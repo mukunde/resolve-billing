@@ -1,0 +1,24 @@
+[
+  {
+    "subscription_id": "sub_88",
+    "metric": "api_call_blocks_100",
+    "quantity": "47",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "_comment": "Cas B : l'usage reel corrobore la facture de depassement inv_011."
+  },
+  {
+    "subscription_id": "sub_77",
+    "metric": "api_calls",
+    "quantity": "0",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00"
+  },
+  {
+    "subscription_id": "sub_99",
+    "metric": "api_calls",
+    "quantity": "1200",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00"
+  }
+]

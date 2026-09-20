@@ -1,0 +1,121 @@
+[
+  {
+    "id": "inv_001",
+    "customer_id": "cus_acme",
+    "subscription_id": "sub_77",
+    "amount": "99.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "lines": [
+      {
+        "label": "Abonnement Enterprise - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "99.00",
+        "amount": "99.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_002",
+    "customer_id": "cus_acme",
+    "subscription_id": "sub_77",
+    "amount": "99.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-02T04:12:00",
+    "_comment": "Cas A : relance d'un batch de facturation, meme periode, meme montant.",
+    "lines": [
+      {
+        "label": "Abonnement Enterprise - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "99.00",
+        "amount": "99.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_010",
+    "customer_id": "cus_nord",
+    "subscription_id": "sub_88",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_011",
+    "customer_id": "cus_nord",
+    "subscription_id": "sub_88",
+    "amount": "23.50",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Cas B : second prelevement legitime, depassement d'usage reel.",
+    "lines": [
+      {
+        "label": "Depassement d'usage - 47 blocs de 100 appels API",
+        "metric": "api_call_blocks_100",
+        "quantity": "47",
+        "unit_amount": "0.50",
+        "amount": "23.50",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_020",
+    "customer_id": "cus_lyon",
+    "subscription_id": "sub_99",
+    "amount": "99.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-16T10:00:00",
+    "_comment": "Cas D : passage Pro -> Enterprise le 16/09, demi-mois facture plein tarif.",
+    "lines": [
+      {
+        "label": "Enterprise - du 16/09 au 30/09 (changement de formule)",
+        "quantity": "1",
+        "unit_amount": "99.00",
+        "amount": "99.00",
+        "period_start": "2026-09-16T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_030",
+    "customer_id": "cus_bordo",
+    "subscription_id": "sub_55",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Cas E : facture relancee alors que le paiement pay_030 a ete encaisse.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  }
+]

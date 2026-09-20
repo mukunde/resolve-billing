@@ -1,0 +1,38 @@
+[
+  {
+    "id": "sub_77",
+    "customer_id": "cus_acme",
+    "state": "active",
+    "plan": "enterprise_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_88",
+    "customer_id": "cus_nord",
+    "state": "active",
+    "plan": "pro_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_99",
+    "customer_id": "cus_lyon",
+    "state": "active",
+    "plan": "enterprise_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_55",
+    "customer_id": "cus_bordo",
+    "state": "cancelled",
+    "plan": "pro_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": "2026-08-20T16:30:00"
+  }
+]

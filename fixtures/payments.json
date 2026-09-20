@@ -1,0 +1,44 @@
+[
+  {
+    "id": "pay_001",
+    "invoice_id": "inv_001",
+    "amount": "99.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-01T09:05:00"
+  },
+  {
+    "id": "pay_002",
+    "invoice_id": "inv_002",
+    "amount": "99.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T04:15:00",
+    "_comment": "Cas A : le doublon a bien ete preleve, l'argent est parti."
+  },
+  {
+    "id": "pay_010",
+    "invoice_id": "inv_010",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-01T09:05:00"
+  },
+  {
+    "id": "pay_011",
+    "invoice_id": "inv_011",
+    "amount": "23.50",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-30T23:05:00"
+  },
+  {
+    "id": "pay_030",
+    "invoice_id": "inv_030",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-03T11:20:00",
+    "_comment": "Cas E : encaisse, mais inv_030 est reste 'open' cote facturation."
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cus_acme",
+    "email": "alice@acme.fr",
+    "currency": "EUR",
+    "display_name": "ACME SAS"
+  },
+  {
+    "id": "cus_nord",
+    "email": "bruno@transports-nord.fr",
+    "currency": "EUR",
+    "display_name": "Transports Nord"
+  },
+  {
+    "id": "cus_lyon",
+    "email": "chloe@lyon-industries.fr",
+    "currency": "EUR",
+    "display_name": "Lyon Industries"
+  },
+  {
+    "id": "cus_bordo",
+    "email": "david@bordeaux-retail.fr",
+    "currency": "EUR",
+    "display_name": "Bordeaux Retail"
+  }
+]
