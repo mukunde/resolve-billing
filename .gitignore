@@ -21,6 +21,9 @@ venv/
 .coverage
 htmlcov/
 
+# --- Base d audit locale (regeneree a chaque demo) -------------------------
+*.db
+
 # --- Secrets et local ------------------------------------------------------
 .env
 *.local

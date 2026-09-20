@@ -22,11 +22,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
+from app.application.events import AuditEvent, AuditSink, event
 from app.decision.base import (
-    FINANCIAL_ACTIONS,
     Classification,
     Decision,
     DecisionEngine,
+    EngineTelemetry,
     RecommendedAction,
 )
 from app.domain.enums import RuleCode
@@ -40,6 +41,7 @@ from app.domain.rules import (
     suspicious_usage_delta,
     unknown_invoice,
 )
+from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
 from app.providers.base import BillingProvider
 
 #: How far back to pull invoices when assembling the context.
@@ -68,32 +70,85 @@ class InvestigationResult(BaseModel):
     findings: list[RuleFinding]
     explanation: str
     proposed_action: ProposedAction
-    requires_human_approval: bool
+    authorization: ActionAuthorization
+    events: list[AuditEvent] = []
+    telemetry: EngineTelemetry | None = None
     short_circuited_by: RuleCode | None = None
+
+    @property
+    def requires_human_approval(self) -> bool:
+        return self.authorization.requires_human_approval
 
 
 class DisputeInvestigator:
     """Wires a billing provider to a decision engine. Knows neither by name."""
 
-    def __init__(self, provider: BillingProvider, engine: DecisionEngine) -> None:
+    def __init__(
+        self,
+        provider: BillingProvider,
+        engine: DecisionEngine,
+        policy: ActionPolicy | None = None,
+        audit: AuditSink | None = None,
+    ) -> None:
         self._provider = provider
         self._engine = engine
+        self._policy = policy or ActionPolicy()
+        self._audit = audit
 
     async def investigate(
         self, dispute: Dispute, now: datetime | None = None
     ) -> InvestigationResult:
         now = now or datetime.now(UTC)
+        trace = [event("run_started", engine=self._engine.name)]
+
         context = await self._load_context(dispute, now)
+        trace.append(
+            event(
+                "billing_context_loaded",
+                invoices=len(context.invoices),
+                subscriptions=len(context.subscriptions),
+            )
+        )
+
         findings = self._run_rules(dispute, context)
+        trace.extend(
+            event("rule_evaluated", code=f.code.value, severity=f.severity.value)
+            for f in findings
+        )
 
         injection = next(
             (f for f in findings if f.code is RuleCode.SUSPECTED_PROMPT_INJECTION), None
         )
         if injection is not None:
-            return self._short_circuit(dispute, context, findings, injection)
+            trace.append(event("injection_suspected", matched=injection.evidence.get("categories")))
+            trace.append(event("decision_engine_skipped"))
+            return self._finish(
+                self._short_circuit(dispute, context, findings, injection), trace
+            )
 
         decision = await self._engine.decide(dispute, context, findings)
-        return self._assemble(dispute, context, findings, decision)
+        trace.append(
+            event(
+                "decision_created",
+                classification=decision.classification.value,
+                confidence=decision.confidence,
+                cost_micros=decision.telemetry.cost_micros if decision.telemetry else 0,
+            )
+        )
+        return self._finish(self._assemble(dispute, context, findings, decision), trace)
+
+    def _finish(
+        self, result: InvestigationResult, trace: list[AuditEvent]
+    ) -> InvestigationResult:
+        verdict = result.authorization.verdict.value
+        trace.append(event("authorization_evaluated", verdict=verdict))
+        if result.requires_human_approval:
+            trace.append(event("approval_requested", verdict=verdict))
+
+        recorded = result.model_copy(update={"events": trace})
+        if self._audit is not None:
+            self._audit.record(recorded, billing_provider=self._provider.name)
+        return recorded
 
     # -- steps -------------------------------------------------------------
 
@@ -190,7 +245,10 @@ class DisputeInvestigator:
             findings=findings,
             explanation=deterministic_explanation(findings),
             proposed_action=ProposedAction(type="none"),
-            requires_human_approval=True,
+            authorization=ActionAuthorization(
+                verdict=Verdict.HUMAN_REVIEW,
+                reason=f"Constat bloquant : {injection.code.value}.",
+            ),
             short_circuited_by=injection.code,
         )
 
@@ -201,6 +259,7 @@ class DisputeInvestigator:
         findings: list[RuleFinding],
         decision: Decision,
     ) -> InvestigationResult:
+        action = _proposed_action(decision, context)
         return InvestigationResult(
             run_id=_new_run_id(),
             dispute=dispute,
@@ -211,8 +270,9 @@ class DisputeInvestigator:
             decision_engine_version=self._engine.version,
             findings=findings,
             explanation=decision.explanation or deterministic_explanation(findings),
-            proposed_action=_proposed_action(decision, context),
-            requires_human_approval=_requires_human_approval(decision),
+            proposed_action=action,
+            authorization=self._policy.evaluate(decision, findings, action.amount),
+            telemetry=decision.telemetry,
         )
 
 
@@ -238,18 +298,6 @@ def _proposed_action(decision: Decision, context: BillingContext) -> ProposedAct
             return ProposedAction(type="request_information")
         case _:
             return ProposedAction(type="none")
-
-
-def _requires_human_approval(decision: Decision) -> bool:
-    """Provisional gate.
-
-    Replaced by ``ActionPolicy`` in the next step, which returns a full
-    authorization object rather than a boolean. Kept here so that the vertical
-    slice is complete and testable on its own.
-    """
-    if decision.recommended_action in FINANCIAL_ACTIONS:
-        return True
-    return decision.classification is Classification.UNKNOWN
 
 
 def deterministic_explanation(findings: list[RuleFinding]) -> str:

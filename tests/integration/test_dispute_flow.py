@@ -6,6 +6,7 @@ These are the demo scenarios. If one of them breaks, the Loom breaks.
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.deps import get_audit
 from app.main import app
 
 # Case F. Kept next to the legitimate messages so the contrast is visible.
@@ -196,3 +197,40 @@ class TestValidation:
 
         assert "UNKNOWN_INVOICE" in body["findings"]
         assert body["classification"] == "insufficient_information"
+
+
+class TestAuditTrail:
+    """Every run leaves a row an auditor can read without our help."""
+
+    def test_the_run_is_recorded_with_its_engine(self, client):
+        body = investigate(
+            client,
+            message="Je crois que j'ai été facturé deux fois pour le mois de septembre.",
+            customer_email="alice@acme.fr",
+            invoice_id="inv_002",
+        )
+
+        row = get_audit().run(body["run_id"])
+
+        assert row is not None
+        assert row["billing_provider"] == "fake"
+        assert row["decision_engine"] == "mock"
+        assert row["verdict"] == "requires_approval"
+        assert row["amount_minor"] == 9900
+
+    def test_a_blocked_run_records_that_the_engine_was_skipped(self, client):
+        body = investigate(
+            client,
+            message=INJECTION,
+            customer_email="alice@acme.fr",
+            invoice_id="inv_002",
+        )
+
+        row = get_audit().run(body["run_id"])
+        events = [e["event"] for e in get_audit().events(body["run_id"])]
+
+        assert row["short_circuited_by"] == "SUSPECTED_PROMPT_INJECTION"
+        assert row["verdict"] == "human_review"
+        assert "injection_suspected" in events
+        assert "decision_engine_skipped" in events
+        assert "decision_created" not in events, "the model must never have been asked"

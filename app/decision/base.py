@@ -59,6 +59,28 @@ FINANCIAL_ACTIONS = frozenset(
 )
 
 
+class EngineTelemetry(BaseModel):
+    """What one engine call cost and how long it took.
+
+    Lives on the decision rather than being returned alongside it, so the port
+    keeps a single return type. That is defensible beyond convenience: in an
+    auditable system, how a decision was produced is part of the decision.
+
+    ``cost_micros`` is an integer count of millionths of a dollar, for the
+    same reason money is an integer count of minor units.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    model_id: str
+    prompt_version: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cost_micros: int = 0
+    latency_ms: int = 0
+
+
 class Decision(BaseModel):
     """A classification, a confidence, and what the engine suggests."""
 
@@ -77,6 +99,9 @@ class Decision(BaseModel):
     traceable line by line, and therefore better for an audit log than model
     prose would have been.
     """
+
+    telemetry: EngineTelemetry | None = None
+    """Absent for engines that cost nothing, such as the mock."""
 
 
 @runtime_checkable
