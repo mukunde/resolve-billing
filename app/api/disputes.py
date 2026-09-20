@@ -58,6 +58,8 @@ class InvestigateResponse(BaseModel):
     explanation: str
     recommended_action: ActionOut
     requires_human_approval: bool
+    authorization_reason: str
+    action_id: str | None = None
     short_circuited_by: str | None = None
 
     @classmethod
@@ -73,6 +75,8 @@ class InvestigateResponse(BaseModel):
             explanation=result.explanation,
             recommended_action=ActionOut.of(result.proposed_action),
             requires_human_approval=result.requires_human_approval,
+            authorization_reason=result.authorization.reason,
+            action_id=result.action_id,
             short_circuited_by=(
                 result.short_circuited_by.value if result.short_circuited_by else None
             ),

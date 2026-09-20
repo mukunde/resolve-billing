@@ -8,11 +8,15 @@ later, not which database is underneath.
 
 Two rules the schema follows:
 
-**Only columns that have a writer.** The approval and execution columns of the
-plan (``approved_by``, ``execution_status``, ``provider_action_id``,
-``idempotency_key``, ``action_state``) are absent because nothing writes them
-yet. A column nobody fills reads, to whoever inherits this, like a feature
-that exists.
+**Only columns that have a writer.** A column nobody fills reads, to whoever
+inherits this, like a feature that exists.
+
+**A run row is immutable.** Approval and execution are not amendments to the
+investigation; they are a separate lifecycle with its own table
+(:mod:`app.infrastructure.actions`), joined on ``run_id``. Updating a run row
+in place would lose the distinction between what was decided at the time and
+what happened to it afterwards -- which is the one thing an audit log exists
+to preserve.
 
 **The engine and its version are not optional.** Without them a decision is
 neither replayable nor comparable against another engine, which would empty

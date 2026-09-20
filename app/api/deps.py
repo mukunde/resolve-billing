@@ -10,10 +10,12 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
+from app.application.execute_action import ApprovalService
 from app.application.investigate_dispute import DisputeInvestigator
 from app.decision.base import DecisionEngine
 from app.decision.claude import ClaudeDecisionEngine
 from app.decision.mock import MockDecisionEngine
+from app.infrastructure.actions import SqliteActionStore
 from app.infrastructure.audit import SqliteAuditRepository
 from app.providers.base import BillingProvider
 from app.providers.fake.adapter import FakeBillingProvider
@@ -47,7 +49,19 @@ def get_audit() -> SqliteAuditRepository:
     return SqliteAuditRepository(os.getenv("AUDIT_DB", "audit.db"))
 
 
+@lru_cache(maxsize=1)
+def get_actions() -> SqliteActionStore:
+    return SqliteActionStore(os.getenv("AUDIT_DB", "audit.db"))
+
+
+def get_approvals() -> ApprovalService:
+    return ApprovalService(provider=get_provider(), actions=get_actions())
+
+
 def get_investigator() -> DisputeInvestigator:
     return DisputeInvestigator(
-        provider=get_provider(), engine=get_engine(), audit=get_audit()
+        provider=get_provider(),
+        engine=get_engine(),
+        audit=get_audit(),
+        actions=get_actions(),
     )

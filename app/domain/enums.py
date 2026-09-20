@@ -31,6 +31,28 @@ class PaymentStatus(StrEnum):
     REFUNDED = "refunded"
 
 
+class ActionState(StrEnum):
+    r"""Lifecycle of a proposed financial action.
+
+    PostgreSQL (SQLite here) holds this, not the orchestrator. If the state of
+    truth lived in n8n, a restart would lose every pending approval, silently
+    and with no trace. n8n is an approval interface and a trigger; it is
+    replaceable.
+
+        PENDING_APPROVAL --approve--> APPROVED --execute--> EXECUTED
+               |                                        \-> FAILED
+               |--reject---> REJECTED
+               \--ttl-----> EXPIRED
+    """
+
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXECUTED = "executed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
 class Severity(StrEnum):
     """How much a finding should weigh on the action policy."""
 

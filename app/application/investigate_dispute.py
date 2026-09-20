@@ -72,6 +72,8 @@ class InvestigationResult(BaseModel):
     proposed_action: ProposedAction
     authorization: ActionAuthorization
     events: list[AuditEvent] = []
+    action_id: str | None = None
+    """Set when a financial action is queued for a human to approve."""
     telemetry: EngineTelemetry | None = None
     short_circuited_by: RuleCode | None = None
 
@@ -89,11 +91,13 @@ class DisputeInvestigator:
         engine: DecisionEngine,
         policy: ActionPolicy | None = None,
         audit: AuditSink | None = None,
+        actions=None,
     ) -> None:
         self._provider = provider
         self._engine = engine
         self._policy = policy or ActionPolicy()
         self._audit = audit
+        self._actions = actions
 
     async def investigate(
         self, dispute: Dispute, now: datetime | None = None
@@ -145,10 +149,39 @@ class DisputeInvestigator:
         if result.requires_human_approval:
             trace.append(event("approval_requested", verdict=verdict))
 
-        recorded = result.model_copy(update={"events": trace})
+        action_id = self._queue_for_approval(result, trace)
+        recorded = result.model_copy(update={"events": trace, "action_id": action_id})
         if self._audit is not None:
             self._audit.record(recorded, billing_provider=self._provider.name)
         return recorded
+
+    def _queue_for_approval(
+        self, result: InvestigationResult, trace: list[AuditEvent]
+    ) -> str | None:
+        """Register the action a human will be asked about.
+
+        Queued here rather than by the HTTP layer so the pending approval
+        exists whoever triggered the run -- n8n, a test, or a future batch.
+        """
+        if self._actions is None:
+            return None
+        if result.authorization.verdict is not Verdict.REQUIRES_APPROVAL:
+            return None
+        amount = result.proposed_action.amount
+        invoice_id = result.dispute.invoice_id
+        if amount is None or invoice_id is None:
+            return None
+
+        action = self._actions.create(
+            run_id=result.run_id,
+            action_type=result.proposed_action.type,
+            invoice_id=invoice_id,
+            amount=amount,
+            reason=result.explanation,
+            provider=self._provider.name,
+        )
+        trace.append(event("action_queued", action_id=action.action_id, state=action.state.value))
+        return action.action_id
 
     # -- steps -------------------------------------------------------------
 
