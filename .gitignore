@@ -1,0 +1,29 @@
+# --- Documents internes, NE JAMAIS PUBLIER ---------------------------------
+# PLAN.md et notes/ contiennent la stratégie de candidature, les messages de
+# relance et les angles d'entretien. Ils ne doivent jamais partir dans un dépôt
+# dont le lien sera transmis.
+PLAN.md
+notes/
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# --- Tests et outils -------------------------------------------------------
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Secrets et local ------------------------------------------------------
+.env
+*.local
+
+# --- Résultats d'évaluation (on publie un tableau, pas des dumps) ----------
+evals/results/*.json
