@@ -119,7 +119,12 @@ def _response_schema() -> dict:
                     "type": "string",
                     "enum": [c.value for c in Classification],
                 },
-                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                # No minimum/maximum: the API rejects those keywords on a
+                # number ("properties maximum, minimum are not supported").
+                # The bound is enforced on arrival instead, by _ModelVerdict,
+                # and a value outside it fails validation and escalates to a
+                # human -- the same safety, checked one step later.
+                "confidence": {"type": "number"},
                 "recommended_action": {
                     "type": "string",
                     "enum": [a.value for a in RecommendedAction],
