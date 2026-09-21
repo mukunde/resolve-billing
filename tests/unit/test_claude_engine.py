@@ -15,6 +15,7 @@ import pytest
 from app.decision.anonymise import anonymise
 from app.decision.base import Classification, RecommendedAction
 from app.decision.claude import (
+    PRICING_AS_OF,
     PRICING_PER_MTOK,
     ClaudeDecisionEngine,
     estimate_cost_micros,
@@ -318,13 +319,26 @@ class TestCost:
 
         assert estimate_cost_micros("mistral-onprem", 1000, 1000) == 0
 
-    async def test_an_unpriced_run_records_no_cost(self, context, findings, dispute):
+    async def test_a_priced_run_carries_the_date_of_the_price_list(
+        self, context, findings, dispute
+    ):
+        """A cost without the grid it came from cannot be read six months on."""
+        engine, _ = engine_with(reply(VALID_VERDICT))
+
+        telemetry = (await engine.decide(dispute, context, findings)).telemetry
+
+        assert telemetry.pricing_as_of == PRICING_AS_OF
+
+    async def test_an_unpriced_run_quotes_no_date(self, context, findings, dispute):
+        """Quoting the date of a table that does not contain this model would
+        suggest the figure was derived from it."""
         engine, _ = engine_with(reply(VALID_VERDICT))
         engine.model = "some-future-model"
 
         telemetry = (await engine.decide(dispute, context, findings)).telemetry
 
         assert telemetry.cost_micros is None
+        assert telemetry.pricing_as_of is None
 
 
 class TestRequestShape:

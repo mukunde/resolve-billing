@@ -70,6 +70,10 @@ class EngineTelemetry(BaseModel):
     same reason money is an integer count of minor units. It is ``None`` when
     no rate is known for the model -- distinct from ``0``, which asserts the
     call genuinely had no per-call price.
+
+    ``pricing_as_of`` travels with it for the same reason ``confidence_kind``
+    travels with ``confidence``: a number whose provenance is lost cannot be
+    interpreted later. It is set only when a cost was actually computed.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -80,6 +84,7 @@ class EngineTelemetry(BaseModel):
     output_tokens: int = 0
     cache_read_input_tokens: int = 0
     cost_micros: int | None = None
+    pricing_as_of: str | None = None
     latency_ms: int = 0
 
 

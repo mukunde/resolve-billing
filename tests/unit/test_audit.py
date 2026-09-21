@@ -63,6 +63,7 @@ def a_result(**overrides) -> InvestigationResult:
             input_tokens=1200,
             output_tokens=180,
             cost_micros=10_500,
+            pricing_as_of="2026-06-24",
             latency_ms=2300,
         ),
     )
@@ -145,6 +146,52 @@ class TestRunRow:
 
         assert row["model_id"] is None
         assert row["cost_micros"] is None
+
+    def test_a_cost_carries_the_date_of_the_price_list(self, audit):
+        audit.record(a_result(), billing_provider="fake")
+
+        assert audit.run("run_test01")["pricing_as_of"] == "2026-06-24"
+
+    def test_an_unknown_rate_is_null_not_zero(self, audit):
+        """Zero would have the row assert the run was free. NULL admits we
+        have no rate -- and `decision_engine` still says who answered, so the
+        two cases stay tellable apart."""
+        audit.record(
+            a_result(
+                telemetry=EngineTelemetry(
+                    model_id="some-future-model",
+                    prompt_version="decision_v1",
+                    input_tokens=1200,
+                    output_tokens=180,
+                    cost_micros=None,
+                    pricing_as_of=None,
+                )
+            ),
+            billing_provider="fake",
+        )
+
+        row = audit.run("run_test01")
+
+        assert row["model_id"] == "some-future-model"
+        assert row["cost_micros"] is None
+        assert row["pricing_as_of"] is None
+
+    def test_a_model_with_no_per_call_price_records_a_real_zero(self, audit):
+        """Distinct from the case above: we know the rate, and it is nothing.
+        A self-hosted engine costing zero per call is a finding, not a gap."""
+        audit.record(
+            a_result(
+                telemetry=EngineTelemetry(
+                    model_id="mistral-onprem",
+                    prompt_version="decision_v1",
+                    cost_micros=0,
+                    pricing_as_of="2026-06-24",
+                )
+            ),
+            billing_provider="fake",
+        )
+
+        assert audit.run("run_test01")["cost_micros"] == 0
 
 
 class TestEvents:

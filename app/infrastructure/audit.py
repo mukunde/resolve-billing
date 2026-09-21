@@ -66,7 +66,9 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     prompt_version           TEXT,
     input_tokens             INTEGER,
     output_tokens            INTEGER,
+    -- NULL means "no rate known", not "it was free". Zero is a claim.
     cost_micros              INTEGER,
+    pricing_as_of            TEXT,
     latency_ms               INTEGER
 );
 
@@ -92,7 +94,24 @@ class SqliteAuditRepository:
         self._connection = sqlite3.connect(self._database, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.executescript(SCHEMA)
+        self._migrate()
         self._connection.commit()
+
+    def _migrate(self) -> None:
+        """Add columns that postdate an existing database file.
+
+        ``CREATE TABLE IF NOT EXISTS`` does nothing to a table that already
+        exists, so a month-old ``audit.db`` would fail with ``no such column``
+        on the next write. No migration framework for a POC, but six lines
+        beats that surprise -- and an audit log that refuses to append is
+        exactly the failure you notice last.
+        """
+        held = {row["name"] for row in self._connection.execute("PRAGMA table_info(agent_runs)")}
+        for column, ddl in (("pricing_as_of", "TEXT"),):
+            if column not in held:
+                self._connection.execute(
+                    f"ALTER TABLE agent_runs ADD COLUMN {column} {ddl}"  # noqa: S608
+                )
 
     def record(
         self,
@@ -111,9 +130,21 @@ class SqliteAuditRepository:
         authorization = result.authorization
 
         with self._connection:
+            # Columns named explicitly rather than positionally: a positional
+            # INSERT silently shifts every value when a column is added.
             self._connection.execute(
                 """
-                INSERT INTO agent_runs VALUES (
+                INSERT INTO agent_runs (
+                    run_id, created_at,
+                    billing_provider, decision_engine, decision_engine_version,
+                    customer_id, invoice_id, input_message,
+                    classification, confidence, confidence_kind, explanation,
+                    findings_json, short_circuited_by,
+                    recommended_action, amount_minor, currency,
+                    verdict, authorization_reason, autonomy_available,
+                    model_id, prompt_version,
+                    input_tokens, output_tokens, cost_micros, pricing_as_of, latency_ms
+                ) VALUES (
                     :run_id, :created_at,
                     :billing_provider, :decision_engine, :decision_engine_version,
                     :customer_id, :invoice_id, :input_message,
@@ -122,7 +153,7 @@ class SqliteAuditRepository:
                     :recommended_action, :amount_minor, :currency,
                     :verdict, :authorization_reason, :autonomy_available,
                     :model_id, :prompt_version,
-                    :input_tokens, :output_tokens, :cost_micros, :latency_ms
+                    :input_tokens, :output_tokens, :cost_micros, :pricing_as_of, :latency_ms
                 )
                 """,
                 {
@@ -158,6 +189,7 @@ class SqliteAuditRepository:
                     "input_tokens": telemetry.input_tokens if telemetry else None,
                     "output_tokens": telemetry.output_tokens if telemetry else None,
                     "cost_micros": telemetry.cost_micros if telemetry else None,
+                    "pricing_as_of": telemetry.pricing_as_of if telemetry else None,
                     "latency_ms": telemetry.latency_ms if telemetry else None,
                 },
             )

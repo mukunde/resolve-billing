@@ -253,13 +253,17 @@ class ClaudeDecisionEngine:
         input_tokens = getattr(usage, "input_tokens", 0) or 0
         output_tokens = getattr(usage, "output_tokens", 0) or 0
         cached = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cost = estimate_cost_micros(self.model, input_tokens, output_tokens)
         return EngineTelemetry(
             model_id=self.model,
             prompt_version=PROMPT_VERSION,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cache_read_input_tokens=cached,
-            cost_micros=estimate_cost_micros(self.model, input_tokens, output_tokens),
+            cost_micros=cost,
+            # Only when a rate was actually applied: quoting the date of a
+            # table that does not contain this model would be misleading.
+            pricing_as_of=PRICING_AS_OF if cost is not None else None,
             latency_ms=latency_ms,
         )
 
