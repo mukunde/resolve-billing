@@ -16,7 +16,6 @@ claude = [
     "anthropic>=0.40",
 ]
 dev = [
-    "anthropic>=0.40",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.7",

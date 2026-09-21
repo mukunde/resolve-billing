@@ -30,18 +30,12 @@ def investigate(client: TestClient, **payload) -> dict:
 class TestHealth:
     def test_names_the_wired_implementations(self, client):
         body = client.get("/health").json()
-
-        assert body["status"] == "ok"
-        assert body["billing_provider"] == "fake"
-        assert body["decision_engine"] == "mock"
-        assert body["decision_engine_version"] == "1.0.0"
-
-    def test_it_publishes_what_a_caller_may_ask_for(self, client):
-        """And, by omission, what it may not."""
-        body = client.get("/health").json()
-
-        assert body["allowed_engines"] == ["claude", "mock"]
-        assert "claude-opus-5" in body["allowed_models"]
+        assert body == {
+            "status": "ok",
+            "billing_provider": "fake",
+            "decision_engine": "mock",
+            "decision_engine_version": "1.0.0",
+        }
 
 
 class TestCaseADuplicate:

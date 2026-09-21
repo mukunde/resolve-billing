@@ -9,13 +9,15 @@ rather than a probabilistic call.
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import UnknownEngine, UnknownModel, build_investigator
+from app.api.deps import get_investigator
 from app.application.investigate_dispute import (
+    DisputeInvestigator,
     InvestigationResult,
     ProposedAction,
 )
@@ -29,18 +31,6 @@ class InvestigateRequest(BaseModel):
     customer_email: str | None = None
     customer_id: str | None = None
     invoice_id: str | None = None
-
-    decision_engine: str | None = None
-    """Which engine should answer. Validated against an allow-list."""
-
-    model: str | None = None
-    """Which model, for engines that take one. Same allow-list treatment.
-
-    Selectable so the demo can replay one dispute across the cost ladder of
-    ADR-003 and show two audit rows. Never a free string: on a system that
-    proposes credit notes, letting the caller choose the judge is privilege
-    escalation dressed as configuration.
-    """
 
 
 class ActionOut(BaseModel):
@@ -94,16 +84,12 @@ class InvestigateResponse(BaseModel):
 
 
 @router.post("/investigate", response_model=InvestigateResponse)
-async def investigate(payload: InvestigateRequest) -> InvestigateResponse:
+async def investigate(
+    payload: InvestigateRequest,
+    investigator: Annotated[DisputeInvestigator, Depends(get_investigator)],
+) -> InvestigateResponse:
     if not (payload.customer_email or payload.customer_id):
         raise HTTPException(422, "a dispute must identify a customer by id or by email")
-
-    try:
-        investigator = build_investigator(payload.decision_engine, payload.model)
-    except (UnknownEngine, UnknownModel) as error:
-        # 422 rather than a quiet fallback to the default: a substitution
-        # would make the audit row name an engine the caller did not get.
-        raise HTTPException(422, str(error)) from error
 
     dispute = Dispute(
         id=f"dsp_{uuid4().hex[:8]}",
