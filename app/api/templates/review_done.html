@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>$headline</title>
+<style>
+  body {
+    margin: 0; background: #f4f5f7; color: #111827;
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 48px 16px;
+  }
+  .card {
+    max-width: 620px; margin: 0 auto; background: #fff;
+    border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;
+  }
+  .banner { padding: 22px 28px; background: $banner_bg; color: $banner_fg; }
+  .banner h1 { margin: 0; font-size: 19px; font-weight: 600; }
+  .banner p { margin: 5px 0 0; font-size: 13.5px; opacity: .9; }
+  section { padding: 22px 28px; }
+  dl { display: grid; grid-template-columns: 170px 1fr; gap: 8px 0; margin: 0; font-size: 14px; }
+  dt { color: #6b7280; }
+  dd { margin: 0; }
+  footer {
+    padding: 14px 28px; background: #f9fafb; border-top: 1px solid #e5e7eb;
+    font-size: 11.5px; color: #9ca3af; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="banner">
+    <h1>$headline</h1>
+    <p>$subhead</p>
+  </div>
+  <section>
+    <dl>
+      <dt>Action</dt><dd>$action_id</dd>
+      <dt>État</dt><dd>$state</dd>
+      <dt>Montant</dt><dd>$amount_display</dd>
+      <dt>Décidé par</dt><dd>$decided_by</dd>
+      <dt>Référence fournisseur</dt><dd>$provider_action_id</dd>
+    </dl>
+  </section>
+  <footer>
+    $footnote
+  </footer>
+</div>
+</body>
+</html>

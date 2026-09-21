@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Validation — $amount_display</title>
+<style>
+  :root {
+    --ink: #111827; --muted: #6b7280; --line: #e5e7eb; --surface: #f4f5f7;
+    --approve: #00695C; --approve-dark: #004D40;
+    --reject: #C2185B; --reject-dark: #AD1457;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 32px 16px;
+  }
+  .card {
+    max-width: 620px; margin: 0 auto; background: #fff;
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  }
+  header { padding: 20px 28px; border-bottom: 1px solid var(--line); }
+  .eyebrow { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .run { font-size: 13px; color: #9ca3af; margin-top: 3px; }
+  .amount { font-size: 38px; font-weight: 600; line-height: 1.1; margin: 4px 0 6px; }
+  section { padding: 24px 28px 0; }
+  dl { display: grid; grid-template-columns: 150px 1fr; gap: 7px 0; margin: 18px 0 0; font-size: 14px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; background: $badge_bg; color: $badge_fg;
+  }
+  .caveat {
+    margin-top: 12px; font-size: 12.5px; color: #92400e;
+    background: #fffbeb; border-left: 3px solid #fcd34d; padding: 9px 13px;
+  }
+  .analysis { margin-top: 18px; font-size: 14px; color: #374151; }
+  .analysis h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .policy {
+    margin-top: 16px; font-size: 12.5px; color: #4b5563; background: #f9fafb;
+    border: 1px solid var(--line); border-radius: 6px; padding: 11px 13px;
+  }
+  .who { margin-top: 24px; }
+  .who label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .who input {
+    width: 100%; padding: 11px 13px; font-size: 15px; font-family: inherit;
+    border: 1px solid #d1d5db; border-radius: 7px; background: #fff; color: var(--ink);
+  }
+  .who input:focus { outline: 2px solid #94a3b8; outline-offset: 1px; border-color: #94a3b8; }
+  .actions { display: flex; gap: 12px; padding: 22px 28px 26px; }
+  button {
+    flex: 1; padding: 15px 18px; font: 600 15px/1 inherit; color: #fff;
+    border: 0; border-radius: 8px; cursor: pointer;
+  }
+  .approve { background: var(--approve); }
+  .approve:hover { background: var(--approve-dark); }
+  .reject { background: var(--reject); }
+  .reject:hover { background: var(--reject-dark); }
+  footer {
+    padding: 14px 28px; background: #f9fafb; border-top: 1px solid var(--line);
+    font-size: 11.5px; color: #9ca3af; line-height: 1.6;
+  }
+  @media (max-width: 520px) {
+    dl { grid-template-columns: 1fr; gap: 2px 0; }
+    dt { margin-top: 8px; }
+    .actions { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<form class="card" method="post" action="$post_url">
+  <header>
+    <div class="eyebrow">Validation requise</div>
+    <div class="run">$run_id</div>
+  </header>
+
+  <section>
+    <div style="font-size:13px;color:var(--muted);">Action proposée</div>
+    <div class="amount">$amount_display</div>
+    <div style="font-size:14px;color:#374151;">$action_type &middot; $classification</div>
+
+    <dl>
+      <dt>Facture</dt><dd>$invoice_id</dd>
+      <dt>Constats</dt><dd>$findings</dd>
+      <dt>Moteur</dt><dd>$engine</dd>
+      <dt>Confiance</dt><dd><span class="badge">$confidence</span></dd>
+    </dl>
+
+    <div class="caveat">$caveat</div>
+
+    <div class="analysis">
+      <h2>Analyse</h2>
+      <div>$reason</div>
+    </div>
+
+    <div class="policy">$policy</div>
+
+    <div class="who">
+      <label for="by">Votre identifiant</label>
+      <input id="by" name="by" required maxlength="120" autocomplete="off"
+             placeholder="prenom.nom@entreprise.fr">
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="approve" name="decision" value="approve" type="submit">Approuver</button>
+    <button class="reject" name="decision" value="reject" type="submit">Refuser</button>
+  </div>
+
+  <footer>
+    Le montant a été calculé à partir de la facture, pas par le moteur de décision.<br>
+    Cette page authentifierait le valideur par le SSO de l&rsquo;entreprise en production&nbsp;;
+    le champ ci-dessus en tient lieu dans cette démonstration.<br>
+    Action $action_id
+  </footer>
+</form>
+</body>
+</html>
