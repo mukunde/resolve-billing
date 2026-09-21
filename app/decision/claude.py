@@ -45,8 +45,27 @@ DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_MAX_TOKENS = 8192
 DEFAULT_TIMEOUT_SECONDS = 60.0
 
-#: USD per million tokens, by model. Used to price each run in micro-euros-ish
-#: units; the point is relative cost between engines, not accounting precision.
+#: The date the prices below were read off the vendor's pricing page.
+#:
+#: Carried explicitly because a cost figure without the date of the price list
+#: it came from cannot be interpreted six months later -- the same reason
+#: ``confidence_kind`` travels next to ``confidence``.
+PRICING_AS_OF = "2026-06-24"
+
+#: List prices in USD per million tokens (input, output), by model.
+#:
+#: Hard-coded, and that is not an oversight waiting to be fixed: **no provider
+#: exposes a rate through an API**. The Models endpoint returns identifiers,
+#: capabilities and context windows, never a price. Every observability tool
+#: that displays a cost -- Langfuse, Helicone, LangSmith -- ships its own
+#: hand-maintained table for exactly this reason. Delegating to one of them
+#: changes who maintains the table, not whether a table is needed.
+#:
+#: These are **list prices, not billed amounts**. What lands in an audit row
+#: is therefore an *estimate*. Reconciling estimated against billed -- via the
+#: provider's usage and cost reporting -- is on the roadmap, and it is the
+#: same problem this project solves on customer invoices, turned on our own
+#: consumption.
 PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
@@ -231,7 +250,12 @@ class ClaudeDecisionEngine:
 
 
 def estimate_cost_micros(model: str, input_tokens: int, output_tokens: int) -> int:
-    """Cost of one call, in millionths of a dollar.
+    """Estimated cost of one call, in millionths of a dollar.
+
+    *Estimated*, and the word is load-bearing: this applies the list prices of
+    :data:`PRICING_PER_MTOK` as of :data:`PRICING_AS_OF`. It is not what the
+    provider invoiced. Quote it as an order of magnitude and as a comparison
+    between engines, never as an accounting figure.
 
     Integer units for the same reason money is: a per-run cost of $0.0007 in
     a float, summed over an evaluation set, drifts.
