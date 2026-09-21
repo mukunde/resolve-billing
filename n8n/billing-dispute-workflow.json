@@ -1,26 +1,63 @@
 {
+  "id": "abehBillingDisp1",
   "name": "Billing dispute triage",
-  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
   "nodes": [
     {
       "id": "webhook",
       "name": "Litige recu",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-360, 0],
+      "position": [
+        -360,
+        0
+      ],
       "webhookId": "billing-dispute",
       "parameters": {
         "path": "billing-dispute",
         "httpMethod": "POST",
-        "responseMode": "responseNode"
-      }
+        "responseMode": "onReceived",
+        "responseData": "Litige recu. Une validation humaine peut etre requise."
+      },
+      "notes": "Accuse reception immediatement. Tenir la connexion HTTP ouverte pendant qu un humain decide n est pas une option : la suite est asynchrone, et l etat vit en base, pas dans cette requete."
+    },
+    {
+      "id": "config",
+      "name": "Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -250,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "billing-api",
+              "name": "billing_api",
+              "value": "http://host.docker.internal:8000",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "notes": "La seule chose a changer pour pointer ailleurs. host.docker.internal depuis n8n en conteneur ; http://localhost:8000 si n8n tourne hors Docker."
     },
     {
       "id": "extract",
       "name": "Extraction deterministe",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-140, 0],
+      "position": [
+        -140,
+        0
+      ],
       "parameters": {
         "jsCode": "// Extraction sans LLM : motif sur la reference de facture,\n// adresse courriel de l'expediteur, corps du message tel quel.\n//\n// Un echec d'extraction n'est pas une erreur : le run part sur\n// insufficient_information, qui est deja un cas gere par l'API.\n// C'est un chemin d'erreur gratuit, et un appel probabiliste de moins.\n\nconst body = $input.first().json.body ?? $input.first().json;\nconst text = String(body.message ?? body.text ?? '');\n\nconst invoice = text.match(/\\binv[_-]?([A-Za-z0-9]{3,})\\b/i);\nconst email =\n  body.customer_email ??\n  body.from ??\n  (text.match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/) || [null])[0];\n\nreturn [{\n  json: {\n    message: text,\n    customer_email: email,\n    invoice_id: invoice ? invoice[0].replace('-', '_') : null,\n    extraction_ok: Boolean(email)\n  }\n}];"
       }
@@ -30,14 +67,19 @@
       "name": "POST /disputes/investigate",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [80, 0],
+      "position": [
+        80,
+        0
+      ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.BILLING_API ?? 'http://host.docker.internal:8000' }}/api/v1/disputes/investigate",
+        "url": "={{ $('Configuration').first().json.billing_api }}/api/v1/disputes/investigate",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ message: $json.message, customer_email: $json.customer_email, invoice_id: $json.invoice_id }) }}",
-        "options": { "timeout": 90000 }
+        "options": {
+          "timeout": 90000
+        }
       }
     },
     {
@@ -45,15 +87,25 @@
       "name": "Validation humaine requise ?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [300, 0],
+      "position": [
+        300,
+        0
+      ],
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "combinator": "and",
           "conditions": [
             {
               "id": "needs-approval",
-              "operator": { "type": "boolean", "operation": "true", "singleValue": true },
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
               "leftValue": "={{ $json.requires_human_approval }}"
             }
           ]
@@ -65,7 +117,10 @@
       "name": "Reponse automatique (aucun mouvement d'argent)",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [520, 160],
+      "position": [
+        520,
+        160
+      ],
       "notes": "Cas B et C. Le brouillon est relu avant envoi ; aucune action financiere."
     },
     {
@@ -73,7 +128,10 @@
       "name": "Attente de validation",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [520, -140],
+      "position": [
+        520,
+        -140
+      ],
       "webhookId": "dispute-approval",
       "parameters": {
         "resume": "form",
@@ -84,10 +142,23 @@
             {
               "fieldLabel": "Decision",
               "fieldType": "dropdown",
-              "fieldOptions": { "values": [{ "option": "Approuver" }, { "option": "Refuser" }] },
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Approuver"
+                  },
+                  {
+                    "option": "Refuser"
+                  }
+                ]
+              },
               "requiredField": true
             },
-            { "fieldLabel": "Votre identifiant", "fieldType": "text", "requiredField": true }
+            {
+              "fieldLabel": "Votre identifiant",
+              "fieldType": "text",
+              "requiredField": true
+            }
           ]
         },
         "options": {}
@@ -99,15 +170,24 @@
       "name": "Approuve ?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [740, -140],
+      "position": [
+        740,
+        -140
+      ],
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": true, "version": 2 },
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
           "combinator": "and",
           "conditions": [
             {
               "id": "is-approved",
-              "operator": { "type": "string", "operation": "equals" },
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
               "leftValue": "={{ $json.Decision }}",
               "rightValue": "Approuver"
             }
@@ -120,14 +200,19 @@
       "name": "POST /actions/{id}/approve",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [960, -240],
+      "position": [
+        960,
+        -240
+      ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.BILLING_API ?? 'http://host.docker.internal:8000' }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/approve",
+        "url": "={{ $('Configuration').first().json.billing_api }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/approve",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ by: $json['Votre identifiant'] }) }}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       }
     },
     {
@@ -135,11 +220,16 @@
       "name": "POST /actions/{id}/execute",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1180, -240],
+      "position": [
+        1180,
+        -240
+      ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.BILLING_API ?? 'http://host.docker.internal:8000' }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/execute",
-        "options": { "timeout": 60000 }
+        "url": "={{ $('Configuration').first().json.billing_api }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/execute",
+        "options": {
+          "timeout": 60000
+        }
       },
       "notes": "Idempotent cote API : rejouer cet appel ne cree pas un second avoir."
     },
@@ -148,53 +238,124 @@
       "name": "POST /actions/{id}/reject",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [960, -40],
+      "position": [
+        960,
+        -40
+      ],
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.BILLING_API ?? 'http://host.docker.internal:8000' }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/reject",
+        "url": "={{ $('Configuration').first().json.billing_api }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/reject",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ by: $json['Votre identifiant'] }) }}",
-        "options": { "timeout": 30000 }
+        "options": {
+          "timeout": 30000
+        }
       }
-    },
-    {
-      "id": "respond",
-      "name": "Reponse",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [1400, 0],
-      "parameters": { "respondWith": "json", "responseBody": "={{ JSON.stringify($json) }}" }
     }
   ],
   "connections": {
-    "Litige recu": { "main": [[{ "node": "Extraction deterministe", "type": "main", "index": 0 }]] },
+    "Litige recu": {
+      "main": [
+        [
+          {
+            "node": "Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Extraction deterministe": {
-      "main": [[{ "node": "POST /disputes/investigate", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "POST /disputes/investigate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "POST /disputes/investigate": {
-      "main": [[{ "node": "Validation humaine requise ?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Validation humaine requise ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Validation humaine requise ?": {
       "main": [
-        [{ "node": "Attente de validation", "type": "main", "index": 0 }],
-        [{ "node": "Reponse automatique (aucun mouvement d'argent)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Attente de validation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reponse automatique (aucun mouvement d'argent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
-    "Attente de validation": { "main": [[{ "node": "Approuve ?", "type": "main", "index": 0 }]] },
+    "Attente de validation": {
+      "main": [
+        [
+          {
+            "node": "Approuve ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Approuve ?": {
       "main": [
-        [{ "node": "POST /actions/{id}/approve", "type": "main", "index": 0 }],
-        [{ "node": "POST /actions/{id}/reject", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "POST /actions/{id}/approve",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST /actions/{id}/reject",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "POST /actions/{id}/approve": {
-      "main": [[{ "node": "POST /actions/{id}/execute", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "POST /actions/{id}/execute",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "POST /actions/{id}/execute": { "main": [[{ "node": "Reponse", "type": "main", "index": 0 }]] },
-    "POST /actions/{id}/reject": { "main": [[{ "node": "Reponse", "type": "main", "index": 0 }]] },
-    "Reponse automatique (aucun mouvement d'argent)": {
-      "main": [[{ "node": "Reponse", "type": "main", "index": 0 }]]
+    "Configuration": {
+      "main": [
+        [
+          {
+            "node": "Extraction deterministe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   }
 }
