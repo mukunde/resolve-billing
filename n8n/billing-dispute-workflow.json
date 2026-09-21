@@ -41,6 +41,18 @@
               "name": "billing_api",
               "value": "http://host.docker.internal:8000",
               "type": "string"
+            },
+            {
+              "id": "notify-to",
+              "name": "notify_to",
+              "value": "facturation@acme.test",
+              "type": "string"
+            },
+            {
+              "id": "notify-from",
+              "name": "notify_from",
+              "value": "agent-facturation@acme.test",
+              "type": "string"
             }
           ]
         },
@@ -124,46 +136,46 @@
       "notes": "Cas B et C. Le brouillon est relu avant envoi ; aucune action financiere."
     },
     {
-      "id": "wait",
-      "name": "Attente de validation",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
+      "id": "notify",
+      "name": "Mail au valideur",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
       "position": [
         520,
         -140
       ],
+      "parameters": {
+        "fromEmail": "={{ $('Configuration').first().json.notify_from }}",
+        "toEmail": "={{ $('Configuration').first().json.notify_to }}",
+        "subject": "=[{{ $('POST /disputes/investigate').item.json.run_id }}] Validation requise : {{ $('POST /disputes/investigate').item.json.recommended_action.type }} de {{ ($('POST /disputes/investigate').item.json.recommended_action.amount_minor ?? 0) / 100 }} {{ $('POST /disputes/investigate').item.json.recommended_action.currency }}",
+        "emailFormat": "both",
+        "text": "=Un litige de facturation attend votre validation.\n\nRun            : {{ $('POST /disputes/investigate').item.json.run_id }}\nClassification : {{ $('POST /disputes/investigate').item.json.classification }}\nConstats       : {{ $('POST /disputes/investigate').item.json.findings.join(', ') || 'aucun' }}\n\nAction proposee : {{ $('POST /disputes/investigate').item.json.recommended_action.type }} de {{ ($json.recommended_action.amount_minor ?? 0) / 100 }} {{ $('POST /disputes/investigate').item.json.recommended_action.currency }}\nAction id       : {{ $('POST /disputes/investigate').item.json.action_id }}\n\nMoteur    : {{ $('POST /disputes/investigate').item.json.decision_engine }} ({{ $('POST /disputes/investigate').item.json.decision_engine_version }})\nConfiance : {{ $('POST /disputes/investigate').item.json.confidence }} ({{ $('POST /disputes/investigate').item.json.confidence_kind }})\n\nAnalyse : {{ $('POST /disputes/investigate').item.json.explanation }}\n\nMotif de la validation : {{ $('POST /disputes/investigate').item.json.authorization_reason }}\n\nValider ou refuser :\n{{ $('Configuration').first().json.billing_api }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/review?resume={{ encodeURIComponent($execution.resumeUrl) }}\n\n--\nAucune action financiere n'est executee tant que ce lien n'a pas ete utilise.\nLe montant a ete calcule a partir de la facture, pas par le moteur de decision.",
+        "options": {},
+        "html": "=<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background:#f4f5f7;padding:32px 12px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;\">\n<tr><td align=\"center\">\n<table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"max-width:600px;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;\">\n\n<tr><td style=\"padding:20px 28px;border-bottom:1px solid #e5e7eb;\">\n<div style=\"font-size:11px;letter-spacing:0.09em;text-transform:uppercase;color:#6b7280;font-weight:600;\">Validation requise</div>\n<div style=\"font-size:13px;color:#9ca3af;margin-top:3px;\">{{ $('POST /disputes/investigate').item.json.run_id }}</div>\n</td></tr>\n\n<tr><td style=\"padding:26px 28px 4px;\">\n<div style=\"font-size:13px;color:#6b7280;\">Action proposée</div>\n<div style=\"font-size:34px;font-weight:600;color:#111827;margin-top:5px;line-height:1.1;\">{{ ($json.recommended_action.amount_minor ?? 0) / 100 }} {{ $('POST /disputes/investigate').item.json.recommended_action.currency }}</div>\n<div style=\"font-size:14px;color:#374151;margin-top:6px;\">{{ $('POST /disputes/investigate').item.json.recommended_action.type }} &middot; {{ $('POST /disputes/investigate').item.json.classification }}</div>\n</td></tr>\n\n<tr><td style=\"padding:20px 28px 0;\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"font-size:14px;color:#374151;\">\n<tr><td style=\"padding:5px 0;color:#6b7280;width:140px;vertical-align:top;\">Constats</td><td style=\"padding:5px 0;\">{{ $('POST /disputes/investigate').item.json.findings.join(', ') || 'aucun' }}</td></tr>\n<tr><td style=\"padding:5px 0;color:#6b7280;vertical-align:top;\">Moteur</td><td style=\"padding:5px 0;\">{{ $('POST /disputes/investigate').item.json.decision_engine }} ({{ $('POST /disputes/investigate').item.json.decision_engine_version }})</td></tr>\n<tr><td style=\"padding:5px 0;color:#6b7280;vertical-align:top;\">Confiance</td><td style=\"padding:5px 0;\"><span style=\"display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;background:{{ $('POST /disputes/investigate').item.json.confidence_kind === 'calibrated' ? '#dcfce7' : '#fef3c7' }};color:{{ $('POST /disputes/investigate').item.json.confidence_kind === 'calibrated' ? '#166534' : '#92400e' }};\">{{ $('POST /disputes/investigate').item.json.confidence }} &middot; {{ $('POST /disputes/investigate').item.json.confidence_kind }}</span></td></tr>\n</table>\n</td></tr>\n\n<tr><td style=\"padding:12px 28px 0;\">\n<div style=\"font-size:12.5px;color:#92400e;background:#fffbeb;border-left:3px solid #fcd34d;padding:9px 13px;line-height:1.5;\">{{ $('POST /disputes/investigate').item.json.confidence_kind === 'calibrated' ? 'Score mesuré sur le jeu de cas de référence.' : 'Score déclaré par le modèle, non mesuré. Les seuils automatiques restent désactivés pour cette raison.' }}</div>\n</td></tr>\n\n<tr><td style=\"padding:20px 28px 0;\">\n<div style=\"font-size:13px;color:#6b7280;margin-bottom:6px;\">Analyse</div>\n<div style=\"font-size:14px;color:#374151;line-height:1.55;\">{{ $('POST /disputes/investigate').item.json.explanation }}</div>\n</td></tr>\n\n<tr><td style=\"padding:16px 28px 0;\">\n<div style=\"font-size:12.5px;color:#4b5563;background:#f9fafb;border:1px solid #e5e7eb;padding:11px 13px;border-radius:6px;line-height:1.5;\">{{ $('POST /disputes/investigate').item.json.authorization_reason }}</div>\n</td></tr>\n\n<tr><td align=\"center\" style=\"padding:26px 28px 10px;\">\n<a href=\"{{ $('Configuration').first().json.billing_api }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/review?resume={{ encodeURIComponent($execution.resumeUrl) }}\" style=\"display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 32px;border-radius:7px;\">Examiner et valider</a>\n</td></tr>\n\n<tr><td align=\"center\" style=\"padding:0 28px 24px;\">\n<div style=\"font-size:12px;color:#9ca3af;\">Aucune action financière n&rsquo;est exécutée tant que ce lien n&rsquo;a pas été utilisé.</div>\n</td></tr>\n\n<tr><td style=\"padding:14px 28px;background:#f9fafb;border-top:1px solid #e5e7eb;\">\n<div style=\"font-size:11.5px;color:#9ca3af;line-height:1.6;\">Le montant a été calculé à partir de la facture, pas par le moteur de décision.<br>Action {{ $('POST /disputes/investigate').item.json.action_id }}</div>\n</td></tr>\n\n</table>\n</td></tr>\n</table>"
+      },
+      "credentials": {
+        "smtp": {
+          "id": "mailpitLocal0001",
+          "name": "Mailpit local"
+        }
+      },
+      "notes": "Le canal est un detail d'orchestration, pas une decision d'architecture : Mattermost, Rocket.Chat, Matrix ou Twake remplacent ce noeud sans toucher une ligne de Python."
+    },
+    {
+      "id": "wait",
+      "name": "Attente de decision",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        740,
+        -140
+      ],
       "webhookId": "dispute-approval",
       "parameters": {
-        "resume": "form",
-        "formTitle": "Validation d'une action financiere",
-        "formDescription": "={{ $json.classification }} — {{ $json.explanation }}\\n\\nAction proposee : {{ $json.recommended_action.type }} de {{ ($json.recommended_action.amount_minor ?? 0) / 100 }} {{ $json.recommended_action.currency }}\\nConstats : {{ $json.findings.join(', ') || 'aucun' }}\\nMoteur : {{ $json.decision_engine }} ({{ $json.decision_engine_version }}), confiance {{ $json.confidence }} ({{ $json.confidence_kind }})\\nMotif : {{ $json.authorization_reason }}",
-        "formFields": {
-          "values": [
-            {
-              "fieldLabel": "Decision",
-              "fieldType": "dropdown",
-              "fieldOptions": {
-                "values": [
-                  {
-                    "option": "Approuver"
-                  },
-                  {
-                    "option": "Refuser"
-                  }
-                ]
-              },
-              "requiredField": true
-            },
-            {
-              "fieldLabel": "Votre identifiant",
-              "fieldType": "text",
-              "requiredField": true
-            }
-          ]
-        },
+        "resume": "webhook",
         "options": {}
       },
-      "notes": "n8n ne detient aucun etat : l'action est deja en pending_approval en base. Si n8n redemarre, l'approbation reste recuperable via GET /runs/{run_id}."
+      "notes": "n8n ne detient aucun etat. L'action est deja pending_approval en base, avec l'URL de reprise. Si n8n redemarre ou disparait, la decision humaine reste enregistrable et l'action reprenable."
     },
     {
       "id": "approved",
@@ -171,7 +183,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        740,
+        960,
         -140
       ],
       "parameters": {
@@ -188,32 +200,13 @@
                 "type": "string",
                 "operation": "equals"
               },
-              "leftValue": "={{ $json.Decision }}",
-              "rightValue": "Approuver"
+              "leftValue": "={{ $json.query.decision }}",
+              "rightValue": "approve"
             }
           ]
         }
-      }
-    },
-    {
-      "id": "approve-call",
-      "name": "POST /actions/{id}/approve",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        960,
-        -240
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Configuration').first().json.billing_api }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/approve",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ by: $json['Votre identifiant'] }) }}",
-        "options": {
-          "timeout": 30000
-        }
-      }
+      },
+      "notes": "La reprise arrive en GET, donc la decision est dans query. Ce rappel ne porte aucune autorite : l execution exige que l action soit deja APPROVED, ce que seule une decision humaine enregistree produit."
     },
     {
       "id": "execute-call",
@@ -232,26 +225,6 @@
         }
       },
       "notes": "Idempotent cote API : rejouer cet appel ne cree pas un second avoir."
-    },
-    {
-      "id": "reject-call",
-      "name": "POST /actions/{id}/reject",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        960,
-        -40
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "={{ $('Configuration').first().json.billing_api }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}/reject",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ by: $json['Votre identifiant'] }) }}",
-        "options": {
-          "timeout": 30000
-        }
-      }
     }
   ],
   "connections": {
@@ -292,7 +265,7 @@
       "main": [
         [
           {
-            "node": "Attente de validation",
+            "node": "Mail au valideur",
             "type": "main",
             "index": 0
           }
@@ -306,36 +279,7 @@
         ]
       ]
     },
-    "Attente de validation": {
-      "main": [
-        [
-          {
-            "node": "Approuve ?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Approuve ?": {
-      "main": [
-        [
-          {
-            "node": "POST /actions/{id}/approve",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "POST /actions/{id}/reject",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "POST /actions/{id}/approve": {
       "main": [
         [
           {
@@ -343,7 +287,8 @@
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        []
       ]
     },
     "Configuration": {
@@ -351,6 +296,28 @@
         [
           {
             "node": "Extraction deterministe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mail au valideur": {
+      "main": [
+        [
+          {
+            "node": "Attente de decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attente de decision": {
+      "main": [
+        [
+          {
+            "node": "Approuve ?",
             "type": "main",
             "index": 0
           }

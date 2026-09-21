@@ -5,86 +5,135 @@ Import `billing-dispute-workflow.json` into n8n (**Workflows → Import from fil
 ```text
 Litige recu (webhook)
       ↓
+Configuration                    ← the one value to change
+      ↓
 Extraction deterministe          ← regex + lookup, no LLM
       ↓
 POST /disputes/investigate
       ↓
 requires_human_approval ?
       ├── no  → reponse automatique, no money moves
-      └── yes → Wait (approval form)
-                    ├── Approuver → POST /actions/{id}/approve
-                    │                      ↓
-                    │               POST /actions/{id}/execute
-                    └── Refuser   → POST /actions/{id}/reject
+      └── yes → Mail au valideur      ← notification, with a link
+                      ↓
+                Attente de decision   ← the run suspends here
+                      ↓
+                Approuve ?
+                      ├── oui  → POST /actions/{id}/execute
+                      └── non  → nothing; the rejection is already recorded
 ```
 
-## What n8n does, and what it deliberately does not
+## Where the approval actually happens
 
-n8n **triggers** the run and **presents** the approval. That is all.
+**Not in n8n.** The email is a notification; the decision is made on a page
+served by the API, at `GET /api/v1/actions/{id}/review`.
 
-It holds no state. By the time the Wait node suspends, the action already
-exists in the database as `pending_approval`, with a derived idempotency key.
-If n8n is restarted, upgraded or replaced, nothing is lost: the pending
-approval is still there, and `GET /api/v1/runs/{run_id}` returns the run, its
-trace and whatever is still waiting.
+That is what finance approval systems do — Ariba, Coupa, Workday all send a
+mail that links back into the application — and for three reasons:
 
-This matters because the Wait node keeps its resume state *inside n8n*. A
-workflow that relied on it would put the answer to "is a credit note waiting
-for someone?" in the orchestrator rather than in the system of record — and
-would lose it silently.
+**Identity.** A controller has to be able to prove *who* approved. An
+anonymous link cannot: whoever holds it acts.
 
-Everything that has to be right lives in Python: the domain model, the
-deterministic rules, the two ports, the action policy, the state machine and
-idempotency. The orchestrator is the replaceable part.
+**Email is untrusted transport.** It is forwarded, quoted, archived, left in
+shared mailboxes. The power to move money should not live in a channel you do
+not control.
 
-## The extraction is deterministic
+**A GET link is prefetched.** Outlook Safe Links and antivirus gateways follow
+links to scan them, so a one-click approve URL can be exercised by a scanner
+rather than a person. Decisions on the review page arrive by POST, from a form
+a human submitted.
 
-The Code node parses the invoice reference with a regular expression and
-resolves the customer by email. No model is involved.
+The honest limit, printed on the page itself: the identifier field is **not
+authentication**. In production that route sits behind the company's SSO.
 
-A failed extraction is not an error path that needs writing: the run proceeds
-without an `invoice_id` and the API classifies it as `insufficient_information`,
-which is already demo case C. One less probabilistic call, and a failure mode
-that was going to exist anyway.
+## n8n holds no state
+
+By the time `Attente de decision` suspends, the action already exists in the
+database as `pending_approval`, with the orchestrator's callback stored beside
+it. n8n restarting, being upgraded or disappearing loses nothing:
+`GET /api/v1/runs/{run_id}` returns the run, its trace and whatever is still
+waiting, and the review page works without n8n being up at all.
+
+The callback the API rings afterwards is a GET, which is what n8n's waiting
+webhook accepts. That is not the hole it looks like. The URL never reaches a
+human or a mail scanner — it is minted by n8n, handed to the API and kept in
+the database. And it **carries no authority**: replaying it cannot approve
+anything, because execution requires the action to already be `APPROVED`,
+which only a recorded human decision produces.
+
+## The notification channel is replaceable
+
+It is a detail of orchestration, not a decision of architecture: it lives in
+n8n and never in the domain. n8n ships nodes for **Mattermost**,
+**Rocket.Chat**, **Matrix** and **Twake** — all self-hostable, the last edited
+in France by Linagora, and Matrix being what Tchap is built on. Swapping the
+channel does not touch a line of Python.
+
+Email was chosen for the demo because it needs one container and no account,
+nothing leaves the machine, and a billing manager reads their mail rather than
+a chat channel.
 
 ## Running it
 
-Start the API on the host:
+### 1. The API
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+pip install -e ".[api]"
+uvicorn app.main:app --port 8000
 ```
 
-The workflow calls `$env.BILLING_API`, defaulting to
-`http://host.docker.internal:8000` (n8n in Docker reaching the host). Set
-`BILLING_API=http://localhost:8000` if you run n8n outside Docker.
+### 2. A local mailbox
 
-Then POST a dispute to the webhook:
+Mailpit catches SMTP and shows it in a browser. No account, no credential, no
+external service:
 
 ```bash
-curl -X POST http://localhost:5678/webhook/billing-dispute -H 'content-type: application/json' -d '{"message":"Je crois que j'"'"'ai ete facture deux fois pour septembre, facture inv_002","customer_email":"alice@acme.fr"}'
+docker run -d --name mailpit -p 8025:8025 -p 1025:1025 axllent/mailpit
 ```
 
-The execution suspends on **Attente de validation**. Open the form link n8n
-shows, approve, and the workflow resumes: the credit note is issued and the
-audit row is updated.
+### 3. n8n
+
+```bash
+docker run -d --name n8n -p 5678:5678 -v n8n_data:/home/node/.n8n docker.n8n.io/n8nio/n8n
+```
+
+Then, **before the workflow will run**, create an SMTP credential in n8n named
+`Mailpit local`: host `host.docker.internal`, port `1025`, no user, no
+password, TLS off. Credentials never travel inside an exported workflow, so
+this step is manual — as it would be for any real SMTP server.
+
+Finally, open the `Configuration` node and set `billing_api`,
+`notify_to` and `notify_from`. `host.docker.internal:8000` is right when n8n
+runs in Docker; use `http://localhost:8000` when it does not.
+
+### 4. Send a dispute
+
+```bash
+curl -X POST http://localhost:5678/webhook/billing-dispute -H 'content-type: application/json' -d '{"message":"Je crois que jai ete facture deux fois pour septembre, facture inv_002","customer_email":"alice@acme.fr"}'
+```
+
+The webhook answers immediately — nobody holds an HTTP connection open while a
+human decides. Open <http://localhost:8025>, read the mail, click **Examiner
+et valider**, and approve.
 
 ## What to look at during the demo
 
-Between the suspend and the approval, the state is visible without n8n:
+Between the mail going out and the click, the state is visible without n8n:
 
 ```bash
 sqlite3 audit.db "SELECT action_id, state, amount_minor, currency FROM pending_actions"
 ```
 
-After approval:
+After approving:
 
 ```bash
 sqlite3 audit.db "SELECT state, approved_by, provider_action_id FROM pending_actions"
 ```
 
-And re-running the execute call returns the same `provider_action_id` rather
-than issuing a second credit note.
+And the run itself, with the engine that produced it and what it cost:
+
+```bash
+sqlite3 audit.db "SELECT classification, verdict, decision_engine, cost_micros, pricing_as_of FROM agent_runs"
+```
 
 ## Case F
 
@@ -97,7 +146,25 @@ Send the injection payload through the same webhook:
 }
 ```
 
-The workflow takes the approval branch and the form shows
-`SUSPECTED_PROMPT_INJECTION`, no proposed action, and `decision_engine: none`.
-The invoice really is a duplicate — the injection stops everything anyway, and
-the model was never asked.
+The run is classified `unknown`, `decision_engine` is `none`, and the trace
+contains `injection_suspected` followed by `decision_engine_skipped` with no
+`decision_created` after it. The invoice really is a duplicate — the injection
+stops everything anyway, and the model was never asked.
+
+No action is queued, so no mail is sent: there is nothing for a human to
+approve, only something for one to read.
+
+## Notes for whoever edits this workflow
+
+**The canvas is a draft.** The webhook serves the *published* version. Moving a
+node and forgetting to publish means the webhook keeps serving the old one.
+
+**`Execute workflow` uses a different URL** from the production webhook. The
+`curl` above targets the production one.
+
+**Expression fields must start with `=`.** Without it n8n treats the field as a
+literal string, and a URL like `{{ ... }}/execute` fails with *Invalid URL*
+rather than resolving.
+
+**`$json` means the previous node's output.** Nodes after `Mail au valideur`
+reference `$('POST /disputes/investigate')` explicitly for that reason.
