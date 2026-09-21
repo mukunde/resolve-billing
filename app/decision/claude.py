@@ -38,8 +38,17 @@ from app.decision.base import (
 )
 from app.domain.models import BillingContext, Dispute, RuleFinding
 
-PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v1.md"
-PROMPT_VERSION = "decision_v1"
+#: A changed prompt gets a new version and a new file; `decision_v1.md` stays
+#: on disk. Otherwise the audit row names a prompt whose text has since moved
+#: under it, and an evaluation run from last week is comparable to nothing.
+#:
+#: v2 adds the rule that a credit note is the default instrument and a refund
+#: the exception. v1 listed both without saying when to prefer one, and the
+#: first real run duly proposed a refund for a duplicate on an active
+#: subscription -- safe, since both need approval, but wrong for French
+#: billing practice.
+PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v2.md"
+PROMPT_VERSION = "decision_v2"
 
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_MAX_TOKENS = 8192
