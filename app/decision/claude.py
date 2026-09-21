@@ -66,7 +66,22 @@ PRICING_AS_OF = "2026-06-24"
 #: provider's usage and cost reporting -- is on the roadmap, and it is the
 #: same problem this project solves on customer invoices, turned on our own
 #: consumption.
-PRICING_PER_MTOK: dict[str, tuple[float, float]] = {
+#:
+#: Two distinct facts live in this table, and conflating them was a bug:
+#:
+#: * a model **absent** from it has an *unknown* price -- we have no rate, and
+#:   the honest record of the cost is "we do not know";
+#: * a model mapped to **None** has *no per-call price*, which is the real and
+#:   expected shape of a self-hosted or flat-rate model. Its cost per call is
+#:   genuinely zero, and that is a result worth publishing rather than a gap.
+#:
+#: The difference matters most in the engine comparison: "free because it runs
+#: on our own hardware" and "free because nobody added the rate" would
+#: otherwise print identically -- one being a finding, the other a defect.
+#:
+#: No ``None`` entry exists today because no self-hosted engine does. Adding
+#: one before the engine would be the empty-adapter smell this repo avoids.
+PRICING_PER_MTOK: dict[str, tuple[float, float] | None] = {
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
     "claude-haiku-4-5": (1.00, 5.00),
@@ -249,7 +264,9 @@ class ClaudeDecisionEngine:
         )
 
 
-def estimate_cost_micros(model: str, input_tokens: int, output_tokens: int) -> int:
+def estimate_cost_micros(
+    model: str, input_tokens: int, output_tokens: int
+) -> int | None:
     """Estimated cost of one call, in millionths of a dollar.
 
     *Estimated*, and the word is load-bearing: this applies the list prices of
@@ -257,12 +274,21 @@ def estimate_cost_micros(model: str, input_tokens: int, output_tokens: int) -> i
     provider invoiced. Quote it as an order of magnitude and as a comparison
     between engines, never as an accounting figure.
 
+    Returns ``None`` when the model is unknown to the table. Returning ``0``
+    there would have the audit *assert* that the run was free, which is a
+    stronger and different claim than admitting we have no rate -- and it
+    would silently zero out the very figures the cost argument rests on.
+
     Integer units for the same reason money is: a per-run cost of $0.0007 in
     a float, summed over an evaluation set, drifts.
     """
-    prices = PRICING_PER_MTOK.get(model)
+    if model not in PRICING_PER_MTOK:
+        return None
+
+    prices = PRICING_PER_MTOK[model]
     if prices is None:
-        return 0
+        return 0  # self-hosted or flat-rate: no per-call price, and we know it
+
     input_price, output_price = prices
     micros = (input_tokens * input_price + output_tokens * output_price)  # $/Mtok * tokens
     return round(micros)

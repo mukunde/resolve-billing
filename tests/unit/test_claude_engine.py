@@ -14,7 +14,11 @@ import pytest
 
 from app.decision.anonymise import anonymise
 from app.decision.base import Classification, RecommendedAction
-from app.decision.claude import ClaudeDecisionEngine, estimate_cost_micros
+from app.decision.claude import (
+    PRICING_PER_MTOK,
+    ClaudeDecisionEngine,
+    estimate_cost_micros,
+)
 from app.domain.enums import InvoiceStatus, RuleCode, Severity, SubscriptionStatus
 from app.domain.models import (
     BillingContext,
@@ -296,8 +300,31 @@ class TestCost:
         assert estimate_cost_micros("claude-opus-5", 1_000_000, 0) == 5_000_000
         assert estimate_cost_micros("claude-opus-5", 0, 1_000_000) == 25_000_000
 
-    def test_an_unpriced_model_reports_zero_rather_than_guessing(self):
-        assert estimate_cost_micros("some-future-model", 1000, 1000) == 0
+    def test_an_unknown_model_reports_nothing_rather_than_zero(self):
+        """Zero is a claim; None is the absence of one.
+
+        Reporting zero would have the audit assert the run was free, and
+        would silently empty out the figures the cost argument rests on.
+        """
+        assert estimate_cost_micros("some-future-model", 1000, 1000) is None
+
+    def test_a_model_with_no_per_call_price_costs_zero(self, monkeypatch):
+        """Self-hosted or flat-rate: genuinely free per call, and we know it.
+
+        This is a result worth publishing -- "the sovereign on-premise option
+        costs nothing per call" -- not a gap in the table.
+        """
+        monkeypatch.setitem(PRICING_PER_MTOK, "mistral-onprem", None)
+
+        assert estimate_cost_micros("mistral-onprem", 1000, 1000) == 0
+
+    async def test_an_unpriced_run_records_no_cost(self, context, findings, dispute):
+        engine, _ = engine_with(reply(VALID_VERDICT))
+        engine.model = "some-future-model"
+
+        telemetry = (await engine.decide(dispute, context, findings)).telemetry
+
+        assert telemetry.cost_micros is None
 
 
 class TestRequestShape:

@@ -67,7 +67,9 @@ class EngineTelemetry(BaseModel):
     auditable system, how a decision was produced is part of the decision.
 
     ``cost_micros`` is an integer count of millionths of a dollar, for the
-    same reason money is an integer count of minor units.
+    same reason money is an integer count of minor units. It is ``None`` when
+    no rate is known for the model -- distinct from ``0``, which asserts the
+    call genuinely had no per-call price.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -77,7 +79,7 @@ class EngineTelemetry(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_input_tokens: int = 0
-    cost_micros: int = 0
+    cost_micros: int | None = None
     latency_ms: int = 0
 
 
