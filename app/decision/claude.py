@@ -210,7 +210,12 @@ class ClaudeDecisionEngine:
             # a calibrated number.
             confidence_kind="self_reported",
             recommended_action=verdict.recommended_action,
-            explanation=verdict.explanation,
+            # The engine writes prose about INVOICE_1; a reviewer needs to
+            # read inv_002. Mapping only `evidence_refs` back left the
+            # explanation unreadable the moment the alias map was discarded --
+            # and the explanation is what reaches the audit row, the email and
+            # the approval page.
+            explanation=names.restore(verdict.explanation),
             evidence_refs=names.resolve_all(verdict.evidence_refs),
             telemetry=telemetry,
         )

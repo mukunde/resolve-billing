@@ -54,6 +54,23 @@ class Pseudonyms:
     def known_aliases(self) -> set[str]:
         return set(self._to_real)
 
+    def restore(self, text: str) -> str:
+        """Put real identifiers back into prose the engine wrote.
+
+        ``evidence_refs`` are mapped back structurally; the explanation is
+        not, and the explanation is what a human actually reads -- in the
+        audit row, in the notification email, on the approval page. A billing
+        manager told that "INVOICE_1 and INVOICE_2 cover the same period" has
+        no way to know which invoices those are: the alias map is discarded
+        with the run.
+
+        Longest alias first, so ``INVOICE_1`` does not rewrite the prefix of
+        ``INVOICE_10``.
+        """
+        for alias in sorted(self._to_real, key=len, reverse=True):
+            text = text.replace(alias, self._to_real[alias])
+        return text
+
 
 def anonymise(context: BillingContext, findings: list[RuleFinding]) -> tuple[dict, Pseudonyms]:
     """Render the context and findings with aliases only.

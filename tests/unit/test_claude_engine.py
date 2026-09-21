@@ -195,6 +195,27 @@ class TestPseudonymisation:
         assert "inv_001" not in sent
 
 
+class TestProseIsReadable:
+    async def test_aliases_are_put_back_into_the_explanation(
+        self, context, findings, dispute
+    ):
+        """The explanation is what a human reads -- audit row, email,
+        approval page. Mapping only evidence_refs back left a billing manager
+        told that "INVOICE_1 and INVOICE_2 cover the same period", with no way
+        to know which invoices those are once the alias map is discarded.
+        """
+        verdict = VALID_VERDICT | {
+            "explanation": "INVOICE_1 et INVOICE_2 couvrent la meme periode."
+        }
+        engine, _ = engine_with(reply(verdict))
+
+        decision = await engine.decide(dispute, context, findings)
+
+        assert "INVOICE_" not in decision.explanation
+        assert "inv_001" in decision.explanation
+        assert "inv_002" in decision.explanation
+
+
 class TestEvidenceMapping:
     async def test_aliases_are_mapped_back_to_real_ids(self, context, findings, dispute):
         engine, _ = engine_with(reply(VALID_VERDICT))
