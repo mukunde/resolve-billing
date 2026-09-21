@@ -40,6 +40,11 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     reason              TEXT NOT NULL,
 
     idempotency_key     TEXT NOT NULL UNIQUE,
+    -- Callback the orchestrator asked us to ring once a human has decided.
+    -- It lives here rather than in a URL the reviewer carries around: the
+    -- state of truth holds it, so the link can be reopened and the page
+    -- reloaded without losing the way back.
+    resume_url          TEXT,
     approved_by         TEXT,
     provider_action_id  TEXT,
     failure_reason      TEXT
@@ -89,6 +94,7 @@ class PendingAction(BaseModel):
     amount: Money
     reason: str
     idempotency_key: str
+    resume_url: str | None = None
     approved_by: str | None = None
     provider_action_id: str | None = None
     failure_reason: str | None = None
@@ -111,7 +117,21 @@ class SqliteActionStore:
         self._connection = sqlite3.connect(str(database), check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.executescript(SCHEMA)
+        self._migrate()
         self._connection.commit()
+
+    def _migrate(self) -> None:
+        """Add columns that postdate an existing database file.
+
+        Same reasoning as the audit repository: CREATE TABLE IF NOT EXISTS
+        does nothing to a table that already exists.
+        """
+        held = {r["name"] for r in self._connection.execute("PRAGMA table_info(pending_actions)")}
+        for column, ddl in (("resume_url", "TEXT"),):
+            if column not in held:
+                self._connection.execute(
+                    f"ALTER TABLE pending_actions ADD COLUMN {column} {ddl}"
+                )
 
     def create(
         self,
@@ -140,8 +160,8 @@ class SqliteActionStore:
                 INSERT INTO pending_actions
                 (action_id, run_id, created_at, updated_at, state, action_type,
                  invoice_id, amount_minor, currency, reason, idempotency_key,
-                 approved_by, provider_action_id, failure_reason)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+                 resume_url, approved_by, provider_action_id, failure_reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
                 """,
                 (
                     action_id,
@@ -156,6 +176,21 @@ class SqliteActionStore:
                     reason,
                     key,
                 ),
+            )
+        return self.get(action_id)
+
+    def set_resume_url(self, action_id: str, resume_url: str) -> PendingAction:
+        """Remember where to call back once a human has decided.
+
+        Overwrites on purpose: a re-run of the same dispute produces the same
+        action by idempotency but a new orchestrator execution, and the stale
+        callback would resume nothing.
+        """
+        self.get(action_id)
+        with self._connection:
+            self._connection.execute(
+                "UPDATE pending_actions SET resume_url = ?, updated_at = ? WHERE action_id = ?",
+                (resume_url, datetime.now(UTC).isoformat(), action_id),
             )
         return self.get(action_id)
 
@@ -226,6 +261,7 @@ def _to_action(row: sqlite3.Row) -> PendingAction:
         amount=Money(amount_minor=row["amount_minor"], currency=row["currency"]),
         reason=row["reason"],
         idempotency_key=row["idempotency_key"],
+        resume_url=row["resume_url"],
         approved_by=row["approved_by"],
         provider_action_id=row["provider_action_id"],
         failure_reason=row["failure_reason"],
