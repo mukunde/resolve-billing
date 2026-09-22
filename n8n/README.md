@@ -126,6 +126,9 @@ Between the mail going out and the click, the state is visible without n8n:
 sqlite3 audit.db "SELECT action_id, state, amount_minor, currency FROM pending_actions"
 ```
 
+No `sqlite3` CLI on the machine? `python -m sqlite3 audit.db "..."` takes the
+same queries, and Python is already a dependency of this project.
+
 After approving:
 
 ```bash

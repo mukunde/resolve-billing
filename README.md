@@ -371,6 +371,14 @@ sqlite3 audit.db "SELECT classification, verdict, decision_engine, cost_micros F
 sqlite3 audit.db "SELECT action_id, state, approved_by, provider_action_id FROM pending_actions"
 ```
 
+Without the `sqlite3` CLI — it is not installed by default on Windows — the
+standard library answers the same queries, and Python is already a dependency
+here:
+
+```bash
+python -m sqlite3 audit.db "SELECT action_id, state, approved_by FROM pending_actions"
+```
+
 ---
 
 ## The orchestrator, and what it is not
