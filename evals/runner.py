@@ -127,16 +127,22 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
     )
 
 
-async def run(engine_name: str) -> list[CaseOutcome]:
+async def run(engine_name: str) -> tuple[list[CaseOutcome], str]:
+    """Run the case set, and report which engine version produced it.
+
+    The version travels back with the outcomes because a stored result whose
+    prompt is unnamed is comparable to nothing -- the same reason the audit row
+    carries `prompt_version` next to the model id. A file saying only "claude"
+    cannot be held against a later run.
+    """
     from app.api.deps import ENGINES
 
     if engine_name not in ENGINES:
         sys.exit(f"unknown engine {engine_name!r}; available: {sorted(ENGINES)}")
 
     cases = json.loads(CASES_PATH.read_text(encoding="utf-8"))
-    investigator = DisputeInvestigator(
-        provider=FakeBillingProvider(), engine=ENGINES[engine_name]()
-    )
+    engine = ENGINES[engine_name]()
+    investigator = DisputeInvestigator(provider=FakeBillingProvider(), engine=engine)
 
     outcomes = []
     for case in cases:
@@ -147,7 +153,20 @@ async def run(engine_name: str) -> list[CaseOutcome]:
             invoice_id=case["invoice_id"],
         )
         outcomes.append(_evaluate(case, await investigator.investigate(dispute)))
-    return outcomes
+    return outcomes, engine.version
+
+
+def _case_set_fingerprint() -> str:
+    """Which case set these numbers were scored against.
+
+    Learned the hard way: the first real run was scored against a case set that
+    contradicted the prompt, and correcting it changed the result. Two files
+    that do not agree on the exam cannot be compared, and a hash is the
+    cheapest way to notice before drawing a table from them.
+    """
+    import hashlib
+
+    return hashlib.sha256(CASES_PATH.read_bytes()).hexdigest()[:16]
 
 
 def report(engine_name: str, outcomes: list[CaseOutcome]) -> int:
@@ -227,7 +246,7 @@ def main() -> int:
     parser.add_argument("--json", type=Path, help="write the raw outcomes here")
     args = parser.parse_args()
 
-    outcomes = asyncio.run(run(args.engine))
+    outcomes, engine_version = asyncio.run(run(args.engine))
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
@@ -235,6 +254,10 @@ def main() -> int:
             json.dumps(
                 {
                     "engine": args.engine,
+                    # What actually produced these numbers. Without it the file
+                    # is a score with no exam attached.
+                    "engine_version": engine_version,
+                    "cases_sha256": _case_set_fingerprint(),
                     "ran_at": datetime.now(UTC).isoformat(),
                     "outcomes": [vars(o) for o in outcomes],
                 },
