@@ -50,6 +50,23 @@ confidence — never an amount. An action policy decides whether anything may
 happen. A human approves. Only then does money move, once, whatever the
 network does.
 
+The classification set is closed, and it is the billing vocabulary rather than
+a generic one:
+
+```text
+duplicate_billing           the same thing was charged twice
+valid_invoice               correct; the customer has misread it
+billing_after_cancellation  a period after cancellation was billed
+proration_dispute           a partial period was mispriced
+payment_already_received    a dunning case: the money arrived, the chase did not notice
+insufficient_information    which invoice is not identifiable; ask
+unknown                     it fits none of these, or it is not a dispute at all
+```
+
+`unknown` is a real answer, not a failure. A dispute forced into the least bad
+box costs more than one that goes to a human — which is why the set is closed
+and the escape hatch is a case in the evaluation suite rather than a hope.
+
 ---
 
 ## Architecture
@@ -96,8 +113,14 @@ module that names a concrete implementation.
 
 Every platform maps its payloads onto one normalised domain — customer,
 subscription, invoice, line, payment, usage. The rules, the engines and the
-policy see nothing else. Adding Stripe means writing a mapper, not touching
-the rules. See [ADR-001](docs/adr/001-provider-agnostic-billing.md).
+policy see nothing else. Adding Stripe, Zuora, OpenCell or Lago means writing
+a mapper, not touching the rules — and the mapper is the only place their
+vocabulary is allowed to exist.
+
+That boundary is the answer to a question every subscription-billing
+integration eventually asks: what happens to the investigation logic when the
+client changes platform, or runs two at once. Here, nothing.
+See [ADR-001](docs/adr/001-provider-agnostic-billing.md).
 
 ### 2. Decision-engine agnostic
 
@@ -175,6 +198,49 @@ checkpointed orchestrator. Both ports are built to survive that.
 
 ---
 
+## Techniques this does not use, and what would change that
+
+Four things a 2026 agent is expected to have are absent here. Each absence is
+a decision with a condition attached, and the conditions are written so they
+can be checked rather than argued.
+
+**Function calling / tool use.** The model holds no tools. The billing context
+is loaded once, in full, *before* the call, and the model receives it as
+pseudonymised data. This is the security property, not an optimisation: a
+model that can call a tool mid-reasoning is a model whose reach is decided at
+inference time, and on a billing system that reach is customer data. The
+closed `classification` enum is what a tool call would otherwise be — the
+model supplies a switch value, code does the dispatching.
+
+*What would change it:* a context too large to load eagerly. Then the tool
+becomes a narrow, audited read, not a general one.
+
+**RAG and a vector database.** The billing context is structured, small and
+exact. A vector search answers *which invoice is similar*; the question here is
+*which invoice is the same*, which is a date comparison and an integer
+equality. Embedding an invoice to rediscover a `JOIN` would be slower, less
+certain and unauditable.
+
+*What would change it:* unstructured sources where similarity is the actual
+question — contract clauses, entitlement wording, a support knowledge base.
+Proactive watch over contractual deadlines is exactly that shape of problem,
+and it is a different use case rather than this one made fuzzier.
+
+**Multi-agent.** There is no second agent to talk to. Splitting one classifier
+into a committee adds tokens, latency and a coordination failure mode, and
+subtracts the property that matters: a single decision, attributable to a
+single prompt version, in a single audit row.
+
+**An agent framework.** See [ADR-006](docs/adr/006-no-agent-framework.md),
+which names what would be adopted and when.
+
+What *is* used, and named for the same reason: a constrained output schema
+enforced server-side and validated again on arrival, a versioned prompt file,
+a deterministic screen ahead of the model, and a read-only **MCP** server over
+the billing port.
+
+---
+
 ## Current implementation
 
 Only what is actually built:
@@ -185,12 +251,13 @@ Decision engines  : MockDecisionEngine, ClaudeDecisionEngine
 Orchestration     : n8n (trigger + notification), verified end to end
 Persistence       : SQLite
 Evaluation        : 12-case set, run against both engines
+Interop           : read-only MCP server over the billing port
 ```
 
 **Not built, and named here so nothing is implied:** no Stripe, Lago, OpenCell
 or Zuora adapter; no Jev or Vertex engine; no reply drafter; no evals in CI; no
-approval expiry; no read retry with backoff; no OpenTelemetry; no MCP server;
-no cloud deployment.
+approval expiry; no read retry with backoff; no OpenTelemetry; no cloud
+deployment.
 
 **`ClaudeDecisionEngine` has run against the live API**, on demo case A. One
 call: `duplicate_billing`, a 99,00 € credit note, human approval required.
@@ -365,6 +432,29 @@ curl -X POST http://localhost:8000/api/v1/disputes/investigate \
 Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY` to use the real engine.
 The default is the mock, so tests and demos cost nothing.
 
+### The same data, over MCP
+
+```bash
+pip install -e ".[mcp]"
+python -m app.mcp.server          # stdio
+```
+
+Four tools — `find_customer`, `get_invoice`, `get_billing_context`,
+`run_deterministic_checks` — every one annotated `read_only_hint`, so a client
+sees the guarantee in the protocol rather than in a README.
+
+**Nothing there can move money.** The provider's single mutating method is not
+reachable from the module, and that is asserted against its source rather than
+against its behaviour: a call that merely is not made today is a weaker claim
+than one that has no path to it.
+
+The point is the asymmetry with our own engine. *This* agent holds no tools,
+because a model that calls a tool decides its own reach at inference time
+(ADR-006). Somebody else's agent is welcome to the facts and to what the
+deterministic checks established — and to nothing that proposes an action.
+`run_deterministic_checks` calls no model, costs nothing, and returns an empty
+list when the rules found nothing, which is a result rather than a gap.
+
 ### Endpoints
 
 ```text
@@ -490,8 +580,6 @@ wish list.
 - **OpenTelemetry GenAI instrumentation**, exporter left to the deployment —
   the `DecisionEngine` argument applied to telemetry. No provider exposes
   prices through an API, so the price table stays ours or the backend's.
-- **Read-only MCP server** over `BillingProvider`, so any MCP-capable agent can
-  investigate a dispute without being able to mutate anything.
 - **A checkpointed orchestrator**, under the condition stated in ADR-006.
 
 ---
