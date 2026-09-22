@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from app.api import approvals, disputes, health, review
+from app.api import approvals, disputes, health, review, run_view
 
 app = FastAPI(
     title="Agentic Billing Exception Handler",
@@ -19,3 +19,4 @@ app.include_router(health.router)
 app.include_router(disputes.router)
 app.include_router(approvals.router)
 app.include_router(review.router)
+app.include_router(run_view.router)

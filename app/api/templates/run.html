@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Run $run_id</title>
+<style>
+  body {
+    margin: 0; background: #f4f5f7; color: #111827;
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 48px 16px;
+  }
+  .card {
+    max-width: 720px; margin: 0 auto; background: #fff;
+    border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;
+  }
+  .banner { padding: 22px 28px; background: $banner_bg; color: $banner_fg; }
+  .banner h1 { margin: 0; font-size: 19px; font-weight: 600; }
+  .banner p { margin: 6px 0 0; font-size: 13.5px; opacity: .92; }
+  section { padding: 22px 28px; border-top: 1px solid #f3f4f6; }
+  section:first-of-type { border-top: 0; }
+  h2 {
+    margin: 0 0 14px; font-size: 11px; font-weight: 600; letter-spacing: .09em;
+    text-transform: uppercase; color: #9ca3af;
+  }
+  dl { display: grid; grid-template-columns: 190px 1fr; gap: 9px 0; margin: 0; font-size: 14px; }
+  dt { color: #6b7280; }
+  dd { margin: 0; }
+  code {
+    font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: #f3f4f6; padding: 1px 5px; border-radius: 4px;
+  }
+  .prose { margin: 0; font-size: 14px; color: #374151; }
+  .pill {
+    display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 8px;
+    border-radius: 999px; background: $kind_bg; color: $kind_fg;
+  }
+  ol.trace { margin: 0; padding: 0; list-style: none; font-size: 13.5px; }
+  ol.trace li {
+    display: flex; gap: 12px; align-items: baseline;
+    padding: 7px 0; border-bottom: 1px dashed #eef0f2;
+  }
+  ol.trace li:last-child { border-bottom: 0; }
+  ol.trace .seq { color: #c3c7cd; font-variant-numeric: tabular-nums; min-width: 18px; }
+  ol.trace .name {
+    font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    min-width: 200px; color: #111827;
+  }
+  ol.trace .payload { color: #9ca3af; font-size: 12px; word-break: break-word; }
+  ol.trace li.blocking .name { color: #b91c1c; font-weight: 600; }
+  .absent {
+    margin: 14px 0 0; padding: 11px 14px; background: #f9fafb;
+    border-left: 3px solid #d1d5db; font-size: 13px; color: #4b5563;
+  }
+  footer {
+    padding: 14px 28px; background: #f9fafb; border-top: 1px solid #e5e7eb;
+    font-size: 11.5px; color: #9ca3af; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="banner">
+    <h1>$headline</h1>
+    <p>$subhead</p>
+  </div>
+
+  <section>
+    <h2>Décision</h2>
+    <dl>
+      <dt>Run</dt><dd><code>$run_id</code></dd>
+      <dt>Reçu le</dt><dd>$created_at</dd>
+      <dt>Classification</dt><dd>$classification</dd>
+      <dt>Confiance</dt><dd>$confidence <span class="pill">$confidence_kind</span></dd>
+      <dt>Moteur</dt><dd>$engine</dd>
+      <dt>Constats</dt><dd>$findings</dd>
+      <dt>Verdict</dt><dd>$verdict</dd>
+      <dt>Motif</dt><dd>$authorization_reason</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Analyse</h2>
+    <p class="prose">$explanation</p>
+  </section>
+
+  <section>
+    <h2>Trace</h2>
+    <ol class="trace">$trace</ol>
+    $absent_note
+  </section>
+
+  <section>
+    <h2>Coût de ce run</h2>
+    <dl>
+      <dt>Appel au moteur</dt><dd>$cost_display</dd>
+      <dt>Latence</dt><dd>$latency_display</dd>
+      <dt>Tarif appliqué</dt><dd>$pricing_as_of</dd>
+    </dl>
+  </section>
+
+  <footer>
+    Page de consultation. Aucune décision ne se prend ici — il n'y a rien à
+    approuver sur ce run. Les événements sont collectés au fil de l'exécution,
+    pas déduits de son issue : ce qui est absent de la trace n'a pas eu lieu.
+  </footer>
+</div>
+</body>
+</html>
