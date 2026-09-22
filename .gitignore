@@ -28,5 +28,8 @@ htmlcov/
 .env
 *.local
 
-# --- Résultats d'évaluation (on publie un tableau, pas des dumps) ----------
-evals/results/*.json
+# --- Résultats d'évaluation -----------------------------------------------
+# Les runs publiés sont versionnés : un chiffre de précision dont personne ne
+# peut inspecter l'exécution est une affirmation, pas un résultat. Le runner
+# n'écrit ici que sur --json explicite, donc le dossier ne se remplit pas tout
+# seul. Voir evals/results/README.md.

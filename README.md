@@ -269,8 +269,16 @@ what prompt v2 requires — no future invoice can absorb a credit note — while
 case set still expected a credit note. The case set was wrong. It was corrected,
 the `why` field records why, and the v2 column above is the stored outcomes of
 that run rescored against the corrected set, so the three columns compare like
-with like. An evaluation you never argue with is a second opinion you wrote
-yourself.
+with like. Both runs are committed under `evals/results/`, and the rescoring is
+a command rather than a claim:
+
+```bash
+python -m evals.rescore evals/results/claude-decision_v2.json
+```
+
+It re-applies today's expectations to that run and names the two cases whose
+verdict changed. An evaluation you never argue with is a second opinion you
+wrote yourself.
 
 **Claude's two real errors were its two least confident answers.** 0.60 and
 0.62, under a prompt that already asked it to withdraw below 0.70. Both were
