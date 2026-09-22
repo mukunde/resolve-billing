@@ -24,19 +24,17 @@ identity comes from there.
 
 from __future__ import annotations
 
-import html
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
-from string import Template
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse
 
 from app.api.deps import get_actions, get_approvals, get_audit
+from app.api.templating import render as _page
 from app.application.execute_action import ApprovalService
 from app.domain.enums import ActionState
 from app.domain.money import Money
@@ -50,20 +48,7 @@ from app.infrastructure.audit import SqliteAuditRepository
 
 router = APIRouter(prefix="/api/v1/actions", tags=["review"])
 
-TEMPLATES = Path(__file__).parent / "templates"
 RESUME_TIMEOUT_SECONDS = 10
-
-
-def _page(name: str, **fields) -> str:
-    """Render a template, escaping every value that came from data.
-
-    An approval page vulnerable to injected markup would be a costly irony on
-    a system whose threat model opens with "the dispute message is untrusted".
-    """
-    template = Template((TEMPLATES / name).read_text(encoding="utf-8"))
-    return template.safe_substitute(
-        {key: html.escape(str(value), quote=True) for key, value in fields.items()}
-    )
 
 
 @router.get("/{action_id}/review", response_class=HTMLResponse)
