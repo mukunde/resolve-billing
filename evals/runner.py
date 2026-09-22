@@ -172,10 +172,23 @@ def report(engine_name: str, outcomes: list[CaseOutcome]) -> int:
         # is the argument: what a call costs, what the whole set costs, and
         # what a dispute costs once the runs the rules settled for free are
         # counted in.
+        #
+        # Cost is a mean and latency below is a median, which is not an
+        # inconsistency. Cost is additive: the question asked of it is what
+        # ten thousand disputes cost, and that is mean x N -- a median does
+        # not sum. Latency is not additive and its distribution trails to
+        # the right, so a mean reports a slow call rather than a typical
+        # one; the question asked of it is what a reviewer waits. With a
+        # case set large enough, that line becomes a p95 and this one does
+        # not change.
         print(f"\nengine calls                  : {len(costs)}/{total}")
         print(f"mean cost per engine call     : ${statistics.mean(costs) / 1e6:.5f}")
         print(f"cost of the whole set         : ${sum(costs) / 1e6:.4f}")
         print(f"mean cost per dispute         : ${sum(costs) / 1e6 / total:.5f}")
+        print(
+            f"cost per call, low to high    : "
+            f"${min(costs) / 1e6:.5f} - ${max(costs) / 1e6:.5f}"
+        )
     if latencies:
         print(f"median latency, engine calls  : {int(statistics.median(latencies))} ms")
 

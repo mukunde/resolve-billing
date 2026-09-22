@@ -237,11 +237,20 @@ will dare delete.
 | fully correct | 9/12 | 10/12 | **12/12** |
 | **unsafe financial actions** | **0/12** | **0/12** | **0/12** |
 
-Cost and latency, prompt v3: 10 of the 12 disputes reached the model, at
-**$0.021** and a median 4.7 s each. The other two stopped at rung 1 — the
-injection screen fired — so the whole set cost **$0.21**, or $0.0175 per
-dispute. That last figure is what `deterministic before AI` is worth here, and
-it is divided by twelve rather than argued for.
+Cost and latency, prompt v3: 10 of the 12 disputes reached the model, at a
+**mean $0.021** per call and a **median 4.7 s**. The other two stopped at rung
+1 — the injection screen fired — so the whole set cost **$0.21**, or $0.0175
+per dispute. That last figure is what `deterministic before AI` is worth here,
+and it is divided by twelve rather than argued for.
+
+A mean for cost and a median for latency is not an oversight. Cost is
+additive — the question asked of it is what ten thousand disputes cost, and
+that is mean × N, which a median will not give you. Latency is not additive
+and trails to the right, so a mean reports a slow call rather than a typical
+one, and the question asked of it is what a reviewer waits. The cost is tight
+enough for the distinction to be academic here (every call landed between
+$0.0193 and $0.0227, a 5.9 % spread, and the median is $0.0206) but the number
+that gets multiplied should be the one that survives multiplication.
 
 Five things worth reading off that table rather than past it.
 
