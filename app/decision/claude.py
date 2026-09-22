@@ -42,13 +42,20 @@ from app.domain.models import BillingContext, Dispute, RuleFinding
 #: on disk. Otherwise the audit row names a prompt whose text has since moved
 #: under it, and an evaluation run from last week is comparable to nothing.
 #:
-#: v2 adds the rule that a credit note is the default instrument and a refund
+#: v2 added the rule that a credit note is the default instrument and a refund
 #: the exception. v1 listed both without saying when to prefer one, and the
 #: first real run duly proposed a refund for a duplicate on an active
 #: subscription -- safe, since both need approval, but wrong for French
 #: billing practice.
-PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v2.md"
-PROMPT_VERSION = "decision_v2"
+#:
+#: v3 closes two gaps the first evaluation run measured. The engine was
+#: asserting findings the rules had not produced -- reading the context and
+#: concluding "duplicate" on a dispute that named no invoice -- which is the
+#: rules' job done with worse tools. And it classified anyway at confidence
+#: 0.60 and 0.62, where the prompt already asked it to withdraw; both of those
+#: answers were wrong.
+PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v3.md"
+PROMPT_VERSION = "decision_v3"
 
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_MAX_TOKENS = 8192

@@ -306,14 +306,14 @@ class TestDecisionAndTelemetry:
         telemetry = (await engine.decide(dispute, context, findings)).telemetry
 
         assert telemetry.model_id == "claude-opus-5"
-        assert telemetry.prompt_version == "decision_v2"
+        assert telemetry.prompt_version == "decision_v3"
         assert telemetry.input_tokens == 1200
         assert telemetry.output_tokens == 180
         assert telemetry.latency_ms >= 0
 
     def test_engine_version_pins_model_and_prompt(self):
         engine, _ = engine_with(reply(VALID_VERDICT))
-        assert engine.version == "claude-opus-5/decision_v2"
+        assert engine.version == "claude-opus-5/decision_v3"
 
 
 class TestCost:
