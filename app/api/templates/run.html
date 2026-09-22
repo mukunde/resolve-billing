@@ -57,6 +57,19 @@
     padding: 14px 28px; background: #f9fafb; border-top: 1px solid #e5e7eb;
     font-size: 11.5px; color: #9ca3af; line-height: 1.6;
   }
+  /* A fixed label column and a 200px event name both overflow a phone, and
+     the flex rows then wrap into something unreadable. Stack instead. */
+  @media (max-width: 560px) {
+    body { padding: 20px 0; }
+    .card { border-radius: 0; border-left: 0; border-right: 0; }
+    .banner, section, footer { padding-left: 18px; padding-right: 18px; }
+    dl { grid-template-columns: 1fr; gap: 2px 0; }
+    dt { margin-top: 9px; }
+    ol.trace li { display: block; }
+    ol.trace .seq { display: none; }
+    ol.trace .name { min-width: 0; display: block; }
+    ol.trace .payload { display: block; margin-top: 2px; }
+  }
 </style>
 </head>
 <body>
