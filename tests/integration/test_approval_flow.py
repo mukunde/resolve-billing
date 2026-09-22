@@ -63,11 +63,11 @@ class TestApproveThenExecute:
         """Two steps on purpose: 'who authorised this' is a different question
         from 'did it go through'."""
         approved = client.post(
-            f"/api/v1/actions/{action_id}/approve", json={"by": "gael@inetum.test"}
+            f"/api/v1/actions/{action_id}/approve", json={"by": "m.dupont@acme.fr"}
         ).json()
 
         assert approved["state"] == "approved"
-        assert approved["approved_by"] == "gael@inetum.test"
+        assert approved["approved_by"] == "m.dupont@acme.fr"
         assert approved["provider_action_id"] is None
 
     def test_execution_issues_the_credit_note(self, client, action_id):

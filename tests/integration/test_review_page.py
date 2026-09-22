@@ -95,19 +95,19 @@ class TestDeciding:
     def test_approving_records_who_and_does_not_execute(self, client, action_id):
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve", "by": "gael@inetum.test"},
+            data={"decision": "approve", "by": "m.dupont@acme.fr"},
         )
 
         assert response.status_code == 200
         action = get_actions().get(action_id)
         assert action.state.value == "approved"
-        assert action.approved_by == "gael@inetum.test"
+        assert action.approved_by == "m.dupont@acme.fr"
         assert action.provider_action_id is None, "execution belongs to the next step"
 
     def test_rejecting_closes_the_action(self, client, action_id):
         client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "reject", "by": "gael@inetum.test"},
+            data={"decision": "reject", "by": "m.dupont@acme.fr"},
         )
 
         assert get_actions().get(action_id).state.value == "rejected"
