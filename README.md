@@ -115,8 +115,9 @@ rung 3  generative model     seconds                  residual ambiguity
 ```
 
 Never climb a rung if the one below settles it. The audit records
-`cost_micros` and `latency_ms`, so this is a measurement rather than a
-slogan. See [ADR-003](docs/adr/003-deterministic-before-ai.md).
+`cost_micros` and `latency_ms`, so this is a measurement rather than a slogan:
+on the evaluation set, 2 of 12 disputes never reach rung 3 and cost nothing.
+See [ADR-003](docs/adr/003-deterministic-before-ai.md).
 
 ### 4. Human approval for financial mutations
 
@@ -178,21 +179,115 @@ Billing providers : FakeBillingProvider
 Decision engines  : MockDecisionEngine, ClaudeDecisionEngine
 Orchestration     : n8n (trigger + notification), verified end to end
 Persistence       : SQLite
+Evaluation        : 12-case set, run against both engines
 ```
 
 **Not built, and named here so nothing is implied:** no Stripe, Lago, OpenCell
-or Zuora adapter; no Jev or Vertex engine; no reply drafter; no evaluation
-suite; no approval expiry; no read retry with backoff; no OpenTelemetry; no
-MCP server; no cloud deployment.
+or Zuora adapter; no Jev or Vertex engine; no reply drafter; no evals in CI; no
+approval expiry; no read retry with backoff; no OpenTelemetry; no MCP server;
+no cloud deployment.
 
-**`ClaudeDecisionEngine` has never run against the live API.** Its tests drive
-a stub client, which proves the logic around the call — pseudonymisation,
-schema rejection, evidence mapping, cost accounting — and proves nothing about
-the call itself. A stub accepts any keyword argument, so it would stay green
-through a renamed parameter. Until a real run happens, treat it as unverified.
+**`ClaudeDecisionEngine` has run against the live API**, on demo case A. One
+call: `duplicate_billing`, a 99,00 € credit note, human approval required.
+2 978 input tokens and 242 output, **$0.021**, 4.3 s.
 
-**No accuracy or cost figures are published**, because the evaluation suite has
-not been written, let alone run. Any number in this README would be invented.
+That first call found three defects the test suite could not have, and the
+reason is worth stating: the engine's tests drive a stub client, and a stub
+accepts any request shape. It would stay green through a renamed parameter or
+a schema the server rejects.
+
+- The API refuses `minimum`/`maximum` on a number, so the confidence bound
+  moved from the schema to validation on arrival — where a violation escalates
+  to a human rather than being guessed at.
+- The explanation came back reading *"INVOICE_1 and INVOICE_2 cover the same
+  period"*. Only `evidence_refs` were being de-pseudonymised; the prose, which
+  is what a reviewer actually reads, was not.
+- The model proposed a **refund** for a duplicate on an active subscription.
+  Safe — both actions need approval — but wrong for French billing, where an
+  *avoir* corrects the invoice and a refund is the cash movement that may
+  follow. The prompt listed both without saying when to prefer one.
+
+All three were fixed, and the fix for the third was a new prompt version
+rather than a patched sentence — which is the point of versioning the prompt at
+all. What the whole case set then scored is in the next section.
+
+---
+
+## What it scores, measured
+
+```bash
+python -m evals.runner --engine mock      # free, deterministic
+python -m evals.runner --engine claude    # real calls, real money
+```
+
+Twelve cases: the six demo scenarios plus the variants that break things — the
+same dispute in English, a correct invoice complained about angrily, an invoice
+reference that does not exist, a second injection shape, and a request that is
+not a billing dispute at all. Each case carries a `why` field saying what it is
+there to catch, because a case whose purpose nobody can state is a case nobody
+will dare delete.
+
+| | mock | claude, prompt v2 | claude, prompt v3 |
+|---|---|---|---|
+| classification | 11/12 | 10/12 | **12/12** |
+| recommended action | 9/12 | 10/12 | **12/12** |
+| approval gate | 11/12 | 12/12 | **12/12** |
+| findings | 12/12 | 12/12 | **12/12** |
+| engine skipped when required | 12/12 | 12/12 | **12/12** |
+| fully correct | 9/12 | 10/12 | **12/12** |
+| **unsafe financial actions** | **0/12** | **0/12** | **0/12** |
+
+Cost and latency, prompt v3: 10 of the 12 disputes reached the model, at
+**$0.021** and a median 4.7 s each. The other two stopped at rung 1 — the
+injection screen fired — so the whole set cost **$0.21**, or $0.0175 per
+dispute. That last figure is what `deterministic before AI` is worth here, and
+it is divided by twelve rather than argued for.
+
+Five things worth reading off that table rather than past it.
+
+**Unsafe financial actions is the only metric with a threshold.** A run is
+unsafe when the system would move money on a dispute the set says is not a
+money case, or propose a financial action without requiring a human. It is
+judged on what the system *would do*, not on whether the label matched. Zero,
+on every engine and every prompt version — including the runs where the
+classification was wrong. That is the separation between the engine and the
+policy, measured rather than asserted.
+
+**The first thing the evaluation found was a defect in the evaluation.** On
+the first real run Claude scored 8/12, and two of its four errors were not
+errors: it recommended a *refund* on a cancelled subscription, which is exactly
+what prompt v2 requires — no future invoice can absorb a credit note — while my
+case set still expected a credit note. The case set was wrong. It was corrected,
+the `why` field records why, and the v2 column above is the stored outcomes of
+that run rescored against the corrected set, so the three columns compare like
+with like. An evaluation you never argue with is a second opinion you wrote
+yourself.
+
+**Claude's two real errors were its two least confident answers.** 0.60 and
+0.62, under a prompt that already asked it to withdraw below 0.70. Both were
+cases where no invoice was identifiable and it classified `duplicate_billing`
+anyway, reading the account rather than the complaint. Good news about the
+confidence, bad news about the instruction — and only the instruction was
+fixable.
+
+**Prompt v3 closed both, and v1 and v2 are still on disk.** v3 forbids
+asserting what the deterministic checks did not find, and makes the withdrawal
+below 0.70 an instruction rather than a preference. Every audit row names the
+prompt version that produced it, so the comparison above is reconstructable
+rather than remembered. After v3, nothing below 0.70 was returned at all.
+
+**Twelve cases is not calibration, and none of this opens anything.** The set
+is small, synthetic, and written by the same person as the prompt — three of
+the ways an evaluation flatters itself, and the second bullet above is what
+that looks like when it happens. `confidence_kind` stays `self_reported` and
+the autonomy thresholds stay shut. Promoting a model to autonomy on a clean
+sweep of twelve would be precisely the mistake this repository argues against.
+
+The mock is the other half of the reading. Forty lines of keyword heuristics
+score 9/12, instantly and for nothing; the model scores 12/12 for $0.021 and
+4.7 s. Both numbers are the point. The mock loses exactly where reading is
+required — it cannot tell a request to cancel an account from a billing
+dispute — and wins everywhere the answer was already in the findings.
 
 ---
 
@@ -336,9 +431,10 @@ deployable engine.
 Ordered by what would be built next, each with its reason rather than as a
 wish list.
 
-- **Evaluation suite, then CI.** Produces the accuracy, cost and
-  calibration-by-confidence-band figures this README deliberately does not
-  publish. It is also what could ever promote a confidence from
+- **The evaluation set in CI, and made bigger.** The suite exists and its
+  figures are published above; what is missing is a set large enough for the
+  confidence bands to mean something, and a job that runs it on every prompt
+  change. That is the only thing that could ever promote a confidence from
   `self_reported` to `calibrated`, and with it open the autonomy thresholds.
 - **Reply drafter.** A second port, already argued for: prose is not the
   decision engine's job, and separating them is what made the decision port
