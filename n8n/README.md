@@ -13,13 +13,16 @@ POST /disputes/investigate
       ↓
 requires_human_approval ?
       ├── no  → reponse automatique, no money moves
-      └── yes → Mail au valideur      ← notification, with a link
-                      ↓
-                Attente de decision   ← the run suspends here
-                      ↓
-                Approuve ?
-                      ├── oui  → POST /actions/{id}/execute
-                      └── non  → nothing; the rejection is already recorded
+      └── yes → Action a approuver ?  ← is there anything to decide on?
+                ├── no  → Alerte : revue sans action
+                │         a mail with no buttons, linking to the run page
+                └── yes → Mail au valideur      ← notification, with a link
+                                ↓
+                          Attente de decision   ← the run suspends here
+                                ↓
+                          Approuve ?
+                                ├── oui  → POST /actions/{id}/execute
+                                └── non  → nothing; the rejection is recorded
 ```
 
 ## Where the approval actually happens
@@ -151,13 +154,45 @@ contains `injection_suspected` followed by `decision_engine_skipped` with no
 `decision_created` after it. The invoice really is a duplicate — the injection
 stops everything anyway, and the model was never asked.
 
-No action is queued, so no mail is sent: there is nothing for a human to
-approve, only something for one to read.
+No action is queued, so there is nothing for a human to approve -- only
+something for one to read. That is a second branch, not the absence of one.
+
+**This is the defect a rehearsal found, and it is worth keeping written
+down.** The workflow branched on `requires_human_approval`, which is *true*
+here: an injection goes to human review. But no action exists to review, so
+the approval mail went out with an empty id in its link —
+`/api/v1/actions//review` — under the subject *« Validation requise : none de
+0 »*, and the execution then suspended on a `Wait` that nobody could ever
+resume.
+
+The flag answered the wrong question. `requires_human_approval` says a human
+must look; it does not say there is a decision to take. Those are two
+different facts and the flow now tests both: `Action a approuver ?` branches
+on the presence of an `action_id`.
+
+The run therefore sends an **alert** rather than an approval request: same
+recipient, no buttons, and a link to `GET /api/v1/runs/{run_id}/view` — a
+read-only page showing the findings and the trace. Not mailing anything at all
+would have been simpler, and would have meant an attempted injection is
+detected, recorded, and told to no one.
 
 ## Notes for whoever edits this workflow
 
 **The canvas is a draft.** The webhook serves the *published* version. Moving a
 node and forgetting to publish means the webhook keeps serving the old one.
+
+**Importing deactivates the workflow**, and reactivating it from the CLI needs
+a restart before it takes:
+
+```bash
+docker cp n8n/billing-dispute-workflow.json n8n:/tmp/wf.json
+docker exec n8n n8n import:workflow --input=/tmp/wf.json
+docker exec n8n n8n update:workflow --id=abehBillingDisp1 --active=true
+docker restart n8n
+```
+
+Skip the last two and the webhook answers 404, which looks like a routing
+problem and is not one.
 
 **`Execute workflow` uses a different URL** from the production webhook. The
 `curl` above targets the production one.

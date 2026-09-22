@@ -360,6 +360,7 @@ GET  /api/v1/actions/{id}/review      the approval page
 POST /api/v1/actions/{id}/review      a human decision
 POST /api/v1/actions/{id}/approve     | reject | execute
 GET  /api/v1/runs/{id}                the run, its trace, what is waiting
+GET  /api/v1/runs/{id}/view           the same, as a page, when nothing awaits
 GET  /health                          which implementations are wired in
 ```
 
@@ -389,6 +390,19 @@ approve URL gets exercised by a scanner rather than a person).
 
 The honest limit, printed on the page itself: the identifier field is **not**
 authentication. In production that route sits behind the company's SSO.
+
+**Not every run that needs a human needs a decision.** A dispute stopped by
+the injection screen queues no action: there is nothing to authorise, only
+something to read. It gets a different mail — no buttons — linking to a
+read-only page of the run and its trace, where the evidence is what the trace
+does *not* contain. `decision_engine_skipped` with no `decision_created` after
+it is a positive record that the model was never asked, which is not the same
+claim as the model having declined.
+
+That branch was missing until a rehearsal found it, and the failure is
+instructive: the flow tested `requires_human_approval`, which is true here,
+and mailed an approval request with an empty action id in the link. The flag
+says a human must look. It does not say there is a decision to take.
 
 ---
 
