@@ -3,6 +3,11 @@
 Provider- and model-agnostic agentic workflow for investigating billing
 disputes and safely recommending corrective actions.
 
+![One dispute, three outcomes: a duplicate goes to a human for approval, a correct invoice proposes nothing, and an injected instruction stops before the decision engine is ever called.](docs/workflow.svg)
+
+<sub>Three runs through one pipeline. The third is the one to watch: the
+engine is never asked, and the audit says so rather than implying it.</sub>
+
 > **The billing domain is stable. Billing providers and decision engines are
 > replaceable.**
 >

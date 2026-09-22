@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 448"
+     width="980" height="448" role="img" aria-label="One dispute, three outcomes: a duplicate goes to a human for approval, a correct invoice proposes nothing, and an injected instruction stops before the decision engine is ever called.">
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
+         Helvetica,Arial,sans-serif;text-anchor:middle}
+    .h1{font-size:19px;font-weight:600}
+    .h2{font-size:14px}
+    .t1{font-size:15px;font-weight:600}
+    .t2{font-size:11.5px}
+    .t3{font-size:12.5px;font-weight:600}
+    .lane{font-size:10px;font-weight:600;letter-spacing:.11em}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+    @keyframes b0{0.000%{opacity:0.0}1.042%{opacity:0.0}2.500%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}34.375%{opacity:0.0}35.833%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}67.708%{opacity:0.0}69.167%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b1{0.000%{opacity:0.0}4.375%{opacity:0.0}5.833%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}37.708%{opacity:0.0}39.167%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}71.042%{opacity:0.0}72.500%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b2{0.000%{opacity:0.0}7.708%{opacity:0.0}9.167%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}41.042%{opacity:0.0}42.500%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}74.375%{opacity:0.0}75.833%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b3{0.000%{opacity:0.0}11.250%{opacity:0.0}12.708%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}44.583%{opacity:0.0}46.042%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b4{0.000%{opacity:0.0}15.625%{opacity:0.0}17.083%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}48.958%{opacity:0.0}50.417%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}82.292%{opacity:0.0}83.750%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes c0{0.000%{stroke-dashoffset:20.0}2.917%{stroke-dashoffset:20.0}5.208%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:20.0}36.250%{stroke-dashoffset:20.0}38.542%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:20.0}69.583%{stroke-dashoffset:20.0}71.875%{stroke-dashoffset:0.0}98.125%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:20.0}}@keyframes c1{0.000%{stroke-dashoffset:20.0}6.250%{stroke-dashoffset:20.0}8.542%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:20.0}39.583%{stroke-dashoffset:20.0}41.875%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:20.0}72.917%{stroke-dashoffset:20.0}75.208%{stroke-dashoffset:0.0}98.125%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:20.0}}@keyframes c2{0.000%{stroke-dashoffset:20.0}9.583%{stroke-dashoffset:20.0}11.875%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:20.0}42.917%{stroke-dashoffset:20.0}45.208%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:20.0}100.000%{stroke-dashoffset:20.0}}@keyframes c3{0.000%{stroke-dashoffset:20.0}14.167%{stroke-dashoffset:20.0}16.458%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:20.0}47.500%{stroke-dashoffset:20.0}49.792%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:20.0}100.000%{stroke-dashoffset:20.0}}@keyframes bypass{0.000%{stroke-dashoffset:300.0}76.250%{stroke-dashoffset:300.0}79.167%{stroke-dashoffset:0.0}98.125%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:300.0}}@keyframes bypasslbl{0.000%{opacity:0.0}77.500%{opacity:0.0}78.958%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b10{0.000%{opacity:0.0}52.917%{opacity:0.0}54.375%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e0{0.000%{stroke-dashoffset:741.0}50.833%{stroke-dashoffset:741.0}53.125%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:741.0}100.000%{stroke-dashoffset:741.0}}@keyframes b11{0.000%{opacity:0.0}19.583%{opacity:0.0}21.042%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e1{0.000%{stroke-dashoffset:466.0}17.500%{stroke-dashoffset:466.0}19.792%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:466.0}100.000%{stroke-dashoffset:466.0}}@keyframes b12{0.000%{opacity:0.0}86.250%{opacity:0.0}87.708%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e2{0.000%{stroke-dashoffset:191.0}84.167%{stroke-dashoffset:191.0}86.458%{stroke-dashoffset:0.0}98.125%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:191.0}}@keyframes hA{0.000%{opacity:0.0}0.417%{opacity:0.0}1.875%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}100.000%{opacity:0.0}}@keyframes hB{0.000%{opacity:0.0}33.750%{opacity:0.0}35.208%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}100.000%{opacity:0.0}}@keyframes hF{0.000%{opacity:0.0}67.083%{opacity:0.0}68.542%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}
+</style>
+  <rect width="980" height="448" rx="12" fill="#fbfcfd" stroke="#d8dee4"/>
+  
+  <g>
+    <rect x="50" y="150" width="160" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
+    <text class="t1" x="130.0" y="176" fill="#6e7781">Dispute in</text>
+    <text class="t2" x="130.0" y="195" fill="#d8dee4">n8n webhook</text>
+  </g>
+  <g style="animation:b0 24.0s linear infinite;opacity:0">
+    <rect x="50" y="150" width="160" height="62" rx="9" fill="#fff"
+          stroke="#004D40" stroke-width="1.8"/>
+    <text class="t1" x="130.0" y="176" fill="#004D40">Dispute in</text>
+    <text class="t2" x="130.0" y="195" fill="#6e7781">n8n webhook</text>
+  </g>
+  <g>
+    <rect x="230" y="150" width="160" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
+    <text class="t1" x="310.0" y="176" fill="#6e7781">Extraction</text>
+    <text class="t2" x="310.0" y="195" fill="#d8dee4">regex, 0 tokens</text>
+  </g>
+  <g style="animation:b1 24.0s linear infinite;opacity:0">
+    <rect x="230" y="150" width="160" height="62" rx="9" fill="#fff"
+          stroke="#004D40" stroke-width="1.8"/>
+    <text class="t1" x="310.0" y="176" fill="#004D40">Extraction</text>
+    <text class="t2" x="310.0" y="195" fill="#6e7781">regex, 0 tokens</text>
+  </g>
+  <g>
+    <rect x="410" y="150" width="160" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
+    <text class="t1" x="490.0" y="176" fill="#6e7781">Context + rules</text>
+    <text class="t2" x="490.0" y="195" fill="#d8dee4">one load, 5 checks</text>
+  </g>
+  <g style="animation:b2 24.0s linear infinite;opacity:0">
+    <rect x="410" y="150" width="160" height="62" rx="9" fill="#fff"
+          stroke="#004D40" stroke-width="1.8"/>
+    <text class="t1" x="490.0" y="176" fill="#004D40">Context + rules</text>
+    <text class="t2" x="490.0" y="195" fill="#6e7781">one load, 5 checks</text>
+  </g>
+  <g>
+    <rect x="590" y="150" width="160" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
+    <text class="t1" x="670.0" y="176" fill="#6e7781">Decision engine</text>
+    <text class="t2" x="670.0" y="195" fill="#d8dee4">1 call, typed schema</text>
+  </g>
+  <g style="animation:b3 24.0s linear infinite;opacity:0">
+    <rect x="590" y="150" width="160" height="62" rx="9" fill="#fff"
+          stroke="#004D40" stroke-width="1.8"/>
+    <text class="t1" x="670.0" y="176" fill="#004D40">Decision engine</text>
+    <text class="t2" x="670.0" y="195" fill="#6e7781">1 call, typed schema</text>
+  </g>
+  <g>
+    <rect x="770" y="150" width="160" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
+    <text class="t1" x="850.0" y="176" fill="#6e7781">Action policy</text>
+    <text class="t2" x="850.0" y="195" fill="#d8dee4">authorises, or not</text>
+  </g>
+  <g style="animation:b4 24.0s linear infinite;opacity:0">
+    <rect x="770" y="150" width="160" height="62" rx="9" fill="#fff"
+          stroke="#004D40" stroke-width="1.8"/>
+    <text class="t1" x="850.0" y="176" fill="#004D40">Action policy</text>
+    <text class="t2" x="850.0" y="195" fill="#6e7781">authorises, or not</text>
+  </g>
+  <line x1="210" y1="181.0" x2="230" y2="181.0" stroke="#d8dee4" stroke-width="2"/>
+  <line x1="210" y1="181.0" x2="230" y2="181.0" stroke="#004D40" stroke-width="2.4"
+        stroke-dasharray="20" stroke-dashoffset="20"
+        style="animation:c0 24.0s linear infinite"/>
+  <line x1="390" y1="181.0" x2="410" y2="181.0" stroke="#d8dee4" stroke-width="2"/>
+  <line x1="390" y1="181.0" x2="410" y2="181.0" stroke="#004D40" stroke-width="2.4"
+        stroke-dasharray="20" stroke-dashoffset="20"
+        style="animation:c1 24.0s linear infinite"/>
+  <line x1="570" y1="181.0" x2="590" y2="181.0" stroke="#d8dee4" stroke-width="2"/>
+  <line x1="570" y1="181.0" x2="590" y2="181.0" stroke="#004D40" stroke-width="2.4"
+        stroke-dasharray="20" stroke-dashoffset="20"
+        style="animation:c2 24.0s linear infinite"/>
+  <line x1="750" y1="181.0" x2="770" y2="181.0" stroke="#d8dee4" stroke-width="2"/>
+  <line x1="750" y1="181.0" x2="770" y2="181.0" stroke="#004D40" stroke-width="2.4"
+        stroke-dasharray="20" stroke-dashoffset="20"
+        style="animation:c3 24.0s linear infinite"/>
+  <path d="M 570 157.0 C 612 92, 728 92, 770 157.0" fill="none" stroke="#C2185B" stroke-width="2.4"
+        stroke-dasharray="300" stroke-dashoffset="300"
+        style="animation:bypass 24.0s linear infinite"/>
+  <text class="t3" x="670.0" y="86" fill="#C2185B"
+        style="animation:bypasslbl 24.0s linear infinite;opacity:0"
+  >the engine is never asked</text>
+  <g>
+    <rect x="95" y="298" width="240" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
+    <text class="t1" x="215.0" y="324" fill="#6e7781">Automatic reply</text>
+    <text class="t2" x="215.0" y="343" fill="#d8dee4">no money moves</text>
+  </g>
+  <g style="animation:b10 24.0s linear infinite;opacity:0">
+    <rect x="95" y="298" width="240" height="62" rx="9" fill="#fff"
+          stroke="#57606a" stroke-width="1.8"/>
+    <text class="t1" x="215.0" y="324" fill="#57606a">Automatic reply</text>
+    <text class="t2" x="215.0" y="343" fill="#6e7781">no money moves</text>
+  </g>
+  <path d="M 850.0 212 L 850.0 255.0 L 215.0 255.0 L 215.0 298" fill="none" stroke="#d8dee4" stroke-width="2"/>
+  <path d="M 850.0 212 L 850.0 255.0 L 215.0 255.0 L 215.0 298" fill="none" stroke="#57606a" stroke-width="2.4"
+        stroke-dasharray="741.0" stroke-dashoffset="741.0"
+        style="animation:e0 24.0s linear infinite"/>
+  <g>
+    <rect x="370" y="298" width="240" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
+    <text class="t1" x="490.0" y="324" fill="#6e7781">Approval e-mail</text>
+    <text class="t2" x="490.0" y="343" fill="#d8dee4">a human decides, then a credit note</text>
+  </g>
+  <g style="animation:b11 24.0s linear infinite;opacity:0">
+    <rect x="370" y="298" width="240" height="62" rx="9" fill="#fff"
+          stroke="#00695C" stroke-width="1.8"/>
+    <text class="t1" x="490.0" y="324" fill="#00695C">Approval e-mail</text>
+    <text class="t2" x="490.0" y="343" fill="#6e7781">a human decides, then a credit note</text>
+  </g>
+  <path d="M 850.0 212 L 850.0 255.0 L 490.0 255.0 L 490.0 298" fill="none" stroke="#d8dee4" stroke-width="2"/>
+  <path d="M 850.0 212 L 850.0 255.0 L 490.0 255.0 L 490.0 298" fill="none" stroke="#00695C" stroke-width="2.4"
+        stroke-dasharray="466.0" stroke-dashoffset="466.0"
+        style="animation:e1 24.0s linear infinite"/>
+  <g>
+    <rect x="645" y="298" width="240" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
+    <text class="t1" x="765.0" y="324" fill="#6e7781">Alert, no buttons</text>
+    <text class="t2" x="765.0" y="343" fill="#d8dee4">nothing to approve</text>
+  </g>
+  <g style="animation:b12 24.0s linear infinite;opacity:0">
+    <rect x="645" y="298" width="240" height="62" rx="9" fill="#fff"
+          stroke="#C2185B" stroke-width="1.8"/>
+    <text class="t1" x="765.0" y="324" fill="#C2185B">Alert, no buttons</text>
+    <text class="t2" x="765.0" y="343" fill="#6e7781">nothing to approve</text>
+  </g>
+  <path d="M 850.0 212 L 850.0 255.0 L 765.0 255.0 L 765.0 298" fill="none" stroke="#d8dee4" stroke-width="2"/>
+  <path d="M 850.0 212 L 850.0 255.0 L 765.0 255.0 L 765.0 298" fill="none" stroke="#C2185B" stroke-width="2.4"
+        stroke-dasharray="191.0" stroke-dashoffset="191.0"
+        style="animation:e2 24.0s linear infinite"/>
+  <g style="animation:hA 24.0s linear infinite;opacity:0">
+    <text class="h1" x="490.0" y="36" fill="#004D40">Case A — charged twice</text>
+    <text class="h2" x="490.0" y="58" fill="#6e7781">the duplicate is real, so a person signs for the money</text>
+    <text class="mono" x="490.0" y="426"
+          fill="#6e7781">DUPLICATE_INVOICE → credit_note 99,00 € → pending_approval → executed</text>
+  </g>
+  <g style="animation:hB 24.0s linear infinite;opacity:0">
+    <text class="h1" x="490.0" y="36" fill="#004D40">Case B — the invoice is correct</text>
+    <text class="h2" x="490.0" y="58" fill="#6e7781">two debits, both legitimate: the agent proposes nothing</text>
+    <text class="mono" x="490.0" y="426"
+          fill="#6e7781">no finding → valid_invoice → verdict auto → nothing is queued</text>
+  </g>
+  <g style="animation:hF 24.0s linear infinite;opacity:0">
+    <text class="h1" x="490.0" y="36" fill="#C2185B">Case F — an injected instruction</text>
+    <text class="h2" x="490.0" y="58" fill="#6e7781">screened by a rule, before any model sees it</text>
+    <text class="mono" x="490.0" y="426"
+          fill="#6e7781">SUSPECTED_PROMPT_INJECTION → decision_engine_skipped → no decision_created</text>
+  </g>
+  <text class="lane" x="50" y="136" fill="#aab2bb"
+        text-anchor="start">ORCHESTRATION — HOLDS NO STATE</text>
+  <text class="lane" x="930" y="136" fill="#aab2bb"
+        text-anchor="end">DETERMINISTIC BEFORE PROBABILISTIC</text>
+</svg>
