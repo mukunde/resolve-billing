@@ -16,6 +16,11 @@ api = [
 claude = [
     "anthropic>=0.40",
 ]
+# Optional on purpose: the MCP server is a second face on the billing port,
+# not something the API or the tests need in order to run.
+mcp = [
+    "mcp>=2.0",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",

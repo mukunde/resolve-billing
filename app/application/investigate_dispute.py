@@ -105,7 +105,7 @@ class DisputeInvestigator:
         now = now or datetime.now(UTC)
         trace = [event("run_started", engine=self._engine.name)]
 
-        context = await self._load_context(dispute, now)
+        context = await self.load_context(dispute, now)
         trace.append(
             event(
                 "billing_context_loaded",
@@ -114,7 +114,7 @@ class DisputeInvestigator:
             )
         )
 
-        findings = self._run_rules(dispute, context)
+        findings = self.run_rules(dispute, context)
         trace.extend(
             event("rule_evaluated", code=f.code.value, severity=f.severity.value)
             for f in findings
@@ -185,7 +185,7 @@ class DisputeInvestigator:
 
     # -- steps -------------------------------------------------------------
 
-    async def _load_context(self, dispute: Dispute, now: datetime) -> BillingContext:
+    async def load_context(self, dispute: Dispute, now: datetime) -> BillingContext:
         customer = None
         if dispute.customer_id:
             customer = await self._provider.get_customer(dispute.customer_id)
@@ -212,7 +212,14 @@ class DisputeInvestigator:
             target_invoice_id=target.id if target else None,
         )
 
-    def _run_rules(self, dispute: Dispute, context: BillingContext) -> list[RuleFinding]:
+    def run_rules(self, dispute: Dispute, context: BillingContext) -> list[RuleFinding]:
+        """Every deterministic check, in the order that matters.
+
+        Public because it has a second consumer: the MCP server exposes the
+        findings without a decision. Duplicating the wiring there would risk
+        the two drifting on the one thing that must not drift -- the injection
+        screen runs first, on the raw text, before anything else touches it.
+        """
         findings: list[RuleFinding] = []
 
         # Screened first, on the raw text, before anything else touches it.
