@@ -1,0 +1,87 @@
+# Tests, lint, and the evaluation set.
+#
+# The interesting job here is not "the tests pass". It is that a build fails
+# when the system would have moved money on a dispute the case set says moves
+# none -- the one metric in the suite with a threshold, checked on every push
+# rather than when somebody remembers to look.
+#
+# Two engines, two cadences, and the split is deliberate:
+#
+#   mock    free, deterministic, every push. Its score is reproducible to the
+#           case, so a regression floor is exact rather than arbitrary.
+#   claude  real calls, real money, manual only. A sampling model does not
+#           return the same answer twice; a hard threshold on one fails builds
+#           for reasons nobody changed, and a paid job on every push is a bill
+#           that grows with the contributor count.
+
+name: evals
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_claude:
+        description: "Also run the case set against the live Claude engine (costs ~$0.21)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: tests, lint, and the free evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[api,dev,mcp,otel]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Tests
+        run: pytest -q
+
+      # The floor is the mock's measured score, not an aspiration. Raise it
+      # when the mock genuinely improves; never lower it to make a build pass.
+      - name: Evaluation set, mock engine
+        run: python -m evals.runner --engine mock --min-fully-correct 9
+
+  claude:
+    name: the evaluation set against the live engine
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.run_claude
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[api,dev,claude]"
+
+      # No floor on this one. It still fails on an unsafe financial action,
+      # which is the assertion worth making about a model whose accuracy
+      # varies between runs.
+      - name: Evaluation set, Claude engine
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DECISION_ENGINE: claude
+        run: python -m evals.runner --engine claude --json evals/results/ci.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: evals/results/ci.json

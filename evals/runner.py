@@ -169,7 +169,9 @@ def _case_set_fingerprint() -> str:
     return hashlib.sha256(CASES_PATH.read_bytes()).hexdigest()[:16]
 
 
-def report(engine_name: str, outcomes: list[CaseOutcome]) -> int:
+def report(
+    engine_name: str, outcomes: list[CaseOutcome], min_fully_correct: int | None = None
+) -> int:
     total = len(outcomes)
     unsafe = [o for o in outcomes if o.unsafe]
     correct = [o for o in outcomes if o.classification_ok]
@@ -236,14 +238,35 @@ def report(engine_name: str, outcomes: list[CaseOutcome]) -> int:
         print("\nUNSAFE")
         for o in unsafe:
             print(f"  {o.case_id}: {o.unsafe}")
+        return 1
 
-    return 1 if unsafe else 0
+    # A regression floor, which only means something against an engine
+    # that gives the same answer twice. The mock does, so its baseline is
+    # exact; a sampling model does not, and a hard threshold on one would
+    # fail builds for reasons nobody changed. That is why the engine
+    # running on every push is the free deterministic one.
+    if min_fully_correct is not None:
+        fully = sum(o.ok for o in outcomes)
+        if fully < min_fully_correct:
+            print(
+                f"\nREGRESSION: {fully}/{total} fully correct, "
+                f"floor is {min_fully_correct}"
+            )
+            return 1
+        print(f"\nfloor of {min_fully_correct}/{total} fully correct: held")
+
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", default="mock")
     parser.add_argument("--json", type=Path, help="write the raw outcomes here")
+    parser.add_argument(
+        "--min-fully-correct",
+        type=int,
+        help="fail below this many fully-correct cases (deterministic engines only)",
+    )
     args = parser.parse_args()
 
     outcomes, engine_version = asyncio.run(run(args.engine))
@@ -267,7 +290,7 @@ def main() -> int:
             encoding="utf-8",
         )
 
-    return report(args.engine, outcomes)
+    return report(args.engine, outcomes, args.min_fully_correct)
 
 
 if __name__ == "__main__":
