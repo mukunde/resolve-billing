@@ -253,6 +253,7 @@ Persistence       : SQLite
 Evaluation        : 12-case set, run against both engines
 Interop           : read-only MCP server over the billing port
 Telemetry         : OpenTelemetry GenAI spans over OTLP, off by default
+Reconciliation    : estimated cost against billed cost, per day and model
 ```
 
 **Not built, and named here so nothing is implied:** no Stripe, Lago, OpenCell
@@ -431,6 +432,57 @@ curl -X POST http://localhost:8000/api/v1/disputes/investigate \
 
 Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY` to use the real engine.
 The default is the mock, so tests and demos cost nothing.
+
+### Reconciling what we estimated against what we were billed
+
+```bash
+python -m app.reconciliation --db audit.db --billed cost_report.json
+```
+
+Every audit row carries `cost_micros`, computed from a dated list price. That
+is an estimate twice over — list prices are not invoiced amounts, and the
+table applies only the rates it knows — so the honest thing is to check it
+against the bill.
+
+Which is this project's own subject, turned around. `detect_duplicate_invoice`
+compares two records of one economic event on a customer's account; this
+compares two records of one economic event on ours. Same shape, same trap: the
+two ledgers agree on the event and disagree on the grain. Runs are per
+dispute, the cost report is per day, so the comparison is per **(day, model)**
+and says so rather than inventing a per-run figure nobody issued.
+
+On the two real runs of 2026-09-22, against a cost report in the documented
+shape:
+
+```text
+day          model                 runs    estimated       billed          gap    gap %
+2026-09-22   claude-opus-5            2     $0.04463     $0.05083     $0.00620   +13.9%
+
+where the gap sits
+  - $0.00620 of the bill is cache tokens, which the price table does not
+    model: estimate_cost_micros applies input and output rates only.
+```
+
+**A gap is only useful with an address.** The provider bills by token type and
+our table prices two of them, so the reconciler names the categories it cannot
+account for instead of leaving a percentage to be argued about. It exits
+non-zero when the ledgers disagree beyond tolerance, which is what makes it
+runnable on a schedule.
+
+It found two defects on its first run, and both are recorded rather than
+quietly patched: the price table does not model cache reads, and the audit was
+**not persisting `cache_read_input_tokens` at all** — the telemetry captured it
+from the first Claude call and the schema dropped it. The column exists now.
+
+Two honest limits. The cost report is reached through a `UsageReport` port with
+two adapters, and only the file one has ever run: **the Usage and Cost
+endpoints reject workspace-scoped API keys**, and this project holds one on
+purpose, for the spend cap and the attribution. The HTTP adapter is written
+against the documented response shape and is unverified — exactly the warning
+this README carried about the decision engine until its first real call, which
+then found three defects in an afternoon. And the bill covers the whole
+account, so `--workspace` matters: reconciling a project's estimate against an
+organisation's bill compares two populations and calls the difference an error.
 
 ### Tracing, when you want it
 
@@ -625,10 +677,11 @@ wish list.
   should not be approvable by someone who has forgotten the context.
 - **A second engine** behind the same port, evaluated head to head.
 - **Stripe adapter**, to prove the billing boundary against a real API.
-- **Reconciling estimated cost against billed cost**, from the provider's
-  usage and cost reporting, and flagging the gap. That is an invoice-to-usage
-  reconciliation — the same problem this project solves on customer invoices,
-  turned on our own model consumption.
+- **Cache rates in the price table.** The reconciler found their absence; the
+  fix is a table entry and a re-run, and it is next precisely because the
+  measurement asked for it.
+- **Running the Admin API adapter for real**, which needs a credential this
+  project deliberately does not hold.
 - **A checkpointed orchestrator**, under the condition stated in ADR-006.
 
 ---
