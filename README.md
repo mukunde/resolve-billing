@@ -73,6 +73,12 @@ and the escape hatch is a case in the evaluation suite rather than a hope.
 
 ## Architecture
 
+![Architecture and flow: a dispute arrives through n8n, the application loads the billing context once, runs deterministic rules, asks a decision engine only when the rules cannot settle it, and an action policy decides whether a person must approve. A prompt injection bypasses the engine entirely. Billing providers, decision engines and usage reports sit behind ports, with unimplemented adapters marked roadmap.](docs/architecture.svg)
+
+<sub>Adapters that do not exist are drawn as not existing. A picture is
+believed faster than a paragraph, so the ones on the roadmap are dashed rather
+than listed beside the working ones.</sub>
+
 The system is agnostic on two independent axes, and neither the domain nor the
 application layer knows the name of any vendor.
 

@@ -205,10 +205,10 @@ for phase, (title, sub) in TITLES.items():
 
 # ---------------------------------------------------------------- lane labels
 body.append(f"""
-  <text class="lane" x="{BOX_X[0]}" y="{BOX_Y - 14}" fill="{LANE}"
-        text-anchor="start">ORCHESTRATION — HOLDS NO STATE</text>
-  <text class="lane" x="{BOX_X[4] + BOX_W}" y="{BOX_Y - 14}" fill="{LANE}"
-        text-anchor="end">DETERMINISTIC BEFORE PROBABILISTIC</text>""")
+  <text class="lane l" x="{BOX_X[0]}" y="{BOX_Y - 14}"
+        fill="{LANE}">ORCHESTRATION — HOLDS NO STATE</text>
+  <text class="lane r" x="{BOX_X[4] + BOX_W}" y="{BOX_Y - 14}"
+        fill="{LANE}">DETERMINISTIC BEFORE PROBABILISTIC</text>""")
 
 style = f"""
     text{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
@@ -219,6 +219,10 @@ style = f"""
     .t2{{font-size:11.5px}}
     .t3{{font-size:12.5px;font-weight:600}}
     .lane{{font-size:10px;font-weight:600;letter-spacing:.11em}}
+    .l{{text-anchor:start}}
+    .r{{text-anchor:end}}
+    .l{{text-anchor:start}}
+    .r{{text-anchor:end}}
     .mono{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}}
     {''.join(rules)}
 """
