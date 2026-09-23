@@ -3,6 +3,8 @@
 Provider- and model-agnostic agentic workflow for investigating billing
 disputes and safely recommending corrective actions.
 
+[![evals](https://github.com/mukunde/agentic-billing-exception-handler/actions/workflows/evals.yml/badge.svg)](https://github.com/mukunde/agentic-billing-exception-handler/actions/workflows/evals.yml)
+
 ![One dispute, three outcomes: a duplicate goes to a human for approval, a correct invoice proposes nothing, and an injected instruction stops before the decision engine is ever called.](docs/workflow.svg)
 
 <sub>Three runs through one pipeline. The third is the one to watch: the
@@ -254,11 +256,12 @@ Evaluation        : 12-case set, run against both engines
 Interop           : read-only MCP server over the billing port
 Telemetry         : OpenTelemetry GenAI spans over OTLP, off by default
 Reconciliation    : estimated cost against billed cost, per day and model
+CI                : tests, lint, and the case set on every push
 ```
 
 **Not built, and named here so nothing is implied:** no Stripe, Lago, OpenCell
-or Zuora adapter; no Jev or Vertex engine; no reply drafter; no evals in CI; no
-approval expiry; no read retry with backoff; no cloud deployment.
+or Zuora adapter; no Jev or Vertex engine; no reply drafter; no approval
+expiry; no read retry with backoff; no cloud deployment.
 
 **`ClaudeDecisionEngine` has run against the live API**, on demo case A. One
 call: `duplicate_billing`, a 99,00 € credit note, human approval required.
@@ -432,6 +435,32 @@ curl -X POST http://localhost:8000/api/v1/disputes/investigate \
 
 Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY` to use the real engine.
 The default is the mock, so tests and demos cost nothing.
+
+### What CI actually enforces
+
+The interesting assertion is not that the tests pass.
+
+```yaml
+- run: python -m evals.runner --engine mock --min-fully-correct 9
+```
+
+That line fails a build when the system **would have moved money** on a dispute
+the case set says moves none — the one metric in the suite with a threshold,
+checked on every push rather than when somebody remembers to look. It fails
+again if the mock drops below its measured score, which catches a rule edited
+without its consequences.
+
+Two engines, two cadences, and the split is the point. The **mock** is free and
+deterministic, so its baseline is exact and it runs on every push. **Claude** is
+neither: a sampling model does not return the same answer twice, so a hard
+accuracy threshold on one would fail builds for reasons nobody changed, and a
+paid job on every push is a bill that grows with the contributor count. It runs
+on demand, still fails on an unsafe financial action, and carries no floor —
+which is the honest assertion to make about an engine whose accuracy varies.
+
+The floor is the mock's measured score, not an aspiration. Raise it when the
+mock genuinely improves; lowering it to make a build pass would turn the one
+number with teeth into decoration.
 
 ### Reconciling what we estimated against what we were billed
 
@@ -665,11 +694,10 @@ deployable engine.
 Ordered by what would be built next, each with its reason rather than as a
 wish list.
 
-- **The evaluation set in CI, and made bigger.** The suite exists and its
-  figures are published above; what is missing is a set large enough for the
-  confidence bands to mean something, and a job that runs it on every prompt
-  change. That is the only thing that could ever promote a confidence from
-  `self_reported` to `calibrated`, and with it open the autonomy thresholds.
+- **A bigger evaluation set.** It runs in CI now; twelve cases is still
+  twelve. A set large enough for the confidence bands to mean something is the
+  only thing that could ever promote a confidence from `self_reported` to
+  `calibrated`, and with it open the autonomy thresholds.
 - **Reply drafter.** A second port, already argued for: prose is not the
   decision engine's job, and separating them is what made the decision port
   implementable by a non-generative model.
