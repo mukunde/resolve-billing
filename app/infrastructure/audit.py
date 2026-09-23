@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     model_id                 TEXT,
     prompt_version           TEXT,
     input_tokens             INTEGER,
+    cache_read_input_tokens  INTEGER,
     output_tokens            INTEGER,
     -- NULL means "no rate known", not "it was free". Zero is a claim.
     cost_micros              INTEGER,
@@ -107,7 +108,15 @@ class SqliteAuditRepository:
         exactly the failure you notice last.
         """
         held = {row["name"] for row in self._connection.execute("PRAGMA table_info(agent_runs)")}
-        for column, ddl in (("pricing_as_of", "TEXT"),):
+        for column, ddl in (
+            ("pricing_as_of", "TEXT"),
+            # Captured by the telemetry since the first Claude call and
+            # dropped on the floor here. Found by the cost reconciler,
+            # which needs it to explain a gap: cache reads are billed at
+            # their own rate, and a bill we cannot break down is a bill
+            # we can only argue with.
+            ("cache_read_input_tokens", "INTEGER"),
+        ):
             if column not in held:
                 self._connection.execute(
                     f"ALTER TABLE agent_runs ADD COLUMN {column} {ddl}"  # noqa: S608
@@ -143,7 +152,8 @@ class SqliteAuditRepository:
                     recommended_action, amount_minor, currency,
                     verdict, authorization_reason, autonomy_available,
                     model_id, prompt_version,
-                    input_tokens, output_tokens, cost_micros, pricing_as_of, latency_ms
+                    input_tokens, cache_read_input_tokens, output_tokens,
+                    cost_micros, pricing_as_of, latency_ms
                 ) VALUES (
                     :run_id, :created_at,
                     :billing_provider, :decision_engine, :decision_engine_version,
@@ -153,7 +163,8 @@ class SqliteAuditRepository:
                     :recommended_action, :amount_minor, :currency,
                     :verdict, :authorization_reason, :autonomy_available,
                     :model_id, :prompt_version,
-                    :input_tokens, :output_tokens, :cost_micros, :pricing_as_of, :latency_ms
+                    :input_tokens, :cache_read_input_tokens, :output_tokens,
+                    :cost_micros, :pricing_as_of, :latency_ms
                 )
                 """,
                 {
@@ -187,6 +198,9 @@ class SqliteAuditRepository:
                     "model_id": telemetry.model_id if telemetry else None,
                     "prompt_version": telemetry.prompt_version if telemetry else None,
                     "input_tokens": telemetry.input_tokens if telemetry else None,
+                    "cache_read_input_tokens": (
+                        telemetry.cache_read_input_tokens if telemetry else None
+                    ),
                     "output_tokens": telemetry.output_tokens if telemetry else None,
                     "cost_micros": telemetry.cost_micros if telemetry else None,
                     "pricing_as_of": telemetry.pricing_as_of if telemetry else None,
