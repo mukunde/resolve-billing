@@ -252,12 +252,12 @@ Orchestration     : n8n (trigger + notification), verified end to end
 Persistence       : SQLite
 Evaluation        : 12-case set, run against both engines
 Interop           : read-only MCP server over the billing port
+Telemetry         : OpenTelemetry GenAI spans over OTLP, off by default
 ```
 
 **Not built, and named here so nothing is implied:** no Stripe, Lago, OpenCell
 or Zuora adapter; no Jev or Vertex engine; no reply drafter; no evals in CI; no
-approval expiry; no read retry with backoff; no OpenTelemetry; no cloud
-deployment.
+approval expiry; no read retry with backoff; no cloud deployment.
 
 **`ClaudeDecisionEngine` has run against the live API**, on demo case A. One
 call: `duplicate_billing`, a 99,00 € credit note, human approval required.
@@ -432,6 +432,54 @@ curl -X POST http://localhost:8000/api/v1/disputes/investigate \
 Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY` to use the real engine.
 The default is the mock, so tests and demos cost nothing.
 
+### Tracing, when you want it
+
+```bash
+pip install -e ".[otel]"
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3000/api/public/otel
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $AUTH,x-langfuse-ingestion-version=4"
+```
+
+Spans follow the **OpenTelemetry GenAI semantic conventions** and leave over
+OTLP, so the backend is configuration rather than architecture: a console in
+development, Langfuse or Phoenix self-hosted, Cloud Trace or Datadog at a
+client. The example above happens to be a local Langfuse — over HTTP, since it
+does not accept gRPC.
+
+That is the `DecisionEngine` argument applied to telemetry: **you do not choose
+the vendor, you choose the interface.** Wiring an observability SDK into the
+decision engine would be the second lock [ADR-006](docs/adr/006-no-agent-framework.md)
+spends its length arguing against.
+
+**With no endpoint set, nothing is installed** and the code path is the one
+that ran before the module existed. Observability that changes the behaviour
+it observes is worse than none.
+
+**No customer data leaves in a span.** This is the part that is not a
+convenience. An evaluation run is offline and synthetic; traces flow
+continuously from production, and would otherwise carry dispute text, billing
+context and our prose about both — to whichever backend someone wired up,
+while this README argues you can pick a vendor by data residency. So spans
+carry identifiers, token counts, classifications, verdicts and costs, and
+never prose:
+
+```text
+invoke_workflow investigate_dispute
+  gen_ai.operation.name              invoke_workflow
+  gen_ai.conversation.id             run_79dd2173
+  billing.classification             duplicate_billing
+  billing.confidence                 0.95
+  billing.confidence_kind            self_reported
+  billing.verdict                    requires_approval
+  billing.findings                   DUPLICATE_INVOICE
+```
+
+A test asserts it against the instrumentation's own source, not against
+today's behaviour. And one thing the conventions deliberately do not carry is
+a price: OpenTelemetry GenAI records *tokens*, because no provider exposes a
+rate through an API. The arithmetic stays ours or the backend's — the same
+conclusion the pricing table reaches.
+
 ### The same data, over MCP
 
 ```bash
@@ -577,9 +625,10 @@ wish list.
   should not be approvable by someone who has forgotten the context.
 - **A second engine** behind the same port, evaluated head to head.
 - **Stripe adapter**, to prove the billing boundary against a real API.
-- **OpenTelemetry GenAI instrumentation**, exporter left to the deployment —
-  the `DecisionEngine` argument applied to telemetry. No provider exposes
-  prices through an API, so the price table stays ours or the backend's.
+- **Reconciling estimated cost against billed cost**, from the provider's
+  usage and cost reporting, and flagging the gap. That is an invoice-to-usage
+  reconciliation — the same problem this project solves on customer invoices,
+  turned on our own model consumption.
 - **A checkpointed orchestrator**, under the condition stated in ADR-006.
 
 ---
