@@ -21,6 +21,14 @@ claude = [
 mcp = [
     "mcp>=2.0",
 ]
+# OpenTelemetry GenAI instrumentation. HTTP rather than gRPC on purpose:
+# Langfuse -- one of the backends this can export to -- does not accept gRPC.
+otel = [
+    "opentelemetry-api>=1.44",
+    "opentelemetry-sdk>=1.44",
+    "opentelemetry-exporter-otlp-proto-http>=1.44",
+    "opentelemetry-semantic-conventions>=0.65b0",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",

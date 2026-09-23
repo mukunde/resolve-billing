@@ -37,6 +37,7 @@ from app.decision.base import (
     RecommendedAction,
 )
 from app.domain.models import BillingContext, Dispute, RuleFinding
+from app.observability import tracing
 
 #: A changed prompt gets a new version and a new file; `decision_v1.md` stays
 #: on disk. Otherwise the audit row names a prompt whose text has since moved
@@ -192,49 +193,78 @@ class ClaudeDecisionEngine:
         payload, names = anonymise(context, findings)
         started = time.perf_counter()
 
-        response = await self._client.messages.create(
-            model=self.model,
-            max_tokens=self._max_tokens,
-            system=self._system,
-            output_config={"effort": self._effort, "format": _response_schema()},
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "<customer_message>\n"
-                        f"{dispute.customer_message}\n"
-                        "</customer_message>\n\n"
-                        "<billing_context>\n"
-                        f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
-                        "</billing_context>"
+        # The span covers the call and its accounting. It carries counts,
+        # model ids and a classification -- never the prompt, never the
+        # context, never the prose. Traces leave continuously, so the
+        # pseudonymisation that protects the model must protect them too.
+        with tracing.span(
+            f"chat {self.model}",
+            **tracing.chat_attributes(
+                model=self.model,
+                prompt_version=PROMPT_VERSION,
+                max_tokens=self._max_tokens,
+            ),
+        ) as current:
+            response = await self._client.messages.create(
+                model=self.model,
+                max_tokens=self._max_tokens,
+                system=self._system,
+                output_config={"effort": self._effort, "format": _response_schema()},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "<customer_message>\n"
+                            f"{dispute.customer_message}\n"
+                            "</customer_message>\n\n"
+                            "<billing_context>\n"
+                            f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+                            "</billing_context>"
+                        ),
+                    }
+                ],
+            )
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            telemetry = self._telemetry(response, latency_ms)
+            tracing.set_attributes(current, **tracing.usage_attributes(telemetry))
+
+            verdict = self._parse(response)
+            if verdict is None:
+                tracing.set_attributes(
+                    current,
+                    **tracing.decision_attributes(
+                        classification=Classification.UNKNOWN.value,
+                        confidence=0.0,
+                        confidence_kind="self_reported",
                     ),
-                }
-            ],
-        )
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        telemetry = self._telemetry(response, latency_ms)
+                )
+                return self._to_human(telemetry)
 
-        verdict = self._parse(response)
-        if verdict is None:
-            return self._to_human(telemetry)
-
-        return Decision(
-            classification=verdict.classification,
-            confidence=verdict.confidence,
-            # Self-reported, always. The model asserting 0.94 is the model's
-            # opinion of itself; only the evaluation suite can turn that into
-            # a calibrated number.
-            confidence_kind="self_reported",
-            recommended_action=verdict.recommended_action,
-            # The engine writes prose about INVOICE_1; a reviewer needs to
-            # read inv_002. Mapping only `evidence_refs` back left the
-            # explanation unreadable the moment the alias map was discarded --
-            # and the explanation is what reaches the audit row, the email and
-            # the approval page.
-            explanation=names.restore(verdict.explanation),
-            evidence_refs=names.resolve_all(verdict.evidence_refs),
-            telemetry=telemetry,
-        )
+            tracing.set_attributes(
+                current,
+                **tracing.decision_attributes(
+                    classification=verdict.classification.value,
+                    confidence=verdict.confidence,
+                    confidence_kind="self_reported",
+                ),
+            )
+            return Decision(
+                classification=verdict.classification,
+                confidence=verdict.confidence,
+                # Self-reported, always. The model asserting 0.94 is the model's
+                # opinion of itself; only the evaluation suite can turn that into
+                # a calibrated number.
+                confidence_kind="self_reported",
+                recommended_action=verdict.recommended_action,
+                # The engine writes prose about INVOICE_1; a reviewer needs to
+                # read inv_002. Mapping only `evidence_refs` back left the
+                # explanation unreadable the moment the alias map was discarded --
+                # and the explanation is what reaches the audit row, the email and
+                # the approval page.
+                explanation=names.restore(verdict.explanation),
+                evidence_refs=names.resolve_all(verdict.evidence_refs),
+                telemetry=telemetry,
+            )
 
     # -- helpers -----------------------------------------------------------
 

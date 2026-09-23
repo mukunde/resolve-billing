@@ -41,6 +41,7 @@ from app.domain.rules import (
     suspicious_usage_delta,
     unknown_invoice,
 )
+from app.observability import tracing
 from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
 from app.providers.base import BillingProvider
 
@@ -100,6 +101,39 @@ class DisputeInvestigator:
         self._actions = actions
 
     async def investigate(
+        self, dispute: Dispute, now: datetime | None = None
+    ) -> InvestigationResult:
+        """Investigate one dispute, and trace the run as a whole.
+
+        The span wraps rather than threads through: the body below is exactly
+        what it was before tracing existed, and with no exporter configured
+        the span is a no-op object. Observability that changes the behaviour
+        it observes is worse than none.
+        """
+        with tracing.span("invoke_workflow investigate_dispute") as current:
+            result = await self._investigate(dispute, now)
+            tracing.set_attributes(
+                current,
+                **tracing.workflow_attributes(
+                    run_id=result.run_id,
+                    provider=self._provider.name,
+                    engine=result.decision_engine,
+                ),
+                **tracing.decision_attributes(
+                    classification=result.classification.value,
+                    confidence=result.confidence,
+                    confidence_kind=result.confidence_kind,
+                ),
+                # Codes from a closed set, never the evidence behind them.
+                **{
+                    "billing.verdict": result.authorization.verdict.value,
+                    "billing.requires_human_approval": result.requires_human_approval,
+                    "billing.findings": ",".join(f.code.value for f in result.findings),
+                },
+            )
+            return result
+
+    async def _investigate(
         self, dispute: Dispute, now: datetime | None = None
     ) -> InvestigationResult:
         now = now or datetime.now(UTC)
