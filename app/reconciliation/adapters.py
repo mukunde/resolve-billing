@@ -38,7 +38,7 @@ TIMEOUT_SECONDS = 30.0
 
 #: Sent so the provider can see what is calling. Asked for in their docs, and
 #: cheap courtesy towards whoever reads those logs.
-USER_AGENT = "agentic-billing-exception-handler/0.1 (+reconciliation)"
+USER_AGENT = "resolve-billing/0.1 (+reconciliation)"
 
 
 class FileUsageReport:

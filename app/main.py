@@ -8,10 +8,10 @@ from app.api import approvals, disputes, health, review, run_view
 from app.observability import tracing
 
 app = FastAPI(
-    title="Agentic Billing Exception Handler",
+    title="ResolveBilling",
     description=(
-        "Provider- and model-agnostic agentic workflow for investigating "
-        "billing disputes and safely recommending corrective actions."
+        "An auditable AI agent for billing dispute investigation, "
+        "recommendation and human-approved resolution."
     ),
     version="0.1.0",
 )

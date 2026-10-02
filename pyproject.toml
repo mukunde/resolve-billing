@@ -1,5 +1,5 @@
 [project]
-name = "agentic-billing-exception-handler"
+name = "resolve-billing"
 version = "0.1.0"
 description = "Provider- and model-agnostic agentic workflow for investigating billing disputes and safely recommending corrective actions."
 requires-python = ">=3.12"

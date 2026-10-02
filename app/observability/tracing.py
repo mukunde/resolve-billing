@@ -49,7 +49,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by not installing it
     trace = None  # type: ignore[assignment]
     genai = None  # type: ignore[assignment]
 
-SERVICE_NAME = "billing-exception-handler"
+SERVICE_NAME = "resolve-billing"
 
 #: Field names that must never be attached to a span.
 #:

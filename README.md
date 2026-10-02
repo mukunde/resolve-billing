@@ -1,9 +1,13 @@
-# Agentic Billing Exception Handler
+# ResolveBilling
 
-Provider- and model-agnostic agentic workflow for investigating billing
-disputes and safely recommending corrective actions.
+**Human-in-the-loop billing dispute resolution.**
 
-[![evals](https://github.com/mukunde/agentic-billing-exception-handler/actions/workflows/evals.yml/badge.svg)](https://github.com/mukunde/agentic-billing-exception-handler/actions/workflows/evals.yml)
+An auditable AI agent for billing dispute investigation, recommendation and
+human-approved resolution. Provider- and model-agnostic on two independent
+axes: neither the domain nor the application layer knows the name of any
+vendor.
+
+[![evals](https://github.com/mukunde/resolve-billing/actions/workflows/evals.yml/badge.svg)](https://github.com/mukunde/resolve-billing/actions/workflows/evals.yml)
 
 ![One dispute, three outcomes: a duplicate goes to a human for approval, a correct invoice proposes nothing, and an injected instruction stops before the decision engine is ever called.](docs/workflow.svg)
 

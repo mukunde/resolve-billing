@@ -75,7 +75,7 @@ def step(n, label, x, y):
 
 
 # ------------------------------------------------------------------ header
-add(f'<text class="h1" x="{W / 2}" y="40" fill="{INK}">Agentic Billing Exception Handler</text>')
+add(f'<text class="h1" x="{W / 2}" y="40" fill="{INK}">ResolveBilling</text>')
 add(
     f'<text class="h2" x="{W / 2}" y="65" fill="{MUTED}">'
     "One dispute, end to end: what code settles, what a model reads, "
