@@ -56,7 +56,9 @@ class InvestigateResponse(BaseModel):
     decision_engine_version: str
     findings: list[str]
     explanation: str
-    recommended_action: ActionOut
+    proposed_action: ActionOut
+    """What the system proposes, amount computed from the invoice. Not the
+    engine's recommendation: an escalation reads `none` here."""
     requires_human_approval: bool
     authorization_reason: str
     action_id: str | None = None
@@ -73,7 +75,7 @@ class InvestigateResponse(BaseModel):
             decision_engine_version=result.decision_engine_version,
             findings=[finding.code.value for finding in result.findings],
             explanation=result.explanation,
-            recommended_action=ActionOut.of(result.proposed_action),
+            proposed_action=ActionOut.of(result.proposed_action),
             requires_human_approval=result.requires_human_approval,
             authorization_reason=result.authorization.reason,
             action_id=result.action_id,

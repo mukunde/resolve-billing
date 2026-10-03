@@ -58,7 +58,7 @@ class TestCaseADuplicate:
 
     def test_credit_note_is_proposed_for_the_invoice_amount(self, body):
         """The engine names the action; the amount comes off the invoice."""
-        assert body["recommended_action"] == {
+        assert body["proposed_action"] == {
             "type": "credit_note",
             "amount_minor": 9900,
             "currency": "EUR",
@@ -95,8 +95,8 @@ class TestCaseBLegitimateOverage:
         assert body["classification"] == "valid_invoice"
 
     def test_no_money_moves(self, body):
-        assert body["recommended_action"]["type"] == "reply"
-        assert body["recommended_action"]["amount_minor"] is None
+        assert body["proposed_action"]["type"] == "reply"
+        assert body["proposed_action"]["amount_minor"] is None
         assert body["requires_human_approval"] is False
 
     def test_metered_usage_corroborates_the_overage(self, body):
@@ -112,7 +112,7 @@ class TestCaseCInsufficientContext:
         )
 
         assert body["classification"] == "insufficient_information"
-        assert body["recommended_action"]["type"] == "request_information"
+        assert body["proposed_action"]["type"] == "request_information"
         assert body["requires_human_approval"] is False
 
 
@@ -165,7 +165,7 @@ class TestCaseFInjection:
 
     def test_no_action_is_proposed_despite_a_real_duplicate(self, body):
         """inv_002 *is* a duplicate. The injection still stops everything."""
-        assert body["recommended_action"]["type"] == "none"
+        assert body["proposed_action"]["type"] == "none"
         assert body["requires_human_approval"] is True
 
     def test_classified_as_unknown(self, body):

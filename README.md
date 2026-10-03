@@ -437,7 +437,7 @@ curl -X POST http://localhost:8000/api/v1/disputes/investigate \
   "confidence_kind": "self_reported",
   "decision_engine": "mock",
   "findings": ["DUPLICATE_INVOICE"],
-  "recommended_action": {"type": "credit_note", "amount_minor": 9900, "currency": "EUR"},
+  "proposed_action": {"type": "credit_note", "amount_minor": 9900, "currency": "EUR"},
   "requires_human_approval": true,
   "action_id": "act_fe9694e793a2"
 }
