@@ -17,6 +17,9 @@ Usage:
     python -m evals.runner                 # mock, free, deterministic
     python -m evals.runner --engine claude # real calls, real money
     python -m evals.runner --json out.json
+    python -m evals.runner --engine claude --runs 5 --json out.json
+                                           # pass rate per case, see variance.py
+    python -m evals.runner --cases other.json
 """
 
 from __future__ import annotations
@@ -127,7 +130,7 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
     )
 
 
-async def run(engine_name: str) -> tuple[list[CaseOutcome], str]:
+async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[CaseOutcome], str]:
     """Run the case set, and report which engine version produced it.
 
     The version travels back with the outcomes because a stored result whose
@@ -140,7 +143,7 @@ async def run(engine_name: str) -> tuple[list[CaseOutcome], str]:
     if engine_name not in ENGINES:
         sys.exit(f"unknown engine {engine_name!r}; available: {sorted(ENGINES)}")
 
-    cases = json.loads(CASES_PATH.read_text(encoding="utf-8"))
+    cases = json.loads(cases_path.read_text(encoding="utf-8"))
     engine = ENGINES[engine_name]()
     investigator = DisputeInvestigator(provider=FakeBillingProvider(), engine=engine)
 
@@ -156,7 +159,7 @@ async def run(engine_name: str) -> tuple[list[CaseOutcome], str]:
     return outcomes, engine.version
 
 
-def _case_set_fingerprint() -> str:
+def _case_set_fingerprint(cases_path: Path = CASES_PATH) -> str:
     """Which case set these numbers were scored against.
 
     Learned the hard way: the first real run was scored against a case set that
@@ -166,7 +169,7 @@ def _case_set_fingerprint() -> str:
     """
     import hashlib
 
-    return hashlib.sha256(CASES_PATH.read_bytes()).hexdigest()[:16]
+    return hashlib.sha256(cases_path.read_bytes()).hexdigest()[:16]
 
 
 def report(
@@ -258,9 +261,40 @@ def report(
     return 0
 
 
+def _write_json(
+    path: Path, engine_name: str, engine_version: str, cases_path: Path, runs: list[dict]
+) -> None:
+    """One run keeps the shape every stored file already has; several runs
+    nest under `runs`, which `variance.load` reads either way."""
+    payload = {
+        "engine": engine_name,
+        # What actually produced these numbers. Without it the file
+        # is a score with no exam attached.
+        "engine_version": engine_version,
+        "cases_file": cases_path.name,
+        "cases_sha256": _case_set_fingerprint(cases_path),
+    }
+    if len(runs) == 1:
+        payload |= runs[0]
+    else:
+        payload["ran_at"] = runs[0]["ran_at"]
+        payload["runs"] = runs
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", default="mock")
+    parser.add_argument(
+        "--cases", type=Path, default=CASES_PATH, help="case file to run (default: cases.json)"
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="run the set this many times and report the pass rate per case",
+    )
     parser.add_argument("--json", type=Path, help="write the raw outcomes here")
     parser.add_argument(
         "--min-fully-correct",
@@ -268,29 +302,30 @@ def main() -> int:
         help="fail below this many fully-correct cases (deterministic engines only)",
     )
     args = parser.parse_args()
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
 
-    outcomes, engine_version = asyncio.run(run(args.engine))
+    runs: list[dict] = []
+    for index in range(args.runs):
+        ran_at = datetime.now(UTC).isoformat()
+        outcomes, engine_version = asyncio.run(run(args.engine, args.cases))
+        runs.append({"ran_at": ran_at, "outcomes": [vars(o) for o in outcomes]})
+        if args.runs > 1:
+            print(f"run {index + 1}/{args.runs} done", file=sys.stderr)
 
     if args.json:
-        args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(
-            json.dumps(
-                {
-                    "engine": args.engine,
-                    # What actually produced these numbers. Without it the file
-                    # is a score with no exam attached.
-                    "engine_version": engine_version,
-                    "cases_sha256": _case_set_fingerprint(),
-                    "ran_at": datetime.now(UTC).isoformat(),
-                    "outcomes": [vars(o) for o in outcomes],
-                },
-                indent=2,
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
+        _write_json(args.json, args.engine, engine_version, args.cases, runs)
 
-    return report(args.engine, outcomes, args.min_fully_correct)
+    if args.runs == 1:
+        return report(args.engine, outcomes, args.min_fully_correct)
+
+    from evals import variance
+
+    return variance.report(
+        f"{args.engine} ({engine_version})",
+        [r["outcomes"] for r in runs],
+        args.min_fully_correct,
+    )
 
 
 if __name__ == "__main__":
