@@ -14,7 +14,7 @@ from app.decision.base import Classification, EngineTelemetry
 from app.domain.enums import RuleCode, Severity
 from app.domain.models import Dispute, RuleFinding
 from app.domain.money import Money
-from app.infrastructure.audit import SqliteAuditRepository
+from app.infrastructure.audit import SCHEMA, SqliteAuditRepository
 from app.policies.action_policy import ActionAuthorization, Verdict
 
 
@@ -89,6 +89,17 @@ class TestRunRow:
 
         assert row["amount_minor"] == 9900
         assert row["currency"] == "EUR"
+
+    def test_the_column_is_named_for_what_it_holds(self, audit):
+        """The system's proposal after translation, not the engine's
+        recommendation: an escalation is stored as `none`."""
+        audit.record(a_result(), billing_provider="fake")
+
+        row = audit.run("run_test01")
+
+        assert row["proposed_action"] == "credit_note"
+        # `.keys()` is required: `in` on a sqlite3.Row searches the values.
+        assert "recommended_action" not in row.keys()  # noqa: SIM118
 
     def test_the_authorization_records_why_not_just_what(self, audit):
         audit.record(a_result(), billing_provider="fake")
@@ -220,3 +231,48 @@ class TestTransaction:
 
         assert audit.count() == 1
         assert len(audit.events("run_test01")) == 2, "events were not duplicated either"
+
+
+class TestMigration:
+    """A file written by an earlier schema must keep appending."""
+
+    @pytest.fixture
+    def legacy_file(self, tmp_path):
+        # The schema as it stood before the rename and the two added columns.
+        legacy = (
+            SCHEMA.replace("proposed_action          TEXT", "recommended_action       TEXT")
+            .replace("    pricing_as_of            TEXT,\n", "")
+            .replace("    cache_read_input_tokens  INTEGER,\n", "")
+        )
+        assert "recommended_action" in legacy and "pricing_as_of" not in legacy
+        path = tmp_path / "audit.db"
+        connection = sqlite3.connect(path)
+        connection.executescript(legacy)
+        connection.execute(
+            "INSERT INTO agent_runs (run_id, created_at, billing_provider, decision_engine, "
+            "decision_engine_version, input_message, classification, confidence, "
+            "confidence_kind, explanation, findings_json, recommended_action, verdict, "
+            "authorization_reason, autonomy_available) "
+            "VALUES ('run_old', '2026-09-20T10:00:00+00:00', 'fake', 'mock', '1.0.0', 'msg', "
+            "'valid_invoice', 0.9, 'self_reported', 'x', '[]', 'reply', 'auto', 'r', 0)"
+        )
+        connection.commit()
+        connection.close()
+        return path
+
+    def test_an_old_file_keeps_its_rows_under_the_new_name(self, legacy_file):
+        audit = SqliteAuditRepository(legacy_file)
+
+        old = audit.run("run_old")
+        audit.record(a_result(), billing_provider="fake")
+
+        assert old["proposed_action"] == "reply"
+        assert audit.run("run_test01")["proposed_action"] == "credit_note"
+        audit.close()
+
+    def test_migrating_twice_changes_nothing(self, legacy_file):
+        SqliteAuditRepository(legacy_file).close()
+        audit = SqliteAuditRepository(legacy_file)
+
+        assert audit.count() == 1
+        audit.close()

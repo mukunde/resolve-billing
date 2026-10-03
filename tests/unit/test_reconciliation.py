@@ -198,7 +198,7 @@ class TestReadingOurOwnLedger:
             "INSERT INTO agent_runs (run_id, created_at, billing_provider, "
             "decision_engine, decision_engine_version, input_message, "
             "classification, confidence, confidence_kind, explanation, "
-            "findings_json, recommended_action, verdict, authorization_reason, "
+            "findings_json, proposed_action, verdict, authorization_reason, "
             "autonomy_available, model_id, cost_micros) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [

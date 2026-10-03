@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     findings_json            TEXT    NOT NULL,
     short_circuited_by       TEXT,
 
-    recommended_action       TEXT    NOT NULL,
+    proposed_action          TEXT    NOT NULL,
     amount_minor             INTEGER,
     currency                 TEXT,
 
@@ -99,7 +99,7 @@ class SqliteAuditRepository:
         self._connection.commit()
 
     def _migrate(self) -> None:
-        """Add columns that postdate an existing database file.
+        """Bring an existing database file up to the schema above.
 
         ``CREATE TABLE IF NOT EXISTS`` does nothing to a table that already
         exists, so a month-old ``audit.db`` would fail with ``no such column``
@@ -108,6 +108,16 @@ class SqliteAuditRepository:
         exactly the failure you notice last.
         """
         held = {row["name"] for row in self._connection.execute("PRAGMA table_info(agent_runs)")}
+
+        # Named for what the engine recommends, while holding what the system
+        # proposes after translation -- `none` for an escalation and for a
+        # credit note with no invoice alike. Renamed rather than copied, so
+        # an existing file keeps its rows and loses only the wrong name.
+        if "recommended_action" in held and "proposed_action" not in held:
+            self._connection.execute(
+                "ALTER TABLE agent_runs RENAME COLUMN recommended_action TO proposed_action"
+            )
+
         for column, ddl in (
             ("pricing_as_of", "TEXT"),
             # Captured by the telemetry since the first Claude call and
@@ -149,7 +159,7 @@ class SqliteAuditRepository:
                     customer_id, invoice_id, input_message,
                     classification, confidence, confidence_kind, explanation,
                     findings_json, short_circuited_by,
-                    recommended_action, amount_minor, currency,
+                    proposed_action, amount_minor, currency,
                     verdict, authorization_reason, autonomy_available,
                     model_id, prompt_version,
                     input_tokens, cache_read_input_tokens, output_tokens,
@@ -160,7 +170,7 @@ class SqliteAuditRepository:
                     :customer_id, :invoice_id, :input_message,
                     :classification, :confidence, :confidence_kind, :explanation,
                     :findings_json, :short_circuited_by,
-                    :recommended_action, :amount_minor, :currency,
+                    :proposed_action, :amount_minor, :currency,
                     :verdict, :authorization_reason, :autonomy_available,
                     :model_id, :prompt_version,
                     :input_tokens, :cache_read_input_tokens, :output_tokens,
@@ -189,7 +199,7 @@ class SqliteAuditRepository:
                     "short_circuited_by": (
                         result.short_circuited_by.value if result.short_circuited_by else None
                     ),
-                    "recommended_action": action.type,
+                    "proposed_action": action.type,
                     "amount_minor": action.amount.amount_minor if action.amount else None,
                     "currency": action.amount.currency if action.amount else None,
                     "verdict": authorization.verdict.value,
