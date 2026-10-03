@@ -40,5 +40,23 @@
     "state": "succeeded",
     "received_at": "2026-09-03T11:20:00",
     "_comment": "Cas E : encaisse, mais inv_030 est reste 'open' cote facturation."
+  },
+  {
+    "id": "pay_050",
+    "invoice_id": "inv_050",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T08:15:00",
+    "_comment": "Premier paiement rattache a inv_050."
+  },
+  {
+    "id": "pay_051",
+    "invoice_id": "inv_050",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T08:19:00",
+    "_comment": "Second paiement rattache a inv_050."
   }
 ]

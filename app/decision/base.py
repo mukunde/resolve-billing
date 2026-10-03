@@ -27,6 +27,13 @@ class Classification(StrEnum):
     cannot return an out-of-schema value, so the escape hatch has to be a
     value of the enum rather than a validation failure -- otherwise a novel
     dispute gets forced into whichever box fits worst.
+
+    ``DUPLICATE_BILLING`` covers both faces of "charged twice": a duplicated
+    invoice and a double collection of a single invoice. The classification
+    names what happened to the customer; which object carries the duplicate
+    decides the corrective action (credit note on the invoice side, refund on
+    the payment side). ``PAYMENT_ALREADY_RECEIVED`` stays what it is: a
+    dunning case, where the chase failed to notice money that arrived.
     """
 
     DUPLICATE_BILLING = "duplicate_billing"
