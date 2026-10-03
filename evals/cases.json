@@ -153,7 +153,7 @@
   },
   {
     "id": "proration_not_duplicate",
-    "why": "Ex-holdout S1, passe en dev le 2026-10-03. Un prorata correct pris pour un doublon : les preuves priment sur l'affirmation du client. Distinct du cas dev 'proration', ou le prorata est faux.",
+    "why": "Ex-holdout S1, passe en dev le 2026-10-03. Un prorata correct pris pour un doublon : les preuves priment sur l'affirmation du client. Distinct du cas dev 'proration', ou le prorata est faux. Representation alignee sur les lignes de prorata de Stripe : deux lignes au prix plein de leur formule, le temps non utilise credite en negatif.",
     "message": "Bonjour,\n\nJe vois deux factures sur septembre, inv_040 à 49,00 € et inv_041 à 25,00 €. Nous avons changé de formule en cours de mois et je pensais qu'une seule facture devait être émise. Pouvez-vous vérifier qu'il ne s'agit pas d'un doublon ?\n\nMerci.",
     "customer_email": "lea@orion-conseil.fr",
     "invoice_id": "inv_041",

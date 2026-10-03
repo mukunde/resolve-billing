@@ -149,10 +149,18 @@
     "_comment": "Facture de prorata creee lors du changement de formule du 16 septembre.",
     "lines": [
       {
-        "label": "Prorata changement de formule Pro vers Enterprise - 16/09 au 01/10",
+        "label": "Temps non utilise sur Pro - 16/09 au 01/10",
         "quantity": "1",
-        "unit_amount": "25.00",
-        "amount": "25.00",
+        "unit_amount": "49.00",
+        "amount": "-24.50",
+        "period_start": "2026-09-16T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      },
+      {
+        "label": "Temps restant sur Enterprise - 16/09 au 01/10",
+        "quantity": "1",
+        "unit_amount": "99.00",
+        "amount": "49.50",
         "period_start": "2026-09-16T00:00:00",
         "period_end": "2026-10-01T00:00:00"
       }
