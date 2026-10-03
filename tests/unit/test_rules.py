@@ -226,6 +226,89 @@ class TestProrationMismatch:
         """Full-period lines are not prorated; a different rule's business."""
         assert proration_mismatch(invoice("inv_063"), subscription()) is None
 
+    # A plan change mid-period, the way Stripe bills it: two lines, each at the
+    # full price of its own plan, the unused time on the old plan credited with
+    # a negative amount. Stripe docs, "Prorations", checked 2026-10-03.
+
+    def test_silent_on_a_correct_credit_for_unused_time(self):
+        unused_pro = line(
+            -2450,
+            unit_minor=4900,
+            start=datetime(2026, 9, 16, tzinfo=UTC),
+            end=OCT,
+            description="Unused time on Pro",
+        )
+
+        assert proration_mismatch(invoice("inv_064", lines=[unused_pro]), subscription()) is None
+
+    def test_fires_on_a_credit_that_covers_the_whole_month(self):
+        unused_pro = line(
+            -4900,
+            unit_minor=4900,
+            start=datetime(2026, 9, 16, tzinfo=UTC),
+            end=OCT,
+            description="Unused time on Pro",
+        )
+
+        finding = proration_mismatch(invoice("inv_065", lines=[unused_pro]), subscription())
+
+        assert finding is not None
+        assert finding.code is RuleCode.PRORATION_MISMATCH
+
+    def test_silent_on_a_correct_plan_change_billed_as_two_lines(self):
+        """Pro at 49 to Enterprise at 99 on the 16th: -24.50 + 49.50 = 25.00."""
+        change = [
+            line(
+                -2450,
+                unit_minor=4900,
+                start=datetime(2026, 9, 16, tzinfo=UTC),
+                end=OCT,
+                description="Unused time on Pro",
+            ),
+            line(
+                4950,
+                unit_minor=9900,
+                start=datetime(2026, 9, 16, tzinfo=UTC),
+                end=OCT,
+                description="Remaining time on Enterprise",
+            ),
+        ]
+
+        target = invoice("inv_066", total_minor=2500, lines=change)
+
+        assert proration_mismatch(target, subscription()) is None
+
+    def test_silent_on_a_proration_computed_to_the_second(self):
+        """Stripe prorates to the second, from the moment of the change. At
+        10:00 on the 16th, 350 of the period's 720 hours remain: 99 x 350/720
+        = 48.13. Counting whole days instead (14 of 30, truncated) expects
+        46.20 and flags a correct line."""
+        remaining = line(
+            4813,
+            unit_minor=9900,
+            start=datetime(2026, 9, 16, 10, tzinfo=UTC),
+            end=OCT,
+            description="Remaining time on Enterprise",
+        )
+
+        assert proration_mismatch(invoice("inv_067", lines=[remaining]), subscription()) is None
+
+    def test_a_net_proration_line_is_flagged_because_it_cannot_be_checked(self):
+        """A known limit, kept visible. One net line of 25.00 for a half month
+        carries no full plan price, so the rule reads 25.00 as one and expects
+        12.50. Telling it from case D -- a half month billed at the full price
+        -- would take the plan prices, which the provider port does not carry.
+        The rule assumes provider-style lines, each at its plan's full price."""
+        net = line(
+            2500,
+            unit_minor=2500,
+            start=datetime(2026, 9, 16, tzinfo=UTC),
+            end=OCT,
+            description="Prorata Pro vers Enterprise",
+        )
+
+        assert proration_mismatch(invoice("inv_068", lines=[net]), subscription()) is not None
+
 
 class TestUnknownInvoice:
     def test_fires_on_an_unknown_reference(self):
