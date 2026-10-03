@@ -15,7 +15,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-from app.decision.base import FINANCIAL_ACTIONS, Classification, Decision
+from app.decision.base import FINANCIAL_ACTIONS, Classification, Decision, RecommendedAction
 from app.domain.enums import RuleCode, Severity
 from app.domain.models import RuleFinding
 from app.domain.money import Money
@@ -127,7 +127,22 @@ class ActionPolicy:
                 )
             return self._financial(decision, amount)
 
-        # 3. Not knowing what happened leaves nothing safe to say either.
+        # 3. An engine that asks for a human gets one, whatever it classified.
+        #    Read off the action rather than inferred from the classification:
+        #    the schema accepts any pairing, and a run of prompt v2 paired
+        #    `escalate` with `duplicate_billing` -- which this policy then
+        #    authorised as an automatic reply. A prompt rule fixed the
+        #    symptom; it is the policy that has to hold whatever the engine.
+        if decision.recommended_action is RecommendedAction.ESCALATE:
+            return ActionAuthorization(
+                verdict=Verdict.HUMAN_REVIEW,
+                reason=(
+                    "Le moteur demande une revue humaine "
+                    f"(classification : {decision.classification.value})."
+                ),
+            )
+
+        # 4. Not knowing what happened leaves nothing safe to say either.
         if decision.classification in NOTHING_SAFE_TO_SAY:
             return ActionAuthorization(
                 verdict=Verdict.HUMAN_REVIEW,
@@ -137,7 +152,7 @@ class ActionPolicy:
                 ),
             )
 
-        # 4. Everything else is a reply or a question: no money moves, and the
+        # 5. Everything else is a reply or a question: no money moves, and the
         #    draft is reviewed before it is sent anyway.
         return ActionAuthorization(
             verdict=Verdict.AUTO,

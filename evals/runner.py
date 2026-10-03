@@ -123,6 +123,12 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
         got={
             "classification": result.classification.value,
             "action": result.proposed_action.type,
+            # The engine's own request, before translation: `action` alone
+            # reads "none" for an escalation and for a credit note with no
+            # invoice, and only one of those must reach a human.
+            "recommended_action": (
+                result.recommended_action.value if result.recommended_action else None
+            ),
             "approval": result.requires_human_approval,
             "findings": sorted(got_findings),
             "engine": result.decision_engine,

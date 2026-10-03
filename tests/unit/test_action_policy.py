@@ -123,6 +123,20 @@ class TestNonActionableClassifications:
         )
         assert auth.verdict is Verdict.HUMAN_REVIEW
 
+    @pytest.mark.parametrize("classification", list(Classification))
+    def test_an_escalation_reaches_a_human_whatever_the_classification(
+        self, policy, classification
+    ):
+        """Prompt v2 paired `escalate` with `duplicate_billing` on a real run,
+        and the policy, reading only the classification, authorised it as an
+        automatic reply. The engine asking for a human is enough."""
+        auth = policy.evaluate(
+            decision(classification=classification, action=RecommendedAction.ESCALATE),
+            [],
+        )
+        assert auth.verdict is Verdict.HUMAN_REVIEW
+        assert auth.requires_human_approval
+
     def test_asking_the_customer_a_question_does_not_need_a_human(self, policy):
         """Case C. A departure from a literal reading of the plan, argued in
         the policy module: requesting information is the safe non-action, not

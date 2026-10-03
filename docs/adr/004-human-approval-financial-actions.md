@@ -30,8 +30,15 @@ credit note, any amount           human approval
 refund                            human approval
 blocking finding (injection)      human review, no action proposed
 classification `unknown`          human review
+engine recommends `escalate`      human review, whatever the classification
 money on an unqualified dispute   human review
 ```
+
+The `escalate` row was added after the fact. The policy first read only the
+classification, and the response schema accepts any pairing: a run of prompt
+v2 returned `escalate` with `duplicate_billing`, which the policy authorised
+as an automatic reply. Prompt v3 stopped the pairing; the policy now holds
+without relying on it.
 
 Autonomy thresholds exist in the code, are configurable, and are **off**.
 

@@ -71,6 +71,10 @@ class InvestigationResult(BaseModel):
     findings: list[RuleFinding]
     explanation: str
     proposed_action: ProposedAction
+    recommended_action: RecommendedAction | None = None
+    """What the engine asked for, before translation. None when it was not
+    called. Kept because `proposed_action` alone cannot tell an escalation
+    from a credit note that had no invoice to apply to: both become `none`."""
     authorization: ActionAuthorization
     events: list[AuditEvent] = []
     action_id: str | None = None
@@ -345,6 +349,7 @@ class DisputeInvestigator:
             findings=findings,
             explanation=decision.explanation or deterministic_explanation(findings),
             proposed_action=action,
+            recommended_action=decision.recommended_action,
             authorization=self._policy.evaluate(decision, findings, action.amount),
             telemetry=decision.telemetry,
         )
