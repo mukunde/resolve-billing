@@ -100,3 +100,40 @@ def test_a_single_run_keeps_the_stored_shape(tmp_path, monkeypatch):
 
     stored = json.loads(out.read_text(encoding="utf-8"))
     assert "outcomes" in stored and "runs" not in stored
+
+
+def test_a_missing_credential_stops_the_run_before_the_first_case(monkeypatch):
+    for name in runner.CREDENTIALS["claude"]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(sys, "argv", ["runner", "--engine", "claude"])
+
+    async def must_not_run(*args, **kwargs):
+        raise AssertionError("a case was run without a credential")
+
+    monkeypatch.setattr(runner, "run", must_not_run)
+
+    with pytest.raises(SystemExit) as exit_:
+        runner.main()
+
+    assert "ANTHROPIC_API_KEY" in str(exit_.value.code)
+    assert "dotenv run" in str(exit_.value.code)
+
+
+def test_an_engine_without_a_credential_needs_none(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert runner.missing_credential("mock") is None
+
+
+def test_either_variable_satisfies_the_check(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
+    assert runner.missing_credential("claude") is None
+
+
+def test_a_missing_case_file_is_named_not_traced(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["runner", "--cases", "evals/nope.json"])
+
+    with pytest.raises(SystemExit):
+        runner.main()
+
+    assert "no such case file: evals" in capsys.readouterr().err

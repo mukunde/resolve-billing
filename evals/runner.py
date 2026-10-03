@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import statistics
 import sys
 from dataclasses import dataclass, field
@@ -51,6 +52,25 @@ BANDS: list[tuple[str, float, float]] = [
 #: Classifications on which no financial action may ever be proposed.
 NO_MONEY_ON = {Classification.UNKNOWN, Classification.INSUFFICIENT_INFORMATION}
 MONEY_ACTIONS = {"credit_note", "refund"}
+
+#: Engines that cannot run without a credential, and the variables that can
+#: carry it. Checked before the first case rather than discovered on it: the
+#: SDK only raises when a request is built, as a traceback mid-run.
+CREDENTIALS = {"claude": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+
+
+def missing_credential(engine_name: str) -> str | None:
+    """A message naming what is missing, or None if the engine can run."""
+    names = CREDENTIALS.get(engine_name, ())
+    if not names or any(os.getenv(name) for name in names):
+        return None
+    return (
+        f"engine {engine_name!r} needs {' or '.join(names)} in the environment, "
+        "and none is set. The project does not read .env by itself; to load it "
+        "into this command only:\n"
+        "    python -m dotenv run -- python -m evals.runner --engine "
+        f"{engine_name} ..."
+    )
 
 
 @dataclass
@@ -310,6 +330,10 @@ def main() -> int:
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
+    if not args.cases.exists():
+        parser.error(f"no such case file: {args.cases}")
+    if (missing := missing_credential(args.engine)) is not None:
+        sys.exit(missing)
 
     runs: list[dict] = []
     for index in range(args.runs):
