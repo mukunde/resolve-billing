@@ -22,5 +22,23 @@
     "email": "david@bordeaux-retail.fr",
     "currency": "EUR",
     "display_name": "Bordeaux Retail"
+  },
+  {
+    "id": "cus_orion",
+    "email": "lea@orion-conseil.fr",
+    "currency": "EUR",
+    "display_name": "Orion Conseil"
+  },
+  {
+    "id": "cus_helios",
+    "email": "marc@helios-services.fr",
+    "currency": "EUR",
+    "display_name": "Helios Services"
+  },
+  {
+    "id": "cus_nova",
+    "email": "sophie@nova-atelier.fr",
+    "currency": "EUR",
+    "display_name": "Nova Atelier"
   }
 ]

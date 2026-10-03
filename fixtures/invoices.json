@@ -117,5 +117,85 @@
         "period_end": "2026-10-01T00:00:00"
       }
     ]
+  },
+  {
+    "id": "inv_040",
+    "customer_id": "cus_orion",
+    "subscription_id": "sub_40",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Facture mensuelle Pro emise au debut de septembre.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_041",
+    "customer_id": "cus_orion",
+    "subscription_id": "sub_40",
+    "amount": "25.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-16T10:00:00",
+    "_comment": "Facture de prorata creee lors du changement de formule du 16 septembre.",
+    "lines": [
+      {
+        "label": "Prorata changement de formule Pro vers Enterprise - 16/09 au 01/10",
+        "quantity": "1",
+        "unit_amount": "25.00",
+        "amount": "25.00",
+        "period_start": "2026-09-16T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_050",
+    "customer_id": "cus_helios",
+    "subscription_id": "sub_50",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Facture mensuelle Pro de septembre.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_060",
+    "customer_id": "cus_nova",
+    "subscription_id": "sub_60",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Facture Pro de septembre toujours ouverte.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
   }
 ]
