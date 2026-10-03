@@ -72,29 +72,57 @@ def test_a_single_run_file_loads_as_one_run(tmp_path):
     assert label == "mock" and len(runs) == 1
 
 
-def test_the_runner_stores_every_run_and_reports_variance(tmp_path, monkeypatch, capsys):
+@pytest.fixture
+def three_cases(tmp_path):
+    """A case file the mock gets fully right, so these tests check how the
+    runner stores and reports -- not whether the dev set is green today.
+    The dev set's own verdict is the eval step's job in CI."""
+    dev = json.loads(runner.CASES_PATH.read_text(encoding="utf-8"))
+    path = tmp_path / "three.json"
+    path.write_text(
+        json.dumps(
+            [c for c in dev if c["id"] in {"duplicate_fr", "legitimate_overage", "injection_role"}]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_the_runner_stores_every_run_and_reports_variance(
+    tmp_path, monkeypatch, capsys, three_cases
+):
     out = tmp_path / "mock-x3.json"
     monkeypatch.setattr(
         sys,
         "argv",
-        ["runner", "--runs", "3", "--json", str(out), "--min-fully-correct", "9"],
+        [
+            "runner",
+            "--cases",
+            str(three_cases),
+            "--runs",
+            "3",
+            "--json",
+            str(out),
+            "--min-fully-correct",
+            "3",
+        ],
     )
 
     assert runner.main() == 0
 
     stored = json.loads(out.read_text(encoding="utf-8"))
     assert len(stored["runs"]) == 3
-    assert stored["cases_file"] == "cases.json"
-    assert stored["cases_sha256"] == runner._case_set_fingerprint()
+    assert stored["cases_file"] == "three.json"
+    assert stored["cases_sha256"] == runner._case_set_fingerprint(three_cases)
     # The mock is deterministic: three draws, one verdict per case.
     label, runs = variance.load(out)
     assert all(row.stable for row in variance.by_case(runs))
     assert "fully correct, run by run" in capsys.readouterr().out
 
 
-def test_a_single_run_keeps_the_stored_shape(tmp_path, monkeypatch):
+def test_a_single_run_keeps_the_stored_shape(tmp_path, monkeypatch, three_cases):
     out = tmp_path / "mock.json"
-    monkeypatch.setattr(sys, "argv", ["runner", "--json", str(out)])
+    monkeypatch.setattr(sys, "argv", ["runner", "--cases", str(three_cases), "--json", str(out)])
 
     assert runner.main() == 0
 
