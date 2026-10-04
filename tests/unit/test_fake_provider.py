@@ -60,6 +60,17 @@ class TestReads:
         with pytest.raises(NotFound):
             await provider.get_invoice("inv_nope")
 
+    async def test_find_invoice_returns_the_invoice(self, provider):
+        assert (await provider.find_invoice("inv_002")).customer_id == "cus_acme"
+
+    async def test_find_invoice_returns_none_on_an_unknown_reference(self, provider):
+        assert await provider.find_invoice("inv_nope") is None
+
+    async def test_lists_every_customer_with_its_display_name(self, provider):
+        customers = {c.id: c for c in await provider.list_customers()}
+        assert customers["cus_acme"].display_name == "ACME SAS"
+        assert "cus_nord" in customers
+
     async def test_invoices_are_scoped_to_the_customer(self, provider):
         invoices = await provider.list_invoices("cus_acme", since=EPOCH)
         assert {i.id for i in invoices} == {"inv_001", "inv_002"}

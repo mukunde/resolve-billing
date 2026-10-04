@@ -100,8 +100,5 @@ async def investigate(
         customer_email=payload.customer_email,
         invoice_id=payload.invoice_id,
     )
-    try:
-        result = await investigator.investigate(dispute)
-    except ValueError as error:
-        raise HTTPException(404, str(error)) from error
+    result = await investigator.investigate(dispute)
     return InvestigateResponse.of(result)

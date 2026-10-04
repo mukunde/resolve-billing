@@ -14,13 +14,15 @@ import pytest
 from app.domain import injection as injection_module
 from app.domain import rules as rules_module
 from app.domain.enums import InvoiceStatus, RuleCode, Severity, SubscriptionStatus
-from app.domain.models import Invoice, InvoiceLine, Subscription
+from app.domain.models import Customer, Invoice, InvoiceLine, Subscription
 from app.domain.money import Money
 from app.domain.rules import (
     detect_duplicate_invoice,
     invoice_after_cancellation,
     proration_mismatch,
+    suspected_impersonation,
     suspicious_usage_delta,
+    unknown_customer,
     unknown_invoice,
 )
 
@@ -320,6 +322,137 @@ class TestUnknownInvoice:
 
     def test_silent_on_a_known_reference(self):
         assert unknown_invoice("inv_001", [invoice("inv_001")]) is None
+
+
+
+CUSTOMERS = [
+    Customer(id="cus_acme", email="alice@acme.fr", display_name="ACME SAS"),
+    Customer(id="cus_nord", email="bruno@transports-nord.fr", display_name="Transports Nord"),
+    Customer(id="cus_lyon", email="chloe@lyon-industries.fr", display_name="Lyon Industries"),
+    Customer(id="cus_solo", email="dan.solo@gmail.com", display_name=None),
+]
+
+
+class TestUnknownCustomer:
+    def test_fires_when_the_sender_matches_no_customer(self):
+        finding = unknown_customer("nobody@example.com", None)
+
+        assert finding is not None
+        assert finding.code is RuleCode.UNKNOWN_CUSTOMER
+        assert finding.evidence["sender_email"] == "nobody@example.com"
+
+    def test_silent_when_the_sender_is_a_known_customer(self):
+        assert unknown_customer("alice@acme.fr", CUSTOMERS[0]) is None
+
+
+class TestSuspectedImpersonation:
+    """An unknown sender is not a fraud by itself. Reaching for a known
+    customer's account -- by its invoice, its name or its domain -- is."""
+
+    def signals(self, finding) -> set[tuple[str, str]]:
+        return {(s["signal"], s["customer_id"]) for s in finding.evidence["signals"]}
+
+    def test_silent_when_nothing_points_at_a_known_customer(self):
+        """The plain unknown sender gets a question, not an escalation."""
+        finding = suspected_impersonation(
+            "jean@exemple.org", "Ma dernière facture me semble trop élevée.", None, CUSTOMERS
+        )
+
+        assert finding is None
+
+    def test_fires_on_a_known_invoice_reference(self):
+        finding = suspected_impersonation(
+            "jean.perso@gmail.com", "Merci de corriger la facture.", invoice("inv_002"), CUSTOMERS
+        )
+
+        assert finding is not None
+        assert finding.code is RuleCode.SUSPECTED_IMPERSONATION
+        assert finding.severity is Severity.HIGH
+        assert self.signals(finding) == {("known_invoice", "cus_acme")}
+
+    def test_fires_on_the_exact_domain_of_a_known_customer(self):
+        """Most likely a colleague. Still, a human checks with the known contact."""
+        finding = suspected_impersonation("compta@acme.fr", "Bonjour.", None, CUSTOMERS)
+
+        assert finding is not None
+        assert self.signals(finding) == {("same_domain", "cus_acme")}
+
+    def test_a_subdomain_counts_as_the_same_domain(self):
+        finding = suspected_impersonation("compta@factures.acme.fr", "Bonjour.", None, CUSTOMERS)
+
+        assert finding is not None
+        assert self.signals(finding) == {("same_domain", "cus_acme")}
+
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            "acme.com",  # same name, other extension
+            "acme-fr.com",  # the name, decorated
+            "acme-facturation.fr",
+            "acrne.fr",  # rn reads as m
+            "transport-nord.fr",  # one letter off a long name
+            "transp0rts-nord.fr",  # 0 reads as o
+        ],
+    )
+    def test_fires_on_a_lookalike_domain(self, domain):
+        finding = suspected_impersonation(f"compta@{domain}", "Bonjour.", None, CUSTOMERS)
+
+        assert finding is not None
+        assert {signal for signal, _ in self.signals(finding)} == {"lookalike_domain"}
+
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            "acne.fr",  # one letter off a short name: too close to call
+            "pacmen.fr",  # contains the name, does not start with it
+            "nord-conseil.fr",  # shares a word, not the name
+            "industries-lyonnaises.fr",
+        ],
+    )
+    def test_silent_on_an_unrelated_domain(self, domain):
+        assert suspected_impersonation(f"jean@{domain}", "Bonjour.", None, CUSTOMERS) is None
+
+    def test_fires_on_a_company_name_in_the_message(self):
+        finding = suspected_impersonation(
+            "jean.perso@gmail.com",
+            "Je suis le comptable d'Acme, merci de m'envoyer nos factures.",
+            None,
+            CUSTOMERS,
+        )
+
+        assert finding is not None
+        assert self.signals(finding) == {("company_name", "cus_acme")}
+
+    def test_the_company_name_is_matched_without_accents_or_case(self):
+        finding = suspected_impersonation(
+            "jean.perso@gmail.com", "Facture de LYON INDUSTRIES.", None, CUSTOMERS
+        )
+
+        assert finding is not None
+        assert self.signals(finding) == {("company_name", "cus_lyon")}
+
+    def test_a_company_name_inside_another_word_does_not_count(self):
+        finding = suspected_impersonation(
+            "jean@exemple.org", "Une facture acmeuse.", None, CUSTOMERS
+        )
+
+        assert finding is None
+
+    def test_a_webmail_domain_is_nobodys_domain(self):
+        """A customer on gmail.com does not make every gmail.com sender suspect."""
+        assert suspected_impersonation("jean@gmail.com", "Bonjour.", None, CUSTOMERS) is None
+
+    def test_reports_every_signal_found(self):
+        finding = suspected_impersonation(
+            "compta@acme-fr.com", "Facture ACME.", invoice("inv_002"), CUSTOMERS
+        )
+
+        assert finding is not None
+        assert self.signals(finding) == {
+            ("known_invoice", "cus_acme"),
+            ("lookalike_domain", "cus_acme"),
+            ("company_name", "cus_acme"),
+        }
 
 
 @pytest.mark.parametrize("code", list(RuleCode))

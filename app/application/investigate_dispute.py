@@ -2,7 +2,9 @@
 
 Order matters and is the architecture in miniature:
 
-1. load the billing context, once, in full;
+1. load the billing context, once, in full -- or, when the sender matches
+   no customer, stop there: there is no context to load, and nothing about
+   any account is said to an address we do not know (ADR-007);
 2. run the deterministic rules -- they are free, instant and certain;
 3. if the message tries to address the system, stop here and hand it to a
    human, without ever calling the model;
@@ -31,14 +33,16 @@ from app.decision.base import (
     RecommendedAction,
 )
 from app.domain.enums import RuleCode
-from app.domain.models import BillingContext, Dispute, RuleFinding
+from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
 from app.domain.money import Money
 from app.domain.rules import (
     detect_duplicate_invoice,
     invoice_after_cancellation,
     proration_mismatch,
+    suspected_impersonation,
     suspected_prompt_injection,
     suspicious_usage_delta,
+    unknown_customer,
     unknown_invoice,
 )
 from app.observability import tracing
@@ -143,7 +147,11 @@ class DisputeInvestigator:
         now = now or datetime.now(UTC)
         trace = [event("run_started", engine=self._engine.name)]
 
-        context = await self.load_context(dispute, now)
+        customer = await self._find_customer(dispute)
+        if customer is None:
+            return self._finish(await self._unknown_sender(dispute, trace), trace)
+
+        context = await self._load_context_for(customer, dispute, now)
         trace.append(
             event(
                 "billing_context_loaded",
@@ -164,9 +172,7 @@ class DisputeInvestigator:
         if injection is not None:
             trace.append(event("injection_suspected", matched=injection.evidence.get("categories")))
             trace.append(event("decision_engine_skipped"))
-            return self._finish(
-                self._short_circuit(dispute, context, findings, injection), trace
-            )
+            return self._finish(self._short_circuit(dispute, findings, injection), trace)
 
         decision = await self._engine.decide(dispute, context, findings)
         trace.append(
@@ -224,14 +230,21 @@ class DisputeInvestigator:
     # -- steps -------------------------------------------------------------
 
     async def load_context(self, dispute: Dispute, now: datetime) -> BillingContext:
-        customer = None
-        if dispute.customer_id:
-            customer = await self._provider.get_customer(dispute.customer_id)
-        elif dispute.customer_email:
-            customer = await self._provider.find_customer_by_email(dispute.customer_email)
+        customer = await self._find_customer(dispute)
         if customer is None:
             raise ValueError("a dispute must identify a customer by id or by email")
+        return await self._load_context_for(customer, dispute, now)
 
+    async def _find_customer(self, dispute: Dispute) -> Customer | None:
+        if dispute.customer_id:
+            return await self._provider.get_customer(dispute.customer_id)
+        if dispute.customer_email:
+            return await self._provider.find_customer_by_email(dispute.customer_email)
+        return None
+
+    async def _load_context_for(
+        self, customer: Customer, dispute: Dispute, now: datetime
+    ) -> BillingContext:
         subscriptions = await self._provider.list_subscriptions(customer.id)
         invoices = await self._provider.list_invoices(customer.id, since=now - LOOKBACK)
         payments = await self._provider.list_payments(customer.id)
@@ -302,16 +315,64 @@ class DisputeInvestigator:
             return None
         return suspicious_usage_delta(expected=usage.quantity, billed=line.quantity)
 
+    async def _unknown_sender(
+        self, dispute: Dispute, trace: list[AuditEvent]
+    ) -> InvestigationResult:
+        """The sender matches no customer. See ADR-007.
+
+        No billing context exists to give the engine, so it is never called.
+        The injection screen still runs first, on the raw text. Then either
+        the message reaches for a known customer's account -- a human looks,
+        and nothing is proposed -- or it does not, and the sender is asked to
+        write from the address we know.
+        """
+        trace.append(event("customer_not_found"))
+
+        findings: list[RuleFinding] = []
+        injection = suspected_prompt_injection(dispute.customer_message)
+        if injection is not None:
+            findings.append(injection)
+
+        unknown = unknown_customer(dispute.customer_email, None)
+        assert unknown is not None  # no customer was found: the rule always fires
+        findings.append(unknown)
+
+        invoice = (
+            await self._provider.find_invoice(dispute.invoice_id) if dispute.invoice_id else None
+        )
+        impersonation = suspected_impersonation(
+            dispute.customer_email,
+            dispute.customer_message,
+            invoice,
+            await self._provider.list_customers(),
+        )
+        if impersonation is not None:
+            findings.append(impersonation)
+
+        trace.extend(
+            event("rule_evaluated", code=f.code.value, severity=f.severity.value)
+            for f in findings
+        )
+        if injection is not None:
+            trace.append(event("injection_suspected", matched=injection.evidence.get("categories")))
+        trace.append(event("decision_engine_skipped"))
+
+        blocking = injection or impersonation
+        if blocking is not None:
+            return self._short_circuit(dispute, findings, blocking)
+        return self._ask_for_known_address(dispute, findings, unknown)
+
     # -- assembly ----------------------------------------------------------
 
     def _short_circuit(
         self,
         dispute: Dispute,
-        context: BillingContext,
         findings: list[RuleFinding],
-        injection: RuleFinding,
+        blocking: RuleFinding,
     ) -> InvestigationResult:
-        """The model is never asked about a message that targets the system."""
+        """The model is never asked about a message a blocking rule caught:
+        one that targets the system, or one that reaches for an account its
+        sender does not hold."""
         return InvestigationResult(
             run_id=_new_run_id(),
             dispute=dispute,
@@ -325,9 +386,42 @@ class DisputeInvestigator:
             proposed_action=ProposedAction(type="none"),
             authorization=ActionAuthorization(
                 verdict=Verdict.HUMAN_REVIEW,
-                reason=f"Constat bloquant : {injection.code.value}.",
+                reason=f"Constat bloquant : {blocking.code.value}.",
             ),
-            short_circuited_by=injection.code,
+            short_circuited_by=blocking.code,
+        )
+
+    def _ask_for_known_address(
+        self,
+        dispute: Dispute,
+        findings: list[RuleFinding],
+        unknown: RuleFinding,
+    ) -> InvestigationResult:
+        """Ask the sender to write from the address we know.
+
+        Authorised by the policy like any engine decision would be: a question
+        moves no money. The explanation is built from the findings alone, so
+        the reply names no customer.
+        """
+        decision = Decision(
+            classification=Classification.INSUFFICIENT_INFORMATION,
+            confidence=1.0,
+            confidence_kind="calibrated",  # a rule fired; there is nothing to estimate
+            recommended_action=RecommendedAction.REQUEST_INFORMATION,
+        )
+        return InvestigationResult(
+            run_id=_new_run_id(),
+            dispute=dispute,
+            classification=decision.classification,
+            confidence=decision.confidence,
+            confidence_kind=decision.confidence_kind,
+            decision_engine="none",
+            decision_engine_version="",
+            findings=findings,
+            explanation=deterministic_explanation(findings),
+            proposed_action=ProposedAction(type="request_information"),
+            authorization=self._policy.evaluate(decision, findings),
+            short_circuited_by=unknown.code,
         )
 
     def _assemble(

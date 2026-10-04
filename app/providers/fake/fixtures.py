@@ -63,7 +63,12 @@ def _money(raw: dict[str, Any], key: str, currency: str) -> Money:
 
 
 def _customer(raw: dict[str, Any]) -> Customer:
-    return Customer(id=raw["id"], email=raw["email"], currency=raw.get("currency"))
+    return Customer(
+        id=raw["id"],
+        email=raw["email"],
+        currency=raw.get("currency"),
+        display_name=raw.get("display_name"),
+    )
 
 
 def _subscription(raw: dict[str, Any]) -> Subscription:

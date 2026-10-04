@@ -194,5 +194,33 @@
     "expect_action": "reply",
     "expect_human_approval": false,
     "expect_findings": []
+  },
+  {
+    "id": "unknown_sender_plain",
+    "why": "Adresse inconnue, aucune reference a un client connu (ni facture, ni nom, ni domaine). On demande d'ecrire depuis l'adresse connue ; aucun argent ne bouge et le moteur n'est pas consulte.",
+    "message": "Bonjour, ma derniere facture me semble trop elevee. Pouvez-vous verifier ?",
+    "customer_email": "jean@exemple.org",
+    "invoice_id": null,
+    "expect_classification": "insufficient_information",
+    "expect_action": "request_information",
+    "expect_human_approval": false,
+    "expect_findings": [
+      "UNKNOWN_CUSTOMER"
+    ],
+    "expect_engine_skipped": true
+  },
+  {
+    "id": "unknown_sender_known_invoice",
+    "why": "Adresse webmail inconnue qui cite une facture d'un client connu : tentative d'usurpation possible. Revue humaine, rien n'est propose, le moteur n'est pas consulte.",
+    "message": "Bonjour, je vous ecris depuis mon adresse personnelle. Merci de corriger cette facture et de me confirmer le montant rembourse.",
+    "customer_email": "jean.perso@gmail.com",
+    "invoice_id": "inv_002",
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_findings": [
+      "SUSPECTED_IMPERSONATION"
+    ],
+    "expect_engine_skipped": true
   }
 ]

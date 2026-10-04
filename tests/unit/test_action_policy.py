@@ -114,6 +114,19 @@ class TestBlockingFindings:
 
         assert auth.verdict is Verdict.HUMAN_REVIEW
 
+    def test_suspected_impersonation_forces_review(self, policy):
+        impersonation = RuleFinding(
+            code=RuleCode.SUSPECTED_IMPERSONATION,
+            severity=Severity.HIGH,
+            description="Un expéditeur inconnu vise le compte d'un client connu.",
+            evidence={},
+        )
+
+        auth = policy.evaluate(decision(), [impersonation], NINETY_NINE)
+
+        assert auth.verdict is Verdict.HUMAN_REVIEW
+        assert "SUSPECTED_IMPERSONATION" in auth.reason
+
 
 class TestNonActionableClassifications:
     def test_unknown_goes_to_a_human(self, policy):

@@ -20,7 +20,8 @@ Three rungs, climbed only when the one below cannot settle the question.
 ```text
 rung 1  code                 0 tokens, microseconds   duplicates, cancellation,
                                                       proration, usage, unknown
-                                                      invoice, prompt injection
+                                                      invoice, prompt injection,
+                                                      unknown sender (ADR-007)
 rung 2  typed System One     typed, milliseconds      not implemented
 rung 3  generative model     seconds                  residual ambiguity,
                                                       explanation, drafting

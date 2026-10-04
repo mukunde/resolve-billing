@@ -28,6 +28,7 @@ class Customer(BaseModel):
     id: str
     email: str
     currency: str | None = None
+    display_name: str | None = None
 
 
 class Subscription(BaseModel):

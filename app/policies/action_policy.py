@@ -71,7 +71,9 @@ class AutonomyPolicy(BaseModel):
 
 
 #: Findings that stop the system acting, whatever the engine concluded.
-BLOCKING_FINDINGS = frozenset({RuleCode.SUSPECTED_PROMPT_INJECTION})
+BLOCKING_FINDINGS = frozenset(
+    {RuleCode.SUSPECTED_PROMPT_INJECTION, RuleCode.SUSPECTED_IMPERSONATION}
+)
 
 #: Classifications on which no financial action may be taken, whatever the
 #: engine recommends. Proposing a credit note while unable to say what

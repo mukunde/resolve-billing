@@ -50,6 +50,9 @@ class FakeBillingProvider:
         target = email.strip().lower()
         return next((c for c in self._customers if c.email.lower() == target), None)
 
+    async def list_customers(self) -> list[Customer]:
+        return list(self._customers)
+
     async def get_subscription(self, subscription_id: str) -> Subscription:
         found = next((s for s in self._subscriptions if s.id == subscription_id), None)
         if found is None:
@@ -64,6 +67,9 @@ class FakeBillingProvider:
         if found is None:
             raise NotFound(f"unknown invoice {invoice_id!r}")
         return found
+
+    async def find_invoice(self, invoice_id: str) -> Invoice | None:
+        return next((i for i in self._invoices if i.id == invoice_id), None)
 
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]:
         return [

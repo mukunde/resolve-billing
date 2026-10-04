@@ -734,3 +734,4 @@ wish list.
 | [ADR-004](docs/adr/004-human-approval-financial-actions.md) | Human approval for financial mutations |
 | [ADR-005](docs/adr/005-money-as-minor-units.md) | Money as integer minor units |
 | [ADR-006](docs/adr/006-no-agent-framework.md) | No agent framework |
+| [ADR-007](docs/adr/007-unknown-sender.md) | An unknown sender gets a result, not an error |

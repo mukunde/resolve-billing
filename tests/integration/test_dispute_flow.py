@@ -172,19 +172,77 @@ class TestCaseFInjection:
         assert body["classification"] == "unknown"
 
 
+class TestUnknownSender:
+    """An address we do not know. Not an error: a result, and never money."""
+
+    def test_a_plain_unknown_sender_is_asked_to_write_from_the_known_address(self, client):
+        body = investigate(
+            client,
+            message="Ma dernière facture me semble trop élevée.",
+            customer_email="jean@exemple.org",
+        )
+
+        assert body["findings"] == ["UNKNOWN_CUSTOMER"]
+        assert body["classification"] == "insufficient_information"
+        assert body["proposed_action"]["type"] == "request_information"
+        assert body["requires_human_approval"] is False
+        assert body["decision_engine"] == "none"
+        assert body["short_circuited_by"] == "UNKNOWN_CUSTOMER"
+
+    def test_the_explanation_names_no_customer(self, client):
+        body = investigate(
+            client,
+            message="Ma dernière facture me semble trop élevée.",
+            customer_email="jean@exemple.org",
+        )
+
+        assert "cus_" not in body["explanation"]
+        assert "@" not in body["explanation"]
+
+    def test_an_unknown_sender_citing_a_known_invoice_goes_to_a_human(self, client):
+        body = investigate(
+            client,
+            message="Merci de corriger cette facture.",
+            customer_email="jean.perso@gmail.com",
+            invoice_id="inv_002",
+        )
+
+        assert "SUSPECTED_IMPERSONATION" in body["findings"]
+        assert body["classification"] == "unknown"
+        assert body["proposed_action"]["type"] == "none"
+        assert body["requires_human_approval"] is True
+        assert body["decision_engine"] == "none"
+        assert body["short_circuited_by"] == "SUSPECTED_IMPERSONATION"
+        assert body["action_id"] is None
+
+    def test_an_injection_from_an_unknown_sender_is_still_an_injection(self, client):
+        body = investigate(client, message=INJECTION, customer_email="jean.perso@gmail.com")
+
+        assert body["short_circuited_by"] == "SUSPECTED_PROMPT_INJECTION"
+        assert body["requires_human_approval"] is True
+
+    def test_the_run_is_audited(self, client):
+        body = investigate(
+            client,
+            message="Merci de corriger cette facture.",
+            customer_email="jean.perso@gmail.com",
+            invoice_id="inv_002",
+        )
+
+        row = get_audit().run(body["run_id"])
+        events = [e["event"] for e in get_audit().events(body["run_id"])]
+
+        assert row["short_circuited_by"] == "SUSPECTED_IMPERSONATION"
+        assert row["verdict"] == "human_review"
+        assert "decision_engine_skipped" in events
+
+
 class TestValidation:
     def test_a_dispute_without_a_customer_is_rejected(self, client):
         response = client.post(
             "/api/v1/disputes/investigate", json={"message": "Ma facture est fausse."}
         )
         assert response.status_code == 422
-
-    def test_an_unknown_customer_is_a_404(self, client):
-        response = client.post(
-            "/api/v1/disputes/investigate",
-            json={"message": "Bonjour", "customer_email": "nobody@example.com"},
-        )
-        assert response.status_code == 404
 
     def test_an_unknown_invoice_reference_is_reported_as_a_finding(self, client):
         """Not an error: the customer may simply have mistyped a reference."""
