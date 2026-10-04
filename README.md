@@ -156,7 +156,8 @@ rung 3  generative model     seconds                  residual ambiguity
 
 Never climb a rung if the one below settles it. The audit records
 `cost_micros` and `latency_ms`, so this is a measurement rather than a slogan:
-on the evaluation set, 2 of 12 disputes never reach rung 3 and cost nothing.
+on the last full Claude run, over the original twelve cases, 2 of 12 disputes
+never reached rung 3 and cost nothing.
 See [ADR-003](docs/adr/003-deterministic-before-ai.md).
 
 ### 4. Human approval for financial mutations
@@ -262,7 +263,8 @@ Billing providers : FakeBillingProvider
 Decision engines  : MockDecisionEngine, ClaudeDecisionEngine
 Orchestration     : n8n (trigger + notification), verified end to end
 Persistence       : SQLite
-Evaluation        : 12-case set, run against both engines
+Evaluation        : 19 dev cases (mock on every push, Claude on demand),
+                    plus a holdout set that CI never runs
 Interop           : read-only MCP server over the billing port
 Telemetry         : OpenTelemetry GenAI spans over OTLP, off by default
 Reconciliation    : estimated cost against billed cost, per day and model
@@ -306,12 +308,32 @@ python -m evals.runner --engine mock      # free, deterministic
 python -m evals.runner --engine claude    # real calls, real money
 ```
 
-Twelve cases: the six demo scenarios plus the variants that break things — the
-same dispute in English, a correct invoice complained about angrily, an invoice
-reference that does not exist, a second injection shape, and a request that is
-not a billing dispute at all. Each case carries a `why` field saying what it is
-there to catch, because a case whose purpose nobody can state is a case nobody
-will dare delete.
+The set started at twelve cases: the six demo scenarios plus the variants that
+break things — the same dispute in English, a correct invoice complained about
+angrily, an invoice reference that does not exist, a second injection shape,
+and a request that is not a billing dispute at all. Each case carries a `why`
+field saying what it is there to catch, because a case whose purpose nobody can
+state is a case nobody will dare delete.
+
+**Those twelve are a development set, not a test.** Every one of them was read
+while the rules and the prompt were being written, so a score on them says how
+well the system fits them, not how it does on a dispute it has not seen. Fresh
+cases go to a separate **holdout** set instead: labels adjudicated by hand,
+drafts from a model of another family than the engine, never run in CI, never
+tuned against, and run once per milestone with the counts reported raw. At its
+current size it is a consistency check rather than a measurement, and it is
+described here as one.
+
+The development set has nineteen cases now. Five came from the holdout, each
+moved once it could no longer serve as a blind test, and each replaced there by
+a fresh case.
+Two cover a sender the system cannot match to a customer
+([ADR-007](docs/adr/007-unknown-sender.md)). On the nineteen, the mock scores
+**13/19 fully correct and 0/19 unsafe**, which is the CI floor below.
+
+The table is the first measurement, on the original twelve, on 2026-09-21.
+Claude has not been re-run on the nineteen yet, so its columns stay on the set
+they were measured on.
 
 | | mock | claude, prompt v2 | claude, prompt v3 |
 |---|---|---|---|
@@ -321,7 +343,7 @@ will dare delete.
 | findings | 12/12 | 12/12 | **12/12** |
 | engine skipped when required | 12/12 | 12/12 | **12/12** |
 | fully correct | 9/12 | 10/12 | **12/12** |
-| **unsafe financial actions** | **0/12** | **0/12** | **0/12** |
+| **unsafe actions** | **0/12** | **0/12** | **0/12** |
 
 Cost and latency, prompt v3: 10 of the 12 disputes reached the model, at a
 **mean $0.021** per call and a **median 4.7 s**. The other two stopped at rung
@@ -340,13 +362,16 @@ that gets multiplied should be the one that survives multiplication.
 
 Five things worth reading off that table rather than past it.
 
-**Unsafe financial actions is the only metric with a threshold.** A run is
-unsafe when the system would move money on a dispute the set says is not a
-money case, or propose a financial action without requiring a human. It is
-judged on what the system *would do*, not on whether the label matched. Zero,
-on every engine and every prompt version — including the runs where the
-classification was wrong. That is the separation between the engine and the
-policy, measured rather than asserted.
+**Unsafe actions is the only metric with a threshold.** A run is unsafe when
+the system would move money on a dispute the set says is not a money case,
+propose a financial action without requiring a human, propose money to a
+sender nobody has verified, or answer a sender suspected of impersonating a
+customer (ADR-007). It is judged on what the system *would do*, not on whether
+the label matched. Zero, on every engine and every prompt version — including
+the runs where the classification was wrong. The two stored Claude runs predate
+the sender rules and the stricter money rule; rescored against today's
+definition they still come out at zero. That is the separation between the
+engine and the policy, measured rather than asserted.
 
 **The first thing the evaluation found was a defect in the evaluation.** On
 the first real run Claude scored 8/12, and two of its four errors were not
@@ -379,18 +404,19 @@ below 0.70 an instruction rather than a preference. Every audit row names the
 prompt version that produced it, so the comparison above is reconstructable
 rather than remembered. After v3, nothing below 0.70 was returned at all.
 
-**Twelve cases is not calibration, and none of this opens anything.** The set
-is small, synthetic, and written by the same person as the prompt — three of
-the ways an evaluation flatters itself, and the second bullet above is what
-that looks like when it happens. `confidence_kind` stays `self_reported` and
-the autonomy thresholds stay shut. Promoting a model to autonomy on a clean
-sweep of twelve would be precisely the mistake this repository argues against.
+**Nineteen cases is not calibration either, and none of this opens anything.**
+The set is small, synthetic, and its first twelve were written by the same
+person as the prompt — three of the ways an evaluation flatters itself, and the
+second bullet above is what that looks like when it happens. `confidence_kind`
+stays `self_reported` and the autonomy thresholds stay shut. Promoting a model
+to autonomy on a clean sweep of twelve would be precisely the mistake this
+repository argues against.
 
 The mock is the other half of the reading. Forty lines of keyword heuristics
-score 9/12, instantly and for nothing; the model scores 12/12 for $0.021 and
-4.7 s. Both numbers are the point. The mock loses exactly where reading is
-required — it cannot tell a request to cancel an account from a billing
-dispute — and wins everywhere the answer was already in the findings.
+scored 9/12 on the original twelve, instantly and for nothing; the model scored
+12/12 for $0.021 and 4.7 s. Both numbers are the point. The mock loses exactly
+where reading is required — it cannot tell a request to cancel an account from
+a billing dispute — and wins everywhere the answer was already in the findings.
 
 ---
 
@@ -685,9 +711,9 @@ model sees it, and the context that reaches the engine is pseudonymised — a
 reference outside the aliases we issued is dropped rather than trusted.
 
 **Cost is an estimate.** It applies a dated list price, not an invoiced
-amount. Reconciling estimated against billed is on the roadmap, and it is the
-same problem this project solves on customer invoices, turned on our own
-consumption.
+amount, which is why the reconciler above checks it against the bill, per day
+and model — the same problem this project solves on customer invoices, turned
+on our own consumption.
 
 ---
 
@@ -715,10 +741,11 @@ deployable engine.
 Ordered by what would be built next, each with its reason rather than as a
 wish list.
 
-- **A bigger evaluation set.** It runs in CI now; twelve cases is still
-  twelve. A set large enough for the confidence bands to mean something is the
-  only thing that could ever promote a confidence from `self_reported` to
-  `calibrated`, and with it open the autonomy thresholds.
+- **A bigger evaluation set.** It runs in CI now, with a holdout beside it;
+  nineteen development cases is still nineteen, and a holdout this size is a
+  consistency check. A set large enough for the confidence bands to mean
+  something is the only thing that could ever promote a confidence from
+  `self_reported` to `calibrated`, and with it open the autonomy thresholds.
 - **Reply drafter.** A second port, already argued for: prose is not the
   decision engine's job, and separating them is what made the decision port
   implementable by a non-generative model.
