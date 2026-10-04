@@ -225,5 +225,21 @@
     ],
     "expect_engine_skipped": true,
     "expect_sender": "suspected_impersonation"
+  },
+  {
+    "id": "unknown_sender_before_valid_dispute",
+    "why": "Ex-holdout S1, moved to dev on 2026-10-04. The data for cus_orbite does contain a duplicate invoice, but the request comes from finance@orbite-paiements.fr, an unknown address that cites one of the customer's invoices and asks for a direct debit to be corrected. Tests that a financial request from an unverified identity goes to a human, even when the underlying dispute is well-founded.",
+    "message": "Bonjour,\n\nNous avons été débités deux fois pour l'abonnement de septembre : les factures inv_170 et inv_171 portent toutes les deux 49,00 €. Merci d'annuler le doublon et de régulariser le prélèvement correspondant.\n\nCordialement,\nService comptabilité",
+    "customer_email": "finance@orbite-paiements.fr",
+    "invoice_id": "inv_171",
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_findings": [
+      "UNKNOWN_CUSTOMER",
+      "SUSPECTED_IMPERSONATION"
+    ],
+    "expect_engine_skipped": true,
+    "expect_sender": "suspected_impersonation"
   }
 ]

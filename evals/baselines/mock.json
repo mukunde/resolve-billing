@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "cd0e9a0527e9c203",
+  "cases_sha256": "ac0b035f93155c1e",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -140,6 +140,14 @@
       "sender": true
     },
     "unknown_sender_known_invoice": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true
+    },
+    "unknown_sender_before_valid_dispute": {
       "classification": true,
       "action": true,
       "approval": true,
