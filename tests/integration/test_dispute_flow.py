@@ -56,6 +56,9 @@ class TestCaseADuplicate:
     def test_classified_as_duplicate_billing(self, body):
         assert body["classification"] == "duplicate_billing"
 
+    def test_the_sender_is_known(self, body):
+        assert body["sender"] == "known"
+
     def test_credit_note_is_proposed_for_the_invoice_amount(self, body):
         """The engine names the action; the amount comes off the invoice."""
         assert body["proposed_action"] == {
@@ -183,6 +186,7 @@ class TestUnknownSender:
         )
 
         assert body["findings"] == ["UNKNOWN_CUSTOMER"]
+        assert body["sender"] == "unknown"
         assert body["classification"] == "insufficient_information"
         assert body["proposed_action"]["type"] == "request_information"
         assert body["requires_human_approval"] is False
@@ -208,6 +212,7 @@ class TestUnknownSender:
         )
 
         assert "SUSPECTED_IMPERSONATION" in body["findings"]
+        assert body["sender"] == "suspected_impersonation"
         assert body["classification"] == "unknown"
         assert body["proposed_action"]["type"] == "none"
         assert body["requires_human_approval"] is True
@@ -219,6 +224,7 @@ class TestUnknownSender:
         body = investigate(client, message=INJECTION, customer_email="jean.perso@gmail.com")
 
         assert body["short_circuited_by"] == "SUSPECTED_PROMPT_INJECTION"
+        assert body["sender"] == "unknown"
         assert body["requires_human_approval"] is True
 
     def test_the_run_is_audited(self, client):
@@ -233,6 +239,7 @@ class TestUnknownSender:
         events = [e["event"] for e in get_audit().events(body["run_id"])]
 
         assert row["short_circuited_by"] == "SUSPECTED_IMPERSONATION"
+        assert row["sender"] == "suspected_impersonation"
         assert row["verdict"] == "human_review"
         assert "decision_engine_skipped" in events
 

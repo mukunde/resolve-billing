@@ -63,6 +63,30 @@ def test_the_floor_holds_against_the_worst_run():
     assert variance.report("x", [good, bad, good], min_fully_correct=2) == 1
 
 
+def test_a_stored_outcome_without_a_sender_check_still_counts():
+    """Files stored before the check existed hold only known senders: an
+    unknown one used to raise before any outcome was written."""
+    assert variance.fully_correct(outcome("a"))
+    assert not variance.fully_correct(outcome("a") | {"sender_ok": False})
+
+
+async def test_the_runner_checks_the_sender_and_defaults_to_known(tmp_path):
+    dev = {c["id"]: c for c in json.loads(runner.CASES_PATH.read_text(encoding="utf-8"))}
+    unlabelled = {k: v for k, v in dev["unknown_sender_plain"].items() if k != "expect_sender"}
+    path = tmp_path / "senders.json"
+    path.write_text(
+        json.dumps([dev["unknown_sender_plain"], unlabelled | {"id": "unlabelled"}]),
+        encoding="utf-8",
+    )
+
+    outcomes, _ = await runner.run("mock", path)
+    labelled, defaulted = outcomes
+
+    assert labelled.sender_ok and labelled.ok
+    assert labelled.got["sender"] == "unknown"
+    assert not defaulted.sender_ok and not defaulted.ok
+
+
 def test_a_single_run_file_loads_as_one_run(tmp_path):
     path = tmp_path / "single.json"
     path.write_text(json.dumps({"engine": "mock", "outcomes": [outcome("a")]}))

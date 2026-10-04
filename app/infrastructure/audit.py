@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     explanation              TEXT    NOT NULL,
     findings_json            TEXT    NOT NULL,
     short_circuited_by       TEXT,
+    sender                   TEXT,
 
     proposed_action          TEXT    NOT NULL,
     amount_minor             INTEGER,
@@ -126,6 +127,10 @@ class SqliteAuditRepository:
             # their own rate, and a bill we cannot break down is a bill
             # we can only argue with.
             ("cache_read_input_tokens", "INTEGER"),
+            # NULL on rows written before it existed: those runs could only
+            # have had a known sender, but the row should not claim a fact
+            # nobody recorded.
+            ("sender", "TEXT"),
         ):
             if column not in held:
                 self._connection.execute(
@@ -158,7 +163,7 @@ class SqliteAuditRepository:
                     billing_provider, decision_engine, decision_engine_version,
                     customer_id, invoice_id, input_message,
                     classification, confidence, confidence_kind, explanation,
-                    findings_json, short_circuited_by,
+                    findings_json, short_circuited_by, sender,
                     proposed_action, amount_minor, currency,
                     verdict, authorization_reason, autonomy_available,
                     model_id, prompt_version,
@@ -169,7 +174,7 @@ class SqliteAuditRepository:
                     :billing_provider, :decision_engine, :decision_engine_version,
                     :customer_id, :invoice_id, :input_message,
                     :classification, :confidence, :confidence_kind, :explanation,
-                    :findings_json, :short_circuited_by,
+                    :findings_json, :short_circuited_by, :sender,
                     :proposed_action, :amount_minor, :currency,
                     :verdict, :authorization_reason, :autonomy_available,
                     :model_id, :prompt_version,
@@ -199,6 +204,7 @@ class SqliteAuditRepository:
                     "short_circuited_by": (
                         result.short_circuited_by.value if result.short_circuited_by else None
                     ),
+                    "sender": result.sender.value,
                     "proposed_action": action.type,
                     "amount_minor": action.amount.amount_minor if action.amount else None,
                     "currency": action.amount.currency if action.amount else None,

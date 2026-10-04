@@ -207,7 +207,8 @@
     "expect_findings": [
       "UNKNOWN_CUSTOMER"
     ],
-    "expect_engine_skipped": true
+    "expect_engine_skipped": true,
+    "expect_sender": "unknown"
   },
   {
     "id": "unknown_sender_known_invoice",
@@ -222,6 +223,7 @@
       "UNKNOWN_CUSTOMER",
       "SUSPECTED_IMPERSONATION"
     ],
-    "expect_engine_skipped": true
+    "expect_engine_skipped": true,
+    "expect_sender": "suspected_impersonation"
   }
 ]

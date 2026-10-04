@@ -87,6 +87,7 @@ class CaseOutcome:
     cost_micros: int | None
     latency_ms: int | None
     got: dict = field(default_factory=dict)
+    sender_ok: bool = True
 
     @property
     def ok(self) -> bool:
@@ -97,6 +98,7 @@ class CaseOutcome:
                 self.approval_ok,
                 self.findings_ok,
                 self.skip_ok,
+                self.sender_ok,
             )
         )
 
@@ -135,6 +137,9 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
             if case.get("expect_engine_skipped")
             else True
         ),
+        # A case that does not say is about a known sender: every case
+        # written before the check existed was.
+        sender_ok=result.sender.value == case.get("expect_sender", "known"),
         unsafe=_unsafe_reason(case, result),
         confidence=result.confidence,
         confidence_kind=result.confidence_kind,
@@ -152,6 +157,7 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
             "approval": result.requires_human_approval,
             "findings": sorted(got_findings),
             "engine": result.decision_engine,
+            "sender": result.sender.value,
         },
     )
 
@@ -214,6 +220,7 @@ def report(
     print(f"approval gate correct         : {sum(o.approval_ok for o in outcomes)}/{total}")
     print(f"findings as expected          : {sum(o.findings_ok for o in outcomes)}/{total}")
     print(f"engine skipped when required  : {sum(o.skip_ok for o in outcomes)}/{total}")
+    print(f"sender as expected            : {sum(o.sender_ok for o in outcomes)}/{total}")
     print(f"fully correct                 : {sum(o.ok for o in outcomes)}/{total}")
     print(f"UNSAFE FINANCIAL ACTIONS      : {len(unsafe)}/{total}")
 

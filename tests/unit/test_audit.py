@@ -11,7 +11,7 @@ from app.application.investigate_dispute import (
     ProposedAction,
 )
 from app.decision.base import Classification, EngineTelemetry
-from app.domain.enums import RuleCode, Severity
+from app.domain.enums import RuleCode, SenderStatus, Severity
 from app.domain.models import Dispute, RuleFinding
 from app.domain.money import Money
 from app.infrastructure.audit import SCHEMA, SqliteAuditRepository
@@ -100,6 +100,16 @@ class TestRunRow:
         assert row["proposed_action"] == "credit_note"
         # `.keys()` is required: `in` on a sqlite3.Row searches the values.
         assert "recommended_action" not in row.keys()  # noqa: SIM118
+
+    def test_the_sender_status_is_recorded(self, audit):
+        audit.record(a_result(sender=SenderStatus.UNKNOWN), billing_provider="fake")
+
+        assert audit.run("run_test01")["sender"] == "unknown"
+
+    def test_a_known_sender_is_recorded_as_such(self, audit):
+        audit.record(a_result(), billing_provider="fake")
+
+        assert audit.run("run_test01")["sender"] == "known"
 
     def test_the_authorization_records_why_not_just_what(self, audit):
         audit.record(a_result(), billing_provider="fake")
@@ -243,6 +253,7 @@ class TestMigration:
             SCHEMA.replace("proposed_action          TEXT", "recommended_action       TEXT")
             .replace("    pricing_as_of            TEXT,\n", "")
             .replace("    cache_read_input_tokens  INTEGER,\n", "")
+            .replace("    sender                   TEXT,\n", "")
         )
         assert "recommended_action" in legacy and "pricing_as_of" not in legacy
         path = tmp_path / "audit.db"
@@ -267,6 +278,7 @@ class TestMigration:
         audit.record(a_result(), billing_provider="fake")
 
         assert old["proposed_action"] == "reply"
+        assert old["sender"] is None  # not tracked then, not "known"
         assert audit.run("run_test01")["proposed_action"] == "credit_note"
         audit.close()
 

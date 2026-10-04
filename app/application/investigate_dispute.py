@@ -32,7 +32,7 @@ from app.decision.base import (
     EngineTelemetry,
     RecommendedAction,
 )
-from app.domain.enums import RuleCode
+from app.domain.enums import RuleCode, SenderStatus
 from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
 from app.domain.money import Money
 from app.domain.rules import (
@@ -85,6 +85,8 @@ class InvestigationResult(BaseModel):
     """Set when a financial action is queued for a human to approve."""
     telemetry: EngineTelemetry | None = None
     short_circuited_by: RuleCode | None = None
+    sender: SenderStatus = SenderStatus.KNOWN
+    """Whether we know who wrote. Decided by the rules, never by the engine."""
 
     @property
     def requires_human_approval(self) -> bool:
@@ -357,9 +359,14 @@ class DisputeInvestigator:
             trace.append(event("injection_suspected", matched=injection.evidence.get("categories")))
         trace.append(event("decision_engine_skipped"))
 
+        sender = (
+            SenderStatus.SUSPECTED_IMPERSONATION
+            if impersonation is not None
+            else SenderStatus.UNKNOWN
+        )
         blocking = injection or impersonation
         if blocking is not None:
-            return self._short_circuit(dispute, findings, blocking)
+            return self._short_circuit(dispute, findings, blocking, sender)
         return self._ask_for_known_address(dispute, findings, unknown)
 
     # -- assembly ----------------------------------------------------------
@@ -369,6 +376,7 @@ class DisputeInvestigator:
         dispute: Dispute,
         findings: list[RuleFinding],
         blocking: RuleFinding,
+        sender: SenderStatus = SenderStatus.KNOWN,
     ) -> InvestigationResult:
         """The model is never asked about a message a blocking rule caught:
         one that targets the system, or one that reaches for an account its
@@ -389,6 +397,7 @@ class DisputeInvestigator:
                 reason=f"Constat bloquant : {blocking.code.value}.",
             ),
             short_circuited_by=blocking.code,
+            sender=sender,
         )
 
     def _ask_for_known_address(
@@ -422,6 +431,7 @@ class DisputeInvestigator:
             proposed_action=ProposedAction(type="request_information"),
             authorization=self._policy.evaluate(decision, findings),
             short_circuited_by=unknown.code,
+            sender=SenderStatus.UNKNOWN,
         )
 
     def _assemble(

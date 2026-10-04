@@ -50,7 +50,7 @@ def rescore(result_path: Path) -> int:
     print(f"jeu de cas actuel             : {current}")
 
     totals = dict.fromkeys(
-        ("classification", "action", "approval", "findings", "skip", "full"), 0
+        ("classification", "action", "approval", "findings", "skip", "sender", "full"), 0
     )
     changed = []
 
@@ -67,6 +67,8 @@ def rescore(result_path: Path) -> int:
             "approval": got["approval"] == case["expect_human_approval"],
             "findings": set(case.get("expect_findings", [])) <= set(got["findings"]),
             "skip": (got["engine"] == "none") if case.get("expect_engine_skipped") else True,
+            # Stored runs predating the check had known senders only.
+            "sender": got.get("sender", "known") == case.get("expect_sender", "known"),
         }
         for name, ok in checks.items():
             totals[name] += ok
@@ -77,6 +79,7 @@ def rescore(result_path: Path) -> int:
                 outcome["approval_ok"],
                 outcome["findings_ok"],
                 outcome["skip_ok"],
+                outcome.get("sender_ok", True),
             )
         )
         now_full = all(checks.values())
@@ -92,7 +95,7 @@ def rescore(result_path: Path) -> int:
 
     total = len(stored["outcomes"])
     print()
-    for name in ("classification", "action", "approval", "findings", "skip", "full"):
+    for name in ("classification", "action", "approval", "findings", "skip", "sender", "full"):
         print(f"{name:<30}: {totals[name]}/{total}")
 
     if changed:

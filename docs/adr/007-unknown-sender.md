@@ -49,6 +49,19 @@ human confirming that with the known contact costs one review. Answering a
 stranger about an account because their address ends the right way costs
 more. Webmail domains carry no identity and are never compared.
 
+What the rules found about the sender is its own axis on the result:
+`sender` is `known`, `unknown` or `suspected_impersonation`. It is not a
+`Classification`. The classification says what a dispute is about; the
+sender says whether we know who is asking, and the two vary independently.
+Folding the second into the first would also hand it to the engine, whose
+output schema is built from the classification enum — and the engine knows
+nothing about identity, which the rules settle before it is called. So the
+classifications stay as they are: `insufficient_information` when the
+sender is asked for the known address, `unknown` — not classified, engine
+not called — when a human reviews. The API returns `sender`, the audit
+stores it, and evaluation cases can expect it (`expect_sender`, `known` when
+a case does not say).
+
 The provider port gains two reads: `find_invoice`, which returns `None`
 rather than raising, and `list_customers`, which the comparison needs.
 `Customer` gains an optional `display_name`.

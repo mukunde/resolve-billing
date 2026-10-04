@@ -63,6 +63,8 @@ class InvestigateResponse(BaseModel):
     authorization_reason: str
     action_id: str | None = None
     short_circuited_by: str | None = None
+    sender: str
+    """`known`, `unknown` or `suspected_impersonation`. See ADR-007."""
 
     @classmethod
     def of(cls, result: InvestigationResult) -> InvestigateResponse:
@@ -82,6 +84,7 @@ class InvestigateResponse(BaseModel):
             short_circuited_by=(
                 result.short_circuited_by.value if result.short_circuited_by else None
             ),
+            sender=result.sender.value,
         )
 
 

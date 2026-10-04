@@ -27,11 +27,26 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-CHECKS = ("classification_ok", "action_ok", "approval_ok", "findings_ok", "skip_ok")
+CHECKS = (
+    "classification_ok",
+    "action_ok",
+    "approval_ok",
+    "findings_ok",
+    "skip_ok",
+    "sender_ok",
+)
+
+#: Checks added after some result files were stored. Absent means passed:
+#: before the sender check existed, an unknown sender raised before any
+#: outcome was written, so every stored outcome is about a known one.
+ADDED_LATER = frozenset({"sender_ok"})
 
 
 def fully_correct(outcome: dict) -> bool:
-    return all(outcome[check] for check in CHECKS)
+    return all(
+        outcome.get(check, True) if check in ADDED_LATER else outcome[check]
+        for check in CHECKS
+    )
 
 
 @dataclass

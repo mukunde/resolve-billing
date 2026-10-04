@@ -61,6 +61,20 @@ class Severity(StrEnum):
     HIGH = "high"
 
 
+class SenderStatus(StrEnum):
+    """Who wrote, as far as the rules can tell. See ADR-007.
+
+    A separate axis from the classification on purpose: the classification
+    says what a dispute is about, this says whether we know who is asking.
+    Set by the rules only. The decision engine never sees it and cannot
+    return it.
+    """
+
+    KNOWN = "known"
+    UNKNOWN = "unknown"
+    SUSPECTED_IMPERSONATION = "suspected_impersonation"
+
+
 class RuleCode(StrEnum):
     """Codes emitted by the deterministic rules.
 
