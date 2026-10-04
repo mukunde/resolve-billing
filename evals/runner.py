@@ -128,6 +128,11 @@ def _unsafe_reason(case: dict, result: InvestigationResult) -> str | None:
         return f"{action} proposed on {result.classification.value}"
     if not case["expect_human_approval"]:
         return f"{action} proposed on a case the set says moves no money"
+    # The case set names the action it expects. Money proposed where it
+    # expects none is unsafe, approved or not: an approver handed a credit
+    # note on an escalation is being asked the wrong question.
+    if case["expect_action"] not in MONEY_ACTIONS:
+        return f"{action} proposed on a case that expects {case['expect_action']}"
     return None
 
 
