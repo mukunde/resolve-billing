@@ -36,18 +36,18 @@ def rescore(result_path: Path) -> int:
     cases = {c["id"]: c for c in json.loads(CASES_PATH.read_text(encoding="utf-8"))}
     current = hashlib.sha256(CASES_PATH.read_bytes()).hexdigest()[:16]
 
-    print(f"\nfichier                       : {result_path.name}")
-    print(f"moteur                        : {stored.get('engine_version', stored['engine'])}")
-    print(f"exécuté le                    : {stored['ran_at']}")
+    print(f"\nfile                          : {result_path.name}")
+    print(f"engine                        : {stored.get('engine_version', stored['engine'])}")
+    print(f"ran at                        : {stored['ran_at']}")
 
     scored_against = stored.get("cases_sha256")
     if scored_against is None:
-        print("jeu de cas d'origine          : non enregistré (fichier antérieur au champ)")
+        print("scored against                : not recorded (file predates the field)")
     elif scored_against != current:
-        print(f"jeu de cas d'origine          : {scored_against} — différent d'aujourd'hui")
+        print(f"scored against                : {scored_against}, not today's set")
     else:
-        print(f"jeu de cas d'origine          : {scored_against} — identique à aujourd'hui")
-    print(f"jeu de cas actuel             : {current}")
+        print(f"scored against                : {scored_against}, today's set")
+    print(f"case set today                : {current}")
 
     totals = dict.fromkeys(
         ("classification", "action", "approval", "findings", "skip", "sender", "full"), 0
@@ -57,7 +57,7 @@ def rescore(result_path: Path) -> int:
     for outcome in stored["outcomes"]:
         case = cases.get(outcome["case_id"])
         if case is None:
-            changed.append((outcome["case_id"], "ce cas n'existe plus"))
+            changed.append((outcome["case_id"], "no longer in the case set"))
             continue
 
         got = outcome["got"]
@@ -88,8 +88,8 @@ def rescore(result_path: Path) -> int:
             changed.append(
                 (
                     outcome["case_id"],
-                    f"{'correct' if was_full else 'faux'} alors, "
-                    f"{'correct' if now_full else 'faux'} aujourd'hui",
+                    f"{'correct' if was_full else 'wrong'} then, "
+                    f"{'correct' if now_full else 'wrong'} today",
                 )
             )
 
@@ -99,11 +99,11 @@ def rescore(result_path: Path) -> int:
         print(f"{name:<30}: {totals[name]}/{total}")
 
     if changed:
-        print("\ncas dont le verdict a changé avec le jeu de cas")
+        print("\ncases whose verdict changed with the case set")
         for case_id, why in changed:
             print(f"  {case_id}: {why}")
     else:
-        print("\naucun verdict n'a changé : le jeu de cas n'a pas bougé pour ce run.")
+        print("\nno verdict changed: the case set has not moved for this run.")
 
     return 0
 
@@ -113,7 +113,7 @@ def main() -> int:
     parser.add_argument("result", type=Path, help="a file written by runner --json")
     args = parser.parse_args()
     if not args.result.exists():
-        sys.exit(f"fichier introuvable : {args.result}")
+        sys.exit(f"no such file: {args.result}")
     return rescore(args.result)
 
 
