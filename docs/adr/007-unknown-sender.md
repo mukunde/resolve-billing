@@ -84,8 +84,14 @@ The port says so; the first real adapter has to honour it.
 The lookalike check is a heuristic with named limits. It compares the label
 in front of the extension, so a lookalike hidden in a subdomain of another
 domain (`acme.example-mail.com`) passes, as do multi-part extensions
-(`.co.uk`) and internationalised homoglyphs. It is tuned for recall on the
-plain cases, and every threshold has a test on each side.
+(`.co.uk`) and internationalised homoglyphs. So does a domain that keeps the
+customer's first word and changes the rest (`acme-payments.fr` for
+`acme-industries.fr`): matching on a shared first word was considered and
+rejected, because first words like a city or `groupe` are shared by
+unrelated companies and would flag them. Such a sender is caught only by
+another signal — a known invoice, the company name, or the exact domain. The
+check is tuned for recall on the plain cases, and every threshold has a test
+on each side.
 
 A company name made of common words matches more than it should. The name
 check is a whole-word match, not a guess, and its false positives cost one

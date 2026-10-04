@@ -66,3 +66,10 @@ typed classifier would go, and ADR-002 already shapes the port to accept one.
 The rules cannot express everything. Detecting that a dunning notice went out
 after payment was received needs a rule that does not exist yet; the case is
 in the fixtures, and the gap is named rather than papered over.
+
+The proration check assumes provider-style lines, each carrying the full
+price of its own plan, as Stripe bills a plan change: a credit for the unused
+time and a charge for the remaining time. A single net line (new plan minus
+old) carries no plan price, so it cannot be checked, and it is flagged. Telling
+it apart from a half period billed at the full price would take the plan
+prices, which the provider port does not carry.
