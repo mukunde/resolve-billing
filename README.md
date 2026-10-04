@@ -322,7 +322,8 @@ cases go to a separate **holdout** set instead: labels adjudicated by hand,
 drafts from a model of another family than the engine, never run in CI, never
 tuned against, and run once per milestone with the counts reported raw. At its
 current size it is a consistency check rather than a measurement, and it is
-described here as one.
+described here as one. Its reference run, against prompt v3, was five runs of
+its five cases: **4/5 fully correct on every run, and no unsafe action.**
 
 The development set has nineteen cases now. Five came from the holdout, each
 moved once it could no longer serve as a blind test, and each replaced there by
