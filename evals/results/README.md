@@ -31,7 +31,9 @@ python -m evals.rescore evals/results/claude-decision_v2.json
 ```
 
 It re-applies today's expectations to that run's stored outcomes and names the
-cases whose verdict changed. That is possible only because the runner stores
+cases whose verdict changed. It recounts unsafe actions the same way, with the
+runner's own definition as it stands today, and exits 1 if any remains; both
+files come out at 0/12. That is possible only because the runner stores
 `got` — what the system actually did — alongside the booleans it derived from
 it at the time.
 

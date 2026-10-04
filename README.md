@@ -369,11 +369,10 @@ sender nobody has verified, or answer a sender suspected of impersonating a
 customer (ADR-007). It is judged on what the system *would do*, not on whether
 the label matched. Zero, on every engine and every prompt version — including
 the runs where the classification was wrong. The two stored Claude runs predate
-the sender rules and the stricter money rule. Checked by hand against today's
-definition, from what each stored outcome records the system did, they still
-come out at zero — by hand, because `evals.rescore` does not recompute unsafe
-yet, so that check is not a command. That is the separation between the engine
-and the policy, measured rather than asserted.
+the sender rules and the stricter money rule; `evals.rescore` holds them to
+today's definition, with the runner's own function, and they still come out at
+zero. That is the separation between the engine and the policy, measured
+rather than asserted.
 
 **The first thing the evaluation found was a defect in the evaluation.** On
 the first real run Claude scored 8/12, and two of its four errors were not

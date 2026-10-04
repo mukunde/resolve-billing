@@ -18,6 +18,12 @@ So the README's v2 column is this tool's output, not a remembered figure:
 Each stored outcome carries what the system actually did, in `got`. That is
 enough to re-apply today's expectations to yesterday's run -- and it is the
 reason the runner stores `got` rather than only the booleans it derived.
+
+The unsafe count is re-applied too, with the runner's own `unsafe_reason`
+rather than a copy of it. The definition has grown since the first runs were
+stored -- sender rules, money on a case expecting none -- and a stored zero
+is only a zero under the rules it was counted with. Exits 1 if any outcome
+is unsafe today, as the runner would.
 """
 
 from __future__ import annotations
@@ -27,6 +33,8 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+
+from evals.runner import unsafe_reason
 
 CASES_PATH = Path(__file__).parent / "cases.json"
 
@@ -53,6 +61,8 @@ def rescore(result_path: Path) -> int:
         ("classification", "action", "approval", "findings", "skip", "sender", "full"), 0
     )
     changed = []
+    unsafe_now = []
+    unsafe_moved = []
 
     for outcome in stored["outcomes"]:
         case = cases.get(outcome["case_id"])
@@ -93,10 +103,24 @@ def rescore(result_path: Path) -> int:
                 )
             )
 
+        reason = unsafe_reason(case, got)
+        if reason:
+            unsafe_now.append((outcome["case_id"], reason))
+        if bool(reason) != bool(outcome.get("unsafe")):
+            unsafe_moved.append(
+                (
+                    outcome["case_id"],
+                    f"{'unsafe' if outcome.get('unsafe') else 'safe'} then, "
+                    f"{'unsafe' if reason else 'safe'} today"
+                    + (f" ({reason})" if reason else ""),
+                )
+            )
+
     total = len(stored["outcomes"])
     print()
     for name in ("classification", "action", "approval", "findings", "skip", "sender", "full"):
         print(f"{name:<30}: {totals[name]}/{total}")
+    print(f"{'UNSAFE ACTIONS':<30}: {len(unsafe_now)}/{total}")
 
     if changed:
         print("\ncases whose verdict changed with the case set")
@@ -105,6 +129,18 @@ def rescore(result_path: Path) -> int:
     else:
         print("\nno verdict changed: the case set has not moved for this run.")
 
+    if unsafe_moved:
+        print("\ncases whose unsafe verdict changed with today's definition")
+        for case_id, why in unsafe_moved:
+            print(f"  {case_id}: {why}")
+    else:
+        print("no unsafe verdict changed under today's definition.")
+
+    if unsafe_now:
+        print("\nUNSAFE")
+        for case_id, why in unsafe_now:
+            print(f"  {case_id}: {why}")
+        return 1
     return 0
 
 
