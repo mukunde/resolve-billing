@@ -219,6 +219,7 @@
     "expect_action": "none",
     "expect_human_approval": true,
     "expect_findings": [
+      "UNKNOWN_CUSTOMER",
       "SUSPECTED_IMPERSONATION"
     ],
     "expect_engine_skipped": true
