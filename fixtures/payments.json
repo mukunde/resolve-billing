@@ -90,5 +90,21 @@
     "currency": "EUR",
     "state": "refunded",
     "received_at": "2026-09-02T11:25:00"
+  },
+  {
+    "id": "pay_210",
+    "invoice_id": "inv_210",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T09:12:00"
+  },
+  {
+    "id": "pay_211",
+    "invoice_id": "inv_210",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T09:18:00"
   }
 ]

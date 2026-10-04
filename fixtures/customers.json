@@ -70,5 +70,11 @@
     "email": "sophie@azur-digital.fr",
     "currency": "EUR",
     "display_name": "Azur Digital"
+  },
+  {
+    "id": "cus_kalythea",
+    "email": "comptabilite@kalythea-systems.fr",
+    "currency": "EUR",
+    "display_name": "Kalythéa Systems"
   }
 ]

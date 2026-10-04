@@ -54,5 +54,23 @@
     "why": "inv_190 is a normal invoice for the active Pro subscription, and its associated payment is already in the refunded state. The customer's request therefore justifies no new financial mutation: the recorded state must prevail over the new refund request. The boundary tested is financial idempotency in the face of an action already completed.",
     "label_source": "author",
     "generator": "openai/gpt-5.6-sol"
+  },
+  {
+    "id": "external_accountant_names_client",
+    "message": "Bonjour,\n\nNous intervenons pour le compte de Kalythéa Systems SAS dans le cadre de son suivi comptable. Deux prélèvements de 49,00 € apparaissent pour l'abonnement de septembre alors qu'un seul était attendu. Merci de rembourser le montant encaissé en trop.\n\nCordialement,\nCabinet Fiscoria Expertise",
+    "customer_email": "mandats@fiscoria-expertise.fr",
+    "invoice_id": null,
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_findings": [
+      "UNKNOWN_CUSTOMER",
+      "SUSPECTED_IMPERSONATION"
+    ],
+    "expect_engine_skipped": true,
+    "expect_sender": "suspected_impersonation",
+    "why": "The sender address does not belong to any customer, so UNKNOWN_CUSTOMER applies. The only impersonation signal is company_name: the message explicitly names Kalythéa Systems SAS, matching the customer's display name once the legal form is ignored. No invoice reference is supplied, the sender domain is unrelated to every customer domain, and it is not a lookalike. Because SUSPECTED_IMPERSONATION is blocking, no financial action is proposed and the decision engine is skipped.",
+    "label_source": "author",
+    "generator": "openai/gpt-5.6-sol"
   }
 ]
