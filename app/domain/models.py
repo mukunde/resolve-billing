@@ -7,6 +7,7 @@ whole point of ADR-001.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
@@ -41,9 +42,9 @@ class Subscription(BaseModel):
     cancelled_at: AwareDatetime | None = None
 
     @property
-    def period_days(self) -> int:
-        """Length of the current billing period, in whole days."""
-        return (self.current_period_end - self.current_period_start).days
+    def period_seconds(self) -> int:
+        """Length of the current billing period, in whole seconds."""
+        return (self.current_period_end - self.current_period_start) // timedelta(seconds=1)
 
 
 class InvoiceLine(BaseModel):
@@ -60,10 +61,10 @@ class InvoiceLine(BaseModel):
     billed. ``None`` on a flat subscription line."""
 
     @property
-    def period_days(self) -> int | None:
+    def period_seconds(self) -> int | None:
         if self.period_start is None or self.period_end is None:
             return None
-        return (self.period_end - self.period_start).days
+        return (self.period_end - self.period_start) // timedelta(seconds=1)
 
 
 class Invoice(BaseModel):

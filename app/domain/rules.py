@@ -141,18 +141,28 @@ def proration_mismatch(
     Only lines covering *less* than the subscription period are checked: those
     are the ones a plan change mid-month produces, and the ones customers
     dispute.
+
+    The ratio is the line's duration over the period's, in seconds, because
+    providers prorate to the second from the moment of the change. Amounts are
+    compared without their sign: a plan change is billed as a negative credit
+    for the unused time on the old plan and a charge for the remaining time on
+    the new one.
+
+    Assumption: each line carries the full price of its own plan as its unit
+    amount, as Stripe's proration lines do. A single net line (new plan minus
+    old) carries no plan price, cannot be checked, and stays flagged.
     """
-    if invoice.status is InvoiceStatus.VOID or sub.period_days <= 0:
+    if invoice.status is InvoiceStatus.VOID or sub.period_seconds <= 0:
         return None
 
     for index, line in enumerate(invoice.lines):
-        line_days = line.period_days
-        if line_days is None or line_days <= 0 or line_days >= sub.period_days:
+        line_seconds = line.period_seconds
+        if line_seconds is None or line_seconds <= 0 or line_seconds >= sub.period_seconds:
             continue
 
-        ratio = Decimal(line_days) / Decimal(sub.period_days)
-        expected = line.unit_amount.multiply(line.quantity).multiply(ratio)
-        gap = abs(expected - line.amount)
+        ratio = Decimal(line_seconds) / Decimal(sub.period_seconds)
+        expected = abs(line.unit_amount.multiply(line.quantity).multiply(ratio))
+        gap = abs(expected - abs(line.amount))
         if gap.amount_minor <= tolerance_minor:
             continue
 
@@ -164,8 +174,9 @@ def proration_mismatch(
                 "invoice_id": invoice.id,
                 "line_index": index,
                 "line_description": line.description,
-                "line_days": line_days,
-                "period_days": sub.period_days,
+                "line_seconds": line_seconds,
+                "period_seconds": sub.period_seconds,
+                "ratio": str(ratio),
                 "expected_minor": expected.amount_minor,
                 "billed_minor": line.amount.amount_minor,
                 "currency": line.amount.currency,
