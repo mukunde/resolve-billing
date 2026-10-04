@@ -451,14 +451,23 @@ The default is the mock, so tests and demos cost nothing.
 The interesting assertion is not that the tests pass.
 
 ```yaml
-- run: python -m evals.runner --engine mock --min-fully-correct 9
+- run: >-
+    python -m evals.runner --engine mock --min-fully-correct 12
+    --baseline evals/baselines/mock.json
 ```
 
 That line fails a build when the system **would have moved money** on a dispute
 the case set says moves none — the one metric in the suite with a threshold,
 checked on every push rather than when somebody remembers to look. It fails
-again if the mock drops below its measured score, which catches a rule edited
-without its consequences.
+again if the mock drops below its measured score, and again if any check of
+any case differs from the recorded baseline. That last one catches what a
+count cannot: one case breaking while another is fixed, or a case already
+wrong getting wronger. An improvement fails it too, until the baseline is
+regenerated in the same commit, where the diff shows which cases moved:
+
+```bash
+python -m evals.runner --engine mock --write-baseline evals/baselines/mock.json
+```
 
 Two engines, two cadences, and the split is the point. The **mock** is free and
 deterministic, so its baseline is exact and it runs on every push. **Claude** is

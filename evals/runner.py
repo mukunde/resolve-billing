@@ -73,6 +73,10 @@ def missing_credential(engine_name: str) -> str | None:
     )
 
 
+#: The checks every case is held to, by name. `<name>_ok` on an outcome.
+CHECK_NAMES = ("classification", "action", "approval", "findings", "skip", "sender")
+
+
 @dataclass
 class CaseOutcome:
     case_id: str
@@ -316,6 +320,84 @@ def _write_json(
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def baseline_of(outcomes: list[CaseOutcome]) -> dict[str, dict[str, bool]]:
+    """Every check of every case, as the baseline records it."""
+    return {
+        o.case_id: {name: getattr(o, f"{name}_ok") for name in CHECK_NAMES} for o in outcomes
+    }
+
+
+def compare_to_baseline(
+    baseline: dict[str, dict[str, bool]], outcomes: list[CaseOutcome]
+) -> list[str]:
+    """Every check that moved since the baseline, in either direction.
+
+    A floor counts fully-correct cases, so one case breaking while another is
+    fixed leaves it unmoved, and a case already wrong can get wronger unseen.
+    This compares check by check. Improvements are reported as well: they
+    are recorded by regenerating the baseline in the same commit, where the
+    diff shows a reviewer exactly which cases moved.
+    """
+    now = baseline_of(outcomes)
+    diffs = []
+    for case_id, checks in now.items():
+        recorded = baseline.get(case_id)
+        if recorded is None:
+            diffs.append(f"{case_id}: not in the baseline")
+            continue
+        for name, passes in checks.items():
+            before = recorded.get(name)
+            if before == passes:
+                continue
+            was = "not recorded" if before is None else ("passed" if before else "failed")
+            diffs.append(
+                f"{case_id}: {name} {was} in the baseline, {'passes' if passes else 'fails'} now"
+            )
+    diffs.extend(
+        f"{case_id}: in the baseline, no longer in the case set"
+        for case_id in baseline
+        if case_id not in now
+    )
+    return diffs
+
+
+def write_baseline(
+    path: Path, engine_name: str, cases_path: Path, outcomes: list[CaseOutcome]
+) -> None:
+    payload = {
+        "engine": engine_name,
+        "cases_file": cases_path.name,
+        "cases_sha256": _case_set_fingerprint(cases_path),
+        "cases": baseline_of(outcomes),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def check_baseline(path: Path, engine_name: str, outcomes: list[CaseOutcome]) -> int:
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    if stored["engine"] != engine_name:
+        print(
+            f"\nBASELINE: {path} was recorded with engine {stored['engine']!r}, "
+            f"not {engine_name!r}"
+        )
+        return 1
+
+    diffs = compare_to_baseline(stored["cases"], outcomes)
+    if not diffs:
+        print(f"\nbaseline {path.name}: matched case by case")
+        return 0
+
+    print(f"\nBASELINE MISMATCH against {path}")
+    for diff in diffs:
+        print(f"  {diff}")
+    print(
+        "If the change is intended, record it in the same commit:\n"
+        f"    python -m evals.runner --engine {engine_name} --write-baseline {path}"
+    )
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine", default="mock")
@@ -334,9 +416,21 @@ def main() -> int:
         type=int,
         help="fail below this many fully-correct cases (deterministic engines only)",
     )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        help="fail if any check of any case differs from this recorded baseline",
+    )
+    parser.add_argument(
+        "--write-baseline", type=Path, help="record this run's verdicts as the baseline"
+    )
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
+    if args.runs > 1 and (args.baseline or args.write_baseline):
+        # Several runs means a sampling engine: its verdicts are not exact,
+        # and a case-by-case baseline on one would fail on noise.
+        parser.error("a baseline is for a single run of a deterministic engine")
     if not args.cases.exists():
         parser.error(f"no such case file: {args.cases}")
     if (missing := missing_credential(args.engine)) is not None:
@@ -354,7 +448,12 @@ def main() -> int:
         _write_json(args.json, args.engine, engine_version, args.cases, runs)
 
     if args.runs == 1:
-        return report(args.engine, outcomes, args.min_fully_correct)
+        status = report(args.engine, outcomes, args.min_fully_correct)
+        if args.write_baseline:
+            write_baseline(args.write_baseline, args.engine, args.cases, outcomes)
+        if args.baseline:
+            status = max(status, check_baseline(args.baseline, args.engine, outcomes))
+        return status
 
     from evals import variance
 
