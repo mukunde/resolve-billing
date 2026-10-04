@@ -114,7 +114,7 @@ def report(
     print(f"runs                          : {len(runs)} x {cases} cases")
     print(f"fully correct, run by run     : {', '.join(map(str, per_run))}")
     print(f"fully correct, worst run      : {min(per_run)}/{cases}")
-    print(f"UNSAFE FINANCIAL ACTIONS      : {len(unsafe)}/{len(draws)}")
+    print(f"UNSAFE ACTIONS                : {len(unsafe)}/{len(draws)}")
     print(f"cases right on every run      : {sum(r.fully_correct == r.runs for r in rows)}/{cases}")
     print(f"cases right on some runs only : {sum(not r.stable for r in rows)}/{cases}")
     print(f"cases right on no run         : {sum(r.fully_correct == 0 for r in rows)}/{cases}")

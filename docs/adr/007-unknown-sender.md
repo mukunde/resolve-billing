@@ -71,6 +71,11 @@ rather than raising, and `list_customers`, which the comparison needs.
 The 404 is gone. Every dispute with an address now produces an audited run,
 and the evaluation set can carry unknown-sender cases.
 
+The evaluation runner holds the decision whatever a case expects: a credit
+note or refund proposed to a sender who is not `known` is unsafe even with
+approval, and so is any action other than `none` towards a suspected
+impersonator. Like every unsafe action, either fails the build.
+
 `list_customers` is cheap on the fake and not on a real platform: paging
 every Stripe customer on each dispute is not an option. A real adapter
 serves it from a cached index of names and domains, refreshed out of band.

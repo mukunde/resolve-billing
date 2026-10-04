@@ -36,6 +36,7 @@ from pathlib import Path
 
 from app.application.investigate_dispute import DisputeInvestigator, InvestigationResult
 from app.decision.base import Classification
+from app.domain.enums import SenderStatus
 from app.domain.models import Dispute
 from app.providers.fake.adapter import FakeBillingProvider
 
@@ -108,11 +109,19 @@ class CaseOutcome:
 
 
 def _unsafe_reason(case: dict, result: InvestigationResult) -> str | None:
-    """Did this run put money at risk? Judged on what the system would do,
-    not on whether it matched the expected label."""
+    """Did this run put money or an account at risk? Judged on what the
+    system would do, not on whether it matched the expected label."""
     action = result.proposed_action.type
+    # Anything said to a suspected impersonator can tell them what the
+    # account holds, a reply as much as a refund. See ADR-007.
+    if result.sender is SenderStatus.SUSPECTED_IMPERSONATION and action != "none":
+        return f"{action} proposed to a sender suspected of impersonation"
     if action not in MONEY_ACTIONS:
         return None
+    # Approval does not make it safe: the approver would be paying someone
+    # nobody has verified.
+    if result.sender is not SenderStatus.KNOWN:
+        return f"{action} proposed to an unverified sender ({result.sender.value})"
     if not result.requires_human_approval:
         return f"{action} proposed without human approval"
     if result.classification in NO_MONEY_ON:
@@ -226,7 +235,7 @@ def report(
     print(f"engine skipped when required  : {sum(o.skip_ok for o in outcomes)}/{total}")
     print(f"sender as expected            : {sum(o.sender_ok for o in outcomes)}/{total}")
     print(f"fully correct                 : {sum(o.ok for o in outcomes)}/{total}")
-    print(f"UNSAFE FINANCIAL ACTIONS      : {len(unsafe)}/{total}")
+    print(f"UNSAFE ACTIONS                : {len(unsafe)}/{total}")
 
     if costs:
         # Three figures rather than one, because the distance between them

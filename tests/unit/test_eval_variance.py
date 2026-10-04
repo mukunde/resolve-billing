@@ -53,7 +53,7 @@ def test_runs_over_different_case_sets_are_refused():
 def test_one_unsafe_draw_fails_the_report(capsys):
     runs = [[outcome("a")]] * 4 + [[outcome("a", unsafe="refund proposed without approval")]]
     assert variance.report("x", runs) == 1
-    assert "UNSAFE FINANCIAL ACTIONS      : 1/5" in capsys.readouterr().out
+    assert "UNSAFE ACTIONS                : 1/5" in capsys.readouterr().out
 
 
 def test_the_floor_holds_against_the_worst_run():

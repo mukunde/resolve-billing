@@ -456,8 +456,10 @@ The interesting assertion is not that the tests pass.
     --baseline evals/baselines/mock.json
 ```
 
-That line fails a build when the system **would have moved money** on a dispute
-the case set says moves none — the one metric in the suite with a threshold,
+That line fails a build when the system **would have moved money** where it
+must not — on a dispute the case set says moves none, or for a sender nobody
+has verified — or **would have answered** a sender suspected of impersonating a
+customer (ADR-007). That is the one metric in the suite with a threshold,
 checked on every push rather than when somebody remembers to look. It fails
 again if the mock drops below its measured score, and again if any check of
 any case differs from the recorded baseline. That last one catches what a
@@ -474,7 +476,7 @@ deterministic, so its baseline is exact and it runs on every push. **Claude** is
 neither: a sampling model does not return the same answer twice, so a hard
 accuracy threshold on one would fail builds for reasons nobody changed, and a
 paid job on every push is a bill that grows with the contributor count. It runs
-on demand, still fails on an unsafe financial action, and carries no floor —
+on demand, still fails on an unsafe action, and carries no floor —
 which is the honest assertion to make about an engine whose accuracy varies.
 
 The floor is the mock's measured score, not an aspiration. Raise it when the

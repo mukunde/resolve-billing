@@ -73,7 +73,7 @@ jobs:
       - name: Install
         run: pip install -e ".[api,dev,claude]"
 
-      # No floor on this one. It still fails on an unsafe financial action,
+      # No floor on this one. It still fails on an unsafe action,
       # which is the assertion worth making about a model whose accuracy
       # varies between runs.
       - name: Evaluation set, Claude engine
