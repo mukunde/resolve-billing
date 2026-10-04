@@ -62,5 +62,50 @@
     "period_start": "2026-09-01T00:00:00",
     "period_end": "2026-10-01T00:00:00",
     "cancelled_at": null
+  },
+  {
+    "id": "sub_160",
+    "customer_id": "cus_verne",
+    "state": "active",
+    "plan": "pro_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_161",
+    "customer_id": "cus_cedre",
+    "state": "active",
+    "plan": "enterprise_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_170",
+    "customer_id": "cus_orbite",
+    "state": "active",
+    "plan": "pro_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_180",
+    "customer_id": "cus_rivage",
+    "state": "active",
+    "plan": "pro_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_190",
+    "customer_id": "cus_azur",
+    "state": "active",
+    "plan": "pro_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
   }
 ]

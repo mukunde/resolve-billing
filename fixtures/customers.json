@@ -40,5 +40,35 @@
     "email": "sophie@nova-atelier.fr",
     "currency": "EUR",
     "display_name": "Nova Atelier"
+  },
+  {
+    "id": "cus_verne",
+    "email": "emma@verne-conseil.fr",
+    "currency": "EUR",
+    "display_name": "Verne Conseil"
+  },
+  {
+    "id": "cus_cedre",
+    "email": "compta@cedre-industries.fr",
+    "currency": "EUR",
+    "display_name": "Cèdre Industries"
+  },
+  {
+    "id": "cus_orbite",
+    "email": "facturation@orbite-industries.fr",
+    "currency": "EUR",
+    "display_name": "Orbite Industries"
+  },
+  {
+    "id": "cus_rivage",
+    "email": "thomas@rivage-conseil.fr",
+    "currency": "EUR",
+    "display_name": "Rivage Conseil"
+  },
+  {
+    "id": "cus_azur",
+    "email": "sophie@azur-digital.fr",
+    "currency": "EUR",
+    "display_name": "Azur Digital"
   }
 ]

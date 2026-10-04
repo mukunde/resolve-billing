@@ -205,5 +205,100 @@
         "period_end": "2026-10-01T00:00:00"
       }
     ]
+  },
+  {
+    "id": "inv_160",
+    "customer_id": "cus_cedre",
+    "subscription_id": "sub_161",
+    "amount": "99.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T10:20:00",
+    "lines": [
+      {
+        "label": "Abonnement Enterprise - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "99.00",
+        "amount": "99.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_170",
+    "customer_id": "cus_orbite",
+    "subscription_id": "sub_170",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_171",
+    "customer_id": "cus_orbite",
+    "subscription_id": "sub_170",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-02T04:10:00",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_180",
+    "customer_id": "cus_rivage",
+    "subscription_id": "sub_180",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_190",
+    "customer_id": "cus_azur",
+    "subscription_id": "sub_190",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T10:00:00",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
   }
 ]

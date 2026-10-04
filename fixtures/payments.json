@@ -58,5 +58,37 @@
     "state": "succeeded",
     "received_at": "2026-09-02T08:19:00",
     "_comment": "Second paiement rattache a inv_050."
+  },
+  {
+    "id": "pay_170",
+    "invoice_id": "inv_170",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-01T09:05:00"
+  },
+  {
+    "id": "pay_171",
+    "invoice_id": "inv_171",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T04:15:00"
+  },
+  {
+    "id": "pay_180",
+    "invoice_id": "inv_180",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "failed",
+    "received_at": null
+  },
+  {
+    "id": "pay_190",
+    "invoice_id": "inv_190",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "refunded",
+    "received_at": "2026-09-02T11:25:00"
   }
 ]
