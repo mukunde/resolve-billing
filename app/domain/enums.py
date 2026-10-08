@@ -39,15 +39,19 @@ class ActionState(StrEnum):
     and with no trace. n8n is an approval interface and a trigger; it is
     replaceable.
 
-        PENDING_APPROVAL --approve--> APPROVED --execute--> EXECUTED
-               |                                        \-> FAILED
-               |--reject---> REJECTED
+        PENDING_APPROVAL --approve--> APPROVED --claim--> EXECUTING --> EXECUTED
+               |                                   ^                \-> FAILED
+               |--reject---> REJECTED              \---- retry ---------/
                \--ttl-----> EXPIRED
+
+    EXECUTING is the claim on the write: exactly one caller moves an action
+    into it, and only that caller rings the provider. See ADR-008.
     """
 
     PENDING_APPROVAL = "pending_approval"
     APPROVED = "approved"
     REJECTED = "rejected"
+    EXECUTING = "executing"
     EXECUTED = "executed"
     FAILED = "failed"
     EXPIRED = "expired"

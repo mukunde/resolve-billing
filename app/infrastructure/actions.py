@@ -62,14 +62,17 @@ ALLOWED: dict[ActionState, set[ActionState]] = {
         ActionState.REJECTED,
         ActionState.EXPIRED,
     },
-    ActionState.APPROVED: {ActionState.EXECUTED, ActionState.FAILED},
+    # Executing starts with a claim. Only the caller that moves the action
+    # into EXECUTING rings the provider; a concurrent one finds it taken.
+    ActionState.APPROVED: {ActionState.EXECUTING},
+    ActionState.EXECUTING: {ActionState.EXECUTED, ActionState.FAILED},
     ActionState.REJECTED: set(),
     ActionState.EXECUTED: set(),
-    # A failed write may be retried: it either succeeds, with the provider's
-    # reference, or fails again. Reaching EXECUTED still takes that reference
-    # -- see transition() -- so a retry cannot be skipped by asking for the
-    # end state directly.
-    ActionState.FAILED: {ActionState.EXECUTED, ActionState.FAILED},
+    # A failed write may be retried, through a fresh claim: it then succeeds
+    # with the provider's reference or fails again. Reaching EXECUTED takes
+    # that reference -- see transition() -- so a retry cannot be skipped by
+    # asking for the end state directly.
+    ActionState.FAILED: {ActionState.EXECUTING},
     ActionState.EXPIRED: set(),
 }
 
@@ -242,15 +245,19 @@ class SqliteActionStore:
                 action_id, current.state, to, why="without the provider's reference"
             )
 
+        # The check above was made on a read. The UPDATE names the state that
+        # read found, so if anything moved the action in between -- another
+        # request, another process -- it changes nothing and says so, instead
+        # of overwriting a transition it never saw.
         with self._connection:
-            self._connection.execute(
+            updated = self._connection.execute(
                 """
                 UPDATE pending_actions
                 SET state = ?, updated_at = ?,
                     approved_by = COALESCE(?, approved_by),
                     provider_action_id = COALESCE(?, provider_action_id),
                     failure_reason = ?
-                WHERE action_id = ?
+                WHERE action_id = ? AND state = ?
                 """,
                 (
                     to.value,
@@ -259,7 +266,12 @@ class SqliteActionStore:
                     provider_action_id,
                     failure_reason,
                     action_id,
+                    current.state.value,
                 ),
+            ).rowcount
+        if updated != 1:
+            raise IllegalTransition(
+                action_id, current.state, to, why="(its state changed concurrently)"
             )
         return self.get(action_id)
 

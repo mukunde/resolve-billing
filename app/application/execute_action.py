@@ -56,6 +56,13 @@ class ApprovalService:
         if action.state not in (ActionState.APPROVED, ActionState.FAILED):
             raise IllegalTransition(action_id, action.state, ActionState.EXECUTED)
 
+        # Claim the write before making it. Of two concurrent executions, one
+        # moves the action to EXECUTING and rings the provider; the other
+        # finds it claimed and is refused. The claim is made before the first
+        # await, so nothing can interleave between the read and the claim in
+        # this process, and the store's conditional UPDATE covers the others.
+        self._actions.transition(action_id, ActionState.EXECUTING)
+
         try:
             result = await self._provider.create_credit_note(
                 invoice_id=action.invoice_id,
