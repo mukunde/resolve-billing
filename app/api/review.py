@@ -17,9 +17,10 @@ links to scan them, so a one-click approve URL can be exercised by a scanner
 rather than a person. The decision here arrives by POST, from a form a human
 submitted.
 
-The honest limit, stated on the page itself: the identifier field is not
-authentication. In production this route sits behind the company's SSO and the
-identity comes from there.
+The identity recorded against a decision is the authenticated approver's,
+never a name typed into the form (ADR-009). In this demonstrator a person signs
+in with HTTP Basic against a configured list; in production this route sits
+behind the company's SSO, and the identity comes from there.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse
 
+from app.api.auth import Approver
 from app.api.deps import get_actions, get_approvals, get_audit
 from app.api.templating import render as _page
 from app.application.execute_action import ApprovalService
@@ -54,6 +56,7 @@ RESUME_TIMEOUT_SECONDS = 10
 @router.get("/{action_id}/review", response_class=HTMLResponse)
 async def review_page(
     action_id: str,
+    approver: Approver,
     actions: Annotated[SqliteActionStore, Depends(get_actions)],
     audit: Annotated[SqliteAuditRepository, Depends(get_audit)],
     resume: str | None = None,
@@ -79,6 +82,7 @@ async def review_page(
         _page(
             "review.html",
             post_url=f"/api/v1/actions/{action.action_id}/review",
+            approver=approver.identity,
             run_id=action.run_id,
             action_id=action.action_id,
             invoice_id=action.invoice_id,
@@ -114,7 +118,7 @@ async def submit_review(
     actions: Annotated[SqliteActionStore, Depends(get_actions)],
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
     decision: Annotated[str, Form()],
-    by: Annotated[str, Form(min_length=1, max_length=120)],
+    approver: Approver,
 ) -> HTMLResponse:
     """Record the human decision, then tell the orchestrator to carry on.
 
@@ -129,13 +133,13 @@ async def submit_review(
     action = _found(lambda: actions.get(action_id))
     try:
         if decision == "approve":
-            action = approvals.approve(action_id, by)
+            action = approvals.approve(action_id, approver.identity)
         else:
-            action = approvals.reject(action_id, by)
+            action = approvals.reject(action_id, approver.identity)
     except IllegalTransition:
         return HTMLResponse(_already_decided(actions.get(action_id)), status_code=409)
 
-    resumed = _resume(action, decision, by)
+    resumed = _resume(action, decision, approver.identity)
     return HTMLResponse(_decided(action, decision, resumed))
 
 

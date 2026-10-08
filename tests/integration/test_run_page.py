@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.integration._auth import SERVICE
 
 CASE_A = {
     "message": "Je crois que j'ai été facturé deux fois pour le mois de septembre.",
@@ -34,7 +35,7 @@ CASE_F = {
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(app)
+    return TestClient(app, headers=SERVICE)
 
 
 def investigate(client, payload) -> dict:

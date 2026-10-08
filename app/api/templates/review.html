@@ -98,11 +98,7 @@
 
     <div class="policy">$policy</div>
 
-    <div class="who">
-      <label for="by">Votre identifiant</label>
-      <input id="by" name="by" required maxlength="120" autocomplete="off"
-             placeholder="prenom.nom@entreprise.fr">
-    </div>
+    <div class="who">Vous décidez en tant que <strong>$approver</strong>.</div>
   </section>
 
   <div class="actions">
@@ -112,8 +108,9 @@
 
   <footer>
     Le montant a été calculé à partir de la facture, pas par le moteur de décision.<br>
-    Cette page authentifierait le valideur par le SSO de l&rsquo;entreprise en production&nbsp;;
-    le champ ci-dessus en tient lieu dans cette démonstration.<br>
+    L&rsquo;identité du valideur vient de son authentification, jamais d&rsquo;un champ du formulaire.
+    En production, c&rsquo;est le SSO de l&rsquo;entreprise&nbsp;; dans cette démonstration, une
+    authentification HTTP Basic sur une liste configurée.<br>
     Action $action_id
   </footer>
 </form>

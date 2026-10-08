@@ -448,11 +448,20 @@ asked rather than that it declined.
 ```bash
 pip install -e ".[api,dev]"
 pytest
-uvicorn app.main:app --port 8000
+```
+
+The API is closed by default: every route that acts needs an authenticated
+caller, and answers 503 until callers are configured (ADR-009). Put the two
+variables from `.env.example` in `.env` -- the orchestrator's key and the
+approvers' sign-ins -- and start the API with them loaded:
+
+```bash
+python -m dotenv run -- uvicorn app.main:app --port 8000
 ```
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/disputes/investigate \
+  -H "Authorization: Bearer $RESOLVE_SERVICE_KEY" \
   -H 'content-type: application/json' \
   -d '{"message":"Je crois que jai ete facture deux fois en septembre","customer_email":"alice@acme.fr","invoice_id":"inv_002"}'
 ```
@@ -636,14 +645,21 @@ list when the rules found nothing, which is a result rather than a gap.
 ### Endpoints
 
 ```text
-POST /api/v1/disputes/investigate
-GET  /api/v1/actions/{id}/review      the approval page
-POST /api/v1/actions/{id}/review      a human decision
-POST /api/v1/actions/{id}/approve     | reject | execute
-GET  /api/v1/runs/{id}                the run, its trace, what is waiting
-GET  /api/v1/runs/{id}/view           the same, as a page, when nothing awaits
-GET  /health                          which implementations are wired in
+                                                                          who may call
+POST /api/v1/disputes/investigate                                         orchestrator
+GET  /api/v1/actions/{id}/review      the approval page                   approver
+POST /api/v1/actions/{id}/review      a human decision                    approver
+POST /api/v1/actions/{id}/approve     | reject                            approver
+POST /api/v1/actions/{id}/execute     carry out what a person approved    orchestrator
+GET  /api/v1/actions/{id}             one action                          either
+GET  /api/v1/runs/{id}                the run, its trace, what is waiting either
+GET  /api/v1/runs/{id}/view           the same, as a page                 either
+GET  /health                          which implementations are wired in  anyone
 ```
+
+The orchestrator presents a service key (`Authorization: Bearer`); an approver
+signs in. The identity recorded against a decision is the authenticated one,
+never a name in the request (ADR-009).
 
 ### The audit, in SQL
 
@@ -677,8 +693,11 @@ must be able to prove *who* approved), transport (email is forwarded, quoted
 and archived), and prefetching (mail scanners follow links, so a one-click
 approve URL gets exercised by a scanner rather than a person).
 
-The honest limit, printed on the page itself: the identifier field is **not**
-authentication. In production that route sits behind the company's SSO.
+The page knows who is deciding because the approver signed in, not because a
+name was typed: the identity recorded is the authenticated one (ADR-009). In
+this demonstrator, signing in is HTTP Basic against a configured list -- the
+honest limit, printed on the page itself. In production that route sits
+behind the company's SSO, behind the same seam.
 
 **Not every run that needs a human needs a decision.** A dispute stopped by
 the injection screen queues no action: there is nothing to authorise, only
@@ -777,4 +796,5 @@ wish list.
 | [ADR-006](docs/adr/006-no-agent-framework.md) | No agent framework |
 | [ADR-007](docs/adr/007-unknown-sender.md) | An unknown sender gets a result, not an error |
 | [ADR-008](docs/adr/008-execution-state-machine.md) | Executing a financial action: one claim, and no answer is not a no |
+| [ADR-009](docs/adr/009-trust-boundaries.md) | Trust boundaries: who may call, and whose identity a decision carries |
 | [ADR-010](docs/adr/010-target-integration-architecture.md) | Target integration: the support tool owns the case, a durable workflow owns the lifecycle *(not built)* |

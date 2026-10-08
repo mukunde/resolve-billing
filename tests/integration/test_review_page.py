@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_actions, get_audit, get_provider
 from app.main import app
+from tests.integration._auth import APPROVER, SECOND_APPROVER, SERVICE, basic
 
 CASE_A = {
     "message": "Je crois que j'ai été facturé deux fois pour le mois de septembre.",
@@ -20,12 +21,14 @@ CASE_A = {
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(app)
+    return TestClient(app, headers=basic(APPROVER))
 
 
 @pytest.fixture
 def action_id(client) -> str:
-    body = client.post("/api/v1/disputes/investigate", json=CASE_A).json()
+    body = client.post(
+        "/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE
+    ).json()
     return body["action_id"]
 
 
@@ -57,9 +60,14 @@ class TestThePage:
     def test_it_says_the_amount_did_not_come_from_the_model(self, client, action_id):
         assert "pas par le moteur de décision" in review(client, action_id).text
 
-    def test_it_admits_the_identifier_is_not_authentication(self, client, action_id):
-        """Stating the limit is stronger than hiding it."""
-        assert "SSO" in review(client, action_id).text
+    def test_it_names_the_signed_in_approver_and_the_limit(self, client, action_id):
+        """The decision is taken as the authenticated person, and the page
+        says what stands in for the company's SSO here."""
+        page = review(client, action_id).text
+
+        assert APPROVER[0] in page
+        assert "SSO" in page
+        assert 'name="by"' not in page, "no identity field left to fill in"
 
     def test_an_unknown_action_is_a_404(self, client):
         assert review(client, "act_nope").status_code == 404
@@ -95,7 +103,7 @@ class TestDeciding:
     def test_approving_records_who_and_does_not_execute(self, client, action_id):
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve", "by": "m.dupont@acme.fr"},
+            data={"decision": "approve"},
         )
 
         assert response.status_code == 200
@@ -107,23 +115,33 @@ class TestDeciding:
     def test_rejecting_closes_the_action(self, client, action_id):
         client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "reject", "by": "m.dupont@acme.fr"},
+            data={"decision": "reject"},
         )
 
         assert get_actions().get(action_id).state.value == "rejected"
 
-    def test_an_anonymous_decision_is_refused(self, client, action_id):
-        response = client.post(
-            f"/api/v1/actions/{action_id}/review", data={"decision": "approve", "by": ""}
+    def test_a_decision_without_signing_in_is_refused(self, action_id):
+        """Who decides is established by authentication, not by the form."""
+        response = TestClient(app).post(
+            f"/api/v1/actions/{action_id}/review", data={"decision": "approve"}
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"].startswith("Basic")
         assert get_actions().get(action_id).state.value == "pending_approval"
+
+    def test_a_name_in_the_form_is_not_the_identity(self, client, action_id):
+        client.post(
+            f"/api/v1/actions/{action_id}/review",
+            data={"decision": "approve", "by": "someone.else@acme.fr"},
+        )
+
+        assert get_actions().get(action_id).approved_by == APPROVER[0]
 
     def test_an_invented_decision_is_refused(self, client, action_id):
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "execute_everything", "by": "gael"},
+            data={"decision": "execute_everything"},
         )
 
         assert response.status_code == 422
@@ -136,22 +154,23 @@ class TestDeciding:
         not an error worth a stack trace."""
         client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve", "by": "first"},
+            data={"decision": "approve"},
         )
 
         second = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "reject", "by": "second"},
+            data={"decision": "reject"},
+            headers=basic(SECOND_APPROVER),
         )
 
         assert second.status_code == 409
         assert "Décision déjà enregistrée" in second.text
-        assert get_actions().get(action_id).approved_by == "first"
+        assert get_actions().get(action_id).approved_by == APPROVER[0]
 
     def test_reopening_a_settled_link_shows_the_outcome(self, client, action_id):
         client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve", "by": "gael"},
+            data={"decision": "approve"},
         )
 
         page = review(client, action_id)
@@ -170,7 +189,7 @@ class TestTheOrchestratorIsNotLoadBearing:
 
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve", "by": "gael"},
+            data={"decision": "approve"},
         )
 
         assert response.status_code == 200
@@ -182,7 +201,7 @@ class TestTheOrchestratorIsNotLoadBearing:
     def test_it_works_with_no_callback_at_all(self, client, action_id):
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve", "by": "gael"},
+            data={"decision": "approve"},
         )
 
         assert response.status_code == 200
@@ -198,6 +217,7 @@ class TestInjectedMarkup:
         payload = "<script>alert('xss')</script>"
         body = client.post(
             "/api/v1/disputes/investigate",
+            headers=SERVICE,
             json={
                 "message": f"Facture inv_002 fausse {payload}",
                 "customer_email": "alice@acme.fr",
@@ -213,6 +233,7 @@ class TestInjectedMarkup:
         """Escaped for display, stored raw: the audit records what arrived."""
         body = client.post(
             "/api/v1/disputes/investigate",
+            headers=SERVICE,
             json={
                 "message": "Facture inv_002 fausse <b>gras</b>",
                 "customer_email": "alice@acme.fr",

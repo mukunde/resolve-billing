@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_actions, get_provider
 from app.main import app
+from tests.integration._auth import APPROVER, SERVICE
 
 CASE_A = {
     "message": "Je crois que j'ai été facturé deux fois pour le mois de septembre.",
@@ -19,7 +20,7 @@ CASE_A = {
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(app)
+    return TestClient(app, headers=SERVICE)
 
 
 @pytest.fixture
@@ -62,16 +63,14 @@ class TestApproveThenExecute:
     def test_approval_records_who_without_executing(self, client, action_id):
         """Two steps on purpose: 'who authorised this' is a different question
         from 'did it go through'."""
-        approved = client.post(
-            f"/api/v1/actions/{action_id}/approve", json={"by": "m.dupont@acme.fr"}
-        ).json()
+        approved = client.post(f"/api/v1/actions/{action_id}/approve", auth=APPROVER).json()
 
         assert approved["state"] == "approved"
         assert approved["approved_by"] == "m.dupont@acme.fr"
         assert approved["provider_action_id"] is None
 
     def test_execution_issues_the_credit_note(self, client, action_id):
-        client.post(f"/api/v1/actions/{action_id}/approve", json={"by": "gael"})
+        client.post(f"/api/v1/actions/{action_id}/approve", auth=APPROVER)
 
         executed = client.post(f"/api/v1/actions/{action_id}/execute").json()
 
@@ -81,7 +80,7 @@ class TestApproveThenExecute:
     def test_the_provider_really_was_called_once(self, client, action_id):
         before = len(get_provider().executed_actions)
 
-        client.post(f"/api/v1/actions/{action_id}/approve", json={"by": "gael"})
+        client.post(f"/api/v1/actions/{action_id}/approve", auth=APPROVER)
         client.post(f"/api/v1/actions/{action_id}/execute")
 
         assert len(get_provider().executed_actions) == before + 1
@@ -97,7 +96,7 @@ class TestTheGuards:
         assert get_actions().get(action_id).state.value == "pending_approval"
 
     def test_a_rejected_action_can_never_be_executed(self, client, action_id):
-        client.post(f"/api/v1/actions/{action_id}/reject", json={"by": "gael"})
+        client.post(f"/api/v1/actions/{action_id}/reject", auth=APPROVER)
 
         response = client.post(f"/api/v1/actions/{action_id}/execute")
 
@@ -105,18 +104,16 @@ class TestTheGuards:
         assert get_actions().get(action_id).state.value == "rejected"
 
     def test_a_rejected_action_cannot_be_approved_afterwards(self, client, action_id):
-        client.post(f"/api/v1/actions/{action_id}/reject", json={"by": "gael"})
+        client.post(f"/api/v1/actions/{action_id}/reject", auth=APPROVER)
 
-        response = client.post(
-            f"/api/v1/actions/{action_id}/approve", json={"by": "someone-else"}
-        )
+        response = client.post(f"/api/v1/actions/{action_id}/approve", auth=APPROVER)
 
         assert response.status_code == 409
 
     def test_executing_twice_does_not_issue_two_credit_notes(self, client, action_id):
         """A retry that lost the first response must not cost the company
         twice. Same idempotency key, same provider action."""
-        client.post(f"/api/v1/actions/{action_id}/approve", json={"by": "gael"})
+        client.post(f"/api/v1/actions/{action_id}/approve", auth=APPROVER)
         first = client.post(f"/api/v1/actions/{action_id}/execute").json()
 
         before = len(get_provider().executed_actions)
@@ -128,12 +125,18 @@ class TestTheGuards:
     def test_an_unknown_action_is_a_404(self, client):
         assert client.post("/api/v1/actions/act_nope/execute").status_code == 404
 
-    def test_an_anonymous_approval_is_rejected(self, client, action_id):
-        """An approval with no name is not an approval."""
-        assert (
-            client.post(f"/api/v1/actions/{action_id}/approve", json={"by": ""}).status_code
-            == 422
-        )
+    def test_an_approval_without_an_approver_is_refused(self, client, action_id):
+        """The orchestrator's key does not approve: only a person does."""
+        assert client.post(f"/api/v1/actions/{action_id}/approve").status_code == 403
+
+    def test_a_name_in_the_body_is_not_the_identity(self, client, action_id):
+        approved = client.post(
+            f"/api/v1/actions/{action_id}/approve",
+            json={"by": "someone.else@acme.fr"},
+            auth=APPROVER,
+        ).json()
+
+        assert approved["approved_by"] == APPROVER[0]
 
 
 class TestResumability:

@@ -25,6 +25,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 
+from app.api.auth import Anyone
 from app.api.deps import get_audit
 from app.api.templating import Safe, escape, render
 from app.infrastructure.audit import SqliteAuditRepository
@@ -39,6 +40,7 @@ BLOCKING_EVENTS = {"injection_suspected", "decision_engine_skipped"}
 @router.get("/{run_id}/view", response_class=HTMLResponse)
 async def run_page(
     run_id: str,
+    _reader: Anyone,
     audit: Annotated[SqliteAuditRepository, Depends(get_audit)],
 ) -> HTMLResponse:
     """Show a run, its findings and its trace. No buttons."""

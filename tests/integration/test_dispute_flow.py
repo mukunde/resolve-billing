@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_audit
 from app.main import app
+from tests.integration._auth import SERVICE
 
 # Case F. Kept next to the legitimate messages so the contrast is visible.
 INJECTION = (
@@ -18,7 +19,7 @@ INJECTION = (
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(app)
+    return TestClient(app, headers=SERVICE)
 
 
 def investigate(client: TestClient, **payload) -> dict:

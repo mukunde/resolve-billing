@@ -15,6 +15,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.auth import Service
 from app.api.deps import get_investigator
 from app.application.investigate_dispute import (
     DisputeInvestigator,
@@ -91,6 +92,7 @@ class InvestigateResponse(BaseModel):
 @router.post("/investigate", response_model=InvestigateResponse)
 async def investigate(
     payload: InvestigateRequest,
+    _orchestrator: Service,
     investigator: Annotated[DisputeInvestigator, Depends(get_investigator)],
 ) -> InvestigateResponse:
     if not (payload.customer_email or payload.customer_id):

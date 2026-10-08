@@ -9,8 +9,9 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
+from app.api.auth import Anyone, Approver, Service
 from app.api.deps import get_actions, get_approvals, get_audit
 from app.application.execute_action import ApprovalService
 from app.infrastructure.actions import (
@@ -23,11 +24,6 @@ from app.infrastructure.audit import SqliteAuditRepository
 from app.providers.base import ProviderRejected
 
 router = APIRouter(prefix="/api/v1", tags=["approvals"])
-
-
-class Decider(BaseModel):
-    by: str = Field(min_length=1, max_length=120)
-    """Who is approving. Recorded; an approval with no name is not one."""
 
 
 class ActionOut(BaseModel):
@@ -74,26 +70,30 @@ def _guard(call):
 @router.post("/actions/{action_id}/approve", response_model=ActionOut)
 async def approve(
     action_id: str,
-    decider: Decider,
+    approver: Approver,
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
 ) -> ActionOut:
-    return ActionOut.of(_guard(lambda: approvals.approve(action_id, decider.by)))
+    """Approve as the authenticated approver. A name in the body is not read:
+    identity comes from authentication. ADR-009."""
+    return ActionOut.of(_guard(lambda: approvals.approve(action_id, approver.identity)))
 
 
 @router.post("/actions/{action_id}/reject", response_model=ActionOut)
 async def reject(
     action_id: str,
-    decider: Decider,
+    approver: Approver,
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
 ) -> ActionOut:
-    return ActionOut.of(_guard(lambda: approvals.reject(action_id, decider.by)))
+    return ActionOut.of(_guard(lambda: approvals.reject(action_id, approver.identity)))
 
 
 @router.post("/actions/{action_id}/execute", response_model=ActionOut)
 async def execute(
     action_id: str,
+    _orchestrator: Service,
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
 ) -> ActionOut:
+    """Only the orchestrator executes, and only what a person approved."""
     try:
         return ActionOut.of(await approvals.execute(action_id))
     except UnknownAction as error:
@@ -116,6 +116,7 @@ async def execute(
 @router.get("/actions/{action_id}", response_model=ActionOut)
 async def read_action(
     action_id: str,
+    _caller: Anyone,
     actions: Annotated[SqliteActionStore, Depends(get_actions)],
 ) -> ActionOut:
     return ActionOut.of(_guard(lambda: actions.get(action_id)))
@@ -124,6 +125,7 @@ async def read_action(
 @router.get("/runs/{run_id}")
 async def read_run(
     run_id: str,
+    _caller: Anyone,
     audit: Annotated[SqliteAuditRepository, Depends(get_audit)],
     actions: Annotated[SqliteActionStore, Depends(get_actions)],
 ) -> dict:

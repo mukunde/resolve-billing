@@ -96,8 +96,18 @@ docker run -d --name mailpit -p 8025:8025 -p 1025:1025 axllent/mailpit
 ### 3. n8n
 
 ```bash
-docker run -d --name n8n -p 5678:5678 -v n8n_data:/home/node/.n8n docker.n8n.io/n8nio/n8n
+docker run -d --name n8n -p 5678:5678 -v n8n_data:/home/node/.n8n \
+  -e RESOLVE_SERVICE_KEY="$RESOLVE_SERVICE_KEY" \
+  -e N8N_BLOCK_ENV_ACCESS_IN_NODE=false \
+  docker.n8n.io/n8nio/n8n
 ```
+
+The two HTTP nodes authenticate to the API with
+`Authorization: Bearer {{ $env.RESOLVE_SERVICE_KEY }}`: the key comes from
+n8n's environment, never from the exported workflow, which is public. It must
+be the same value the API was started with (ADR-009). The approver opens the
+review link in a browser and signs in there; n8n holds no approver
+credential.
 
 Then, **before the workflow will run**, create an SMTP credential in n8n named
 `Mailpit local`: host `host.docker.internal`, port `1025`, no user, no
