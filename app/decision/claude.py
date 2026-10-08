@@ -69,6 +69,14 @@ DEFAULT_TIMEOUT_SECONDS = 60.0
 #: ``confidence_kind`` travels next to ``confidence``.
 PRICING_AS_OF = "2026-06-24"
 
+#: Models priced after the rest of the table, with the date of their own
+#: list price. An audit row cites the price list its figure came from; for
+#: these, citing :data:`PRICING_AS_OF` would name a list that never held them.
+PRICED_ON: dict[str, str] = {
+    # anthropic.com/claude-haiku-5-5, read 2026-10-08, page dated 2026-10-07.
+    "claude-haiku-5-5": "2026-10-07",
+}
+
 #: List prices in USD per million tokens (input, output), by model.
 #:
 #: Hard-coded, and that is not an oversight waiting to be fixed: **no provider
@@ -79,10 +87,9 @@ PRICING_AS_OF = "2026-06-24"
 #: changes who maintains the table, not whether a table is needed.
 #:
 #: These are **list prices, not billed amounts**. What lands in an audit row
-#: is therefore an *estimate*. Reconciling estimated against billed -- via the
-#: provider's usage and cost reporting -- is on the roadmap, and it is the
-#: same problem this project solves on customer invoices, turned on our own
-#: consumption.
+#: is therefore an *estimate*, which :mod:`app.reconciliation` checks against
+#: the provider's usage and cost reporting -- the same problem this project
+#: solves on customer invoices, turned on our own consumption.
 #:
 #: Two distinct facts live in this table, and conflating them was a bug:
 #:
@@ -102,6 +109,10 @@ PRICING_PER_MTOK: dict[str, tuple[float, float] | None] = {
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
     "claude-haiku-4-5": (1.00, 5.00),
+    # Tiered by prompt length: these are the rates for prompts up to 100k
+    # tokens ($0.50 / $2.50 above). Every prompt here is a few thousand
+    # tokens; a long one would be under-estimated, not mispriced silently.
+    "claude-haiku-5-5": (0.10, 0.50),
 }
 
 
@@ -319,9 +330,14 @@ class ClaudeDecisionEngine:
             cost_micros=cost,
             # Only when a rate was actually applied: quoting the date of a
             # table that does not contain this model would be misleading.
-            pricing_as_of=PRICING_AS_OF if cost is not None else None,
+            pricing_as_of=pricing_date(self.model) if cost is not None else None,
             latency_ms=latency_ms,
         )
+
+
+def pricing_date(model: str) -> str:
+    """The date of the list price applied to this model."""
+    return PRICED_ON.get(model, PRICING_AS_OF)
 
 
 def estimate_cost_micros(

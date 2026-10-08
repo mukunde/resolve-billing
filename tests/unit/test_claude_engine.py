@@ -350,6 +350,25 @@ class TestCost:
 
         assert telemetry.pricing_as_of == PRICING_AS_OF
 
+    async def test_a_model_priced_later_carries_its_own_date(
+        self, context, findings, dispute
+    ):
+        """Haiku 5.5 was priced on 2026-10-07, after the rest of the table.
+        Stamping the table's date on its cost would cite a price list that
+        never contained it."""
+        engine, _ = engine_with(reply(VALID_VERDICT))
+        engine.model = "claude-haiku-5-5"
+
+        telemetry = (await engine.decide(dispute, context, findings)).telemetry
+
+        assert telemetry.cost_micros is not None
+        assert telemetry.pricing_as_of == "2026-10-07"
+
+    def test_haiku_5_5_at_its_list_price(self):
+        """$0.10 in and $0.50 out per million tokens, prompts up to 100k."""
+        assert estimate_cost_micros("claude-haiku-5-5", 1_000_000, 0) == 100_000
+        assert estimate_cost_micros("claude-haiku-5-5", 0, 1_000_000) == 500_000
+
     async def test_an_unpriced_run_quotes_no_date(self, context, findings, dispute):
         """Quoting the date of a table that does not contain this model would
         suggest the figure was derived from it."""
