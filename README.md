@@ -777,3 +777,4 @@ wish list.
 | [ADR-006](docs/adr/006-no-agent-framework.md) | No agent framework |
 | [ADR-007](docs/adr/007-unknown-sender.md) | An unknown sender gets a result, not an error |
 | [ADR-008](docs/adr/008-execution-state-machine.md) | Executing a financial action: one claim, and no answer is not a no |
+| [ADR-010](docs/adr/010-target-integration-architecture.md) | Target integration: the support tool owns the case, a durable workflow owns the lifecycle *(not built)* |
