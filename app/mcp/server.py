@@ -12,10 +12,11 @@ agent -- a client's copilot, an internal assistant, an evaluation harness --
 read what this system can read. So the same `BillingProvider` port is exposed
 over MCP, with one property enforced rather than promised:
 
-**Nothing here can move money.** The provider's single mutating method is not
-reachable from any tool below, the approval state machine is not exposed, and
-every tool is annotated `read_only_hint=True` so a client can see the
-guarantee in the protocol rather than in this docstring.
+**Nothing here can move money.** The provider's mutating methods -- a credit
+note and a refund -- are not reachable from any tool below, the approval
+state machine is not exposed, and every tool is annotated
+`read_only_hint=True` so a client can see the guarantee in the protocol
+rather than in this docstring.
 
 What an external agent gets is the *facts and the deterministic findings* --
 never a recommendation. `run_deterministic_checks` returns what code

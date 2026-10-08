@@ -621,8 +621,8 @@ Four tools — `find_customer`, `get_invoice`, `get_billing_context`,
 `run_deterministic_checks` — every one annotated `read_only_hint`, so a client
 sees the guarantee in the protocol rather than in a README.
 
-**Nothing there can move money.** The provider's single mutating method is not
-reachable from the module, and that is asserted against its source rather than
+**Nothing there can move money.** The provider's mutating methods, a credit
+note and a refund, are not reachable from the module, and that is asserted against its source rather than
 against its behaviour: a call that merely is not made today is a weaker claim
 than one that has no path to it.
 
@@ -701,8 +701,9 @@ says a human must look. It does not say there is a decision to take.
 invoice, type, amount, currency — never generated. A retry after a timeout
 finds the original credit note instead of issuing a second one.
 
-**Reads retry, the write does not.** The single mutating provider call carries
-its key rather than relying on the caller being careful.
+**Reads retry, the writes do not.** Each mutating provider call, credit note
+or refund, carries its key rather than relying on the caller being careful,
+and the one that runs is the one the human approved.
 
 **Immutable run rows.** Approval and execution are a separate lifecycle in
 their own table, joined on `run_id`. Amending a run in place would erase the

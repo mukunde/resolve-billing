@@ -1,10 +1,11 @@
 """Approve, reject, execute. The only path by which money moves.
 
-Nothing else in the codebase calls ``create_credit_note``. That is the point
-of ADR-004: the decision engine recommends, the action policy authorises, and
-this single module executes -- after a human has said yes.
+Nothing else in the codebase calls ``create_credit_note`` or
+``create_refund``. That is the point of ADR-004: the decision engine
+recommends, the action policy authorises, and this single module executes --
+after a human has said yes, and exactly the instrument the human approved.
 
-Retry policy: reads retry freely, the one write never retries blindly. The
+Retry policy: reads retry freely, a write never retries blindly. The
 platform either answers -- the write succeeded, or it was refused -- or it
 does not, and then the outcome is unknown: the credit note may exist with its
 response lost. An unknown outcome is settled by asking the platform what it
@@ -83,6 +84,22 @@ class ApprovalService:
         if action.state not in (ActionState.APPROVED, ActionState.FAILED):
             raise IllegalTransition(action_id, action.state, ActionState.EXECUTED)
 
+        # The write is the one the human approved, by type. A type with no
+        # write on the platform is refused before anything is claimed: never
+        # replaced by the nearest instrument that does exist.
+        writes = {
+            "credit_note": self._provider.create_credit_note,
+            "refund": self._provider.create_refund,
+        }
+        write = writes.get(action.action_type)
+        if write is None:
+            raise IllegalTransition(
+                action_id,
+                action.state,
+                ActionState.EXECUTED,
+                why=f"(no write on the platform for action type {action.action_type!r})",
+            )
+
         # Claim the write before making it. Of two concurrent executions, one
         # moves the action to EXECUTING and rings the provider; the other
         # finds it claimed and is refused. The claim is made before the first
@@ -91,7 +108,7 @@ class ApprovalService:
         self._actions.transition(action_id, ActionState.EXECUTING)
 
         try:
-            result = await self._provider.create_credit_note(
+            result = await write(
                 invoice_id=action.invoice_id,
                 amount_minor=action.amount.amount_minor,
                 currency=action.amount.currency,

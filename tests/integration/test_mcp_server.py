@@ -16,7 +16,7 @@ mcp = pytest.importorskip("mcp", reason="the MCP server is an optional extra")
 from app.mcp import server as mcp_server  # noqa: E402
 
 #: Everything on BillingProvider that changes state on the platform.
-MUTATING = ("create_credit_note",)
+MUTATING = ("create_credit_note", "create_refund")
 
 
 @pytest.fixture

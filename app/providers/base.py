@@ -5,7 +5,8 @@ The application layer imports :class:`BillingProvider`. It never imports
 platform means writing an adapter that maps its payloads onto the domain
 objects -- the rules, the decision engines and the action policy do not move.
 
-Only one method mutates anything, and it takes an idempotency key.
+Two methods mutate anything -- a credit note and a refund -- and both take an
+idempotency key.
 """
 
 from __future__ import annotations
@@ -93,6 +94,22 @@ class BillingProvider(Protocol):
         idempotency_key: str,
     ) -> ProviderAction:
         """Raise :class:`ProviderRejected` when the platform says no."""
+        ...
+
+    async def create_refund(
+        self,
+        invoice_id: str,
+        amount_minor: int,
+        currency: str,
+        reason: str,
+        idempotency_key: str,
+    ) -> ProviderAction:
+        """Return money already collected on the invoice.
+
+        Not a credit note: a credit note corrects what is owed, a refund
+        moves cash back. An invoice with no settled payment to draw on is a
+        refusal (:class:`ProviderRejected`), never a credit note instead.
+        """
         ...
 
     async def find_action(self, idempotency_key: str) -> ProviderAction | None:

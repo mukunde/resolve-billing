@@ -91,8 +91,10 @@ credit note. The test against the Stripe sandbox (S7) is where this is shown,
 not assumed.
 
 **What this does not settle:**
-- **A refund is executed as a credit note.** `execute()` only knows
-  `create_credit_note` (D4, next).
+- **A refund was executed as a credit note** (D4). It is settled in a
+  separate change: the port gains `create_refund`, `execute()` writes the
+  instrument that was approved, and a type with no write is refused
+  before the claim.
 - **The idempotency key identifies a technical write, not an economic
   correction.** Two legitimate disputes on one invoice for the same amount
   collide (D6).

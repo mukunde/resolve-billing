@@ -295,3 +295,71 @@ class TestATimeoutIsNotAFailure:
 
         assert done.state is ActionState.EXECUTED
         assert len(provider.executed_actions) == 1
+
+
+def approved_refund(store: SqliteActionStore):
+    action = store.create(
+        run_id="run_test",
+        action_type="refund",
+        invoice_id="inv_002",
+        amount=NINETY_NINE,
+        reason="charged twice",
+        provider="fake",
+    )
+    return store.transition(action.action_id, ActionState.APPROVED, approved_by="approver")
+
+
+class TestARefundIsARefund:
+    """D4. execute() only knew create_credit_note, so an approved refund was
+    issued as a credit note: the human approved one instrument and the
+    platform received another."""
+
+    async def test_an_approved_refund_is_executed_as_a_refund(self, store):
+        provider = FakeBillingProvider()
+        action = approved_refund(store)
+
+        done = await ApprovalService(provider, store).execute(action.action_id)
+
+        assert done.state is ActionState.EXECUTED
+        (written,) = provider.executed_actions
+        assert written.action_type == "refund"
+
+    async def test_a_refund_with_no_settled_payment_is_refused(self, store):
+        """inv_020 has no settled payment: there is nothing to refund, and
+        the platform says so instead of issuing a credit note."""
+        provider = FakeBillingProvider()
+        action = store.create(
+            run_id="run_test",
+            action_type="refund",
+            invoice_id="inv_020",
+            amount=NINETY_NINE,
+            reason="proration",
+            provider="fake",
+        )
+        store.transition(action.action_id, ActionState.APPROVED, approved_by="approver")
+
+        with pytest.raises(ProviderRejected):
+            await ApprovalService(provider, store).execute(action.action_id)
+
+        assert provider.executed_actions == []
+        assert store.get(action.action_id).state is ActionState.FAILED
+
+    async def test_an_action_type_the_platform_cannot_write_is_refused_before_the_claim(
+        self, store
+    ):
+        provider = FakeBillingProvider()
+        action = store.create(
+            run_id="run_test",
+            action_type="write_off",
+            invoice_id="inv_002",
+            amount=NINETY_NINE,
+            reason="x",
+            provider="fake",
+        )
+        store.transition(action.action_id, ActionState.APPROVED, approved_by="approver")
+
+        with pytest.raises(IllegalTransition):
+            await ApprovalService(provider, store).execute(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.APPROVED
+        assert provider.executed_actions == []

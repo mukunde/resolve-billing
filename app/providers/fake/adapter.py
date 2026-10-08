@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.domain.enums import PaymentStatus
 from app.domain.exceptions import BillingDomainError
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
 from app.providers.base import ProviderAction, ProviderRejected
@@ -83,7 +84,7 @@ class FakeBillingProvider:
         invoice_ids = {i.id for i in self._invoices if i.customer_id == customer_id}
         return [p for p in self._payments if p.invoice_id in invoice_ids]
 
-    # -- the one write -----------------------------------------------------
+    # -- the two writes ----------------------------------------------------
 
     async def create_credit_note(
         self,
@@ -113,6 +114,53 @@ class FakeBillingProvider:
             provider=self.name,
             provider_action_id=f"cn_{len(self._actions) + 1:03d}",
             action_type="credit_note",
+            idempotency_key=idempotency_key,
+            status="succeeded",
+            created_at=datetime.now(UTC),
+        )
+        self._actions[idempotency_key] = action
+        return action
+
+    async def create_refund(
+        self,
+        invoice_id: str,
+        amount_minor: int,
+        currency: str,
+        reason: str,
+        idempotency_key: str,
+    ) -> ProviderAction:
+        """Refund money collected on the invoice, at most once per key.
+
+        A refund draws on a settled payment. With none large enough to cover
+        it, the platform refuses rather than doing something else.
+        """
+        replayed = self._actions.get(idempotency_key)
+        if replayed is not None:
+            return replayed
+
+        try:
+            await self.get_invoice(invoice_id)
+        except NotFound as error:
+            raise ProviderRejected(str(error)) from error
+
+        settled = [
+            p
+            for p in self._payments
+            if p.invoice_id == invoice_id
+            and p.status is PaymentStatus.SUCCEEDED
+            and p.amount.currency == currency
+            and p.amount.amount_minor >= amount_minor
+        ]
+        if not settled:
+            raise ProviderRejected(
+                f"no settled payment of at least {amount_minor} {currency} "
+                f"on invoice {invoice_id} to refund"
+            )
+
+        action = ProviderAction(
+            provider=self.name,
+            provider_action_id=f"re_{len(self._actions) + 1:03d}",
+            action_type="refund",
             idempotency_key=idempotency_key,
             status="succeeded",
             created_at=datetime.now(UTC),
