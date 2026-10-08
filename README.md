@@ -775,3 +775,4 @@ wish list.
 | [ADR-005](docs/adr/005-money-as-minor-units.md) | Money as integer minor units |
 | [ADR-006](docs/adr/006-no-agent-framework.md) | No agent framework |
 | [ADR-007](docs/adr/007-unknown-sender.md) | An unknown sender gets a result, not an error |
+| [ADR-008](docs/adr/008-execution-state-machine.md) | Executing a financial action: one claim, and no answer is not a no |

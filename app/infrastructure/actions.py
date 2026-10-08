@@ -47,7 +47,10 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     resume_url          TEXT,
     approved_by         TEXT,
     provider_action_id  TEXT,
-    failure_reason      TEXT
+    failure_reason      TEXT,
+    -- How an unknown outcome was settled, in words: what the platform was
+    -- asked and what it answered. The audit of a recovery, not of a write.
+    resolution          TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_run ON pending_actions(run_id);
@@ -65,7 +68,14 @@ ALLOWED: dict[ActionState, set[ActionState]] = {
     # Executing starts with a claim. Only the caller that moves the action
     # into EXECUTING rings the provider; a concurrent one finds it taken.
     ActionState.APPROVED: {ActionState.EXECUTING},
-    ActionState.EXECUTING: {ActionState.EXECUTED, ActionState.FAILED},
+    ActionState.EXECUTING: {
+        ActionState.EXECUTED,
+        ActionState.FAILED,
+        ActionState.UNKNOWN_OUTCOME,
+    },
+    # No answer from the platform: resolved by asking it what it holds under
+    # the idempotency key -- the write landed, or it can be made again.
+    ActionState.UNKNOWN_OUTCOME: {ActionState.EXECUTED, ActionState.FAILED},
     ActionState.REJECTED: set(),
     ActionState.EXECUTED: set(),
     # A failed write may be retried, through a fresh claim: it then succeeds
@@ -110,6 +120,8 @@ class PendingAction(BaseModel):
     approved_by: str | None = None
     provider_action_id: str | None = None
     failure_reason: str | None = None
+    resolution: str | None = None
+    updated_at: datetime | None = None
 
 
 def idempotency_key(
@@ -139,7 +151,7 @@ class SqliteActionStore:
         does nothing to a table that already exists.
         """
         held = {r["name"] for r in self._connection.execute("PRAGMA table_info(pending_actions)")}
-        for column, ddl in (("resume_url", "TEXT"),):
+        for column, ddl in (("resume_url", "TEXT"), ("resolution", "TEXT")):
             if column not in held:
                 self._connection.execute(
                     f"ALTER TABLE pending_actions ADD COLUMN {column} {ddl}"
@@ -233,6 +245,7 @@ class SqliteActionStore:
         approved_by: str | None = None,
         provider_action_id: str | None = None,
         failure_reason: str | None = None,
+        resolution: str | None = None,
     ) -> PendingAction:
         current = self.get(action_id)
         if to not in ALLOWED[current.state]:
@@ -256,7 +269,8 @@ class SqliteActionStore:
                 SET state = ?, updated_at = ?,
                     approved_by = COALESCE(?, approved_by),
                     provider_action_id = COALESCE(?, provider_action_id),
-                    failure_reason = ?
+                    failure_reason = ?,
+                    resolution = COALESCE(?, resolution)
                 WHERE action_id = ? AND state = ?
                 """,
                 (
@@ -265,6 +279,7 @@ class SqliteActionStore:
                     approved_by,
                     provider_action_id,
                     failure_reason,
+                    resolution,
                     action_id,
                     current.state.value,
                 ),
@@ -293,4 +308,6 @@ def _to_action(row: sqlite3.Row) -> PendingAction:
         approved_by=row["approved_by"],
         provider_action_id=row["provider_action_id"],
         failure_reason=row["failure_reason"],
+        resolution=row["resolution"],
+        updated_at=datetime.fromisoformat(row["updated_at"]),
     )

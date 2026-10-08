@@ -7,7 +7,7 @@ import pytest
 
 from app.domain.enums import InvoiceStatus, SubscriptionStatus
 from app.domain.money import Money
-from app.providers.base import BillingProvider
+from app.providers.base import BillingProvider, ProviderRejected
 from app.providers.fake.adapter import FakeBillingProvider, NotFound
 
 EPOCH = datetime(2020, 1, 1, tzinfo=UTC)
@@ -100,11 +100,21 @@ class TestIdempotentWrite:
 
         assert len(provider.executed_actions) == 2
 
-    async def test_write_against_an_unknown_invoice_raises(self, provider):
-        with pytest.raises(NotFound):
+    async def test_write_against_an_unknown_invoice_is_a_refusal(self, provider):
+        """The platform answered, and nothing was created: a refusal, not an
+        unknown outcome. See ADR-008."""
+        with pytest.raises(ProviderRejected):
             await provider.create_credit_note(
                 "inv_nope", 100, "EUR", "x", idempotency_key="c"
             )
+        assert await provider.find_action("c") is None
+
+    async def test_find_action_returns_what_a_key_produced(self, provider):
+        action = await provider.create_credit_note(
+            "inv_001", 100, "EUR", "x", idempotency_key="e"
+        )
+        assert await provider.find_action("e") == action
+        assert await provider.find_action("never-used") is None
 
     async def test_created_at_is_timezone_aware(self, provider):
         action = await provider.create_credit_note(

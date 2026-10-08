@@ -40,12 +40,16 @@ class ActionState(StrEnum):
     replaceable.
 
         PENDING_APPROVAL --approve--> APPROVED --claim--> EXECUTING --> EXECUTED
-               |                                   ^                \-> FAILED
-               |--reject---> REJECTED              \---- retry ---------/
-               \--ttl-----> EXPIRED
+               |                                   ^                |-> FAILED
+               |--reject---> REJECTED              |                \-> UNKNOWN_OUTCOME
+               \--ttl-----> EXPIRED                \-- retry -- FAILED      |
+                                                                 reconcile:
+                                                     found -> EXECUTED, absent -> FAILED
 
     EXECUTING is the claim on the write: exactly one caller moves an action
-    into it, and only that caller rings the provider. See ADR-008.
+    into it, and only that caller rings the provider. FAILED means the
+    platform said no; UNKNOWN_OUTCOME means it did not answer, and is
+    resolved by asking it, never by writing again blind. See ADR-008.
     """
 
     PENDING_APPROVAL = "pending_approval"
@@ -54,6 +58,7 @@ class ActionState(StrEnum):
     EXECUTING = "executing"
     EXECUTED = "executed"
     FAILED = "failed"
+    UNKNOWN_OUTCOME = "unknown_outcome"
     EXPIRED = "expired"
 
 

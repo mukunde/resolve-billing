@@ -15,7 +15,18 @@ from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
+from app.domain.exceptions import BillingDomainError
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
+
+
+class ProviderRejected(BillingDomainError):
+    """The platform answered, and refused the write: nothing was created.
+
+    Adapters raise this, or a subclass, only when the platform's answer says
+    so -- a validation error, an unknown invoice. Anything else, a timeout or
+    a dropped connection above all, leaves the outcome unknown: the write
+    may have landed with its response lost. See ADR-008.
+    """
 
 
 class ProviderAction(BaseModel):
@@ -80,4 +91,16 @@ class BillingProvider(Protocol):
         currency: str,
         reason: str,
         idempotency_key: str,
-    ) -> ProviderAction: ...
+    ) -> ProviderAction:
+        """Raise :class:`ProviderRejected` when the platform says no."""
+        ...
+
+    async def find_action(self, idempotency_key: str) -> ProviderAction | None:
+        """What the platform holds under this key, if anything.
+
+        The read that resolves an unknown outcome: after a timeout, ask
+        whether the write landed instead of guessing, and record its
+        reference if it did. A real adapter looks the key up, or lists the
+        invoice's credit notes and matches on it. See ADR-008.
+        """
+        ...

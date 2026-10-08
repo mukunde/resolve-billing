@@ -20,6 +20,7 @@ from app.infrastructure.actions import (
     UnknownAction,
 )
 from app.infrastructure.audit import SqliteAuditRepository
+from app.providers.base import ProviderRejected
 
 router = APIRouter(prefix="/api/v1", tags=["approvals"])
 
@@ -99,6 +100,17 @@ async def execute(
         raise HTTPException(404, str(error)) from error
     except IllegalTransition as error:
         raise HTTPException(409, str(error)) from error
+    except ProviderRejected as error:
+        # The platform answered no: the action is FAILED, nothing was written.
+        raise HTTPException(502, f"the billing platform refused the write: {error}") from error
+    except Exception as error:
+        # No answer: the action is UNKNOWN_OUTCOME. Calling execute again
+        # asks the platform what it holds before writing anything. ADR-008.
+        raise HTTPException(
+            504,
+            "no answer from the billing platform; the outcome is unknown and will be "
+            "reconciled on the next execute",
+        ) from error
 
 
 @router.get("/actions/{action_id}", response_model=ActionOut)

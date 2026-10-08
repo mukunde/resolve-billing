@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 
 from app.domain.exceptions import BillingDomainError
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
-from app.providers.base import ProviderAction
+from app.providers.base import ProviderAction, ProviderRejected
 from app.providers.fake.fixtures import load_all
 
 
@@ -102,7 +102,12 @@ class FakeBillingProvider:
         if replayed is not None:
             return replayed
 
-        await self.get_invoice(invoice_id)  # raises NotFound on a bad reference
+        # A bad reference is a refusal: the platform answered, and nothing
+        # was created.
+        try:
+            await self.get_invoice(invoice_id)
+        except NotFound as error:
+            raise ProviderRejected(str(error)) from error
 
         action = ProviderAction(
             provider=self.name,
@@ -114,6 +119,9 @@ class FakeBillingProvider:
         )
         self._actions[idempotency_key] = action
         return action
+
+    async def find_action(self, idempotency_key: str) -> ProviderAction | None:
+        return self._actions.get(idempotency_key)
 
     # -- test and demo helpers --------------------------------------------
 
