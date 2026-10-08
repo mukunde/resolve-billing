@@ -13,7 +13,7 @@ already created instead of issuing a second one.
 from __future__ import annotations
 
 from app.domain.enums import ActionState
-from app.infrastructure.actions import PendingAction, SqliteActionStore
+from app.infrastructure.actions import IllegalTransition, PendingAction, SqliteActionStore
 from app.providers.base import BillingProvider
 
 
@@ -48,10 +48,13 @@ class ApprovalService:
         if action.state is ActionState.EXECUTED:
             return action
 
-        if action.state is not ActionState.APPROVED:
-            # transition() raises with the current and wanted states, which is
-            # what a caller needs in order to know whether to retry.
-            return self._actions.transition(action_id, ActionState.EXECUTED)
+        # An approved action is executed; a failed one is retried, through the
+        # provider and with the same idempotency key, never by marking it
+        # done. Anything else -- awaiting approval, rejected, expired -- is
+        # refused with its current state, which is what a caller needs in
+        # order to know whether to retry.
+        if action.state not in (ActionState.APPROVED, ActionState.FAILED):
+            raise IllegalTransition(action_id, action.state, ActionState.EXECUTED)
 
         try:
             result = await self._provider.create_credit_note(

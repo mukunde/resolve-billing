@@ -65,16 +65,25 @@ ALLOWED: dict[ActionState, set[ActionState]] = {
     ActionState.APPROVED: {ActionState.EXECUTED, ActionState.FAILED},
     ActionState.REJECTED: set(),
     ActionState.EXECUTED: set(),
-    ActionState.FAILED: {ActionState.EXECUTED},
+    # A failed write may be retried: it either succeeds, with the provider's
+    # reference, or fails again. Reaching EXECUTED still takes that reference
+    # -- see transition() -- so a retry cannot be skipped by asking for the
+    # end state directly.
+    ActionState.FAILED: {ActionState.EXECUTED, ActionState.FAILED},
     ActionState.EXPIRED: set(),
 }
 
 
 class IllegalTransition(BillingDomainError):
-    def __init__(self, action_id: str, current: ActionState, wanted: ActionState) -> None:
-        super().__init__(
-            f"action {action_id} is {current.value}; it cannot become {wanted.value}"
-        )
+    def __init__(
+        self,
+        action_id: str,
+        current: ActionState,
+        wanted: ActionState,
+        why: str | None = None,
+    ) -> None:
+        message = f"action {action_id} is {current.value}; it cannot become {wanted.value}"
+        super().__init__(f"{message} {why}" if why else message)
         self.current = current
         self.wanted = wanted
 
@@ -225,6 +234,13 @@ class SqliteActionStore:
         current = self.get(action_id)
         if to not in ALLOWED[current.state]:
             raise IllegalTransition(action_id, current.state, to)
+        # EXECUTED is a claim that money moved, so it takes the provider's
+        # reference as proof. Without one, the state would say a credit note
+        # exists that nobody issued.
+        if to is ActionState.EXECUTED and not provider_action_id:
+            raise IllegalTransition(
+                action_id, current.state, to, why="without the provider's reference"
+            )
 
         with self._connection:
             self._connection.execute(
