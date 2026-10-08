@@ -100,6 +100,40 @@ class TestIdempotentWrite:
 
         assert len(provider.executed_actions) == 2
 
+
+class TestThePlatformCapsCorrections:
+    """D6. The platform, not ResolveBilling, knows what an invoice can still
+    give back, and refuses a write beyond it. The fake models that rule so it
+    can be tested without a real platform; whether Stripe enforces the same
+    is established against its sandbox (S7), not assumed. ADR-008."""
+
+    async def test_credit_notes_cannot_exceed_the_invoice(self, provider):
+        await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
+
+        with pytest.raises(ProviderRejected):
+            await provider.create_credit_note("inv_002", 1, "EUR", "x", idempotency_key="b")
+
+    async def test_a_refund_after_a_full_credit_note_is_refused(self, provider):
+        """99 EUR credited, then 99 EUR refunded, on a 99 EUR invoice: the
+        customer would get 198 EUR back. Different keys, different types --
+        only a cap on the invoice stops it."""
+        await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
+
+        with pytest.raises(ProviderRejected):
+            await provider.create_refund("inv_002", 9900, "EUR", "x", idempotency_key="b")
+
+        assert len(provider.executed_actions) == 1
+
+    async def test_a_replay_still_returns_the_original_at_the_cap(self, provider):
+        first = await provider.create_credit_note(
+            "inv_002", 9900, "EUR", "x", idempotency_key="a"
+        )
+        again = await provider.create_credit_note(
+            "inv_002", 9900, "EUR", "x", idempotency_key="a"
+        )
+
+        assert again == first
+
     async def test_write_against_an_unknown_invoice_is_a_refusal(self, provider):
         """The platform answered, and nothing was created: a refusal, not an
         unknown outcome. See ADR-008."""

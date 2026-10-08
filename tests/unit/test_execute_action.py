@@ -363,3 +363,44 @@ class TestARefundIsARefund:
 
         assert store.get(action.action_id).state is ActionState.APPROVED
         assert provider.executed_actions == []
+
+
+class TestNeverMoreThanTheInvoice:
+    """D6, on our side. The platform holds the ledger and caps corrections;
+    ResolveBilling keeps one minimal guard of its own, so a bug in a proposal
+    does not rely on the platform alone to stop it."""
+
+    async def test_an_amount_above_the_invoice_total_is_refused_before_the_claim(
+        self, store
+    ):
+        provider = FakeBillingProvider()
+        action = store.create(
+            run_id="run_test",
+            action_type="credit_note",
+            invoice_id="inv_002",
+            amount=Money(amount_minor=12000, currency="EUR"),
+            reason="x",
+            provider="fake",
+        )
+        store.transition(action.action_id, ActionState.APPROVED, approved_by="approver")
+
+        with pytest.raises(IllegalTransition):
+            await ApprovalService(provider, store).execute(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.APPROVED
+        assert provider.executed_actions == []
+
+    async def test_a_refund_after_a_full_credit_note_fails_at_the_platform(self, store):
+        """The 198 EUR case end to end: both approved, the second refused by
+        the platform, recorded as FAILED with the platform's reason."""
+        provider = FakeBillingProvider()
+        service = ApprovalService(provider, store)
+        credit = approved(store)
+        await service.execute(credit.action_id)
+        refund = approved_refund(store)
+
+        with pytest.raises(ProviderRejected):
+            await service.execute(refund.action_id)
+
+        assert store.get(refund.action_id).state is ActionState.FAILED
+        assert len(provider.executed_actions) == 1

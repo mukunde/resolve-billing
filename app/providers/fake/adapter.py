@@ -38,6 +38,10 @@ class FakeBillingProvider:
         self._payments = list(data.payments)
         self._usage = list(data.usage)
         self._actions: dict[str, ProviderAction] = {}
+        # What each invoice has already given back, in minor units: the
+        # platform's own ledger of corrections, which caps the next one.
+        self._credited: dict[str, int] = {}
+        self._refunded: dict[str, int] = {}
 
     # -- reads -------------------------------------------------------------
 
@@ -106,9 +110,10 @@ class FakeBillingProvider:
         # A bad reference is a refusal: the platform answered, and nothing
         # was created.
         try:
-            await self.get_invoice(invoice_id)
+            invoice = await self.get_invoice(invoice_id)
         except NotFound as error:
             raise ProviderRejected(str(error)) from error
+        self._refuse_beyond_the_invoice(invoice, amount_minor, currency)
 
         action = ProviderAction(
             provider=self.name,
@@ -119,6 +124,7 @@ class FakeBillingProvider:
             created_at=datetime.now(UTC),
         )
         self._actions[idempotency_key] = action
+        self._credited[invoice_id] = self._credited.get(invoice_id, 0) + amount_minor
         return action
 
     async def create_refund(
@@ -139,22 +145,23 @@ class FakeBillingProvider:
             return replayed
 
         try:
-            await self.get_invoice(invoice_id)
+            invoice = await self.get_invoice(invoice_id)
         except NotFound as error:
             raise ProviderRejected(str(error)) from error
+        self._refuse_beyond_the_invoice(invoice, amount_minor, currency)
 
-        settled = [
-            p
+        collected = sum(
+            p.amount.amount_minor
             for p in self._payments
             if p.invoice_id == invoice_id
             and p.status is PaymentStatus.SUCCEEDED
             and p.amount.currency == currency
-            and p.amount.amount_minor >= amount_minor
-        ]
-        if not settled:
+        )
+        refundable = collected - self._refunded.get(invoice_id, 0)
+        if amount_minor > refundable:
             raise ProviderRejected(
-                f"no settled payment of at least {amount_minor} {currency} "
-                f"on invoice {invoice_id} to refund"
+                f"only {refundable} {currency} of settled payment left to refund "
+                f"on invoice {invoice_id}, asked {amount_minor}"
             )
 
         action = ProviderAction(
@@ -166,7 +173,30 @@ class FakeBillingProvider:
             created_at=datetime.now(UTC),
         )
         self._actions[idempotency_key] = action
+        self._refunded[invoice_id] = self._refunded.get(invoice_id, 0) + amount_minor
         return action
+
+    def _refuse_beyond_the_invoice(
+        self, invoice: Invoice, amount_minor: int, currency: str
+    ) -> None:
+        """Credit notes and refunds together never exceed the invoice.
+
+        The fake's model of the platform's rule: once 99 EUR has been
+        credited on a 99 EUR invoice, nothing more comes back from it, by
+        either instrument. Whether a real platform enforces exactly this is
+        checked against it (Stripe sandbox, S7), not assumed. ADR-008.
+        """
+        if currency != invoice.total.currency:
+            raise ProviderRejected(
+                f"invoice {invoice.id} is in {invoice.total.currency}, not {currency}"
+            )
+        given_back = self._credited.get(invoice.id, 0) + self._refunded.get(invoice.id, 0)
+        left = invoice.total.amount_minor - given_back
+        if amount_minor > left:
+            raise ProviderRejected(
+                f"only {left} {currency} left to correct on invoice {invoice.id}, "
+                f"asked {amount_minor}"
+            )
 
     async def find_action(self, idempotency_key: str) -> ProviderAction | None:
         return self._actions.get(idempotency_key)

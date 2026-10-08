@@ -100,11 +100,32 @@ class ApprovalService:
                 why=f"(no write on the platform for action type {action.action_type!r})",
             )
 
+        # One guard of our own, before anything is claimed: never more than
+        # the invoice itself. The platform holds the ledger and caps what an
+        # invoice can still give back (ADR-008); this only stops a proposal
+        # bug from relying on the platform alone. Read from the platform, so
+        # the figure is its own, not one we keep.
+        invoice = await self._provider.find_invoice(action.invoice_id)
+        if invoice is not None and (
+            action.amount.currency != invoice.total.currency
+            or action.amount.amount_minor > invoice.total.amount_minor
+        ):
+            raise IllegalTransition(
+                action_id,
+                action.state,
+                ActionState.EXECUTED,
+                why=(
+                    f"({action.amount} exceeds invoice {invoice.id}, "
+                    f"which totals {invoice.total})"
+                ),
+            )
+
         # Claim the write before making it. Of two concurrent executions, one
         # moves the action to EXECUTING and rings the provider; the other
-        # finds it claimed and is refused. The claim is made before the first
-        # await, so nothing can interleave between the read and the claim in
-        # this process, and the store's conditional UPDATE covers the others.
+        # finds it claimed and is refused. The guarantee is the store's
+        # conditional UPDATE: transition() re-reads the state and only moves
+        # it from the one it found, so whichever caller claims second fails,
+        # in this process or another.
         self._actions.transition(action_id, ActionState.EXECUTING)
 
         try:

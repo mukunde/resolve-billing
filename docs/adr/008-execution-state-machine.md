@@ -96,14 +96,49 @@ not assumed.
   instrument that was approved, and a type with no write is refused
   before the claim.
 - **The idempotency key identifies a technical write, not an economic
-  correction.** Two legitimate disputes on one invoice for the same amount
-  collide (D6).
+  correction** (D6). It is derived from provider, invoice, type and amount.
+  Two legitimate disputes on one invoice for the same amount collide, and
+  nothing capped the corrections an invoice could accumulate: a 99 EUR
+  credit note, then a 99 EUR refund, on a 99 EUR invoice, would have paid
+  back 198 EUR. The cap is settled below. Tying the key to the originating
+  dispute is not: a replayed dispute must keep its identity, and the model
+  has no stable dispute identifier yet (an email's `Message-ID`, for
+  instance). That belongs with the correction intent (chantier 4).
 - **There is no scheduler.** An abandoned claim is recovered at the next
   `execute()` call, not on a timer.
 
-These are separate decisions.
+## The platform is authoritative on amounts and limits
 
-**Re-evaluation condition:** more than one kind of write (refunds included),
-or execution moving off the request path into a worker. At that point,
-reconciliation becomes a sweep over every `UNKNOWN_OUTCOME` and abandoned
-`EXECUTING`, run on a schedule, instead of a step in `execute()`.
+Added with D6, 2026-10-08.
+
+**ResolveBilling does not keep a ledger.** What an invoice can still give
+back depends on the credit notes, refunds and payments the billing platform
+holds. Recomputing it here would duplicate the platform's accounting, and
+would be wrong the first time someone corrects an invoice outside this
+system. So the platform decides:
+
+- **A write beyond what an invoice can still give back is the platform's to
+  refuse.** It arrives here as `ProviderRejected`, and the action becomes
+  `FAILED` with the platform's reason. The fake models that rule: credit
+  notes and refunds together never exceed the invoice, and a refund never
+  exceeds the settled payments left to refund.
+- **ResolveBilling keeps one guard of its own, for defence in depth.** An
+  action is never executed for more than the invoice's total, or in another
+  currency, and the check reads that total from the platform. This is not a
+  ledger. It stops a proposal bug from relying on the platform alone.
+- **The same holds for amounts to come** (D5, chantier 4). The rules
+  *detect* an anomaly, and the platform *computes* the correction: its
+  credit note, its tax, its numbering. ResolveBilling proposes, has a human
+  approve, and keeps the trace.
+
+**To verify, not assume:** whether Stripe enforces the same caps, and in
+particular how it treats a credit note and a refund on one paid invoice. A
+contract test against its sandbox (S7) establishes it. Until then, the cap
+is a property of the fake, stated as such.
+
+**Re-evaluation condition:** execution moving off the request path into a
+worker, or a volume at which waiting for the next `execute()` to recover an
+abandoned claim is too slow. At that point, reconciliation becomes a sweep
+over every `UNKNOWN_OUTCOME` and abandoned `EXECUTING`, run on a schedule,
+instead of a step in `execute()`. `find_action` is keyed on the idempotency
+key, so it already serves refunds and credit notes alike.
