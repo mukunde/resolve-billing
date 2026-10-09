@@ -1,16 +1,36 @@
 # Stored evaluation runs
 
-The two files here are the evidence behind the table in the root README. They
-are committed rather than ignored because a published accuracy figure whose
-run nobody can inspect is an assertion, not a result.
+The first two files are the evidence behind the table in the root README; the
+third is a variance band, described below. They are committed rather than
+ignored because a published accuracy figure whose run nobody can inspect is
+an assertion, not a result.
 
 | file | prompt | ran at | fully correct |
 |---|---|---|---|
 | `claude-decision_v2.json` | `decision_v2` | 2026-09-21 23:04 UTC | 10/12 *(rescored)* |
 | `claude-decision_v3.json` | `decision_v3` | 2026-09-21 23:08 UTC | 12/12 |
+| `claude-haiku-5-5_decision_v3_x5.json` | `decision_v3` | 2026-10-08 17:47 UTC | 14/19 *(worst of 5 runs; Haiku 5.5)* |
 
 The mock's numbers are not stored: it is deterministic and free, so
 `python -m evals.runner --engine mock` reproduces them in under a second.
+
+## The variance band is Haiku 5.5, on another exam
+
+`claude-haiku-5-5_decision_v3_x5.json` is five runs of the 19-case
+development set with Claude Haiku 5.5, not the model behind the two rows
+above. Its fully correct count, run by run, is 15, 15, 14, 15, 14, and no
+run proposed an unsafe action (0/95). It measures how much one model's
+verdicts move from run to run, not how good the system is.
+
+It is not comparable to the 12/12 above either: those runs were scored on
+the earlier 12-case set. This one carries `engine_version` and
+`cases_sha256`, which name its model, prompt and case set in the file.
+
+```bash
+python -m evals.variance evals/results/claude-haiku-5-5_decision_v3_x5.json
+```
+
+prints the band case by case.
 
 ## Why the v2 figure says "rescored"
 
@@ -32,14 +52,14 @@ python -m evals.rescore evals/results/claude-decision_v2.json
 
 It re-applies today's expectations to that run's stored outcomes and names the
 cases whose verdict changed. It recounts unsafe actions the same way, with the
-runner's own definition as it stands today, and exits 1 if any remains; both
-files come out at 0/12. That is possible only because the runner stores
+runner's own definition as it stands today, and exits 1 if any remains; the
+two v2 and v3 files come out at 0/12. That is possible only because the runner stores
 `got` — what the system actually did — alongside the booleans it derived from
 it at the time.
 
 ## What these files do not carry
 
-Both predate two fields the runner now writes: `engine_version` and
+The first two predate two fields the runner now writes: `engine_version` and
 `cases_sha256`. Their prompt version is recorded in their **filename** and in
 this table, which is a label rather than a record, and the honest way to say
 so is to say so. Runs written from now on carry both in the file itself, so a
