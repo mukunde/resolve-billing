@@ -220,14 +220,22 @@ async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[Cas
     investigator = DisputeInvestigator(provider=FakeBillingProvider(), engine=engine)
 
     outcomes = []
-    for case in cases:
-        dispute = Dispute(
-            id=f"eval_{case['id']}",
-            customer_message=case["message"],
-            customer_email=case["customer_email"],
-            invoice_id=case["invoice_id"],
-        )
-        outcomes.append(_evaluate(case, await investigator.investigate(dispute)))
+    try:
+        for case in cases:
+            dispute = Dispute(
+                id=f"eval_{case['id']}",
+                customer_message=case["message"],
+                customer_email=case["customer_email"],
+                invoice_id=case["invoice_id"],
+            )
+            outcomes.append(_evaluate(case, await investigator.investigate(dispute)))
+    finally:
+        # Whatever the engine holds belongs to this run's event loop, which
+        # `asyncio.run` closes on return: release it before then. An engine
+        # with nothing to release has no `aclose`.
+        aclose = getattr(engine, "aclose", None)
+        if aclose is not None:
+            await aclose()
     return outcomes, engine.version
 
 

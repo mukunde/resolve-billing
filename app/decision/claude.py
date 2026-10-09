@@ -195,6 +195,17 @@ class ClaudeDecisionEngine:
         self._system = PROMPT_PATH.read_text(encoding="utf-8")
         self._client = client if client is not None else _default_client(timeout_seconds)
 
+    async def aclose(self) -> None:
+        """Release the HTTP client, on the event loop that opened it.
+
+        Left to the garbage collector, the SDK schedules the close on
+        whatever loop is running then -- in the evaluation runner, the next
+        run's, for connections bound to a loop already closed.
+        """
+        close = getattr(self._client, "close", None)
+        if close is not None:
+            await close()
+
     async def decide(
         self,
         dispute: Dispute,

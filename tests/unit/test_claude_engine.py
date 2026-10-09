@@ -404,3 +404,28 @@ class TestRequestShape:
         content = client.messages.last_request["messages"][0]["content"]
         assert "<customer_message>" in content
         assert "<billing_context>" in content
+
+
+class TestTheClientIsReleased:
+    """Each evaluation run builds an engine, and with it an HTTP client. Left
+    open, the client of one run was collected while the next run's event
+    loop was running; the SDK's finaliser then scheduled its close on that
+    loop, for connections bound to the previous one, already closed --
+    "Event loop is closed" in the middle of `--runs`."""
+
+    async def test_closing_the_engine_closes_its_client(self):
+        closed = []
+
+        class ClosableClient(StubClient):
+            async def close(self):
+                closed.append(True)
+
+        engine = ClaudeDecisionEngine(client=ClosableClient(reply(VALID_VERDICT)), model="m")
+        await engine.aclose()
+
+        assert closed == [True]
+
+    async def test_a_client_with_nothing_to_close_is_left_alone(self):
+        engine, _ = engine_with(reply(VALID_VERDICT))
+
+        await engine.aclose()
