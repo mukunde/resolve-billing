@@ -120,9 +120,17 @@ Then, **before the workflow will run**, create an SMTP credential in n8n named
 password, TLS off. Credentials never travel inside an exported workflow, so
 this step is manual — as it would be for any real SMTP server.
 
-Finally, open the `Configuration` node and set `billing_api`,
-`notify_to` and `notify_from`. `host.docker.internal:8000` is right when n8n
-runs in Docker; use `http://localhost:8000` when it does not.
+Finally, open the `Configuration` node and set `billing_api`, `public_api`,
+`notify_to` and `notify_from`. The API has two addresses, because it is
+reached from two places:
+
+- `billing_api` is where n8n calls it. `http://host.docker.internal:8000` is
+  right when n8n runs in Docker; use `http://localhost:8000` when it does not.
+- `public_api` is where a person's browser opens it: every link in a mail
+  is built from it. `http://localhost:8000` here. From the machine itself,
+  `host.docker.internal` does not lead to an API listening on `127.0.0.1`,
+  so a link built from `billing_api` fails for the person it was sent to.
+  In production both are the API's public domain.
 
 ### 4. Send a dispute
 
