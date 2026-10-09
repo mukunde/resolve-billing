@@ -721,6 +721,81 @@ says a human must look. It does not say there is a decision to take.
 
 ---
 
+## Review findings
+
+Code reviews of this repository found fourteen defects, D1 to D14. Each is
+fixed the same way: a test that fails on the code as it was, then the fix,
+one commit per defect. The ones below change no investigation result -- they
+sit on execution, the API and the workflow -- and are fixed. The others
+change what an investigation concludes; they are open, and the holdout is
+measured again once they are fixed, since its current reference describes
+the system before them.
+
+**Fixed**
+
+- **D1 -- a failed write could become `EXECUTED` without the platform**
+  (`f9a22d7`). The state machine allowed `FAILED -> EXECUTED`, so a retry
+  could be recorded as done with no write behind it. `EXECUTED` now takes
+  the provider's reference, and a failed write is retried through a fresh
+  claim. `TestNothingIsExecutedWithoutTheProvider`.
+- **D2 -- two executions could both write** (`19ae815`). Both read
+  `APPROVED`, both called the platform. Execution now claims the action
+  first (`EXECUTING`), by an update conditional on the state it read: of
+  two callers, one wins. `TestOneExecutionAtATime`.
+- **D3 -- a timeout was treated as a failure** (`8f4b54d`). The write may
+  have landed with its response lost, and the retry could issue a second
+  credit note. No answer is now `UNKNOWN_OUTCOME`, settled by asking the
+  platform what it holds under the idempotency key. ADR-008.
+  `TestATimeoutIsNotAFailure`.
+- **D4 -- an approved refund was executed as a credit note** (`83dbf86`).
+  Execution had one write. The port gains `create_refund`; the instrument
+  written is the one approved, and a type with no write is refused before
+  anything is claimed. `TestARefundIsARefund`.
+- **D6 -- nothing capped what an invoice could give back** (`e21efca`). A
+  99 EUR credit note, then a 99 EUR refund, on a 99 EUR invoice would
+  have paid back 198 EUR. The platform is the authority on what remains and refuses beyond
+  it; one guard of our own keeps any action under the invoice's total.
+  `TestThePlatformCapsCorrections`, `TestNeverMoreThanTheInvoice`. Still
+  open: the idempotency key identifies a write, not the dispute behind it
+  (ADR-008).
+- **D7 -- routes that move money took no authenticated caller**
+  (`683797d`). Anyone who knew an action id could approve and execute it,
+  and the approver was a name typed into the form. The orchestrator now
+  presents a service key, a person signs in, each does only its part, and
+  the service refuses everything when neither is configured. ADR-009.
+  `tests/integration/test_auth.py`.
+- **D8 -- the server called back any URL a browser handed it**
+  (`892a4b1`). The resume callback came through the review link, and was
+  called as received: a link could make the service request an internal
+  address. Only the orchestrator's own waiting webhook is called now,
+  rebuilt from the configured origin. `TestOnlyTheOrchestratorIsCalledBack`.
+- **D12 -- a long message was dropped in silence** (`ef0379e`). Past
+  10,000 characters the API answered 422 and the workflow stopped there.
+  Such a message now goes to a person without calling the engine, and
+  whatever the API refuses ends in a mail. `tests/integration/test_long_message.py`.
+- **D13 -- an approval held forever, and for anything** (`aba154e`). A
+  request stayed decidable indefinitely, and the decision named only the
+  action, so an invoice changed in between was approved unseen. A request
+  now has a deadline, the approval names a fingerprint of the proposal and
+  invoice it was shown, and execution checks it again. The workflow reports
+  an approval that does not end in an execution (`2869608`).
+  `tests/integration/test_approval_binding.py`.
+
+**Open** -- each changes investigation results, so each is measured on the
+evaluation set before it lands.
+
+- **D5** -- when the amount owed cannot be evaluated, propose none rather
+  than the invoice's total.
+- **D9** -- check that the customer found matches the sender.
+- **D10** -- mask the dispute message itself before the engine call; today
+  only the billing context is pseudonymised.
+- **D11** -- no automatic reply to an unknown sender without filtering
+  automated mail first.
+- **D14** -- give each rule its preconditions, and a `NOT_EVALUABLE`
+  outcome when they do not hold.
+
+---
+
 ## Production considerations
 
 **Idempotency.** The key is derived from what the action *is* — provider,
@@ -786,8 +861,9 @@ wish list.
 - **Reply drafter.** A second port, already argued for: prose is not the
   decision engine's job, and separating them is what made the decision port
   implementable by a non-generative model.
-- **Approval expiry and read retry.** A request that sits for three weeks
-  should not be approvable by someone who has forgotten the context.
+- **Read retry.** The port declares reads safe to retry with backoff; no
+  adapter does it yet. Approval expiry, once listed beside it, is done
+  (D13).
 - **A second engine** behind the same port, evaluated head to head.
 - **Stripe adapter**, to prove the billing boundary against a real API.
 - **Cache rates in the price table.** The reconciler found their absence; the
