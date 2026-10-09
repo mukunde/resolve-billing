@@ -195,6 +195,16 @@ read-only page showing the findings and the trace. Not mailing anything at all
 would have been simpler, and would have meant an attempted injection is
 detected, recorded, and told to no one.
 
+## When the API cannot take a dispute
+
+The `POST /disputes/investigate` node has an error output. Whatever the
+cause -- a message over the service's hard limit, the API down, its
+authentication not configured -- the run ends in a mail to a person,
+naming the sender and the API's reason, never in an execution that simply
+stopped. A message that is only too long for the engine does not take this
+branch: the API returns a result routed to a human, and the usual
+"review without action" mail goes out.
+
 ## Notes for whoever edits this workflow
 
 **The canvas is a draft.** The webhook serves the *published* version. Moving a

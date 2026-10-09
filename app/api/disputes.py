@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from app.api.auth import Service
 from app.api.deps import get_investigator
 from app.application.investigate_dispute import (
+    MESSAGE_HARD_LIMIT,
     DisputeInvestigator,
     InvestigationResult,
     ProposedAction,
@@ -28,7 +29,9 @@ router = APIRouter(prefix="/api/v1/disputes", tags=["disputes"])
 
 
 class InvestigateRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=10_000)
+    # Up to the hard limit, every message gets a result; past what an engine
+    # is given, that result is a person reading it. D12.
+    message: str = Field(min_length=1, max_length=MESSAGE_HARD_LIMIT)
     customer_email: str | None = None
     customer_id: str | None = None
     invoice_id: str | None = None

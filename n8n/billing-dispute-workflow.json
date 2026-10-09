@@ -101,7 +101,8 @@
         "options": {
           "timeout": 90000
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "id": "route",
@@ -302,6 +303,32 @@
           "appendAttribution": false
         }
       }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Configuration').first().json.notify_from }}",
+        "toEmail": "={{ $('Configuration').first().json.notify_to }}",
+        "subject": "=Litige non traite : {{ $('Extraction deterministe').first().json.customer_email || 'expediteur inconnu' }}",
+        "emailFormat": "text",
+        "text": "=Un litige n'a pas pu etre traite par l'API. Personne d'autre ne sera prevenu :\nil faut le reprendre a la main depuis le message d'origine.\n\nExpediteur : {{ $('Extraction deterministe').first().json.customer_email || 'inconnu' }}\nFacture    : {{ $('Extraction deterministe').first().json.invoice_id || 'non identifiee' }}\nLongueur   : {{ ($('Extraction deterministe').first().json.message || '').length }} caracteres\n\nRaison donnee par l'API :\n{{ $json.error?.message ?? $json.message ?? 'inconnue' }}\n\n--\nUn message trop long pour le service, une API indisponible ou mal configuree :\ndans tous les cas, le litige n'est pas perdu tant que ce mail est lu.",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "alerte-api-erreur",
+      "name": "Alerte : litige non traite par l'API",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        300,
+        260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailpitLocal0001",
+          "name": "Mailpit local"
+        }
+      }
     }
   ],
   "connections": {
@@ -332,6 +359,13 @@
         [
           {
             "node": "Validation humaine requise ?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alerte : litige non traite par l'API",
             "type": "main",
             "index": 0
           }

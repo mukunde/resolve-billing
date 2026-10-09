@@ -732,6 +732,14 @@ difference between what was decided then and what happened to it since.
 model sees it, and the context that reaches the engine is pseudonymised — a
 reference outside the aliases we issued is dropped rather than trusted.
 
+**No dispute is dropped for its length.** Past 10,000 characters a message is
+not sent to the engine -- a cost and context bound -- but the run still
+happens: the rules run on the billing context, the audit records it, and a
+person is alerted to read it (`MESSAGE_TOO_LONG`). Past 200,000 the service
+refuses, and the workflow's error branch mails a person rather than ending
+in silence. Stripping quoted history and signatures belongs upstream, in the
+support tool (ADR-010).
+
 **Cost is an estimate.** It applies a dated list price, not an invoiced
 amount, which is why the reconciler above checks it against the bill, per day
 and model — the same problem this project solves on customer invoices, turned

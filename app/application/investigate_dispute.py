@@ -32,7 +32,7 @@ from app.decision.base import (
     EngineTelemetry,
     RecommendedAction,
 )
-from app.domain.enums import RuleCode, SenderStatus
+from app.domain.enums import RuleCode, SenderStatus, Severity
 from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
 from app.domain.money import Money
 from app.domain.rules import (
@@ -51,6 +51,17 @@ from app.providers.base import BillingProvider
 
 #: How far back to pull invoices when assembling the context.
 LOOKBACK = timedelta(days=180)
+
+#: The longest message handed to a decision engine, in characters. Past it,
+#: the run still happens -- the rules run on the billing context, the audit
+#: records it -- but the engine is not asked, and a person reads the message.
+#: A cost and context bound, not a judgement on the customer. D12.
+ENGINE_MESSAGE_LIMIT = 10_000
+
+#: The longest message the service accepts at all, to protect itself. Past it
+#: the API refuses, and the orchestrator alerts a person. Quoted history and
+#: signatures are the support tool's to strip upstream (ADR-010).
+MESSAGE_HARD_LIMIT = 200_000
 
 
 class ProposedAction(BaseModel):
@@ -175,6 +186,13 @@ class DisputeInvestigator:
             trace.append(event("injection_suspected", matched=injection.evidence.get("categories")))
             trace.append(event("decision_engine_skipped"))
             return self._finish(self._short_circuit(dispute, findings, injection), trace)
+
+        too_long = _message_too_long(dispute.customer_message)
+        if too_long is not None:
+            findings.append(too_long)
+            trace.append(event("message_too_long", **too_long.evidence))
+            trace.append(event("decision_engine_skipped"))
+            return self._finish(self._short_circuit(dispute, findings, too_long), trace)
 
         decision = await self._engine.decide(dispute, context, findings)
         trace.append(
@@ -481,6 +499,21 @@ def _proposed_action(decision: Decision, context: BillingContext) -> ProposedAct
             return ProposedAction(type="request_information")
         case _:
             return ProposedAction(type="none")
+
+
+def _message_too_long(message: str) -> RuleFinding | None:
+    """A finding when the message is longer than an engine is given. D12."""
+    if len(message) <= ENGINE_MESSAGE_LIMIT:
+        return None
+    return RuleFinding(
+        code=RuleCode.MESSAGE_TOO_LONG,
+        severity=Severity.MEDIUM,
+        description=(
+            f"Message de {len(message)} caractères, au-delà des {ENGINE_MESSAGE_LIMIT} "
+            "soumis au moteur : à lire par une personne."
+        ),
+        evidence={"length": len(message), "limit": ENGINE_MESSAGE_LIMIT},
+    )
 
 
 def deterministic_explanation(findings: list[RuleFinding]) -> str:

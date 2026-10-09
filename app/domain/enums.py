@@ -99,3 +99,6 @@ class RuleCode(StrEnum):
     SUSPECTED_PROMPT_INJECTION = "SUSPECTED_PROMPT_INJECTION"
     UNKNOWN_CUSTOMER = "UNKNOWN_CUSTOMER"
     SUSPECTED_IMPERSONATION = "SUSPECTED_IMPERSONATION"
+    # Not a billing rule: an input check, made before the engine. The message
+    # is longer than what is sent to a model, so a person reads it instead.
+    MESSAGE_TOO_LONG = "MESSAGE_TOO_LONG"
