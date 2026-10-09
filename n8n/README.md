@@ -205,6 +205,19 @@ stopped. A message that is only too long for the engine does not take this
 branch: the API returns a result routed to a human, and the usual
 "review without action" mail goes out.
 
+## When an approval does not end in an execution
+
+The `POST /actions/{id}/execute` node has an error output too. An approval
+came back, and the action was not executed: the API holds no approval for
+it, or it expired before execution -- past its deadline, or the invoice
+changed since the approval (409); the billing platform refused the write
+(502); or no answer came back (504). Each ends in a mail naming the action, who the callback says
+decided -- the API's state, not the callback, is authoritative -- and the
+API's reason, with what to do: nothing was written on a 409 or a 502; on a
+504 the outcome is unknown, and the remedy is to call execute again, which
+asks the platform what it holds before writing anything (ADR-008) -- never
+to issue the credit note by hand.
+
 ## Notes for whoever edits this workflow
 
 **The canvas is a draft.** The webhook serves the *published* version. Moving a

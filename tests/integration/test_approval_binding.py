@@ -6,7 +6,9 @@ being shown and the click -- or between the click and the execution -- the
 approval applied to facts nobody had looked at.
 """
 
+import json
 import re
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +17,8 @@ from app.api.deps import get_actions, get_provider
 from app.main import app
 from tests.integration._auth import APPROVER, SERVICE, basic
 from tests.integration._proposal import shown
+
+WORKFLOW = Path(__file__).resolve().parents[2] / "n8n" / "billing-dispute-workflow.json"
 
 CASE_A = {
     "message": "Je crois que j'ai été facturé deux fois pour le mois de septembre.",
@@ -116,3 +120,25 @@ class TestARequestHasADeadline:
 
         assert response.status_code == 409
         assert get_actions().get(overdue).state.value == "expired"
+
+
+class TestAnExecutionThatDoesNotGoThroughIsReported:
+    """An approved action that expires at execution answers 409 -- as a
+    refusal by the platform answers 502 and a lost answer 504. The workflow's
+    execute node had no error branch: the run stopped there, and nobody was
+    told that what a person had approved was not done."""
+
+    def test_the_workflow_alerts_a_person_when_execution_fails(self):
+        workflow = json.loads(WORKFLOW.read_text(encoding="utf-8"))
+        nodes = {node["name"]: node for node in workflow["nodes"]}
+        execute = nodes["POST /actions/{id}/execute"]
+
+        assert execute.get("onError") == "continueErrorOutput"
+        outputs = workflow["connections"]["POST /actions/{id}/execute"]["main"]
+        assert len(outputs) == 2, "a success output and an error output"
+        (target,) = outputs[1]
+        alert = nodes[target["node"]]
+        assert alert["type"].endswith("emailSend")
+        # The person alerted can act: which action, and what the API said.
+        assert "action_id" in alert["parameters"]["subject"]
+        assert "$json.error" in alert["parameters"]["text"]

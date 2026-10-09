@@ -245,7 +245,8 @@
           "timeout": 60000
         }
       },
-      "notes": "Idempotent cote API : rejouer cet appel ne cree pas un second avoir."
+      "notes": "Idempotent cote API : rejouer cet appel ne cree pas un second avoir.",
+      "onError": "continueErrorOutput"
     },
     {
       "id": "action-a-approuver",
@@ -322,6 +323,32 @@
       "position": [
         300,
         260
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailpitLocal0001",
+          "name": "Mailpit local"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Configuration').first().json.notify_from }}",
+        "toEmail": "={{ $('Configuration').first().json.notify_to }}",
+        "subject": "=Execution non aboutie : {{ $('POST /disputes/investigate').item.json.action_id }}",
+        "emailFormat": "text",
+        "text": "=Une decision d'approbation est arrivee, et l'action n'a pas ete executee.\nPersonne d'autre ne sera prevenu.\n\nAction id : {{ $('POST /disputes/investigate').item.json.action_id }}\nRun       : {{ $('POST /disputes/investigate').item.json.run_id }}\nAnnoncee par : {{ $('Attente de decision').item.json.query.by || 'inconnu' }} (selon le rappel ; c'est\n  l'etat de l'action dans l'API qui fait foi)\n\nReponse de l'API :\n{{ $json.error?.message ?? $json.message ?? 'inconnue' }}\n\nQue faire, selon la reponse :\n- 409 : l'action n'est pas executable (jamais approuvee, delai de decision\n  depasse, facture modifiee depuis la validation, ou deja traitee). Rien n'a ete ecrit ; le\n  litige est a reexaminer.\n- 502 : la plateforme de facturation a refuse l'ecriture. Rien n'a ete ecrit.\n- 504, ou aucune reponse : l'issue est inconnue. Ne pas emettre l'avoir a la\n  main : rappeler execute, qui demande d'abord a la plateforme ce qu'elle\n  detient sous la cle d'idempotence.\n\nEtat de l'action :\n{{ $('Configuration').first().json.billing_api }}/api/v1/actions/{{ $('POST /disputes/investigate').item.json.action_id }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "alerte-execution-erreur",
+      "name": "Alerte : execution non aboutie",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1660,
+        -100
       ],
       "credentials": {
         "smtp": {
@@ -447,6 +474,18 @@
         [
           {
             "node": "Alerte : revue sans action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /actions/{id}/execute": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Alerte : execution non aboutie",
             "type": "main",
             "index": 0
           }
