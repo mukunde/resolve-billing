@@ -26,6 +26,8 @@ behind the company's SSO, and the identity comes from there.
 from __future__ import annotations
 
 import json
+import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -69,8 +71,12 @@ async def review_page(
     """
     action = _found(lambda: actions.get(action_id))
 
-    if resume:
-        action = actions.set_resume_url(action_id, resume)
+    # Kept only if it is the orchestrator's own callback, rebuilt here from
+    # the configured origin. Anything else is ignored: the decision still
+    # counts, nobody is called back. ADR-009, D8.
+    callback = orchestrator_callback(resume) if resume else None
+    if callback:
+        action = actions.set_resume_url(action_id, callback)
 
     if action.state is not ActionState.PENDING_APPROVAL:
         return HTMLResponse(_already_decided(action), status_code=409)
@@ -205,6 +211,48 @@ def _findings(run) -> str:
 
 # -- orchestrator callback -------------------------------------------------
 
+#: The only callback shape accepted: n8n's waiting webhook for one execution.
+_WAITING_PATH = re.compile(r"/webhook-waiting/(\d+)")
+_SIGNATURE = re.compile(r"[0-9A-Fa-f]{1,128}")
+
+
+def orchestrator_callback(resume: str) -> str | None:
+    """The callback to ring, rebuilt from the configured origin, or None.
+
+    The `resume` URL reaches this service through a browser, so it is
+    untrusted input, and calling it as given would let anyone who can put a
+    link in front of a reviewer make this server request any address it can
+    reach: a cloud metadata endpoint, an internal service. So it is only
+    accepted when it is the orchestrator's own waiting webhook, on the origin
+    configured in ``RESOLVE_ORCHESTRATOR_URL`` -- same scheme, host and port,
+    the path ``/webhook-waiting/<execution id>``, and nothing in the query
+    but n8n's signature. The URL rung is then built here, from those parts,
+    never from the string as received. Not configured means no callback.
+
+    The orchestrator's resume URL is minimal by design (ADR-010 removes it):
+    a durable workflow takes the decision as a signal instead.
+    """
+    base = os.getenv("RESOLVE_ORCHESTRATOR_URL")
+    if not base:
+        return None
+    origin = urllib.parse.urlsplit(base)
+    given = urllib.parse.urlsplit(resume)
+    if origin.scheme not in ("http", "https") or not origin.netloc:
+        return None
+    if (given.scheme, given.netloc) != (origin.scheme, origin.netloc):
+        return None
+    waiting = _WAITING_PATH.fullmatch(given.path)
+    query = urllib.parse.parse_qs(given.query, keep_blank_values=True)
+    if waiting is None or set(query) != {"signature"} or len(query["signature"]) != 1:
+        return None
+    signature = query["signature"][0]
+    if not _SIGNATURE.fullmatch(signature):
+        return None
+    return (
+        f"{origin.scheme}://{origin.netloc}/webhook-waiting/{waiting.group(1)}"
+        f"?signature={signature}"
+    )
+
 
 def _resume(action: PendingAction, decision: str, by: str) -> bool:
     """Ring the orchestrator back. Best effort, and deliberately so.
@@ -214,27 +262,31 @@ def _resume(action: PendingAction, decision: str, by: str) -> bool:
     the human's click is never lost because the orchestrator was unavailable.
     That is the whole reason the state does not live in n8n.
 
-    It is a GET, which n8n's waiting webhook is what accepts. That is not the
-    hole it looks like: this URL never reaches a human or a mail scanner. It
-    is minted by the orchestrator, handed to this service, and kept in the
-    database -- the link a reviewer clicks is the page above, and decisions
-    there arrive by POST.
+    It is a GET, which n8n's waiting webhook is what accepts. The URL does
+    reach a browser -- n8n hands it over inside the review link -- which is
+    why it is never called as received: only the orchestrator's own waiting
+    webhook, rebuilt from the configured origin, is rung
+    (:func:`orchestrator_callback`, D8). Decisions on the page above still
+    arrive by POST.
 
-    More to the point, **the callback carries no authority**. Replaying it
+    And **the callback carries no authority**. Replaying it
     cannot approve anything: execution requires the action to already be in
     APPROVED, which only a recorded human decision produces. A leaked resume
     URL can at most re-trigger what a person already authorised.
     """
-    if not action.resume_url:
+    # Checked again at call time: a row stored before this check existed
+    # may hold any URL at all.
+    callback = orchestrator_callback(action.resume_url) if action.resume_url else None
+    if not callback:
         return False
 
-    separator = "&" if "?" in action.resume_url else "?"
+    separator = "&" if "?" in callback else "?"
     query = urllib.parse.urlencode(
         {"decision": decision, "by": by, "action_id": action.action_id}
     )
     try:
         with urllib.request.urlopen(
-            f"{action.resume_url}{separator}{query}", timeout=RESUME_TIMEOUT_SECONDS
+            f"{callback}{separator}{query}", timeout=RESUME_TIMEOUT_SECONDS
         ):
             return True
     except (urllib.error.URLError, TimeoutError, OSError):

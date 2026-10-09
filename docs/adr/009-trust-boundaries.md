@@ -1,7 +1,7 @@
 # ADR-009 — Trust boundaries: who may call, and whose identity a decision carries
 
-**Status:** accepted · 2026-10-08 · covers D7; D8 (the resume URL) and D10
-(what reaches the model) are recorded here as they are settled
+**Status:** accepted · 2026-10-08 · covers D7 and D8; D10 (what reaches the
+model) is recorded here when it is settled
 
 ## Context
 
@@ -84,7 +84,34 @@ None of these changes touches a route. They replace the one dependency.
   mail links to it. It shows no customer message, only the trace and its
   findings, the same as before.
 
-**To be added to this record:**
-- the resume URL, which the review page currently accepts from the browser
-  and calls server-side (D8);
-- what of the customer's own message reaches the model provider (D10).
+## The resume URL (D8), 2026-10-09
+
+**The defect.** n8n's resume URL travels inside the review link, so it
+reaches a browser. The review page accepted it as a query parameter,
+stored it, and the server called it once a person had decided -- whatever
+host it named. Anyone who could put a link in front of a reviewer could
+make this service request an address of their choosing: a cloud metadata
+endpoint, an internal service, a `file://` path. Ten such URLs were stored
+and called by the previous code.
+
+**The fix, minimal on purpose**, since ADR-010 removes this callback (a
+durable workflow takes the decision as a signal):
+- **Only one shape is accepted:** the orchestrator's own waiting webhook,
+  on the origin configured in `RESOLVE_ORCHESTRATOR_URL`. That means the
+  same scheme, host and port, the path `/webhook-waiting/<execution id>`,
+  and nothing in the query but n8n's signature.
+- **The address is rebuilt server-side** from those parts, never used as
+  received. It is checked again at call time, so a row stored before the
+  check existed cannot be rung.
+- **Anything else is ignored.** The person's decision still counts;
+  nobody is called back. Unset means no callback at all (closed by
+  default).
+
+**What it does not do.** The callback still carries no authority of its
+own: it can only resume a run whose action a person already approved. A
+cleaner design would register the execution when n8n, authenticated,
+creates the case, so that no part of the address ever transits a browser.
+That is the shape ADR-010 adopts; it is not built here.
+
+**To be added to this record:** what of the customer's own message reaches
+the model provider (D10).

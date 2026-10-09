@@ -109,6 +109,12 @@ be the same value the API was started with (ADR-009). The approver opens the
 review link in a browser and signs in there; n8n holds no approver
 credential.
 
+Once the person has decided, the API rings n8n's waiting webhook to resume
+the run. It only rings it on the origin set in `RESOLVE_ORCHESTRATOR_URL`
+(`http://localhost:5678` when both run on this machine), and rebuilds the
+address itself: the resume URL travels inside the review link, through a
+browser, so it is never called as received (ADR-009, D8).
+
 Then, **before the workflow will run**, create an SMTP credential in n8n named
 `Mailpit local`: host `host.docker.internal`, port `1025`, no user, no
 password, TLS off. Credentials never travel inside an exported workflow, so

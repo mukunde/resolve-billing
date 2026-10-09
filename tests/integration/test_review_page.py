@@ -91,12 +91,11 @@ class TestGetMovesNothing:
     def test_the_page_can_be_reloaded_without_losing_the_callback(
         self, client, action_id
     ):
-        review(client, action_id, resume="http://orchestrator.test/resume/1")
+        callback = "http://orchestrator.test/webhook-waiting/1?signature=ab12"
+        review(client, action_id, resume=callback)
         review(client, action_id)
 
-        assert get_actions().get(action_id).resume_url == (
-            "http://orchestrator.test/resume/1"
-        )
+        assert get_actions().get(action_id).resume_url == callback
 
 
 class TestDeciding:
@@ -180,12 +179,15 @@ class TestDeciding:
 
 
 class TestTheOrchestratorIsNotLoadBearing:
-    def test_a_decision_survives_an_unreachable_orchestrator(self, client, action_id):
+    def test_a_decision_survives_an_unreachable_orchestrator(
+        self, client, action_id, monkeypatch
+    ):
         """The whole reason the state does not live in n8n.
 
         The callback points nowhere; the human's click must still count.
         """
-        review(client, action_id, resume="http://127.0.0.1:9/never-listens")
+        monkeypatch.setenv("RESOLVE_ORCHESTRATOR_URL", "http://127.0.0.1:9")
+        review(client, action_id, resume="http://127.0.0.1:9/webhook-waiting/1?signature=ab12")
 
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
