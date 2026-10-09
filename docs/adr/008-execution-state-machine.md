@@ -72,7 +72,12 @@ PENDING_APPROVAL --approve--> APPROVED --claim--> EXECUTING --> EXECUTED
                                   |                   \-> UNKNOWN_OUTCOME
                                   |                          | reconcile
                                   |               found: EXECUTED · absent: FAILED
+
+PENDING_APPROVAL, APPROVED, FAILED --deadline passed or invoice changed--> EXPIRED
 ```
+
+`EXPIRED` is described below, under "An approval holds for what was
+shown, and not forever".
 
 ## Consequences
 
@@ -135,6 +140,41 @@ system. So the platform decides:
 particular how it treats a credit note and a refund on one paid invoice. A
 contract test against its sandbox (S7) establishes it. Until then, the cap
 is a property of the fake, stated as such.
+
+## An approval holds for what was shown, and not forever
+
+Added with D13, 2026-10-09.
+
+A request for approval stayed decidable indefinitely, and the decision
+named only the action. If the invoice changed between the page being
+shown and the click -- paid, voided, corrected in the platform's console --
+or between the click and the execution, the approval applied to facts
+nobody had looked at.
+
+- **A request has a deadline**: 72 hours by default
+  (`RESOLVE_APPROVAL_TTL_HOURS`), stored with the action. Past it, the
+  action becomes `EXPIRED` the next time anyone tries to decide or opens
+  the page; approving and rejecting are both refused. `EXPIRED` is the
+  record that nobody decided in time, not a refusal. Checked on access,
+  with no sweeper: a request nobody opens again does no harm by staying
+  pending. The target integration replaces this with a timer in the
+  durable workflow (ADR-010).
+- **The decision names what was shown.** The page, and `GET
+  /actions/{id}`, carry a fingerprint of the proposal -- instrument,
+  invoice, amount -- and of the invoice as the platform holds it: status,
+  total, lines. An approval sends it back. If it no longer matches, the
+  action expires instead of being approved, and the dispute is to be
+  investigated again on today's facts.
+- **Execution checks it again.** The fingerprint approved is stored; before
+  the claim, `execute()` recomputes it from the platform. A change since
+  the approval expires the action, and nothing is written. An approval
+  recorded before fingerprints existed carries none, and is held to the
+  other guards only.
+
+The fingerprint is read from the platform, never from a copy kept here, for
+the reason given above: the platform is the authority on the invoice.
+What it does not cover is the ledger of corrections already made on the
+invoice -- the platform's own caps settle that, at the write.
 
 **Re-evaluation condition:** execution moving off the request path into a
 worker, or a volume at which waiting for the next `execute()` to recover an

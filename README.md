@@ -661,6 +661,13 @@ The orchestrator presents a service key (`Authorization: Bearer`); an approver
 signs in. The identity recorded against a decision is the authenticated one,
 never a name in the request (ADR-009).
 
+An approval names what it approves: the `proposal` fingerprint the page
+carries, or that `GET /actions/{id}` returns, sent back as
+`{"proposal": ...}`. If the proposal or its invoice changed since, or
+changes before execution, the action expires instead of going through. A
+request left undecided past its deadline (72 hours by default) expires
+too (ADR-008).
+
 ### The audit, in SQL
 
 ```bash

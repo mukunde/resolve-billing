@@ -84,6 +84,7 @@
 
     <dl>
       <dt>Facture</dt><dd>$invoice_id</dd>
+      <dt>À décider avant</dt><dd>$deadline</dd>
       <dt>Constats</dt><dd>$findings</dd>
       <dt>Moteur</dt><dd>$engine</dd>
       <dt>Confiance</dt><dd><span class="badge">$confidence</span></dd>
@@ -101,13 +102,16 @@
     <div class="who">Vous décidez en tant que <strong>$approver</strong>.</div>
   </section>
 
+  <input type="hidden" name="proposal" value="$proposal">
   <div class="actions">
     <button class="approve" name="decision" value="approve" type="submit">Approuver</button>
     <button class="reject" name="decision" value="reject" type="submit">Refuser</button>
   </div>
 
   <footer>
-    Le montant a été calculé à partir de la facture, pas par le moteur de décision.<br>
+    Le montant a été calculé à partir de la facture, pas par le moteur de décision.
+    Une approbation vaut pour la proposition et la facture affichées ici&nbsp;:
+    si l&rsquo;une ou l&rsquo;autre change avant l&rsquo;exécution, l&rsquo;action expire.<br>
     L&rsquo;identité du valideur vient de son authentification, jamais d&rsquo;un champ du formulaire.
     En production, c&rsquo;est le SSO de l&rsquo;entreprise&nbsp;; dans cette démonstration, une
     authentification HTTP Basic sur une liste configurée.<br>

@@ -404,3 +404,72 @@ class TestNeverMoreThanTheInvoice:
 
         assert store.get(refund.action_id).state is ActionState.FAILED
         assert len(provider.executed_actions) == 1
+
+
+class TestAnApprovalHoldsForWhatWasShownAndNotForever:
+    """D13. An approval request stayed valid indefinitely, and nothing tied
+    the decision to the proposal the approver had seen: if the invoice
+    changed in between, the approval still applied."""
+
+    async def shown(self, service, action):
+        return await service.proposal_fingerprint(action)
+
+    async def test_an_approval_of_what_was_shown_goes_through(self, store):
+        service = ApprovalService(FakeBillingProvider(), store)
+        action = store.create(
+            run_id="run_test", action_type="credit_note", invoice_id="inv_002",
+            amount=NINETY_NINE, reason="x", provider="fake",
+        )
+
+        shown = await self.shown(service, action)
+        done = await service.approve(action.action_id, "approver", shown)
+
+        assert done.state is ActionState.APPROVED
+        assert done.approved_fingerprint == await self.shown(service, action)
+
+    async def test_a_request_past_its_deadline_cannot_be_decided(self, store):
+        service = ApprovalService(FakeBillingProvider(), store)
+        action = store.create(
+            run_id="run_test", action_type="credit_note", invoice_id="inv_002",
+            amount=NINETY_NINE, reason="x", provider="fake", ttl=timedelta(seconds=-1),
+        )
+
+        with pytest.raises(IllegalTransition):
+            await service.approve(action.action_id, "approver", await self.shown(service, action))
+
+        assert store.get(action.action_id).state is ActionState.EXPIRED
+
+    async def test_an_approval_of_a_proposal_that_changed_since_it_was_shown_falls(
+        self, store
+    ):
+        provider = FakeBillingProvider()
+        service = ApprovalService(provider, store)
+        action = store.create(
+            run_id="run_test", action_type="credit_note", invoice_id="inv_002",
+            amount=NINETY_NINE, reason="x", provider="fake",
+        )
+        shown = await self.shown(service, action)
+        provider.change_invoice("inv_002", total_minor=4900)
+
+        with pytest.raises(IllegalTransition):
+            await service.approve(action.action_id, "approver", shown)
+
+        held = store.get(action.action_id)
+        assert held.state is ActionState.EXPIRED
+        assert "changed" in held.resolution
+
+    async def test_an_invoice_that_changed_after_approval_is_not_written(self, store):
+        provider = FakeBillingProvider()
+        service = ApprovalService(provider, store)
+        action = store.create(
+            run_id="run_test", action_type="credit_note", invoice_id="inv_002",
+            amount=NINETY_NINE, reason="x", provider="fake",
+        )
+        await service.approve(action.action_id, "approver", await self.shown(service, action))
+        provider.change_invoice("inv_002", total_minor=4900)
+
+        with pytest.raises(IllegalTransition):
+            await service.execute(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.EXPIRED
+        assert provider.executed_actions == []

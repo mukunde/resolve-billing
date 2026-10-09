@@ -15,8 +15,9 @@ timeout finds the original action instead of issuing a second one.
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -50,7 +51,13 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     failure_reason      TEXT,
     -- How an unknown outcome was settled, in words: what the platform was
     -- asked and what it answered. The audit of a recovery, not of a write.
-    resolution          TEXT
+    resolution          TEXT,
+    -- When the request stops being decidable. A decision is taken on the
+    -- facts of the day it is shown; a week later they may not hold. D13.
+    expires_at          TEXT,
+    -- What the approver approved: the fingerprint of the proposal and of
+    -- the invoice as they were. Execution refuses if it no longer holds.
+    approved_fingerprint TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_run ON pending_actions(run_id);
@@ -67,7 +74,8 @@ ALLOWED: dict[ActionState, set[ActionState]] = {
     },
     # Executing starts with a claim. Only the caller that moves the action
     # into EXECUTING rings the provider; a concurrent one finds it taken.
-    ActionState.APPROVED: {ActionState.EXECUTING},
+    # An approval also lapses if the invoice changed before execution. D13.
+    ActionState.APPROVED: {ActionState.EXECUTING, ActionState.EXPIRED},
     ActionState.EXECUTING: {
         ActionState.EXECUTED,
         ActionState.FAILED,
@@ -82,7 +90,7 @@ ALLOWED: dict[ActionState, set[ActionState]] = {
     # with the provider's reference or fails again. Reaching EXECUTED takes
     # that reference -- see transition() -- so a retry cannot be skipped by
     # asking for the end state directly.
-    ActionState.FAILED: {ActionState.EXECUTING},
+    ActionState.FAILED: {ActionState.EXECUTING, ActionState.EXPIRED},
     ActionState.EXPIRED: set(),
 }
 
@@ -122,6 +130,18 @@ class PendingAction(BaseModel):
     failure_reason: str | None = None
     resolution: str | None = None
     updated_at: datetime | None = None
+    expires_at: datetime | None = None
+    approved_fingerprint: str | None = None
+
+    def expired(self, now: datetime | None = None) -> bool:
+        """Past the deadline for a decision."""
+        return self.expires_at is not None and (now or datetime.now(UTC)) >= self.expires_at
+
+
+def approval_ttl() -> timedelta:
+    """How long a request for approval stays decidable. 72 hours unless
+    ``RESOLVE_APPROVAL_TTL_HOURS`` says otherwise."""
+    return timedelta(hours=float(os.getenv("RESOLVE_APPROVAL_TTL_HOURS", "72")))
 
 
 def idempotency_key(
@@ -151,7 +171,12 @@ class SqliteActionStore:
         does nothing to a table that already exists.
         """
         held = {r["name"] for r in self._connection.execute("PRAGMA table_info(pending_actions)")}
-        for column, ddl in (("resume_url", "TEXT"), ("resolution", "TEXT")):
+        for column, ddl in (
+            ("resume_url", "TEXT"),
+            ("resolution", "TEXT"),
+            ("expires_at", "TEXT"),
+            ("approved_fingerprint", "TEXT"),
+        ):
             if column not in held:
                 self._connection.execute(
                     f"ALTER TABLE pending_actions ADD COLUMN {column} {ddl}"
@@ -165,6 +190,7 @@ class SqliteActionStore:
         amount: Money,
         reason: str,
         provider: str,
+        ttl: timedelta | None = None,
     ) -> PendingAction:
         """Register an action awaiting a human.
 
@@ -176,7 +202,9 @@ class SqliteActionStore:
         if existing is not None:
             return existing
 
-        now = datetime.now(UTC).isoformat()
+        created = datetime.now(UTC)
+        now = created.isoformat()
+        expires_at = (created + (ttl if ttl is not None else approval_ttl())).isoformat()
         action_id = f"act_{key[:12]}"
         with self._connection:
             self._connection.execute(
@@ -184,8 +212,9 @@ class SqliteActionStore:
                 INSERT INTO pending_actions
                 (action_id, run_id, created_at, updated_at, state, action_type,
                  invoice_id, amount_minor, currency, reason, idempotency_key,
-                 resume_url, approved_by, provider_action_id, failure_reason)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+                 resume_url, approved_by, provider_action_id, failure_reason,
+                 expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)
                 """,
                 (
                     action_id,
@@ -199,6 +228,7 @@ class SqliteActionStore:
                     amount.currency,
                     reason,
                     key,
+                    expires_at,
                 ),
             )
         return self.get(action_id)
@@ -246,6 +276,7 @@ class SqliteActionStore:
         provider_action_id: str | None = None,
         failure_reason: str | None = None,
         resolution: str | None = None,
+        approved_fingerprint: str | None = None,
     ) -> PendingAction:
         current = self.get(action_id)
         if to not in ALLOWED[current.state]:
@@ -270,7 +301,8 @@ class SqliteActionStore:
                     approved_by = COALESCE(?, approved_by),
                     provider_action_id = COALESCE(?, provider_action_id),
                     failure_reason = ?,
-                    resolution = COALESCE(?, resolution)
+                    resolution = COALESCE(?, resolution),
+                    approved_fingerprint = COALESCE(?, approved_fingerprint)
                 WHERE action_id = ? AND state = ?
                 """,
                 (
@@ -280,6 +312,7 @@ class SqliteActionStore:
                     provider_action_id,
                     failure_reason,
                     resolution,
+                    approved_fingerprint,
                     action_id,
                     current.state.value,
                 ),
@@ -310,4 +343,8 @@ def _to_action(row: sqlite3.Row) -> PendingAction:
         failure_reason=row["failure_reason"],
         resolution=row["resolution"],
         updated_at=datetime.fromisoformat(row["updated_at"]),
+        expires_at=(
+            datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None
+        ),
+        approved_fingerprint=row["approved_fingerprint"],
     )

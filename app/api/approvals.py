@@ -6,6 +6,8 @@ it holds two URLs.
 
 from __future__ import annotations
 
+import inspect
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +16,7 @@ from pydantic import BaseModel
 from app.api.auth import Anyone, Approver, Service
 from app.api.deps import get_actions, get_approvals, get_audit
 from app.application.execute_action import ApprovalService
+from app.domain.enums import ActionState
 from app.infrastructure.actions import (
     IllegalTransition,
     PendingAction,
@@ -38,9 +41,14 @@ class ActionOut(BaseModel):
     approved_by: str | None = None
     provider_action_id: str | None = None
     failure_reason: str | None = None
+    resolution: str | None = None
+    expires_at: datetime | None = None
+    #: While the action awaits a decision: what an approval must name,
+    #: the fingerprint of the proposal and of its invoice as they stand.
+    proposal: str | None = None
 
     @classmethod
-    def of(cls, action: PendingAction) -> ActionOut:
+    def of(cls, action: PendingAction, proposal: str | None = None) -> ActionOut:
         return cls(
             action_id=action.action_id,
             run_id=action.run_id,
@@ -53,12 +61,22 @@ class ActionOut(BaseModel):
             approved_by=action.approved_by,
             provider_action_id=action.provider_action_id,
             failure_reason=action.failure_reason,
+            resolution=action.resolution,
+            expires_at=action.expires_at,
+            proposal=proposal,
         )
 
 
-def _guard(call):
+class ApprovalIn(BaseModel):
+    #: The proposal fingerprint the approver was shown, as read from
+    #: ``GET /actions/{id}`` or the review page. D13.
+    proposal: str
+
+
+async def _guard(call):
     try:
-        return call()
+        result = call()
+        return await result if inspect.isawaitable(result) else result
     except UnknownAction as error:
         raise HTTPException(404, str(error)) from error
     except IllegalTransition as error:
@@ -72,10 +90,22 @@ async def approve(
     action_id: str,
     approver: Approver,
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
+    body: ApprovalIn | None = None,
 ) -> ActionOut:
-    """Approve as the authenticated approver. A name in the body is not read:
-    identity comes from authentication. ADR-009."""
-    return ActionOut.of(_guard(lambda: approvals.approve(action_id, approver.identity)))
+    """Approve as the authenticated approver, the proposal that was shown.
+
+    A name in the body is not read: identity comes from authentication
+    (ADR-009). The body names the proposal approved; if it changed since,
+    the action expires (D13). Optional in the signature so that an
+    unauthenticated caller is turned away before the body is judged.
+    """
+    if body is None:
+        raise HTTPException(422, "an approval names the proposal it approves")
+    return ActionOut.of(
+        await _guard(
+            lambda: approvals.approve(action_id, approver.identity, body.proposal)
+        )
+    )
 
 
 @router.post("/actions/{action_id}/reject", response_model=ActionOut)
@@ -84,7 +114,9 @@ async def reject(
     approver: Approver,
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
 ) -> ActionOut:
-    return ActionOut.of(_guard(lambda: approvals.reject(action_id, approver.identity)))
+    return ActionOut.of(
+        await _guard(lambda: approvals.reject(action_id, approver.identity))
+    )
 
 
 @router.post("/actions/{action_id}/execute", response_model=ActionOut)
@@ -117,9 +149,12 @@ async def execute(
 async def read_action(
     action_id: str,
     _caller: Anyone,
-    actions: Annotated[SqliteActionStore, Depends(get_actions)],
+    approvals: Annotated[ApprovalService, Depends(get_approvals)],
 ) -> ActionOut:
-    return ActionOut.of(_guard(lambda: actions.get(action_id)))
+    action = await _guard(lambda: approvals.expire_if_overdue(action_id))
+    if action.state is not ActionState.PENDING_APPROVAL:
+        return ActionOut.of(action)
+    return ActionOut.of(action, await approvals.proposal_fingerprint(action))
 
 
 @router.get("/runs/{run_id}")

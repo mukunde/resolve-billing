@@ -11,10 +11,19 @@ does not, and then the outcome is unknown: the credit note may exist with its
 response lost. An unknown outcome is settled by asking the platform what it
 holds under the idempotency key, never by writing again on a guess. See
 ADR-008.
+
+An approval holds for what was shown, and not forever. A request carries a
+deadline; past it, it can no longer be decided. The approver decides on a
+fingerprint of the proposal and of the invoice as the platform presented
+it; if either changed in between, or changes between approval and
+execution, the action expires instead of going through on facts nobody
+looked at.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import ActionState
@@ -40,21 +49,88 @@ class ApprovalService:
         self._actions = actions
         self._stale_after = stale_after
 
-    def approve(self, action_id: str, approved_by: str) -> PendingAction:
-        """Record who said yes. Approving does not execute.
+    async def proposal_fingerprint(self, action: PendingAction) -> str:
+        """What an approver is asked to approve, reduced to a comparable value.
+
+        The proposal itself -- instrument, invoice, amount -- and the invoice
+        as the platform holds it now: status, total, lines. Read from the
+        platform, not from a copy of ours, so a change made there shows.
+        """
+        invoice = await self._provider.find_invoice(action.invoice_id)
+        material = {
+            "action_type": action.action_type,
+            "invoice_id": action.invoice_id,
+            "amount_minor": action.amount.amount_minor,
+            "currency": action.amount.currency,
+            "invoice": None if invoice is None else invoice.model_dump(mode="json"),
+        }
+        encoded = json.dumps(material, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode()).hexdigest()[:32]
+
+    async def approve(
+        self, action_id: str, approved_by: str, presented: str
+    ) -> PendingAction:
+        """Record who said yes, to what. Approving does not execute.
 
         Two steps rather than one so that the audit answers "who authorised
         this" separately from "did it go through", and so a provider outage
         does not force a second human decision.
+
+        ``presented`` is the fingerprint of the proposal as it was shown to
+        the approver. If the proposal no longer matches it, the yes was given
+        to something else: the action expires, and the dispute goes back to
+        be investigated on today's facts.
         """
+        # Past its deadline, the request is expired and the transition
+        # below refuses it.
+        action = self.expire_if_overdue(action_id)
+        current = await self.proposal_fingerprint(action)
+        if action.state is ActionState.PENDING_APPROVAL and presented != current:
+            self._actions.transition(
+                action_id,
+                ActionState.EXPIRED,
+                resolution=(
+                    "the proposal or its invoice changed after it was presented; "
+                    "approval refused, to be investigated again"
+                ),
+            )
+            raise IllegalTransition(
+                action_id,
+                ActionState.EXPIRED,
+                ActionState.APPROVED,
+                why="(the proposal changed after it was presented)",
+            )
         return self._actions.transition(
-            action_id, ActionState.APPROVED, approved_by=approved_by
+            action_id,
+            ActionState.APPROVED,
+            approved_by=approved_by,
+            approved_fingerprint=current,
         )
 
     def reject(self, action_id: str, rejected_by: str) -> PendingAction:
+        self.expire_if_overdue(action_id)
         return self._actions.transition(
             action_id, ActionState.REJECTED, approved_by=rejected_by
         )
+
+    def expire_if_overdue(self, action_id: str) -> PendingAction:
+        """Expire a request nobody decided in time; return the action.
+
+        Checked when someone tries to decide, not by a sweeper: a request
+        that is never opened again does no harm by staying pending, and one
+        that is opened finds out then.
+        """
+        action = self._actions.get(action_id)
+        if action.state is ActionState.PENDING_APPROVAL and action.expired():
+            return self._actions.transition(
+                action_id,
+                ActionState.EXPIRED,
+                resolution=(
+                    f"no decision before the deadline, "
+                    f"{action.expires_at:%Y-%m-%d %H:%M} UTC"
+                ),
+            )
+        return action
 
     async def execute(self, action_id: str) -> PendingAction:
         """Carry out an approved action against the billing platform."""
@@ -83,6 +159,30 @@ class ApprovalService:
         # caller needs in order to know whether to retry.
         if action.state not in (ActionState.APPROVED, ActionState.FAILED):
             raise IllegalTransition(action_id, action.state, ActionState.EXECUTED)
+
+        # The approval was given to a proposal on a given invoice. If the
+        # invoice changed since -- paid, voided, re-issued -- it no longer
+        # covers this write: the action expires and nothing is claimed. An
+        # approval recorded before fingerprints existed carries none, and is
+        # held to the guards below only.
+        if (
+            action.approved_fingerprint is not None
+            and await self.proposal_fingerprint(action) != action.approved_fingerprint
+        ):
+            self._actions.transition(
+                action_id,
+                ActionState.EXPIRED,
+                resolution=(
+                    "the invoice changed after approval; nothing written, "
+                    "to be investigated again"
+                ),
+            )
+            raise IllegalTransition(
+                action_id,
+                ActionState.EXPIRED,
+                ActionState.EXECUTED,
+                why="(the invoice changed after approval)",
+            )
 
         # The write is the one the human approved, by type. A type with no
         # write on the platform is refused before anything is claimed: never

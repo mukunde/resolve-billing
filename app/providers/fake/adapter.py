@@ -206,3 +206,13 @@ class FakeBillingProvider:
     @property
     def executed_actions(self) -> list[ProviderAction]:
         return list(self._actions.values())
+
+    def change_invoice(self, invoice_id: str, *, total_minor: int) -> Invoice:
+        """Change an invoice behind the application's back, as someone
+        working in the platform's own console would."""
+        invoice = next(i for i in self._invoices if i.id == invoice_id)
+        changed = invoice.model_copy(
+            update={"total": invoice.total.model_copy(update={"amount_minor": total_minor})}
+        )
+        self._invoices[self._invoices.index(invoice)] = changed
+        return changed

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.api.deps import get_actions, get_audit, get_provider
 from app.main import app
 from tests.integration._auth import APPROVER, SECOND_APPROVER, SERVICE, basic
+from tests.integration._proposal import shown
 
 CASE_A = {
     "message": "Je crois que j'ai été facturé deux fois pour le mois de septembre.",
@@ -102,7 +103,7 @@ class TestDeciding:
     def test_approving_records_who_and_does_not_execute(self, client, action_id):
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve"},
+            data={"decision": "approve", "proposal": shown(client, action_id)},
         )
 
         assert response.status_code == 200
@@ -132,7 +133,11 @@ class TestDeciding:
     def test_a_name_in_the_form_is_not_the_identity(self, client, action_id):
         client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve", "by": "someone.else@acme.fr"},
+            data={
+                "decision": "approve",
+                "by": "someone.else@acme.fr",
+                "proposal": shown(client, action_id),
+            },
         )
 
         assert get_actions().get(action_id).approved_by == APPROVER[0]
@@ -153,7 +158,7 @@ class TestDeciding:
         not an error worth a stack trace."""
         client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve"},
+            data={"decision": "approve", "proposal": shown(client, action_id)},
         )
 
         second = client.post(
@@ -169,7 +174,7 @@ class TestDeciding:
     def test_reopening_a_settled_link_shows_the_outcome(self, client, action_id):
         client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve"},
+            data={"decision": "approve", "proposal": shown(client, action_id)},
         )
 
         page = review(client, action_id)
@@ -191,7 +196,7 @@ class TestTheOrchestratorIsNotLoadBearing:
 
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve"},
+            data={"decision": "approve", "proposal": shown(client, action_id)},
         )
 
         assert response.status_code == 200
@@ -203,7 +208,7 @@ class TestTheOrchestratorIsNotLoadBearing:
     def test_it_works_with_no_callback_at_all(self, client, action_id):
         response = client.post(
             f"/api/v1/actions/{action_id}/review",
-            data={"decision": "approve"},
+            data={"decision": "approve", "proposal": shown(client, action_id)},
         )
 
         assert response.status_code == 200

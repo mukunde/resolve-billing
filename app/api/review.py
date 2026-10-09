@@ -60,6 +60,7 @@ async def review_page(
     action_id: str,
     approver: Approver,
     actions: Annotated[SqliteActionStore, Depends(get_actions)],
+    approvals: Annotated[ApprovalService, Depends(get_approvals)],
     audit: Annotated[SqliteAuditRepository, Depends(get_audit)],
     resume: str | None = None,
 ) -> HTMLResponse:
@@ -76,8 +77,10 @@ async def review_page(
     # counts, nobody is called back. ADR-009, D8.
     callback = orchestrator_callback(resume) if resume else None
     if callback:
-        action = actions.set_resume_url(action_id, callback)
+        actions.set_resume_url(action_id, callback)
 
+    # Past its deadline the request is expired here, and shown as such.
+    action = approvals.expire_if_overdue(action_id)
     if action.state is not ActionState.PENDING_APPROVAL:
         return HTMLResponse(_already_decided(action), status_code=409)
 
@@ -114,6 +117,10 @@ async def review_page(
             ),
             reason=action.reason,
             policy=run["authorization_reason"] if run else "",
+            # What the approver is shown, as a value the decision carries
+            # back: an approval binds to this proposal on this invoice. D13.
+            proposal=await approvals.proposal_fingerprint(action),
+            deadline=_deadline(action),
         )
     )
 
@@ -125,6 +132,7 @@ async def submit_review(
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
     decision: Annotated[str, Form()],
     approver: Approver,
+    proposal: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
     """Record the human decision, then tell the orchestrator to carry on.
 
@@ -135,11 +143,13 @@ async def submit_review(
     """
     if decision not in {"approve", "reject"}:
         raise HTTPException(422, "decision must be 'approve' or 'reject'")
+    if decision == "approve" and not proposal:
+        raise HTTPException(422, "an approval names the proposal it approves")
 
     action = _found(lambda: actions.get(action_id))
     try:
         if decision == "approve":
-            action = approvals.approve(action_id, approver.identity)
+            action = await approvals.approve(action_id, approver.identity, proposal)
         else:
             action = approvals.reject(action_id, approver.identity)
     except IllegalTransition:
@@ -194,8 +204,19 @@ def _already_decided(action: PendingAction) -> str:
         amount_display=_money(action.amount),
         decided_by=action.approved_by or "—",
         provider_action_id=action.provider_action_id or "—",
-        footnote="Un lien de validation ne vaut que pour une décision.",
+        footnote=(
+            "Délai de décision dépassé, ou la facture a changé depuis que la "
+            "proposition a été présentée : le litige est à réexaminer."
+            if action.state is ActionState.EXPIRED
+            else "Un lien de validation ne vaut que pour une décision."
+        ),
     )
+
+
+def _deadline(action: PendingAction) -> str:
+    if action.expires_at is None:
+        return "—"
+    return f"{action.expires_at:%d/%m/%Y %H:%M} UTC"
 
 
 def _money(amount: Money) -> str:

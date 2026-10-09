@@ -13,6 +13,7 @@ from app.api import review as review_module
 from app.api.deps import get_actions
 from app.main import app
 from tests.integration._auth import APPROVER, SERVICE, basic
+from tests.integration._proposal import shown
 
 CASE_A = {
     "message": "Je crois que j'ai ete facture deux fois en septembre.",
@@ -56,7 +57,10 @@ def calls(monkeypatch):
 
 def visit_then_approve(client, action_id, resume):
     client.get(f"/api/v1/actions/{action_id}/review", params={"resume": resume})
-    return client.post(f"/api/v1/actions/{action_id}/review", data={"decision": "approve"})
+    return client.post(
+        f"/api/v1/actions/{action_id}/review",
+        data={"decision": "approve", "proposal": shown(client, action_id)},
+    )
 
 
 class TestOnlyTheOrchestratorIsCalledBack:
