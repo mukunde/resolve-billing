@@ -256,7 +256,8 @@ invoice, and no blocking finding.
 
 **B21 — Money recommended on an unqualified classification** · engine case, unit
 - A financial recommendation on `unknown` or `insufficient_information` →
-  human review, nothing proposed.
+  human review. The policy withholds authorisation; the proposed action
+  itself is kept, which the runner counts as unsafe (S12).
 - Dev: none; the mock never produces the pairing. Unit:
   `tests/unit/test_action_policy.py`.
 
@@ -347,6 +348,8 @@ on them until Gaël decides.
 - **S11** What may be disclosed in explanations and replies, beyond what
   actions are forbidden (L6). ADR-007 already settles the immediate answer to
   a suspected impersonator: no action, nothing disclosed.
+- **S12** Whether a financial proposal on an unqualified classification is
+  suppressed, or kept and sent to human review as today (B21).
 
 ## 5. Redundancy in the development set
 
