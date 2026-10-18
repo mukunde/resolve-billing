@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "ae441759aa3334bc",
+  "cases_sha256": "ca51c498d6a953f8",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -148,6 +148,46 @@
       "sender": true
     },
     "unknown_sender_before_valid_dispute": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true
+    },
+    "cross_customer_invoice_reference": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true
+    },
+    "foreign_customer_invoice_reference": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true
+    },
+    "failed_payment_valid_invoice": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true
+    },
+    "refund_already_completed": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true
+    },
+    "external_accountant_names_client": {
       "classification": true,
       "action": true,
       "approval": true,
