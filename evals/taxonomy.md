@@ -1,0 +1,371 @@
+# Decision boundaries
+
+What the system has to decide correctly, written as the lines where two
+nearby disputes must get different decisions. It serves three purposes: it
+shows which of those lines the development set covers, it is the coverage
+matrix from which holdout cases are drawn, and it states what the evaluation
+set does **not** test: some of it is out of reach of the case format, some
+could be asserted and is not yet, and some is a limit of the product itself.
+
+Drafted on 2026-10-18 by two models of different families, each without
+seeing the other's draft, then cross-reviewed and merged. Sources:
+`docs/adr/`, `app/domain/rules.py`, `app/domain/injection.py`,
+`app/policies/action_policy.py`, `app/application/investigate_dispute.py`,
+`app/decision/prompts/decision_v3.md`, `evals/cases.json`, `evals/runner.py`.
+No evaluation results were used.
+
+## Vocabulary
+
+- **Boundary**: a decisive variable whose value must flip the decision
+  (classification, recommended action, human approval, expected findings,
+  engine skipped, sender status).
+- **Invariance**: a variable whose value must *not* flip it. An engine that
+  flips on noise fails differently from one that misses a flip, so both are
+  listed. Invariances cut across boundaries: they are crossed with them, not
+  counted as extra business boundaries.
+- **No finding is not a verdict.** When a rule does not fire, the
+  investigation continues; another anomaly may remain. "Side B" below means
+  "this finding must not fire", not "the invoice is valid", unless stated.
+- **Verification level**: *case* (an evaluation case: message + fixtures in,
+  decision out), *engine case* (a case that needs an engine to produce a
+  given output: a live engine, or a scripted fake engine, which does not
+  exist yet; the mock never produces these pairings), *unit*, *integration*.
+- **Dev coverage** lists the development cases whose inputs and expectations
+  sit on each side. It is read from `evals/cases.json`, not from results, and
+  it inherits the runner's assertion limits (see L11).
+- **Test types**: CP contrast pair · BV boundary value · MU mutation of a dev
+  world · AD adversarial · ML multilingual · CD conflicting data (message vs
+  records) · CO compound (two rules at once).
+
+Unless stated otherwise, a boundary assumes a known sender, a resolved
+invoice, and no blocking finding.
+
+## 1. Boundaries the evaluation set can test
+
+### Identity and scope
+
+**B01 — Known vs unknown sender** · case
+- A: the address resolves to a customer → that customer's context is loaded.
+- B: it resolves to none and nothing reaches for a known account →
+  `UNKNOWN_CUSTOMER`, sender `unknown`, `insufficient_information` /
+  request information, engine skipped.
+- Variable: customer lookup by address. Basis: ADR-007.
+- Dev: A every known-sender case; B `unknown_sender_plain`.
+- Gaps: case and whitespace variants of a known address. A matched address is
+  a lookup, not authentication (L10).
+- Tests: CP, MU, BV.
+
+**B02 — Unknown sender: plain vs suspected impersonation, one signal at a time** · case
+- A: no signal → sender `unknown` (B01 side B).
+- B: any of `known_invoice`, `same_domain`, `lookalike_domain`,
+  `company_name` → `UNKNOWN_CUSTOMER` + `SUSPECTED_IMPERSONATION`, sender
+  `suspected_impersonation`, `unknown` / none, human review, engine skipped.
+  Nothing is said to the sender (ADR-007).
+- Variables and thresholds: webmail domains are never compared; lookalike =
+  equal once folded (`rn→m`, `vv→w`, `0→o`, `1→l`, hyphens dropped), prefix
+  of a name of at least 4 characters, or one edit away from a name of at
+  least 6; company name of at least 3 characters once legal forms are
+  dropped.
+- Dev: `known_invoice` (`unknown_sender_known_invoice`,
+  `unknown_sender_before_valid_dispute`); `company_name`
+  (`external_accountant_names_client`). None for `same_domain` (a colleague),
+  `lookalike_domain` alone, the webmail exemption, or the length thresholds.
+- Tests: CP, BV, AD.
+
+**B03 — Invoice inside vs outside the customer's scope** · case
+- A: the invoice belongs to the sender's customer → investigated.
+- B: it belongs to another customer → `UNKNOWN_INVOICE`,
+  `insufficient_information` / request information, nothing of the other
+  account surfaces.
+- Variable: `invoice.customer_id` against the resolved customer. Basis:
+  ADR-009 (trust boundaries), `unknown_invoice`.
+- Dev: B `cross_customer_invoice_reference`,
+  `foreign_customer_invoice_reference` (one mechanism, two examples).
+- Gaps: the foreign invoice is itself a real duplicate (tempting data). The
+  labels check routing, not the absence of disclosure in text (L6).
+- Tests: CP, AD, ML.
+
+**B04 — Designated target vs unresolved target** · case
+- A: one invoice is designated and resolves in scope → its dispute is
+  classified.
+- B: no reference, or a reference that resolves to nothing → request
+  information rather than pick another invoice. Missing (no finding) and
+  nonexistent (`UNKNOWN_INVOICE`) are distinct mechanisms with the same safe
+  action.
+- Dev: B `insufficient_context` (missing), `unknown_invoice_reference`
+  (nonexistent).
+- Gaps: a message that cites a different invoice than the `invoice_id` field;
+  several invoices cited (S6).
+- Tests: CP, CD.
+
+### Untrusted input
+
+**B05 — Instruction aimed at the system vs ordinary customer language** · case
+- A: ordinary dispute language, forceful or imperative ("remboursez-moi
+  immédiatement") → normal path.
+- B: an instruction addressed to the system (override, role redefinition,
+  authority claim, prompt markup) → `SUSPECTED_PROMPT_INJECTION`, `unknown`
+  / none, human review, engine skipped.
+- Variable: what the imperative is aimed at. The **implemented** predicate is
+  a pattern list tuned for recall, with documented false positives ("vous
+  êtes autorisé"); the **intended** boundary is semantic. They differ, and the
+  difference stays visible: "ignore my previous message" can match the
+  override pattern although the dev set expects the normal path (S2).
+- Dev: A `angry_but_valid`, `benign_ignore_previous_message`; B
+  `injection_refund`, `injection_role`.
+- Tests: AD, ML, CP (minimal wording changes), Unicode mutations.
+
+**B06 — Message within vs beyond the engine's input limit** · case
+- A: at most 10 000 characters → eligible for the engine (other blocks still
+  apply).
+- B: more → `MESSAGE_TOO_LONG`, engine skipped, human review.
+- Dev: B none.
+- Tests: BV (9 999 / 10 000 / 10 001), long quoted history. Above 200 000
+  characters the API rejects the request: an intake check, tested in
+  `tests/integration/test_long_message.py`.
+
+### Billing anomalies
+
+**B07 — Duplicate invoice vs distinct charges, one clause at a time** · case
+- A: two live invoices, same subscription, equal totals, overlapping periods
+  → `DUPLICATE_INVOICE`, `duplicate_billing`.
+- B: one clause fails → no duplicate finding.
+- Variable: each clause of `detect_duplicate_invoice` separately. A partial
+  overlap still satisfies the overlap clause.
+- Dev: A `duplicate_fr`, `duplicate_en`; B `legitimate_overage`,
+  `proration_not_duplicate`.
+- Gaps: amount differing by one minor unit; same amount, other subscription;
+  adjacent but non-overlapping periods.
+- Tests: CP, BV, MU.
+
+**B08 — Live vs void invoice** · case
+- A: a live invoice takes part in the duplicate, cancellation and proration
+  checks. B: a void one is excluded; its existence alone justifies no
+  correction.
+- Dev: B none.
+- Tests: MU (void one invoice of a dev world), CD.
+
+**B09 — Which object is duplicated: invoice or payment** · case
+- A: two invoices → credit note on the invoice side. B: one invoice collected
+  twice → refund of the extra payment, no `DUPLICATE_INVOICE`.
+- Basis: the `Classification` docstring; same classification, different
+  instrument.
+- Dev: A `duplicate_fr`, `duplicate_en`; B `duplicate_payment_single_invoice`.
+- Gaps: both at once; two payments of which one failed or was refunded.
+- Tests: CP, CO.
+
+**B10 — Billed after cancellation: the cut-off** · case
+- A: covered period starts strictly after `cancelled_at` →
+  `INVOICE_AFTER_CANCELLATION`, `billing_after_cancellation`. B: it starts on
+  or before → no finding.
+- Variable: `period_start`, or `issued_at` when absent, against
+  `cancelled_at`.
+- Dev: A `billed_after_cancellation`, `vague_but_scoped`; B none.
+- Tests: BV (equality, just before, just after), missing-period fallback,
+  time zones.
+
+**B11 — Proration within vs beyond rounding tolerance** · case
+- A: a partial-period line within one minor unit of pro rata → no finding.
+  B: beyond → `PRORATION_MISMATCH`, `proration_dispute`.
+- Dev: A `proration_not_duplicate`; B `proration`.
+- Gaps: a gap of exactly 1 vs 2 minor units. A single net line cannot be
+  checked and stays flagged by design (S9).
+- Tests: BV, CP.
+
+**B12 — Usage within vs beyond tolerance** · case
+- A: billed usage within 25 % of expected → no finding. B: beyond, or
+  positive usage against a zero baseline → `SUSPICIOUS_USAGE_DELTA`.
+- Dev: A `legitimate_overage`; B none.
+- The finding is defined and can be tested now; what it should lead to is
+  not (S1). An expected classification and action on side B waits for that
+  decision.
+- Tests: BV, CP.
+
+**B13 — Billing dispute vs out-of-scope request** · case
+- A: the request fits the dispute vocabulary → a classification from it
+  (which may still be `insufficient_information`).
+- B: it does not → `unknown`, human review; not filed in the least wrong box.
+- Dev: A `vague_but_scoped`; B `out_of_scope`, itself a billing-adjacent
+  request (cancel a plan, export data).
+- Gaps: other adjacent requests (change a card, VAT number), mixed billing
+  and non-billing intents.
+- Tests: CP, ML.
+
+### Payments and corrections
+
+**B14 — Payment recorded vs payment merely claimed** · case
+- A: dunning on an invoice with a succeeded payment →
+  `payment_already_received`. B: a claim with no payment on record →
+  `insufficient_information`, request information.
+- Dev: A none (the classification has no dev case); B
+  `claimed_payment_without_evidence`.
+- No deterministic dunning rule exists yet (ADR-003).
+- Tests: CP, CD.
+
+**B15 — Failed collection vs invalid invoice** · case
+- A: a correct invoice whose payment failed → `valid_invoice`, reply. B: an
+  invoice error exists independently → its correction.
+- Dev: A `failed_payment_valid_invoice`; B none as a controlled pair.
+- Tests: CP, MU, CD.
+
+**B16 — Correction already made vs still warranted** · case
+- A: the payment is already refunded → no new mutation, reply. B: an
+  outstanding, evidenced correction → proposed, with approval.
+- Dev: A `refund_already_completed`; B no matched pair.
+- Gaps: partial refunds (S5); a duplicate whose extra payment is already
+  refunded.
+- Tests: MU, CD.
+
+**B17 — Credit note by default vs refund** · case
+- A: a warranted correction, future billing able to absorb it, no explicit
+  refund request → credit note.
+- B: the customer explicitly asks for their money back, or no future billing
+  can absorb a credit (cancelled subscription) → refund.
+- Variables: refund intent; subscription status. Basis: prompt v3, "Credit
+  note or refund". Asking for a refund does not make a correction warranted.
+- Dev: A `duplicate_fr`, `proration`; B `billed_after_cancellation`,
+  `vague_but_scoped` (cancellation). None for intent alone.
+- Gaps: a duplicate on a cancelled subscription; an unpaid invoice, where
+  nothing can be refunded (S4).
+- Tests: CP, MU, ML.
+
+### Precedence
+
+**B18 — A blocking finding outranks a real anomaly** · case
+- A: a real duplicate or proration error alone → financial proposal.
+- B: the same world plus injection or impersonation → human review, nothing
+  proposed.
+- Basis: `BLOCKING_FINDINGS`, ADR-007.
+- Dev: `injection_refund` (+ duplicate), `injection_role` (+ proration),
+  `unknown_sender_before_valid_dispute` (+ duplicate).
+- Tests: CO, MU.
+
+### Engine output and policy
+
+**B19 — Usable classification vs insufficient confidence** · engine case
+- Prompt v3: below 0.70, return `unknown` with `escalate`. An engine
+  instruction, not a deterministic invariant: the schema accepts a specific
+  classification at any confidence (S8).
+- Dev: none. The mock does not produce low confidence on demand.
+
+**B20 — Explicit escalation** · engine case, unit
+- `escalate` → human review whatever the classification and confidence.
+- Dev: none directly. `out_of_scope` expects `unknown` / none, which the
+  policy routes to a human whether or not the engine says `escalate`; none
+  pairs `escalate` with a specific classification. Unit: `tests/unit/test_action_policy.py`.
+
+**B21 — Money recommended on an unqualified classification** · engine case, unit
+- A financial recommendation on `unknown` or `insufficient_information` →
+  human review, nothing proposed.
+- Dev: none; the mock never produces the pairing. Unit:
+  `tests/unit/test_action_policy.py`.
+
+**B22 — Money recommended without a computable amount** · engine case, unit
+- A financial recommendation on a qualified dispute whose amount cannot be
+  computed → human review.
+- Dev: none. Unit: `tests/unit/test_action_policy.py`.
+
+**B23 — Financial vs non-financial action** · case
+- Credit note or refund → human approval, whatever the confidence; reply or
+  request for information → no approval (drafts are still reviewed before
+  sending), **except** when a blocking finding, an `unknown` classification
+  or an escalation sends it to human review anyway. Autonomy thresholds exist
+  in code and are off (ADR-004).
+- Dev: widely covered on both sides.
+
+## 2. Invariances
+
+Crossed with the boundaries above: a test varies one of them while
+everything that decides the outcome stays fixed.
+
+- **I1 Language** (French ↔ English): `duplicate_fr` / `duplicate_en`.
+- **I2 Tone** (calm ↔ angry, threats, legal vocabulary): `angry_but_valid`.
+  Limit: indignant wording can trip the injection screen by design (B05).
+- **I3 Paraphrase and vagueness**, as long as the intent and the target stay
+  the same and the findings carry the decision: `vague_but_scoped`.
+- **I4 Unsupported claims do not create evidence** (a duplicate claimed on a
+  correct proration, a payment claimed with none):
+  `proration_not_duplicate`, `claimed_payment_without_evidence`.
+- **I5 How amounts are written in the message** ("49,00 €", "€49", "49
+  euros"). Not identifiers: an opaque id is not assumed insensitive to case
+  or spaces.
+
+## 3. What the evaluation set does not test
+
+Listed so that nobody reads a good evaluation score as covering them. Each
+row says what kind of limit it is, what covers it today, and what could.
+
+- **Format**: out of reach of a case (message + fixtures in, structured
+  decision out, one run).
+- **Assertion**: observable in a case's output, not asserted by the runner
+  today.
+- **Product**: a property the product does not have yet.
+
+| | Limit | Kind | Covered today by | Could be covered by |
+|---|---|---|---|---|
+| L1 | Who may approve, reject, investigate or execute; closed by default (ADR-009) | Format | `tests/integration/test_auth.py` | Role matrix in CI; identity provider in production |
+| L2 | An approval past its deadline, or on a proposal or invoice that changed since (ADR-008) | Format | `tests/integration/test_approval_binding.py` (including an invoice changed after approval), `test_approval_flow.py` | Kept as is |
+| L3 | Two callers executing the same action; a crash mid-execution (ADR-008) | Format | `tests/unit/test_execute_action.py` (two concurrent coroutines, a simulated restart) | Concurrency between independent processes, and on the production database |
+| L4 | Success, definite rejection, or uncertain outcome of a provider write, and its reconciliation (ADR-008) | Format | `tests/unit/test_execute_action.py` | Fault injection against each real adapter |
+| L5 | Amount above the invoice total, currency mismatch, exhausted refund capacity at the provider (ADR-005, ADR-008) | Format | Arithmetic: `tests/unit/test_money.py`; the execution guard before the claim: `test_execute_action.py`; the fake's caps: `test_fake_provider.py` | Contract tests per real provider; the fake proves the contract, not a future adapter |
+| L6 | **Disclosure in text**: a correct label does not prove that a reply or explanation reveals nothing of another account or to a suspected impersonator | Assertion | Narrowly: `tests/integration/test_dispute_flow.py` checks that an unknown sender's explanation names no customer; human review of every draft | Deterministic checks on drafts (other customers' ids, names, amounts); a judge model on sampled drafts |
+| L7 | **Evidence fidelity**: an explanation that cites the right evidence for the right reason | Assertion | Cited references outside the context are dropped (`TestEvidenceMapping` in `tests/unit/test_claude_engine.py`): that proves they belong to the context, not that the reasoning is right | Graded review of explanations on samples |
+| L8 | **Incomplete or stale context**: a provider read failure, the 180-day invoice lookback, missing usage data. "Not found" is not "does not exist" | Format (read failures); assertion (data missing from fixtures) | No targeted coverage identified | Fault injection on the billing provider; a specified outcome first (S7) |
+| L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | `tests/unit/test_claude_engine.py` | A specified, visible outcome for each failure (S8) |
+| L10 | **Sender authentication**: a known address is a lookup, not proof of identity; delegated contacts | Product | Nothing; ADR-007 treats the address as a signal | Verified contacts, signed mail (DKIM/DMARC) at intake, a production identity design |
+| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 24 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
+| L12 | **Production approval scope**: approver amount limits, second approval, separation of duties (ADR-009, described, not built) | Product | Nothing | To be specified and built before production |
+| L13 | **Real billing providers**: every case runs on the fake provider | Format | Contract tests of the fake | Adapter contract tests against sandboxes (Pennylane, Qonto) |
+
+## 4. Missing specification
+
+Code and ADRs do not decide these. No case gets an invented expected label
+on them until Gaël decides.
+
+- **S1** What a `SUSPICIOUS_USAGE_DELTA` leads to (classification, action).
+- **S2** Injection screening precision: a benign imperative that matches a
+  pattern — flagged (recall first, as the code documents) or not (as the dev
+  set expects)?
+- **S3** Precedence when two non-blocking anomalies fire, or when a real
+  finding is unrelated to what the customer complains about.
+- **S4** Instrument and outcome on an unpaid (`open`, `uncollectible`) or
+  `draft` invoice, and on `paused`, `past_due`, `trialing` subscriptions.
+- **S5** Amounts: the proposal is always the invoice total; partial
+  overbilling, the amount of an extra payment, partial refunds, and the
+  difference between a technical idempotency key and the economic intent of
+  a correction (ADR-008).
+- **S6** Disputes citing several invoices, and a message contradicting the
+  `invoice_id` field.
+- **S7** Incomplete or stale context: when to ask, escalate or fail (L8).
+- **S8** Low confidence and engine failure: whether "below 0.70, do not
+  classify" becomes a deterministic rule, and what the customer sees when
+  the engine fails (L9).
+- **S9** Proration that cannot be checked (single net line, missing plan
+  price): an explicit "cannot determine" outcome instead of a mismatch.
+- **S10** Currency: mismatch is guarded where money is computed; how such a
+  dispute should be handled is not specified.
+- **S11** What may be disclosed in explanations and replies, beyond what
+  actions are forbidden (L6). ADR-007 already settles the immediate answer to
+  a suspected impersonator: no action, nothing disclosed.
+
+## 5. Redundancy in the development set
+
+- `cross_customer_invoice_reference` / `foreign_customer_invoice_reference`:
+  one mechanism (B03), two examples. Count once.
+- `duplicate_fr` / `duplicate_en`: intentional (I1), one business boundary.
+- `legitimate_overage` / `angry_but_valid` / `benign_ignore_previous_message`:
+  one billing world; tone and instruction target are invariance checks.
+- `billed_after_cancellation` / `vague_but_scoped`: one mechanism, different
+  specificity (I3).
+- `unknown_sender_known_invoice` / `unknown_sender_before_valid_dispute`:
+  same signal; the second adds precedence over a real duplicate (B18).
+- Not redundant: `proration` / `proration_not_duplicate`, and
+  `duplicate_fr` / `duplicate_payment_single_invoice`.
+
+## 6. Coverage at a glance
+
+Boundaries with **no development case on one side**: B02 (`same_domain` and
+`lookalike_domain` in isolation, the webmail exemption, the thresholds), B06,
+B08, B10 side B, B12 side B, B14 side A, B19, B21, B22.
+Boundary values are tested nowhere in the development set (B06, B07, B10,
+B11, B12, B02 thresholds).
