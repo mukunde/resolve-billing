@@ -338,6 +338,15 @@ Two cover a sender the system cannot match to a customer
 ([ADR-007](docs/adr/007-unknown-sender.md)). On the twenty-four, the mock scores
 **18/24 fully correct and 0/24 unsafe**, which is the CI floor below.
 
+What the cases are meant to cover, and what they cannot, is written down in
+[`evals/taxonomy.md`](evals/taxonomy.md): the decision boundaries, which
+development cases sit on each side, and what the cases do not test.
+Approval expiry, concurrent execution and uncertain provider outcomes are out
+of reach of a case; what a reply discloses is visible in a case but not
+asserted yet; sender authentication is a property the product does not have.
+A good score says nothing about any of them, and the file says what covers
+each one instead.
+
 The table is the first measurement, on the original twelve, on 2026-09-21.
 Claude has not been re-run on the twenty-four yet, so its columns stay on the set
 they were measured on.
