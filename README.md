@@ -263,8 +263,8 @@ Billing providers : FakeBillingProvider
 Decision engines  : MockDecisionEngine, ClaudeDecisionEngine
 Orchestration     : n8n (trigger + notification), verified end to end
 Persistence       : SQLite
-Evaluation        : 19 dev cases (mock on every push, Claude on demand),
-                    plus a holdout set that CI never runs
+Evaluation        : 24 dev cases (mock on every push, Claude on demand),
+                    no active holdout; a new one in preparation
 Interop           : read-only MCP server over the billing port
 Telemetry         : OpenTelemetry GenAI spans over OTLP, off by default
 Reconciliation    : estimated cost against billed cost, per day and model
@@ -321,19 +321,25 @@ well the system fits them, not how it does on a dispute it has not seen. Fresh
 cases go to a separate **holdout** set instead: labels adjudicated by hand,
 drafts from a model of another family than the engine, never run in CI, never
 tuned against, and run once per milestone with the counts reported raw. At its
-current size it is a consistency check rather than a measurement, and it is
-described here as one. Its reference run, against prompt v3, was five runs of
-its five cases: **4/5 fully correct on every run, and no unsafe action.**
+size it is a consistency check rather than a measurement, and it is described
+here as one. Its first reference run, against prompt v3, was five runs of its
+five cases: **4/5 fully correct on every run, and no unsafe action.**
 
-The development set has nineteen cases now. Five came from the holdout, each
-moved once it could no longer serve as a blind test, and each replaced there by
-a fresh case.
+The five cases the holdout held last have since joined the development set,
+on 2026-10-18. The holdout lived in this repository, where every session working on the system could read it, so
+it could no longer serve as a blind test. A new holdout is being written in a
+separate private repository, with its own fixtures; until it is adjudicated and
+frozen, there is no blind measurement, and its results will not be comparable
+with the first reference run.
+
+The development set has twenty-four cases now. Ten came from the holdout, each
+moved once it could no longer serve as a blind test.
 Two cover a sender the system cannot match to a customer
-([ADR-007](docs/adr/007-unknown-sender.md)). On the nineteen, the mock scores
-**13/19 fully correct and 0/19 unsafe**, which is the CI floor below.
+([ADR-007](docs/adr/007-unknown-sender.md)). On the twenty-four, the mock scores
+**18/24 fully correct and 0/24 unsafe**, which is the CI floor below.
 
 The table is the first measurement, on the original twelve, on 2026-09-21.
-Claude has not been re-run on the nineteen yet, so its columns stay on the set
+Claude has not been re-run on the twenty-four yet, so its columns stay on the set
 they were measured on.
 
 | | mock | claude, prompt v2 | claude, prompt v3 |
@@ -489,7 +495,7 @@ The interesting assertion is not that the tests pass.
 
 ```yaml
 - run: >-
-    python -m evals.runner --engine mock --min-fully-correct 13
+    python -m evals.runner --engine mock --min-fully-correct 18
     --baseline evals/baselines/mock.json
 ```
 
@@ -727,9 +733,8 @@ Code reviews of this repository found fourteen defects, D1 to D14. Each is
 fixed the same way: a test that fails on the code as it was, then the fix,
 one commit per defect. The ones below change no investigation result -- they
 sit on execution, the API and the workflow -- and are fixed. The others
-change what an investigation concludes; they are open, and the holdout is
-measured again once they are fixed, since its current reference describes
-the system before them.
+change what an investigation concludes; they are open, and the new holdout
+gets its first reference run once they are fixed.
 
 **Fixed**
 
@@ -853,9 +858,9 @@ deployable engine.
 Ordered by what would be built next, each with its reason rather than as a
 wish list.
 
-- **A bigger evaluation set.** It runs in CI now, with a holdout beside it;
-  nineteen development cases is still nineteen, and a holdout this size is a
-  consistency check. A set large enough for the confidence bands to mean
+- **A bigger evaluation set.** It runs in CI now, with a holdout being
+  rebuilt beside it; twenty-four development cases is still twenty-four, and
+  a holdout of ten to fifteen cases is a consistency check. A set large enough for the confidence bands to mean
   something is the only thing that could ever promote a confidence from
   `self_reported` to `calibrated`, and with it open the autonomy thresholds.
 - **Reply drafter.** A second port, already argued for: prose is not the
