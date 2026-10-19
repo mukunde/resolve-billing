@@ -114,4 +114,42 @@ creates the case, so that no part of the address ever transits a browser.
 That is the shape ADR-010 adopts; it is not built here.
 
 **To be added to this record:** what of the customer's own message reaches
-the model provider (D10).
+the model provider (D10). Its place is the inventory below.
+
+## Disclosure, channel by channel (2026-10-19)
+
+Actions are guarded; until now text was not. A correct label does not prove
+that what the system writes reveals nothing it should not (taxonomy S11, L6).
+Three rules, then an inventory of every channel as it stands.
+
+**1. Text meant for the sender names only the sender's own account.** No
+identifier, name or amount of another customer, ever. To a sender who is
+unknown or suspected of impersonation, nothing about any account: not that it
+exists, not that an invoice exists (ADR-007). Today no such text is sent --
+there is no reply drafter, and the workflow's automatic-reply branch is a
+placeholder gated by `automatic_reply_allowed` (ADR-011). The reply drafter
+will be built with an automatic check of every outgoing text against this
+rule: no other customer's identifiers, addresses, names or amounts.
+
+**2. Every internal channel carries what its readers need, and no more.**
+Finding codes and a link rather than evidence and prose wherever a link is
+enough; the evidence stays behind authentication.
+
+**3. A channel's readers are named.** A channel without a named audience,
+retention and access is a leak waiting for a reader.
+
+| Channel | Read by | Carries | Guard today | Open |
+|---|---|---|---|---|
+| `POST /disputes/investigate` response | the orchestrator (service key) | classification, finding codes, explanation, proposed action, sender, reply permission | service authentication; codes, not evidence | the explanation is internal prose and must never be forwarded to the sender as it is |
+| Reply to the sender | the sender | nothing yet | `automatic_reply_allowed` (ADR-011) | rule 1 and its automatic check, with the reply drafter |
+| Approval mail | the approvers' mailbox | run, classification, amount, explanation, link | the decision itself needs a signed-in approver | mail is forwarded and archived: the explanation could give way to codes and the link |
+| Review alert, execution alert | the approvers' mailbox | codes, run, link; for an execution, the API's error text | no explanation, no evidence | -- |
+| Triage mail | the triage mailbox | the unknown sender's address, codes, link | no explanation, no evidence; the request to confirm nothing (ADR-011) | -- |
+| API error mail | the approvers' mailbox | sender, cited invoice, message length | never the message itself | -- |
+| Review page, run page | a signed-in approver; the run page, either kind of caller | findings with evidence, explanation, trace | authentication (above) | the run page is readable by the service caller too (known limit above) |
+| Audit database | whoever reads the file | the message verbatim, explanation, findings with evidence, amounts | a local file in this demonstrator | access and retention to define before production (Cloud SQL with IAM in the target, ADR-010) |
+| Telemetry | the trace backend | identifiers, codes, verdict, counts, cost | never the message, the prompt, the context or an address (`tests/integration/test_tracing.py`) | the backend's own retention |
+| Logs | the log sink | dispute id and error category | never an exception's text (taxonomy S7) | -- |
+| Model provider | the engine's vendor | the message verbatim, the context and findings pseudonymised | aliases for every identifier in the context | the message itself is not masked (D10) |
+| MCP server | whoever starts it | any customer's context, invoices and findings | read-only, no mutation reachable | no per-caller scope: it must not be exposed beyond the operator |
+| Evaluation results | readers of this repository | case ids, codes, verdicts | synthetic data only | never run on real data into committed files |
