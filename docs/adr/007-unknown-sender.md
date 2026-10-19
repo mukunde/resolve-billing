@@ -4,6 +4,10 @@
 [ADR-011](011-automated-mail-and-automatic-replies.md): the request to write
 from the known address is never sent automatically; a person sends it from a
 triage mailbox, and automated mail from an unknown sender is set aside.
+Amended again the same day (D9): the sender's address is required and is
+what identifies the sender; a customer id in the request is only a claim,
+and one the address does not support is an identity conflict, reviewed by a
+person without loading the claimed account.
 
 ## Context
 

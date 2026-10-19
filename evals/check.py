@@ -138,6 +138,7 @@ def _well_formed(case: object) -> bool:
         and _one_of(case.get("expect_sender", SenderStatus.KNOWN.value), _SENDERS)
         and isinstance(case.get("expect_engine_skipped", False), bool)
         and isinstance(case.get("expect_automatic_reply", False), bool)
+        and (case.get("customer_id") is None or isinstance(case.get("customer_id"), str))
         # The API's own bounds: a case the API would refuse is malformed.
         and header_problem(case.get("headers", {})) is None
     )
@@ -153,6 +154,17 @@ def _fits(case: dict, data: FixtureSet) -> bool:
     customer = next((c for c in data.customers if c.email.lower() == email), None)
     invoice = next((i for i in data.invoices if i.id == case["invoice_id"]), None)
     sender = case.get("expect_sender", SenderStatus.KNOWN.value)
+
+    # A claimed customer id (D9): the case either expects the claim to hold,
+    # or expects an identity conflict -- and the references must agree.
+    claimed = case.get("customer_id")
+    if claimed is not None:
+        holds = customer is not None and customer.id == claimed
+        expects_conflict = RuleCode.IDENTITY_CONFLICT.value in case["expect_findings"]
+        if expects_conflict:
+            return not holds
+        if not holds:
+            return False
 
     if sender in _UNKNOWN_SENDERS:
         if customer is not None:

@@ -53,6 +53,10 @@ invoice, and no blocking finding.
 - Dev: A every known-sender case; B `unknown_sender_plain`.
 - Gaps: case and whitespace variants of a known address. A matched address is
   a lookup, not authentication (L10).
+- Since D9: a customer id in the request is a claim. When the address does
+  not resolve to it -- another customer's address, an unknown one, an id that
+  does not exist -- `IDENTITY_CONFLICT`: human review, nothing proposed, the
+  claimed account not loaded (`claimed_account_of_another_customer`).
 - Tests: CP, MU, BV.
 
 **B02 — Unknown sender: plain vs suspected impersonation, one signal at a time** · case
@@ -389,7 +393,7 @@ row says what kind of limit it is, what covers it today, and what could.
 | L8 | **Incomplete or stale context**: a provider read failure, the 180-day invoice lookback, missing usage data. "Not found" is not "does not exist" | Format (read failures); assertion (data missing from fixtures) | A failed read decides nothing and answers 503; an old invoice, missing usage: `tests/integration/test_unusable_evidence.py` | Fault injection against each real adapter |
 | L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | Outages escalate and are recorded as such; errors fail visibly: `tests/unit/test_claude_outages.py` (with the SDK), `tests/integration/test_unusable_evidence.py` | The same against a real outage, in the pilot |
 | L10 | **Sender authentication**: a known address is a lookup, not proof of identity; delegated contacts | Product | Nothing; ADR-007 treats the address as a signal | Verified contacts, signed mail (DKIM/DMARC) at intake, a production identity design |
-| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 32 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
+| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 33 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
 | L12 | **Production approval scope**: approver amount limits, second approval, separation of duties (ADR-009, described, not built) | Product | Nothing | To be specified and built before production |
 | L13 | **Real billing providers**: every case runs on the fake provider | Format | Contract tests of the fake | Adapter contract tests against sandboxes (Pennylane, Qonto) |
 | L14 | **Where mail headers come from**: automated mail is recognised from the headers the intake forwards; their provenance is not verified, and without them only the sender address is checked. Headers can only withhold a reply, never grant one | Format | `tests/unit/test_automated_mail.py` | The support tool or a trusted gateway supplying headers and authentication results (ADR-010, ADR-011) |

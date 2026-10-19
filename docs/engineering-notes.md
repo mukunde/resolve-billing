@@ -106,7 +106,7 @@ below 0.70 an instruction rather than a preference. Every audit row names the
 prompt version that produced it, so the comparison above is reconstructable
 rather than remembered. After v3, nothing below 0.70 was returned at all.
 
-**Thirty-two cases is not calibration either, and none of this opens anything.**
+**Thirty-three cases is not calibration either, and none of this opens anything.**
 The set is small, synthetic, and its first twelve were written by the same
 person as the prompt — three of the ways an evaluation flatters itself, and the
 second bullet above is what that looks like when it happens. `confidence_kind`
@@ -238,6 +238,13 @@ once they are fixed.
   as a credit note for the invoice's total. An amount now exists only when
   the whole invoice is the error; anything else goes to a person without
   one (`app/policies/correction.py`, `tests/unit/test_correction.py`).
+- **D9 -- a customer id in the request outranked the sender's address**
+  (2026-10-19, bug record `.specify/bugs/d9-sender-matches-customer/`). A
+  request naming `cus_acme` from any address was investigated as ACME's, up
+  to a credit note proposed for approval. The address now identifies the
+  sender and is required; a customer id is a claim, and a claim it does not
+  support is an identity conflict: a person checks, the claimed account is
+  not even loaded. `tests/integration/test_identity.py`.
 - **D11 -- an automatic reply was authorised for robots and strangers**
   (2026-10-19, bug record `.specify/bugs/d11-no-automatic-reply/`). "No
   approval needed" was read as "may answer automatically". Nothing was sent
@@ -259,7 +266,6 @@ once they are fixed.
 **Open** -- each changes investigation results, so each is measured on the
 evaluation set before it lands.
 
-- **D9** -- check that the customer found matches the sender.
 - **D10** -- mask the dispute message itself before the engine call; today
   only the billing context is pseudonymised.
 - **D14** -- give each rule its preconditions, and a `NOT_EVALUABLE`

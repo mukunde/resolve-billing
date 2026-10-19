@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "c09a7399a46ccb1f",
+  "cases_sha256": "ce2c508daacfe2ca",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -283,6 +283,15 @@
       "reply": true
     },
     "withdrawn_message_with_injection": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true
+    },
+    "claimed_account_of_another_customer": {
       "classification": true,
       "action": true,
       "approval": true,

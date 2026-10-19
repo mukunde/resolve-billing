@@ -21,6 +21,7 @@ from app.domain.models import Customer, Invoice, Payment, RuleFinding, Subscript
 
 __all__ = [
     "cited_invoice_conflict",
+    "identity_conflict",
     "currency_mismatch",
     "detect_duplicate_invoice",
     "duplicate_payment",
@@ -373,6 +374,35 @@ def unknown_invoice(invoice_id: str, invoices: list[Invoice]) -> RuleFinding | N
         evidence={
             "invoice_id": invoice_id,
             "known_invoice_ids": [invoice.id for invoice in invoices],
+        },
+    )
+
+
+def identity_conflict(
+    claimed_customer_id: str | None, sender: Customer | None
+) -> RuleFinding | None:
+    """The request names a customer the sender's address does not resolve to (D9).
+
+    The address identifies the sender; a `customer_id` is only a claim. When
+    the address resolves to another customer, to nobody, or the claimed id
+    does not exist, the claim is not believed. The claimed account is never
+    looked up here -- not even to check that it exists -- so the answer is the
+    same either way, and nothing about it leaks.
+    """
+    if claimed_customer_id is None:
+        return None
+    if sender is not None and sender.id == claimed_customer_id:
+        return None
+    return RuleFinding(
+        code=RuleCode.IDENTITY_CONFLICT,
+        severity=Severity.HIGH,
+        description=(
+            "L'adresse de l'expéditeur ne correspond pas au compte indiqué : "
+            "une personne vérifie."
+        ),
+        evidence={
+            "claimed_customer_id": claimed_customer_id,
+            "sender_is_a_customer": sender is not None,
         },
     )
 

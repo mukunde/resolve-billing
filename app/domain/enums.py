@@ -120,3 +120,6 @@ class RuleCode(StrEnum):
     # The message cites invoice references, none of them the designated one
     # (taxonomy S6): ask which, rather than investigate the wrong invoice.
     INVOICE_REFERENCE_CONFLICT = "INVOICE_REFERENCE_CONFLICT"
+    # The request names a customer the sender's address does not resolve to
+    # (D9): a claim, not an identity. Blocking.
+    IDENTITY_CONFLICT = "IDENTITY_CONFLICT"
