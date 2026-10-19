@@ -128,13 +128,21 @@ class TestLoader:
         with pytest.raises(FixtureError, match="pay_extra"):
             load_all()
 
-    def test_usage_has_no_id_and_is_only_appended(self, monkeypatch, tmp_path):
-        before = counts(load_all())
+    def test_usage_is_one_record_per_subscription(self, monkeypatch, tmp_path):
+        """The platform returns one usage record per subscription."""
         monkeypatch.setenv(
             EXTRA_FIXTURES_ENV, str(write(tmp_path / "extra", {"usage.json": [USAGE, USAGE]}))
         )
-        load_all.cache_clear()
-        assert counts(load_all())[4] == before[4] + 2
+        with pytest.raises(FixtureError, match="subscription_id 'sub_extra'"):
+            load_all()
+
+    def test_usage_for_a_subscription_already_metered_is_an_error(self, monkeypatch, tmp_path):
+        clash = dict(USAGE, subscription_id="sub_88")
+        monkeypatch.setenv(
+            EXTRA_FIXTURES_ENV, str(write(tmp_path / "extra", {"usage.json": [clash]}))
+        )
+        with pytest.raises(FixtureError, match="sub_88"):
+            load_all()
 
     def test_the_repository_fixtures_are_never_written(self, monkeypatch, tmp_path):
         snapshot = {p.name: p.read_bytes() for p in fixtures.FIXTURES_DIR.glob("*.json")}
@@ -182,12 +190,22 @@ class TestCheckOnly:
     @pytest.mark.parametrize(
         "bad",
         [
-            case(customer_email="nobody@example.test"),
+            case(customer_email="nobody@elsewhere.test"),
             case(invoice_id="inv_001"),
             case(expect_findings=["UNKNOWN_INVOICE"]),
             case(expect_sender="unknown"),
+            case(customer_email="nobody@elsewhere.test", expect_sender="suspected_impersonation",
+                 invoice_id=None),
+            case(customer_email="nobody@elsewhere.test", expect_sender="unknown"),
         ],
-        ids=["unknown-sender", "foreign-invoice", "unknown-invoice-expected", "sender-known"],
+        ids=[
+            "unknown-sender",
+            "foreign-invoice",
+            "unknown-invoice-expected",
+            "sender-known",
+            "impersonation-without-signal",
+            "unknown-sender-citing-a-known-invoice",
+        ],
     )
     def test_references_that_contradict_the_expectations(self, monkeypatch, tmp_path, bad):
         assert self.run(monkeypatch, tmp_path, [bad]) == 1
@@ -196,10 +214,16 @@ class TestCheckOnly:
         "good",
         [
             case(invoice_id="inv_001", expect_findings=["UNKNOWN_INVOICE"]),
-            case(customer_email="nobody@example.test", expect_sender="unknown"),
+            case(customer_email="nobody@elsewhere.test", expect_sender="unknown", invoice_id=None),
+            case(customer_email="nobody@elsewhere.test", expect_sender="suspected_impersonation"),
             case(invoice_id=None),
         ],
-        ids=["foreign-invoice-expected", "unknown-sender-expected", "no-invoice"],
+        ids=[
+            "foreign-invoice-expected",
+            "unknown-sender-expected",
+            "impersonation-by-known-invoice",
+            "no-invoice",
+        ],
     )
     def test_references_that_match_the_expectations(self, monkeypatch, tmp_path, good):
         assert self.run(monkeypatch, tmp_path, [good]) == 0
@@ -208,13 +232,77 @@ class TestCheckOnly:
         cases = [case(), case(), {"id": "half"}]
         assert self.run(monkeypatch, tmp_path, cases) == 1
         out = capsys.readouterr().out
-        assert "cases missing a field         : 1" in out
+        assert "cases malformed               : 1" in out
         assert "duplicate case ids            : 1" in out
 
-    def test_broken_fixtures_are_reported_not_raised(self, monkeypatch, tmp_path, capsys):
-        clash = {"customers.json": [dict(CUSTOMER, id="cus_acme")]}
-        assert self.run(monkeypatch, tmp_path, [case()], files=clash) == 1
-        assert "fixtures                      : error" in capsys.readouterr().out
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            case(id=["not", "hashable"]),
+            case(customer_email=None),
+            case(expect_findings=None),
+            case(expect_findings=["NOT_A_RULE"]),
+            case(expect_classification="refund_please"),
+            case(expect_action="wire_transfer"),
+            case(expect_human_approval="yes"),
+            case(expect_sender="somebody"),
+        ],
+    )
+    def test_mistyped_cases_are_counted_not_raised(self, monkeypatch, tmp_path, capsys, bad):
+        assert self.run(monkeypatch, tmp_path, [bad]) == 1
+        assert "cases malformed               : 1" in capsys.readouterr().out
+
+    def test_an_orphan_link_between_fixtures(self, monkeypatch, tmp_path, capsys):
+        orphan = dict(ONE_OF_EACH, **{"payments.json": [dict(PAYMENT, invoice_id="inv_ghost")]})
+        assert self.run(monkeypatch, tmp_path, [case()], files=orphan) == 1
+        assert "fixture links not resolved    : 1" in capsys.readouterr().out
+
+    @pytest.mark.parametrize(
+        "files, category",
+        [
+            ({"customers.json": [dict(CUSTOMER, id="cus_acme")]}, "defined twice"),
+            ({"invoices.json": [dict(INVOICE, amount="SECRET-MARKER")]}, "invalid entry"),
+            ({"payments.json": [dict(PAYMENT, state="SECRET-MARKER")]}, "invalid entry"),
+        ],
+        ids=["duplicate", "bad-amount", "bad-state"],
+    )
+    def test_broken_fixtures_print_a_category_and_nothing_of_the_data(
+        self, monkeypatch, tmp_path, capsys, files, category
+    ):
+        assert self.run(monkeypatch, tmp_path, [case()], files=files) == 1
+        out, err = capsys.readouterr()
+        assert "fixtures                      : error -- " in out and category in out
+        for leak in ("SECRET-MARKER", "cus_acme", str(tmp_path)):
+            assert leak not in out and leak not in err
+
+    def test_a_missing_extra_directory(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv(EXTRA_FIXTURES_ENV, str(tmp_path / "nowhere"))
+        path = tmp_path / "cases.json"
+        path.write_text(json.dumps([case()]), encoding="utf-8")
+        assert check.check(path) == 1
+        out = capsys.readouterr().out
+        assert "extra directory not found" in out and "nowhere" not in out
+
+    def test_the_runner_calls_no_engine(self, monkeypatch, tmp_path, capsys):
+        """`--check-only` returns before any engine exists or any result is written."""
+        from evals import runner
+
+        def no_run(*args, **kwargs):
+            raise AssertionError("an engine run was started")
+
+        monkeypatch.setattr(runner, "run", no_run)
+        monkeypatch.setenv(EXTRA_FIXTURES_ENV, str(write(tmp_path / "extra", ONE_OF_EACH)))
+        load_all.cache_clear()
+        path = tmp_path / "cases.json"
+        path.write_text(json.dumps([case()]), encoding="utf-8")
+        out_json = tmp_path / "out.json"
+        monkeypatch.setattr(
+            "sys.argv",
+            ["runner", "--engine", "claude", "--check-only", "--cases", str(path),
+             "--json", str(out_json)],
+        )
+        assert runner.main() == 0
+        assert not out_json.exists()
 
     def test_the_development_set_fits_its_fixtures(self, capsys):
         from evals.runner import CASES_PATH

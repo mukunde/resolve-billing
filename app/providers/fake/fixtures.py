@@ -18,7 +18,9 @@ A second directory can add entries: ``RESOLVE_EXTRA_FIXTURES_DIR``. It is how
 cases kept outside this repository bring their own data without that data
 ever entering ``fixtures/``. Its entries are appended, never substituted: an
 ``id`` already present is an error, because a silent override would change
-what every other case sees.
+what every other case sees. Usage records carry no ``id``; the platform
+returns one per subscription, so a second record for the same subscription
+is the same error.
 """
 
 from __future__ import annotations
@@ -47,13 +49,27 @@ FIXTURES_DIR = Path(__file__).resolve().parents[3] / "fixtures"
 #: Names a directory whose fixture files add to those of ``FIXTURES_DIR``.
 EXTRA_FIXTURES_ENV = "RESOLVE_EXTRA_FIXTURES_DIR"
 
-#: Files whose entries carry an ``id``. ``usage.json`` has none: its entries
-#: are only appended.
-_KEYED = frozenset({"customers.json", "subscriptions.json", "invoices.json", "payments.json"})
+#: What makes an entry unique, per file. Usage has no ``id``: the platform
+#: returns one record per subscription.
+_KEYS = {
+    "customers.json": "id",
+    "subscriptions.json": "id",
+    "invoices.json": "id",
+    "payments.json": "id",
+    "usage.json": "subscription_id",
+}
 
 
 class FixtureError(ValueError):
     """The fixtures cannot be loaded as one consistent platform."""
+
+
+class MissingFixturesDirectory(FixtureError):
+    """The extra directory named by the variable does not exist."""
+
+
+class DuplicateFixture(FixtureError):
+    """An entry the fixtures already define."""
 
 
 def extra_fixtures_dir() -> Path | None:
@@ -67,7 +83,9 @@ def extra_fixtures_dir() -> Path | None:
         return None
     path = Path(raw)
     if not path.is_dir():
-        raise FixtureError(f"{EXTRA_FIXTURES_ENV} names {path}, which is not a directory")
+        raise MissingFixturesDirectory(
+            f"{EXTRA_FIXTURES_ENV} names {path}, which is not a directory"
+        )
     return path
 
 
@@ -76,12 +94,12 @@ def _read(name: str, extra: Path | None = None) -> list[dict[str, Any]]:
     if extra is None or not (extra / name).is_file():
         return entries
     added = json.loads((extra / name).read_text(encoding="utf-8"))
-    if name in _KEYED:
-        seen = {entry["id"] for entry in entries}
-        for entry in added:
-            if entry["id"] in seen:
-                raise FixtureError(f"{extra / name}: id {entry['id']!r} is already defined")
-            seen.add(entry["id"])
+    key = _KEYS[name]
+    seen = {entry[key] for entry in entries}
+    for entry in added:
+        if entry[key] in seen:
+            raise DuplicateFixture(f"{extra / name}: {key} {entry[key]!r} is already defined")
+        seen.add(entry[key])
     return entries + added
 
 

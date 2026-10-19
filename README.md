@@ -336,8 +336,10 @@ That holdout brings its data with it. `RESOLVE_EXTRA_FIXTURES_DIR` names a
 directory whose fixture files are appended to `fixtures/` -- an `id` already
 defined is an error, never an override -- and the runner takes the case file
 by path. `--check-only` checks the plumbing without calling an engine and
-prints totals only: the fixtures load, every case has its fields, and every
-reference resolves the way the case expects.
+prints totals only: the fixtures load and link up, every case has its fields,
+and every reference resolves the way the case expects. It does not check the
+expected decisions -- only a run does -- nor the investigation's 180-day
+lookback.
 
 ```bash
 RESOLVE_EXTRA_FIXTURES_DIR=../holdout/fixtures python -m evals.runner --check-only --cases ../holdout/cases.json
