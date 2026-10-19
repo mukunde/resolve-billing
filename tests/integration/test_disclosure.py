@@ -112,3 +112,16 @@ class TestErrorsDoNotReflectInput:
         assert "CONFIDENTIAL-SENTINEL" not in response.text
         assert response.json()["detail"][0]["loc"] == ["body", "message"]
 
+    def test_a_key_the_caller_chose_is_not_echoed_back(self, client):
+        response = client.post(
+            "/api/v1/disputes/investigate",
+            json={
+                "message": "Facture ?",
+                "customer_email": "alice@acme.fr",
+                "headers": {"X-CONFIDENTIAL-SENTINEL": ["v"] * 11},
+            },
+        )
+        assert response.status_code == 422
+        assert "SENTINEL" not in response.text
+        assert all("msg" not in problem for problem in response.json()["detail"])
+

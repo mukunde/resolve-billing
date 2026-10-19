@@ -167,4 +167,6 @@ def test_an_exception_leaves_its_type_not_its_text(exporter):
     assert span.attributes["error.type"] == "RuntimeError"
     everything = str(span.attributes) + str([e.attributes for e in span.events])
     assert "SECRET-TOKEN" not in everything
+    assert span.status.status_code is trace.StatusCode.ERROR
+    assert not span.status.description
 
