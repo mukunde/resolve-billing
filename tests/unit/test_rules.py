@@ -5,7 +5,6 @@ worse than no agent at all -- it refunds by reflex. Scenario B of the demo
 exists for exactly this reason.
 """
 
-import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -37,6 +36,7 @@ from app.domain.rules import (
     unknown_customer,
     unknown_invoice,
 )
+from app.providers.fake.adapter import FakeBillingProvider
 
 SEPT = datetime(2026, 9, 1, tzinfo=UTC)
 OCT = datetime(2026, 10, 1, tzinfo=UTC)
@@ -573,28 +573,32 @@ class TestDuplicatePayment:
 class TestCitedInvoiceConflict:
     """Taxonomy S6: only a conflict is flagged."""
 
-    PATTERN = re.compile(r"\binv[_-]?[a-z0-9]{3,}\b", re.IGNORECASE)
-
     def test_only_other_invoices_are_cited(self):
-        finding = cited_invoice_conflict("Ma facture inv_001 est fausse.", "inv_002", self.PATTERN)
+        finding = cited_invoice_conflict({"inv_001"}, "inv_002")
         assert finding.code is RuleCode.INVOICE_REFERENCE_CONFLICT
         assert finding.evidence == {"designated": "inv_002", "cited": ["inv_001"]}
 
     @pytest.mark.parametrize(
-        "message",
-        [
-            "Ma facture est fausse.",
-            "inv_001 et inv_002 font doublon.",
-            "Ma facture INV-002 est fausse.",
-        ],
-        ids=["nothing-cited", "designated-among-others", "written-differently"],
+        "cited", [set(), {"inv_001", "inv_002"}], ids=["nothing-cited", "designated-among-others"]
     )
-    def test_no_conflict(self, message):
-        assert cited_invoice_conflict(message, "inv_002", self.PATTERN) is None
+    def test_no_conflict(self, cited):
+        assert cited_invoice_conflict(cited, "inv_002") is None
 
-    def test_no_designated_invoice_or_no_format_is_no_check(self):
-        assert cited_invoice_conflict("inv_001", None, self.PATTERN) is None
-        assert cited_invoice_conflict("inv_001", "inv_002", None) is None
+    def test_no_designated_invoice_is_no_check(self):
+        assert cited_invoice_conflict({"inv_001"}, None) is None
+
+
+class TestTheProviderNormalisesItsReferences:
+    """Only the platform knows how its references are written."""
+
+    @pytest.mark.parametrize("written", ["inv_002", "INV-002", "inv002", "Inv_002"])
+    def test_every_spelling_is_the_same_invoice(self, written):
+        provider = FakeBillingProvider()
+        assert provider.invoice_references(f"Ma facture {written} est fausse.") == {"inv_002"}
+
+    def test_free_text_is_not_a_reference(self):
+        provider = FakeBillingProvider()
+        assert provider.invoice_references("Ma facture de septembre, involontairement.") == set()
 
 
 class TestProrationStatesItsAssumption:

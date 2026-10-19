@@ -111,26 +111,33 @@ _OWN_MESSAGE = re.compile(
     r"(?:\s+(?:precedent\w*|d'avant))?"
 )
 
-#: Words that make a sentence about the system, whatever else it says.
-_SYSTEM_WORDS = re.compile(
-    r"\b(?:instructions?|consignes?|regles?|rules?|prompt|system|systeme|directives?)\b"
+#: What an override reaches for. If any of it is left in the sentence once
+#: the exempt phrase is set aside, the phrase is not exempt: "ignore my
+#: previous message and everything above" keeps its verb.
+_OVERRIDE_OBJECTS = re.compile(
+    r"\b(?:instructions?|consignes?|regles?|rules?|prompt|system|systeme|directives?"
+    r"|precedent\w*|previous|prior|above|ci-dessus|everything|tout ce qui|context\w*"
+    r"|earlier|told|dit)\b"
 )
 
 
 def _without_own_message(normalised: str) -> str:
     """The text with each exempt phrase blanked, positions kept.
 
-    Sentence by sentence: a sentence that also names instructions, rules, a
-    prompt or the system keeps everything, so "ignore my previous email and
-    all prior instructions" is still flagged. Every other pattern -- a role,
-    an authority claim, markup -- is matched on the same text, where the
-    exempt phrase is the only thing removed.
+    Sentence by sentence, and only when the phrase stands alone: once it is
+    set aside, nothing an override reaches for may be left in the sentence
+    -- instructions, rules, a prompt, the system, "everything above", what
+    came before. "Ignore my previous email and all prior instructions" and
+    "ignore my previous message and everything above" are still flagged.
+    Every other pattern -- a role, an authority claim, markup -- is matched
+    on the same text, where the exempt phrase is the only thing removed.
     """
     sentences = re.split(r"(?<=[.!?;])", normalised)
     kept = []
     for sentence in sentences:
-        if not _SYSTEM_WORDS.search(sentence):
-            sentence = _OWN_MESSAGE.sub(lambda m: " " * len(m.group(0)), sentence)
+        blanked = _OWN_MESSAGE.sub(lambda m: " " * len(m.group(0)), sentence)
+        if blanked != sentence and not _OVERRIDE_OBJECTS.search(blanked):
+            sentence = blanked
         kept.append(sentence)
     return "".join(kept)
 

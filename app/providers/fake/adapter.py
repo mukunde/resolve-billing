@@ -31,10 +31,21 @@ class FakeBillingProvider:
 
     name = "fake"
 
-    #: How this platform writes an invoice reference, for spotting one cited
-    #: in a message (taxonomy S6). Optional on the port: a provider without
-    #: one simply has no cited-reference check.
-    invoice_reference = re.compile(r"\binv[_-]?[a-z0-9]{3,}\b", re.IGNORECASE)
+    #: How this platform writes an invoice reference in free text: `inv_002`,
+    #: `INV-002`, `inv002` -- digits after the prefix, so a word that happens
+    #: to start with "inv" is not one (taxonomy S6).
+    _INVOICE_REFERENCE = re.compile(r"\binv[_-]?(\d{3,})\b", re.IGNORECASE)
+
+    def invoice_references(self, text: str) -> set[str]:
+        """Invoice ids cited in `text`, normalised to this platform's own form.
+
+        Optional on the port (taxonomy S6): only the platform knows its
+        format, and a provider without this method simply has no
+        cited-reference check.
+        """
+        return {
+            f"inv_{match.group(1).lower()}" for match in self._INVOICE_REFERENCE.finditer(text)
+        }
 
     def __init__(self) -> None:
         data = load_all()

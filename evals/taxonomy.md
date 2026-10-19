@@ -111,13 +111,17 @@ invoice, and no blocking finding.
 - Variable: what the imperative is aimed at. The **implemented** predicate is
   a pattern list tuned for recall, with documented false positives ("vous
   êtes autorisé"); the **intended** boundary is semantic. They differ, and the
-  difference stays visible: "ignore my previous message" can match the
-  override pattern although the dev set expects the normal path (S2).
+  difference stays visible.
 - Dev: A `angry_but_valid`, `benign_ignore_previous_message`; B
   `injection_refund`, `injection_role`, `withdrawn_message_with_injection`.
 - Since S2: the customer withdrawing their own earlier message is exempt,
-  as that phrase only, in a sentence naming no instructions, rules, prompt
-  or system; every other pattern still applies to the rest of the text.
+  as that phrase only and only when it stands alone -- once it is set aside,
+  nothing an override reaches for (instructions, rules, a prompt, the
+  system, "everything above", what came before) may be left in the sentence.
+  Every other pattern still applies to the whole text.
+- Known gap of the patterns themselves: an override that names nothing they
+  list ("forget what you were told before") is not caught. The model is
+  told the message is data, and the policy, not the model, authorises.
 - Tests: AD, ML, CP (minimal wording changes), Unicode mutations.
 
 **B06 — Message within vs beyond the engine's input limit** · case
@@ -383,7 +387,7 @@ row says what kind of limit it is, what covers it today, and what could.
 | L6 | **Disclosure in text**: a correct label does not prove that a reply or explanation reveals nothing of another account or to a suspected impersonator | Assertion | Narrowly: `tests/integration/test_dispute_flow.py` checks that an unknown sender's explanation names no customer; human review of every draft | Deterministic checks on drafts (other customers' ids, names, amounts); a judge model on sampled drafts |
 | L7 | **Evidence fidelity**: an explanation that cites the right evidence for the right reason | Assertion | Cited references outside the context are dropped (`TestEvidenceMapping` in `tests/unit/test_claude_engine.py`): that proves they belong to the context, not that the reasoning is right | Graded review of explanations on samples |
 | L8 | **Incomplete or stale context**: a provider read failure, the 180-day invoice lookback, missing usage data. "Not found" is not "does not exist" | Format (read failures); assertion (data missing from fixtures) | A failed read decides nothing and answers 503; an old invoice, missing usage: `tests/integration/test_unusable_evidence.py` | Fault injection against each real adapter |
-| L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | Outages escalate and are recorded as such; errors fail visibly: `tests/unit/test_claude_engine.py`, `tests/integration/test_unusable_evidence.py` | The same against a real outage, in the pilot |
+| L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | Outages escalate and are recorded as such; errors fail visibly: `tests/unit/test_claude_outages.py` (with the SDK), `tests/integration/test_unusable_evidence.py` | The same against a real outage, in the pilot |
 | L10 | **Sender authentication**: a known address is a lookup, not proof of identity; delegated contacts | Product | Nothing; ADR-007 treats the address as a signal | Verified contacts, signed mail (DKIM/DMARC) at intake, a production identity design |
 | L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 32 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
 | L12 | **Production approval scope**: approver amount limits, second approval, separation of duties (ADR-009, described, not built) | Product | Nothing | To be specified and built before production |

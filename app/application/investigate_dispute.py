@@ -394,10 +394,16 @@ class DisputeInvestigator:
         if automated is not None:
             findings.append(automated)
 
-        conflict = cited_invoice_conflict(
-            dispute.customer_message,
-            dispute.invoice_id,
-            getattr(self._provider, "invoice_reference", None),
+        references = getattr(self._provider, "invoice_references", None)
+        conflict = (
+            cited_invoice_conflict(
+                references(dispute.customer_message),
+                next(iter(references(dispute.invoice_id)), dispute.invoice_id)
+                if dispute.invoice_id
+                else None,
+            )
+            if references is not None
+            else None
         )
         if conflict is not None:
             findings.append(conflict)

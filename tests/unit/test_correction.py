@@ -159,3 +159,12 @@ class TestNoAmount:
         correction = correction_for("credit_note", invoice(status), [DUPLICATE], [payment()])
         assert correction.amount is None
         assert correction.withheld
+
+
+def test_a_duplicate_payment_finding_without_the_payments_yields_no_amount():
+    """The records decide: an incoherent finding cannot release a refund."""
+    finding = RuleFinding(
+        code=RuleCode.DUPLICATE_PAYMENT, severity=Severity.HIGH, description="", evidence={}
+    )
+    correction = correction_for("refund", invoice(), [finding], [payment()])
+    assert correction.amount is None

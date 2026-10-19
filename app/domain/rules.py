@@ -212,20 +212,19 @@ def duplicate_payment(target: Invoice, payments: list[Payment]) -> RuleFinding |
 
 
 def cited_invoice_conflict(
-    message: str, invoice_id: str | None, pattern: re.Pattern[str] | None
+    cited: Iterable[str], designated: str | None
 ) -> RuleFinding | None:
     """The message cites invoice references, none of them the designated one
     (taxonomy S6).
 
     Only a conflict is flagged. A message that cites the designated invoice
     and others -- a comparison, a history, a suspected duplicate -- is
-    ordinary. References are recognised by the provider's own format; a
-    reference written freely ("my September invoice") is not detected.
+    ordinary. `cited` and `designated` come from the provider, which alone
+    knows how its references are written and normalised; a reference written
+    freely ("my September invoice") is not detected.
     """
-    if not invoice_id or pattern is None:
-        return None
-    cited = sorted(set(_references(pattern.findall(message))))
-    if not cited or _reference(invoice_id) in cited:
+    cited = sorted(set(cited))
+    if not designated or not cited or designated in cited:
         return None
     return RuleFinding(
         code=RuleCode.INVOICE_REFERENCE_CONFLICT,
@@ -234,16 +233,8 @@ def cited_invoice_conflict(
             "Le message cite d'autres factures que celle désignée : "
             "demander laquelle est contestée."
         ),
-        evidence={"designated": invoice_id, "cited": cited},
+        evidence={"designated": designated, "cited": cited},
     )
-
-
-def _references(found: Iterable[str]) -> list[str]:
-    return [_reference(ref) for ref in found]
-
-
-def _reference(ref: str) -> str:
-    return ref.strip().lower().replace("-", "_")
 
 
 def invoice_after_cancellation(invoice: Invoice, sub: Subscription) -> RuleFinding | None:
