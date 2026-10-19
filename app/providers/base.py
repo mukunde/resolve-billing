@@ -69,6 +69,10 @@ class BillingProvider(Protocol):
     """
 
     name: str
+    # Optionally, `invoice_reference`: a compiled pattern matching how this
+    # platform writes an invoice reference, used to spot references cited in
+    # a message (taxonomy S6). Not part of the protocol, so a provider without
+    # one still satisfies it and simply has no cited-reference check.
 
     async def get_customer(self, customer_id: str) -> Customer: ...
 

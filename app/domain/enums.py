@@ -114,3 +114,9 @@ class RuleCode(StrEnum):
     INVOICE_OUTSIDE_WINDOW = "INVOICE_OUTSIDE_WINDOW"
     # ...or a metered line has no usage record to compare it with.
     USAGE_UNAVAILABLE = "USAGE_UNAVAILABLE"
+    # One invoice collected twice: two distinct settled payments, each its
+    # full total (the payment-side face of a duplicate).
+    DUPLICATE_PAYMENT = "DUPLICATE_PAYMENT"
+    # The message cites invoice references, none of them the designated one
+    # (taxonomy S6): ask which, rather than investigate the wrong invoice.
+    INVOICE_REFERENCE_CONFLICT = "INVOICE_REFERENCE_CONFLICT"

@@ -5,6 +5,7 @@ worse than no agent at all -- it refunds by reflex. Scenario B of the demo
 exists for exactly this reason.
 """
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -25,8 +26,10 @@ from app.domain.enums import (
 from app.domain.models import Customer, Invoice, InvoiceLine, Payment, Subscription
 from app.domain.money import Money
 from app.domain.rules import (
+    cited_invoice_conflict,
     currency_mismatch,
     detect_duplicate_invoice,
+    duplicate_payment,
     invoice_after_cancellation,
     proration_mismatch,
     suspected_impersonation,
@@ -540,3 +543,72 @@ class TestCurrencyMismatch:
                                     end=datetime(2026, 8, 1, tzinfo=UTC))]}
         )
         assert currency_mismatch(invoice("inv_001"), [other], []) is None
+
+
+class TestDuplicatePayment:
+    def paid(self, payment_id, minor=9900, status=PaymentStatus.SUCCEEDED):
+        return Payment(
+            id=payment_id, invoice_id="inv_001", amount=eur(minor), status=status
+        )
+
+    def test_two_distinct_full_payments(self):
+        finding = duplicate_payment(invoice("inv_001"), [self.paid("p1"), self.paid("p2")])
+        assert finding.code is RuleCode.DUPLICATE_PAYMENT
+        assert finding.evidence["payment_ids"] == ["p1", "p2"]
+
+    @pytest.mark.parametrize(
+        "payments",
+        [
+            lambda t: [t.paid("p1")],
+            lambda t: [t.paid("p1"), t.paid("p1")],
+            lambda t: [t.paid("p1"), t.paid("p2", minor=4950)],
+            lambda t: [t.paid("p1"), t.paid("p2", status=PaymentStatus.REFUNDED)],
+        ],
+        ids=["one", "same-id-twice", "partial", "second-refunded"],
+    )
+    def test_not_a_duplicate(self, payments):
+        assert duplicate_payment(invoice("inv_001"), payments(self)) is None
+
+
+class TestCitedInvoiceConflict:
+    """Taxonomy S6: only a conflict is flagged."""
+
+    PATTERN = re.compile(r"\binv[_-]?[a-z0-9]{3,}\b", re.IGNORECASE)
+
+    def test_only_other_invoices_are_cited(self):
+        finding = cited_invoice_conflict("Ma facture inv_001 est fausse.", "inv_002", self.PATTERN)
+        assert finding.code is RuleCode.INVOICE_REFERENCE_CONFLICT
+        assert finding.evidence == {"designated": "inv_002", "cited": ["inv_001"]}
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "Ma facture est fausse.",
+            "inv_001 et inv_002 font doublon.",
+            "Ma facture INV-002 est fausse.",
+        ],
+        ids=["nothing-cited", "designated-among-others", "written-differently"],
+    )
+    def test_no_conflict(self, message):
+        assert cited_invoice_conflict(message, "inv_002", self.PATTERN) is None
+
+    def test_no_designated_invoice_or_no_format_is_no_check(self):
+        assert cited_invoice_conflict("inv_001", None, self.PATTERN) is None
+        assert cited_invoice_conflict("inv_001", "inv_002", None) is None
+
+
+class TestProrationStatesItsAssumption:
+    def test_the_finding_names_the_assumption(self):
+        half = line(9900, start=SEPT, end=datetime(2026, 9, 16, tzinfo=UTC))
+        finding = proration_mismatch(invoice("inv_001", lines=[half]), subscription())
+        assert "prix plein" in finding.description
+        assert finding.evidence["assumption"] == "each line carries the full price of its own plan"
+
+
+class TestUsageDirection:
+    @pytest.mark.parametrize(
+        "expected, billed, direction", [("100", "200", "over"), ("200", "100", "under")]
+    )
+    def test_the_gap_says_which_way(self, expected, billed, direction):
+        finding = suspicious_usage_delta(Decimal(expected), Decimal(billed))
+        assert finding.evidence["direction"] == direction

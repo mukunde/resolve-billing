@@ -313,3 +313,21 @@ class TestIsolation:
 
         params = set(inspect.signature(ActionPolicy.evaluate).parameters)
         assert params == {"self", "decision", "findings", "amount", "withheld"}
+
+
+class TestOverBilledUsage:
+    """Taxonomy S1: "the invoice is correct" cannot stand against usage the
+    rules found over-billed."""
+
+    def test_a_valid_invoice_against_an_over_billing_goes_to_a_person(self, policy):
+        gap = RuleFinding(
+            code=RuleCode.SUSPICIOUS_USAGE_DELTA,
+            severity=Severity.MEDIUM,
+            description="",
+            evidence={"direction": "over"},
+        )
+        auth = policy.evaluate(
+            decision(Classification.VALID_INVOICE, RecommendedAction.EXPLAIN_INVOICE), [gap]
+        )
+        assert auth.verdict is Verdict.HUMAN_REVIEW
+        assert "dépasse" in auth.reason

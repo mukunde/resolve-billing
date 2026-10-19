@@ -30,6 +30,12 @@ _BY_FINDING: list[tuple[RuleCode, Classification, RecommendedAction, float]] = [
         0.95,
     ),
     (
+        RuleCode.DUPLICATE_PAYMENT,
+        Classification.DUPLICATE_BILLING,
+        RecommendedAction.PROPOSE_REFUND,
+        0.95,
+    ),
+    (
         RuleCode.PRORATION_MISMATCH,
         Classification.PRORATION_DISPUTE,
         RecommendedAction.PROPOSE_CREDIT_NOTE,

@@ -80,7 +80,9 @@ def correction_for(
     if any(f.code in WHOLE_INVOICE_FINDINGS for f in findings):
         corrections.add("whole_invoice")
     corrections.update(PARTIAL_FINDINGS[f.code] for f in findings if f.code in PARTIAL_FINDINGS)
-    if _collected_twice(invoice, settled):
+    if _collected_twice(invoice, settled) or any(
+        f.code is RuleCode.DUPLICATE_PAYMENT for f in findings
+    ):
         corrections.add("extra_payment")
 
     if not corrections:
