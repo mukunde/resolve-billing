@@ -1,63 +1,102 @@
 # ResolveBilling
 
-**Human-in-the-loop billing dispute resolution.**
+**Billing dispute resolution where code checks the facts, a model reads the
+complaint, and a person signs for the money.**
 
-An auditable AI agent for billing dispute investigation, recommendation and
-human-approved resolution. Provider- and model-agnostic on two independent
-axes: neither the domain nor the application layer knows the name of any
-vendor.
+A customer writes that they were charged twice, billed after cancelling, or
+charged the full month for half of it. ResolveBilling loads their billing
+records, checks them with deterministic rules, asks a language model only what
+code cannot settle -- what the customer is actually disputing -- and prepares
+the case for a human: findings with their evidence, a classification, and a
+correction priced by code when the code can price it. Nothing moves money
+without an authenticated person approving it, and every run that completes is
+recorded in an audit trail.
 
 [![evals](https://github.com/mukunde/resolve-billing/actions/workflows/evals.yml/badge.svg)](https://github.com/mukunde/resolve-billing/actions/workflows/evals.yml)
 
-![One dispute, three outcomes: a duplicate goes to a human for approval, a correct invoice proposes nothing, and an injected instruction stops before the decision engine is ever called.](docs/workflow.svg)
+> **Status, 2026-10-19.** A working, tested demonstrator, run on fake billing
+> data: no real billing platform is connected and nothing is deployed. The
+> goal is a production-ready product, and the next milestone is a supervised
+> pilot; [where it stands](#where-it-stands) says what is done and what is not.
 
-<sub>Three runs through one pipeline. The third is the one to watch: the
-engine is never asked, and the audit says so rather than implying it.</sub>
+![One pipeline, four disputes: a duplicate goes to a human for approval, a correct invoice proposes nothing, a mispriced proration goes to a person without an amount, and an injected instruction stops before the decision engine is ever called.](docs/workflow.svg)
 
-> **The billing domain is stable. Billing providers and decision engines are
-> replaceable.**
->
-> **Deterministic where possible. Probabilistic where useful. Human-controlled
-> where risky.**
+<sub>Four runs through one pipeline. Case D is the newest rule: the error is
+real, but the code cannot yet compute what is owed, so a person reviews and
+nothing is proposed. Case F never reaches the model, and the audit says so.</sub>
 
 ---
 
-## Why this exists
+## Why it exists
 
-A customer writes in saying they were charged twice. Answering that well needs
-three different kinds of certainty, and most of the work is deciding which one
-applies where.
+Answering a billing dispute well takes three kinds of certainty, and most of
+the work is knowing which applies where.
 
-Whether two invoices cover the same period for the same subscription is
-arithmetic. It does not need a model, it needs a date comparison, and it will
-give the same answer every time. Whether the customer is actually complaining
-about that, or about something else entirely, is a reading problem. And
-whether to hand back 99 € is neither — it is an authorisation question, and
-the answer is that a person decides.
+- **Arithmetic.** Whether two invoices cover the same period for the same
+  subscription, or whether a partial month was prorated correctly, is a date
+  comparison and an integer calculation. Code answers it the same way every
+  time, for nothing.
+- **Reading.** Whether the customer is complaining about that duplicate, or
+  about something else; whether the message is a dispute at all; which of the
+  findings answers it. That is what a language model is good at, and what
+  rules are bad at.
+- **Authority.** Whether to hand back 99 €. That is neither arithmetic nor
+  reading: a person decides.
 
-This repository is small on purpose. It is an argument about where each of
-those three lines sits, made in code you can run.
+**Why use a model if a person decides?** Because the person decides on a
+prepared case, not a raw e-mail. Finance already works this way: the
+four-eyes principle separates whoever prepares a correction from whoever
+approves it. The model assists the preparer; it never replaces the approver.
+A dispute that needs no money -- a correct invoice to explain, a missing
+invoice reference to ask for -- gets a reply without anyone deciding
+anything; a dispute that needs money reaches a person with the findings, the
+evidence and the proposed correction already assembled. People also step in
+when the message looks like an attack, the sender is suspected of
+impersonating a customer, the
+model says it cannot classify, or the message is too long to send it.
+Sending low-confidence answers and engine outages to a person is decided and
+not built yet.
+
+What is measured so far: on the original twelve cases, one model call cost
+**$0.021** on average, with a **median 4.7 s**. What is not measured yet, and
+can only be measured in a pilot: how much preparation time it saves, at what
+quality. That is the number the product has to earn.
 
 ---
 
 ## What it does
 
-One use case, end to end:
-
 ```text
 dispute → billing context → deterministic rules → decision engine
-        → action policy → human approval → idempotent execution → audit
+        → correction amount → action policy → human approval
+        → execution, once → audit
 ```
 
-A dispute arrives. The billing context is loaded once, in full. Deterministic
-rules run first because they are free, instant and certain. What they cannot
-settle goes to a decision engine, whose answer is a classification and a
-confidence — never an amount. An action policy decides whether anything may
-happen. A human approves. Only then does money move, once, whatever the
-network does.
+1. **Billing context.** The customer is identified by their address, and
+   their subscriptions, invoices, payments and usage are loaded once.
+2. **Deterministic rules** run first: duplicate invoice, billing after
+   cancellation, proration mismatch, usage gap, unknown invoice, unknown
+   sender, suspected impersonation, prompt injection, message too long. A
+   rule states a fact and shows its evidence; it never recommends.
+3. **The decision engine** -- a language model behind a port -- is called only
+   when the rules have not already stopped the run. It returns a
+   classification from a closed set, a confidence, and the *kind* of action it
+   recommends. Never an amount.
+4. **The correction amount** is computed by code from the records, and only
+   when the whole invoice is the error: a duplicated invoice, an invoice
+   after cancellation, an invoice collected twice. A partial error goes to a
+   person without an amount rather than with a wrong one.
+5. **The action policy** decides what may happen: a reply or a request for
+   information, a financial action awaiting approval, or human review. Refused
+   money is not shown as a proposal.
+6. **A person approves** on a page the API serves, signed in; the approval
+   is bound to what they were shown, and expires.
+7. **Execution is designed to happen once**: the action is claimed
+   atomically, written with an idempotency key, and an uncertain outcome is
+   reconciled with the platform rather than retried blind -- all of it tested
+   against the fake provider, not yet a real one.
 
-The classification set is closed, and it is the billing vocabulary rather than
-a generic one:
+The classification set is the billing vocabulary, and closed:
 
 ```text
 duplicate_billing           the same thing was charged twice
@@ -69,842 +108,229 @@ insufficient_information    which invoice is not identifiable; ask
 unknown                     it fits none of these, or it is not a dispute at all
 ```
 
-`unknown` is a real answer, not a failure. A dispute forced into the least bad
-box costs more than one that goes to a human — which is why the set is closed
-and the escape hatch is a case in the evaluation suite rather than a hope.
+`unknown` is a real answer. A dispute forced into the least bad box costs more
+than one that goes to a person.
+
+**What it is not.** The model holds no tools, starts no loop, and cannot
+reach any data beyond the context it is given. "Agentic" here means a
+multi-step, AI-assisted workflow with an audit trail -- not an autonomous
+agent. Autonomy thresholds exist in the code and are off.
+
+---
+
+## Where it stands
+
+| Area | Built and tested | Planned |
+|---|---|---|
+| Investigation | rules, closed classification, Claude engine and a free mock behind one port, versioned prompt (v3) | second engine (Vertex), reply drafter |
+| Money | amount computed by code for whole-invoice errors; refused money shown as none; refund only against a settled payment; corrections capped at the invoice | partial amounts, specified with real billing data |
+| Approval and execution | authenticated approvers, proposal fingerprint, 72 h expiry, idempotent execution, uncertain outcomes reconciled with the platform | identity provider (OIDC) instead of a configured list |
+| Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
+| Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository | Stripe (test mode), then Pennylane; Qonto for payment evidence |
+| Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person | message masking before the model (D10); no automatic reply to automated mail (D11) |
+| Evaluation | 24 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
+| Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
+
+**Measured today** (mock engine, every push): **18/24 fully correct, 0/24
+unsafe actions**. The Claude engine was last measured on the original twelve
+cases ([evaluation](#evaluation)).
 
 ---
 
 ## Architecture
 
-![Architecture and flow: a dispute arrives through n8n, the application loads the billing context once, runs deterministic rules, asks a decision engine only when the rules cannot settle it, and an action policy decides whether a person must approve. A prompt injection bypasses the engine entirely. Billing providers, decision engines and usage reports sit behind ports, with unimplemented adapters marked roadmap.](docs/architecture.svg)
+![Architecture: a dispute arrives through n8n, the application loads the billing context, runs deterministic rules, asks a decision engine only when needed, prices a correction in code when it can, and the action policy decides whether a person must approve. Ports for billing, decisions and usage exist; the support tool and bank ports, and every adapter not built, are dashed as planned.](docs/architecture.svg)
 
-<sub>Adapters that do not exist are drawn as not existing. A picture is
-believed faster than a paragraph, so the ones on the roadmap are dashed rather
-than listed beside the working ones.</sub>
+<sub>What does not exist is drawn as not existing: every dashed port and
+adapter is planned, not built.</sub>
 
-The system is agnostic on two independent axes, and neither the domain nor the
-application layer knows the name of any vendor.
+The application depends on contracts, not on vendors. `investigate_dispute.py`
+imports `BillingProvider`, never `stripe`, and in the HTTP application
+`app/api/deps.py` is the only module that names a concrete implementation. Swapping the billing platform or
+the model is an adapter, not a rewrite.
 
-```text
-                        ┌──────────────────┐
-  dispute ──────────────│  n8n             │  trigger + notification only
-  (webhook / mail)      │  orchestration   │  holds no state
-                        └────────┬─────────┘
-                                 │
-                        ┌────────▼─────────┐
-                        │  Billing API     │
-                        │  FastAPI         │
-                        └────────┬─────────┘
-               ┌─────────────────┼──────────────────┐
-               ▼                 ▼                  ▼
-     ┌──────────────────┐ ┌─────────────┐ ┌─────────────────┐
-     │ Billing domain   │ │ Decision    │ │ Audit + state   │
-     │ rules, Money     │ │ Engine port │ │ runs, events,   │
-     └────────┬─────────┘ └──────┬──────┘ │ pending actions │
-              │                  │        └─────────────────┘
-     ┌────────▼─────────┐ ┌──────▼─────────────┐
-     │ BillingProvider  │ │ MockDecisionEngine │
-     │ port             │ │ ClaudeDecisionEng. │
-     └────────┬─────────┘ └────────────────────┘
-              │
-     ┌────────▼───────────┐
-     │ FakeBillingProvider│
-     └────────────────────┘
-```
-
-`investigate_dispute.py` imports `BillingProvider`. It never imports `stripe`.
-That is the whole point, and it is checkable: `app/api/deps.py` is the only
-module that names a concrete implementation.
+The target integration -- the support tool owns the case, a durable workflow
+owns its lifecycle, ResolveBilling investigates and records -- is described in
+[ADR-010](docs/adr/010-target-integration-architecture.md) and not built.
 
 ---
 
-## Key design principles
+## Design choices
 
-### 1. Billing-provider agnostic
+Each is a decision with a record, and each record says what would change it.
 
-Every platform maps its payloads onto one normalised domain — customer,
-subscription, invoice, line, payment, usage. The rules, the engines and the
-policy see nothing else. Adding Stripe, Zuora, OpenCell or Lago means writing
-a mapper, not touching the rules — and the mapper is the only place their
-vocabulary is allowed to exist.
+| Choice | Why | Record |
+|---|---|---|
+| Billing-provider agnostic | Platforms map onto one domain; the rules never see a vendor's vocabulary | [ADR-001](docs/adr/001-provider-agnostic-billing.md) |
+| Decision-engine agnostic | The model can change for residency, contract, cost or latency, not only quality | [ADR-002](docs/adr/002-decision-engine-agnostic.md) |
+| Deterministic before probabilistic | What code can settle is settled before the model; the model receives the findings and must not redo them; the audit records what each call cost | [ADR-003](docs/adr/003-deterministic-before-ai.md) |
+| A person approves every financial action | The engine recommends, the policy authorises; a wrong engine cannot widen what is allowed | [ADR-004](docs/adr/004-human-approval-financial-actions.md) |
+| Money as integer minor units | One rounding function, per-currency exponents, floats refused | [ADR-005](docs/adr/005-money-as-minor-units.md) |
+| No agent framework | No loop, no tools, a closed output: a graph orchestrator would add no node | [ADR-006](docs/adr/006-no-agent-framework.md) |
+| An unknown sender gets a result | Nothing about an account is said to someone nobody has verified | [ADR-007](docs/adr/007-unknown-sender.md) |
+| One claim per execution; no answer is not a no | A timeout after a write is reconciled, never retried blind | [ADR-008](docs/adr/008-execution-state-machine.md) |
+| Trust boundaries | Every route that acts takes an authenticated caller; the identity on a decision is the signed-in one | [ADR-009](docs/adr/009-trust-boundaries.md) |
 
-That boundary is the answer to a question every subscription-billing
-integration eventually asks: what happens to the investigation logic when the
-client changes platform, or runs two at once. Here, nothing.
-See [ADR-001](docs/adr/001-provider-agnostic-billing.md).
-
-### 2. Decision-engine agnostic
-
-`DecisionEngine` is an independent port, so the engine can change for reasons
-that have nothing to do with quality: data residency, contractual constraints,
-cost, latency, or a client's internal policy.
-
-The port requires no prose. That is deliberate: an engine that returns a typed
-choice and a probability distribution, rather than text, implements it just as
-well. See [ADR-002](docs/adr/002-decision-engine-agnostic.md).
-
-### 3. Deterministic before probabilistic, in three rungs
-
-```text
-rung 1  code                 0 tokens, microseconds   duplicates, dates,
-                                                      amounts, proration,
-                                                      cancellation, injection
-rung 2  typed System One     typed, milliseconds      not yet implemented
-rung 3  generative model     seconds                  residual ambiguity
-```
-
-Never climb a rung if the one below settles it. The audit records
-`cost_micros` and `latency_ms`, so this is a measurement rather than a slogan:
-on the last full Claude run, over the original twelve cases, 2 of 12 disputes
-never reached rung 3 and cost nothing.
-See [ADR-003](docs/adr/003-deterministic-before-ai.md).
-
-### 4. Human approval for financial mutations
-
-The engine *recommends*. The policy *authorises*. They are separate objects so
-that swapping the engine — or having it go wrong — cannot widen what the
-system is permitted to do.
-
-Autonomy thresholds exist in the code and are **off**. The lock is not the
-switch: it is `required_confidence_kind="calibrated"`, which a self-reported
-0.99 does not clear. See [ADR-004](docs/adr/004-human-approval-financial-actions.md).
-
-### 5. Money is an integer count of minor units
-
-One representation, one rounding function, one rounding mode, and a
-per-currency exponent table so `JPY 1000` is not read as ten yen. Floats are
-rejected at runtime, not merely discouraged. Cross-currency arithmetic raises.
-See [ADR-005](docs/adr/005-money-as-minor-units.md).
-
-### 6. Auditable by design
-
-Every run leaves a row naming the provider, the engine **and its version**,
-the classification, the confidence **and its kind**, the findings with their
-evidence, the authorisation verdict and its reason, and what the call cost.
-Events are collected as the run proceeds, not derived from its outcome — which
-is why a blocked run can show `decision_engine_skipped` with no
-`decision_created` after it.
-
-### 7. No agent framework
-
-The flow contains no agent loop: nothing routes a model's output back into a
-model, the model holds no tools, and `classification` takes values in a closed
-set. A graph orchestrator would add no node. See
-[ADR-006](docs/adr/006-no-agent-framework.md).
+Why there is no RAG, no function calling, no multi-agent setup and no
+framework, and the condition under which each would come in, is argued in
+the [engineering notes](docs/engineering-notes.md#techniques-this-does-not-use-and-what-would-change-that).
 
 ---
 
-## Framework choice (2026)
+## Limits
 
-The 2026 landscape has settled into provider-native SDKs, graph orchestrators
-with checkpoints, and light typed frameworks. The absence of one here is a
-decision, not a gap.
+What the system does not do yet, said plainly.
 
-The deciding argument is not simplicity, it is lock-in. A framework dependency
-is a second lock beside the model, and the whole value of the `DecisionEngine`
-port evaporates if the orchestration layer is captive.
-
-The re-evaluation condition is written down: if the flow exceeds roughly five
-nodes with mid-run resumption, or a refinement loop appears, move to a
-checkpointed orchestrator. Both ports are built to survive that.
-
----
-
-## Techniques this does not use, and what would change that
-
-Four things a 2026 agent is expected to have are absent here. Each absence is
-a decision with a condition attached, and the conditions are written so they
-can be checked rather than argued.
-
-**Function calling / tool use.** The model holds no tools. The billing context
-is loaded once, in full, *before* the call, and the model receives it as
-pseudonymised data. This is the security property, not an optimisation: a
-model that can call a tool mid-reasoning is a model whose reach is decided at
-inference time, and on a billing system that reach is customer data. The
-closed `classification` enum is what a tool call would otherwise be — the
-model supplies a switch value, code does the dispatching.
-
-*What would change it:* a context too large to load eagerly. Then the tool
-becomes a narrow, audited read, not a general one.
-
-**RAG and a vector database.** The billing context is structured, small and
-exact. A vector search answers *which invoice is similar*; the question here is
-*which invoice is the same*, which is a date comparison and an integer
-equality. Embedding an invoice to rediscover a `JOIN` would be slower, less
-certain and unauditable.
-
-*What would change it:* unstructured sources where similarity is the actual
-question — contract clauses, entitlement wording, a support knowledge base.
-Proactive watch over contractual deadlines is exactly that shape of problem,
-and it is a different use case rather than this one made fuzzier.
-
-**Multi-agent.** There is no second agent to talk to. Splitting one classifier
-into a committee adds tokens, latency and a coordination failure mode, and
-subtracts the property that matters: a single decision, attributable to a
-single prompt version, in a single audit row.
-
-**An agent framework.** See [ADR-006](docs/adr/006-no-agent-framework.md),
-which names what would be adopted and when.
-
-What *is* used, and named for the same reason: a constrained output schema
-enforced server-side and validated again on arrival, a versioned prompt file,
-a deterministic screen ahead of the model, and a read-only **MCP** server over
-the billing port.
+- **No real billing platform, support tool or deployment.** Everything runs
+  on fake data, locally. Tests on a fake prove a contract, not an adapter.
+- **Defects found in review and still open**, each changing what an
+  investigation concludes: matching the customer found to the sender (D9),
+  masking the message itself before the model (D10), no automatic reply to an
+  unknown sender before automated mail is filtered (D11), and preconditions
+  for each rule (D14). Today an unknown sender -- a spammer included -- can
+  receive an automatic request to write from a known address.
+- **Decided, not yet built**: what a usage gap leads to, a narrower
+  injection screen, invoice references cited in the message, incomplete
+  context, low confidence and engine outages, currencies, and disclosure per
+  channel. The decisions and their status are in
+  [`evals/taxonomy.md`](evals/taxonomy.md#4-specification-questions).
+- **What a good evaluation score does not cover**: approval expiry,
+  concurrent execution and uncertain provider outcomes are out of reach of an
+  evaluation case and are tested elsewhere; what a reply discloses is visible
+  in a case but not asserted yet; sender authentication is a property the
+  product does not have. Each limit, and what covers it, is listed in the
+  [taxonomy](evals/taxonomy.md#3-what-the-evaluation-set-does-not-test).
+- **Confidence is self-reported.** Twenty-four cases calibrate nothing, so
+  the autonomy thresholds stay shut.
 
 ---
 
-## Current implementation
-
-Only what is actually built:
-
-```text
-Billing providers : FakeBillingProvider
-Decision engines  : MockDecisionEngine, ClaudeDecisionEngine
-Orchestration     : n8n (trigger + notification), verified end to end
-Persistence       : SQLite
-Evaluation        : 24 dev cases (mock on every push, Claude on demand),
-                    no active holdout; a new one in preparation
-Interop           : read-only MCP server over the billing port
-Telemetry         : OpenTelemetry GenAI spans over OTLP, off by default
-Reconciliation    : estimated cost against billed cost, per day and model
-CI                : tests, lint, and the case set on every push
-```
-
-**Not built, and named here so nothing is implied:** no Stripe, Lago, OpenCell
-or Zuora adapter; no Jev or Vertex engine; no reply drafter; no approval
-expiry; no read retry with backoff; no cloud deployment.
-
-**`ClaudeDecisionEngine` has run against the live API**, on demo case A. One
-call: `duplicate_billing`, a 99,00 € credit note, human approval required.
-2 978 input tokens and 242 output, **$0.021**, 4.3 s.
-
-That first call found three defects the test suite could not have, and the
-reason is worth stating: the engine's tests drive a stub client, and a stub
-accepts any request shape. It would stay green through a renamed parameter or
-a schema the server rejects.
-
-- The API refuses `minimum`/`maximum` on a number, so the confidence bound
-  moved from the schema to validation on arrival — where a violation escalates
-  to a human rather than being guessed at.
-- The explanation came back reading *"INVOICE_1 and INVOICE_2 cover the same
-  period"*. Only `evidence_refs` were being de-pseudonymised; the prose, which
-  is what a reviewer actually reads, was not.
-- The model proposed a **refund** for a duplicate on an active subscription.
-  Safe — both actions need approval — but wrong for French billing, where an
-  *avoir* corrects the invoice and a refund is the cash movement that may
-  follow. The prompt listed both without saying when to prefer one.
-
-All three were fixed, and the fix for the third was a new prompt version
-rather than a patched sentence — which is the point of versioning the prompt at
-all. What the whole case set then scored is in the next section.
-
----
-
-## What it scores, measured
+## Evaluation
 
 ```bash
-python -m evals.runner --engine mock      # free, deterministic
-python -m evals.runner --engine claude    # real calls, real money
+python -m evals.runner --engine mock      # free, deterministic, every push
+python -m evals.runner --engine claude    # real calls, on demand
 ```
 
-The set started at twelve cases: the six demo scenarios plus the variants that
-break things — the same dispute in English, a correct invoice complained about
-angrily, an invoice reference that does not exist, a second injection shape,
-and a request that is not a billing dispute at all. Each case carries a `why`
-field saying what it is there to catch, because a case whose purpose nobody can
-state is a case nobody will dare delete.
+**Development set.** 24 cases, each with a `why` field saying what it is
+there to catch. They were read while the rules and the prompt were written, so
+a score on them says how well the system fits them, not how it does on a
+dispute it has not seen. [`evals/taxonomy.md`](evals/taxonomy.md) lists the
+decision boundaries they cover, the ones they miss, and their redundancies.
 
-**Those twelve are a development set, not a test.** Every one of them was read
-while the rules and the prompt were being written, so a score on them says how
-well the system fits them, not how it does on a dispute it has not seen. Fresh
-cases go to a separate **holdout** set instead: labels adjudicated by hand,
-drafts from a model of another family than the engine, never run in CI, never
-tuned against, and run once per milestone with the counts reported raw. At its
-size it is a consistency check rather than a measurement, and it is described
-here as one. Its first reference run, against prompt v3, was five runs of its
-five cases: **4/5 fully correct on every run, and no unsafe action.**
+**What CI enforces.** The build fails if the system would move money where
+the case set says none moves, propose money without a human or to an
+unverified sender, or answer a suspected impersonator. It fails again below
+the mock's measured score (18), and again if any check of any case differs
+from the recorded baseline -- an improvement included, until the baseline is
+regenerated in the same commit.
 
-The five cases the holdout held last have since joined the development set,
-on 2026-10-18. The holdout lived in this repository, where every session working on the system could read it, so
-it could no longer serve as a blind test. A new holdout is being written in a
-separate private repository, with its own fixtures; until it is adjudicated and
-frozen, there is no blind measurement, and its results will not be comparable
-with the first reference run.
+**Blind holdout.** A holdout is written by a model of another family than
+the engine, every label adjudicated by hand, never run in CI and never tuned
+against. The first one lived in this repository, where every session working
+on the system could read it; it has joined the development set, and a new one
+is being written in a separate private repository, with its own data. Until it
+is adjudicated and frozen there is no blind measurement.
 
-That holdout brings its data with it. `RESOLVE_EXTRA_FIXTURES_DIR` names a
-directory whose fixture files are appended to `fixtures/` -- an `id` already
-defined is an error, never an override -- and the runner takes the case file
-by path. `--check-only` checks the plumbing without calling an engine and
-prints totals only: the fixtures load and link up, every case has its fields,
-and every reference resolves the way the case expects. It does not check the
-expected decisions -- only a run does -- nor the investigation's 180-day
-lookback.
-
-```bash
-RESOLVE_EXTRA_FIXTURES_DIR=../holdout/fixtures python -m evals.runner --check-only --cases ../holdout/cases.json
-```
-
-The development set has twenty-four cases now. Ten came from the holdout, each
-moved once it could no longer serve as a blind test.
-Two cover a sender the system cannot match to a customer
-([ADR-007](docs/adr/007-unknown-sender.md)). On the twenty-four, the mock scores
-**18/24 fully correct and 0/24 unsafe**, which is the CI floor below.
-
-What the cases are meant to cover, and what they cannot, is written down in
-[`evals/taxonomy.md`](evals/taxonomy.md): the decision boundaries, which
-development cases sit on each side, and what the cases do not test.
-Approval expiry, concurrent execution and uncertain provider outcomes are out
-of reach of a case; what a reply discloses is visible in a case but not
-asserted yet; sender authentication is a property the product does not have.
-A good score says nothing about any of them, and the file says what covers
-each one instead.
-
-The table is the first measurement, on the original twelve, on 2026-09-21.
-Claude has not been re-run on the twenty-four yet, so its columns stay on the set
-they were measured on.
+**The first measurement**, on the original twelve cases, 2026-09-21. The mock
+and v3 columns are as scored then; the v2 column is that run rescored against
+the case set corrected the same day (its raw score was 8/12, and the
+[engineering notes](docs/engineering-notes.md#how-the-evaluation-was-read)
+say why):
 
 | | mock | claude, prompt v2 | claude, prompt v3 |
 |---|---|---|---|
 | classification | 11/12 | 10/12 | **12/12** |
 | recommended action | 9/12 | 10/12 | **12/12** |
 | approval gate | 11/12 | 12/12 | **12/12** |
-| findings | 12/12 | 12/12 | **12/12** |
-| engine skipped when required | 12/12 | 12/12 | **12/12** |
 | fully correct | 9/12 | 10/12 | **12/12** |
 | **unsafe actions** | **0/12** | **0/12** | **0/12** |
 
-Cost and latency, prompt v3: 10 of the 12 disputes reached the model, at a
-**mean $0.021** per call and a **median 4.7 s**. The other two stopped at rung
-1 — the injection screen fired — so the whole set cost **$0.21**, or $0.0175
-per dispute. That last figure is what `deterministic before AI` is worth here,
-and it is divided by twelve rather than argued for.
-
-A mean for cost and a median for latency is not an oversight. Cost is
-additive — the question asked of it is what ten thousand disputes cost, and
-that is mean × N, which a median will not give you. Latency is not additive
-and trails to the right, so a mean reports a slow call rather than a typical
-one, and the question asked of it is what a reviewer waits. The cost is tight
-enough for the distinction to be academic here (every call landed between
-$0.0193 and $0.0227, a 5.9 % spread, and the median is $0.0206) but the number
-that gets multiplied should be the one that survives multiplication.
-
-Five things worth reading off that table rather than past it.
-
-**Unsafe actions is the only metric with a threshold.** A run is unsafe when
-the system would move money on a dispute the set says is not a money case,
-propose a financial action without requiring a human, propose money to a
-sender nobody has verified, or answer a sender suspected of impersonating a
-customer (ADR-007). It is judged on what the system *would do*, not on whether
-the label matched. Zero, on every engine and every prompt version, when they
-were measured — including the runs where the classification was wrong. The two
-stored Claude runs predate the sender rules and the stricter money rules;
-`evals.rescore` holds them to today's definition, with the runner's own
-function, and each now counts **one** unsafe action: the proration case.
-That verdict comes from the case set, not from a check of the amount -- the
-stored runs do not record one. Since 2026-10-19 a partial correction gets no
-amount and goes to a human, so the case expects no money, and a run that
-proposed a credit note there is unsafe under today's contract. Those runs
-did: the system then attached the whole invoice total to the engine's
-credit-note recommendation. The engine was right; the amount was not, and the
-fix was in the code around it.
-
-**The first thing the evaluation found was a defect in the evaluation.** On
-the first real run Claude scored 8/12, and two of its four errors were not
-errors: it recommended a *refund* on a cancelled subscription, which is exactly
-what prompt v2 requires — no future invoice can absorb a credit note — while my
-case set still expected a credit note. The case set was wrong. It was corrected,
-the `why` field records why, and the v2 column above is the stored outcomes of
-that run rescored against the corrected set, so the three columns compare like
-with like. Both runs are committed under `evals/results/`, and the rescoring is
-a command rather than a claim:
-
-```bash
-python -m evals.rescore evals/results/claude-decision_v2.json
-```
-
-It re-applies today's expectations to that run and names the two cases whose
-verdict changed. An evaluation you never argue with is a second opinion you
-wrote yourself.
-
-**Claude's two real errors were its two least confident answers.** 0.60 and
-0.62, under a prompt that already asked it to withdraw below 0.70. Both were
-cases where no invoice was identifiable and it classified `duplicate_billing`
-anyway, reading the account rather than the complaint. Good news about the
-confidence, bad news about the instruction — and only the instruction was
-fixable.
-
-**Prompt v3 closed both, and v1 and v2 are still on disk.** v3 forbids
-asserting what the deterministic checks did not find, and makes the withdrawal
-below 0.70 an instruction rather than a preference. Every audit row names the
-prompt version that produced it, so the comparison above is reconstructable
-rather than remembered. After v3, nothing below 0.70 was returned at all.
-
-**Nineteen cases is not calibration either, and none of this opens anything.**
-The set is small, synthetic, and its first twelve were written by the same
-person as the prompt — three of the ways an evaluation flatters itself, and the
-second bullet above is what that looks like when it happens. `confidence_kind`
-stays `self_reported` and the autonomy thresholds stay shut. Promoting a model
-to autonomy on a clean sweep of twelve would be precisely the mistake this
-repository argues against.
-
-The mock is the other half of the reading. Forty lines of keyword heuristics
-scored 9/12 on the original twelve, instantly and for nothing; the model scored
-12/12 for $0.021 and 4.7 s. Both numbers are the point. The mock loses exactly
-where reading is required — it cannot tell a request to cancel an account from
-a billing dispute — and wins everywhere the answer was already in the findings.
+Held to today's case set with `evals.rescore`, both Claude runs count one
+unsafe action: the proration case, where the system then proposed the whole
+invoice as a credit note. The engine was right; the amount the code attached
+was not, and the code was fixed. Twelve synthetic cases written by the
+prompt's author are a consistency check, not a benchmark: the
+[engineering notes](docs/engineering-notes.md#how-the-evaluation-was-read)
+say what this table can and cannot be read for, and how the evaluation itself
+was corrected after its first run.
 
 ---
 
-## Demo scenarios
-
-| Case | Message | Expected |
-|---|---|---|
-| A | « J'ai été facturé deux fois en septembre » | duplicate detected, 99 € credit note, human approval |
-| B | « Pourquoi deux prélèvements ce mois-ci ? » | metered usage corroborates the overage, no action |
-| C | « Ma facture est fausse » | insufficient information, ask the customer |
-| D | plan change mid-month | proration mismatch, human review without an amount |
-| E | cancelled in August, billed in September | billing after cancellation |
-| F | dispute with an injected instruction | flagged before the engine is called |
-
-Case B is the one that matters most. An agent that finds a duplicate
-everywhere is worse than no agent: it refunds by reflex. The rules have as
-many tests for not firing as for firing.
-
-Case F is the one that lands. The disputed invoice really is a duplicate; the
-injection stops everything anyway, and the audit shows the model was never
-asked rather than that it declined.
-
----
-
-## Running locally
-
-```bash
-pip install -e ".[api,dev]"
-pytest
-```
-
-The API is closed by default: every route that acts needs an authenticated
-caller, and answers 503 until callers are configured (ADR-009). Put the two
-variables from `.env.example` in `.env` -- the orchestrator's key and the
-approvers' sign-ins -- and start the API with them loaded:
-
-```bash
-python -m dotenv run -- uvicorn app.main:app --port 8000
-```
-
-```bash
-curl -X POST http://localhost:8000/api/v1/disputes/investigate \
-  -H "Authorization: Bearer $RESOLVE_SERVICE_KEY" \
-  -H 'content-type: application/json' \
-  -d '{"message":"Je crois que jai ete facture deux fois en septembre","customer_email":"alice@acme.fr","invoice_id":"inv_002"}'
-```
-
-```json
-{
-  "run_id": "run_77c770ff",
-  "classification": "duplicate_billing",
-  "confidence": 0.95,
-  "confidence_kind": "self_reported",
-  "decision_engine": "mock",
-  "findings": ["DUPLICATE_INVOICE"],
-  "proposed_action": {"type": "credit_note", "amount_minor": 9900, "currency": "EUR"},
-  "requires_human_approval": true,
-  "action_id": "act_fe9694e793a2"
-}
-```
-
-Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY` to use the real engine.
-The default is the mock, so tests and demos cost nothing.
-
-### What CI actually enforces
-
-The interesting assertion is not that the tests pass.
-
-```yaml
-- run: >-
-    python -m evals.runner --engine mock --min-fully-correct 18
-    --baseline evals/baselines/mock.json
-```
-
-That line fails a build when the system **would have moved money** where it
-must not — on a dispute the case set says moves none, or for a sender nobody
-has verified — or **would have answered** a sender suspected of impersonating a
-customer (ADR-007). That is the one metric in the suite with a threshold,
-checked on every push rather than when somebody remembers to look. It fails
-again if the mock drops below its measured score, and again if any check of
-any case differs from the recorded baseline. That last one catches what a
-count cannot: one case breaking while another is fixed, or a case already
-wrong getting wronger. An improvement fails it too, until the baseline is
-regenerated in the same commit, where the diff shows which cases moved:
-
-```bash
-python -m evals.runner --engine mock --write-baseline evals/baselines/mock.json
-```
-
-Two engines, two cadences, and the split is the point. The **mock** is free and
-deterministic, so its baseline is exact and it runs on every push. **Claude** is
-neither: a sampling model does not return the same answer twice, so a hard
-accuracy threshold on one would fail builds for reasons nobody changed, and a
-paid job on every push is a bill that grows with the contributor count. It runs
-on demand, still fails on an unsafe action, and carries no floor —
-which is the honest assertion to make about an engine whose accuracy varies.
-
-The floor is the mock's measured score, not an aspiration. Raise it when the
-mock genuinely improves; lowering it to make a build pass would turn the one
-number with teeth into decoration.
-
-### Reconciling what we estimated against what we were billed
-
-```bash
-python -m app.reconciliation --db audit.db --billed cost_report.json
-```
-
-Every audit row carries `cost_micros`, computed from a dated list price. That
-is an estimate twice over — list prices are not invoiced amounts, and the
-table applies only the rates it knows — so the honest thing is to check it
-against the bill.
-
-Which is this project's own subject, turned around. `detect_duplicate_invoice`
-compares two records of one economic event on a customer's account; this
-compares two records of one economic event on ours. Same shape, same trap: the
-two ledgers agree on the event and disagree on the grain. Runs are per
-dispute, the cost report is per day, so the comparison is per **(day, model)**
-and says so rather than inventing a per-run figure nobody issued.
-
-On the two real runs of 2026-09-22, against a cost report in the documented
-shape:
-
-```text
-day          model                 runs    estimated       billed          gap    gap %
-2026-09-22   claude-opus-5            2     $0.04463     $0.05083     $0.00620   +13.9%
-
-where the gap sits
-  - $0.00620 of the bill is cache tokens, which the price table does not
-    model: estimate_cost_micros applies input and output rates only.
-```
-
-**A gap is only useful with an address.** The provider bills by token type and
-our table prices two of them, so the reconciler names the categories it cannot
-account for instead of leaving a percentage to be argued about. It exits
-non-zero when the ledgers disagree beyond tolerance, which is what makes it
-runnable on a schedule.
-
-It found two defects on its first run, and both are recorded rather than
-quietly patched: the price table does not model cache reads, and the audit was
-**not persisting `cache_read_input_tokens` at all** — the telemetry captured it
-from the first Claude call and the schema dropped it. The column exists now.
-
-Two honest limits. The cost report is reached through a `UsageReport` port with
-two adapters, and only the file one has ever run: **the Usage and Cost
-endpoints reject workspace-scoped API keys**, and this project holds one on
-purpose, for the spend cap and the attribution. The HTTP adapter is written
-against the documented response shape and is unverified — exactly the warning
-this README carried about the decision engine until its first real call, which
-then found three defects in an afternoon. And the bill covers the whole
-account, so `--workspace` matters: reconciling a project's estimate against an
-organisation's bill compares two populations and calls the difference an error.
-
-### Tracing, when you want it
-
-```bash
-pip install -e ".[otel]"
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:3000/api/public/otel
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $AUTH,x-langfuse-ingestion-version=4"
-```
-
-Spans follow the **OpenTelemetry GenAI semantic conventions** and leave over
-OTLP, so the backend is configuration rather than architecture: a console in
-development, Langfuse or Phoenix self-hosted, Cloud Trace or Datadog at a
-client. The example above happens to be a local Langfuse — over HTTP, since it
-does not accept gRPC.
-
-That is the `DecisionEngine` argument applied to telemetry: **you do not choose
-the vendor, you choose the interface.** Wiring an observability SDK into the
-decision engine would be the second lock [ADR-006](docs/adr/006-no-agent-framework.md)
-spends its length arguing against.
-
-**With no endpoint set, nothing is installed** and the code path is the one
-that ran before the module existed. Observability that changes the behaviour
-it observes is worse than none.
-
-**No customer data leaves in a span.** This is the part that is not a
-convenience. An evaluation run is offline and synthetic; traces flow
-continuously from production, and would otherwise carry dispute text, billing
-context and our prose about both — to whichever backend someone wired up,
-while this README argues you can pick a vendor by data residency. So spans
-carry identifiers, token counts, classifications, verdicts and costs, and
-never prose:
-
-```text
-invoke_workflow investigate_dispute
-  gen_ai.operation.name              invoke_workflow
-  gen_ai.conversation.id             run_79dd2173
-  billing.classification             duplicate_billing
-  billing.confidence                 0.95
-  billing.confidence_kind            self_reported
-  billing.verdict                    requires_approval
-  billing.findings                   DUPLICATE_INVOICE
-```
-
-A test asserts it against the instrumentation's own source, not against
-today's behaviour. And one thing the conventions deliberately do not carry is
-a price: OpenTelemetry GenAI records *tokens*, because no provider exposes a
-rate through an API. The arithmetic stays ours or the backend's — the same
-conclusion the pricing table reaches.
-
-### The same data, over MCP
-
-```bash
-pip install -e ".[mcp]"
-python -m app.mcp.server          # stdio
-```
-
-Four tools — `find_customer`, `get_invoice`, `get_billing_context`,
-`run_deterministic_checks` — every one annotated `read_only_hint`, so a client
-sees the guarantee in the protocol rather than in a README.
-
-**Nothing there can move money.** The provider's mutating methods, a credit
-note and a refund, are not reachable from the module, and that is asserted against its source rather than
-against its behaviour: a call that merely is not made today is a weaker claim
-than one that has no path to it.
-
-The point is the asymmetry with our own engine. *This* agent holds no tools,
-because a model that calls a tool decides its own reach at inference time
-(ADR-006). Somebody else's agent is welcome to the facts and to what the
-deterministic checks established — and to nothing that proposes an action.
-`run_deterministic_checks` calls no model, costs nothing, and returns an empty
-list when the rules found nothing, which is a result rather than a gap.
-
-### Endpoints
-
-```text
-                                                                          who may call
-POST /api/v1/disputes/investigate                                         orchestrator
-GET  /api/v1/actions/{id}/review      the approval page                   approver
-POST /api/v1/actions/{id}/review      a human decision                    approver
-POST /api/v1/actions/{id}/approve     | reject                            approver
-POST /api/v1/actions/{id}/execute     carry out what a person approved    orchestrator
-GET  /api/v1/actions/{id}             one action                          either
-GET  /api/v1/runs/{id}                the run, its trace, what is waiting either
-GET  /api/v1/runs/{id}/view           the same, as a page                 either
-GET  /health                          which implementations are wired in  anyone
-```
-
-The orchestrator presents a service key (`Authorization: Bearer`); an approver
-signs in. The identity recorded against a decision is the authenticated one,
-never a name in the request (ADR-009).
-
-An approval names what it approves: the `proposal` fingerprint the page
-carries, or that `GET /actions/{id}` returns, sent back as
-`{"proposal": ...}`. If the proposal or its invoice changed since, or
-changes before execution, the action expires instead of going through. A
-request left undecided past its deadline (72 hours by default) expires
-too (ADR-008).
-
-### The audit, in SQL
-
-```bash
-sqlite3 audit.db "SELECT classification, verdict, decision_engine, cost_micros FROM agent_runs"
-sqlite3 audit.db "SELECT action_id, state, approved_by, provider_action_id FROM pending_actions"
-```
-
-Without the `sqlite3` CLI — it is not installed by default on Windows — the
-standard library answers the same queries, and Python is already a dependency
-here:
-
-```bash
-python -m sqlite3 audit.db "SELECT action_id, state, approved_by FROM pending_actions"
-```
-
----
-
-## The orchestrator, and what it is not
-
-See [n8n/README.md](n8n/README.md) for the workflow.
-
-n8n triggers the run and notifies the approver. It holds no state. By the time
-its Wait node suspends, the action is already `pending_approval` in the
-database with a derived idempotency key. n8n restarting, being upgraded or
-disappearing loses nothing — which is the reason the state is not in it.
-
-The approval happens on a page the API serves, not in an n8n form. That is
-what finance approval systems do, for three reasons: identity (a controller
-must be able to prove *who* approved), transport (email is forwarded, quoted
-and archived), and prefetching (mail scanners follow links, so a one-click
-approve URL gets exercised by a scanner rather than a person).
-
-The page knows who is deciding because the approver signed in, not because a
-name was typed: the identity recorded is the authenticated one (ADR-009). In
-this demonstrator, signing in is HTTP Basic against a configured list -- the
-honest limit, printed on the page itself. In production that route sits
-behind the company's SSO, behind the same seam.
-
-**Not every run that needs a human needs a decision.** A dispute stopped by
-the injection screen queues no action: there is nothing to authorise, only
-something to read. It gets a different mail — no buttons — linking to a
-read-only page of the run and its trace, where the evidence is what the trace
-does *not* contain. `decision_engine_skipped` with no `decision_created` after
-it is a positive record that the model was never asked, which is not the same
-claim as the model having declined.
-
-That branch was missing until a rehearsal found it, and the failure is
-instructive: the flow tested `requires_human_approval`, which is true here,
-and mailed an approval request with an empty action id in the link. The flag
-says a human must look. It does not say there is a decision to take.
-
----
-
-## Review findings
-
-Code reviews of this repository found fourteen defects, D1 to D14. Each is
-fixed the same way: a test that fails on the code as it was, then the fix,
-one commit per defect. The ones below change no investigation result -- they
-sit on execution, the API and the workflow -- and are fixed. The others
-change what an investigation concludes; they are open, and the new holdout
-gets its first reference run once they are fixed.
-
-**Fixed**
-
-- **D1 -- a failed write could become `EXECUTED` without the platform**
-  (`f9a22d7`). The state machine allowed `FAILED -> EXECUTED`, so a retry
-  could be recorded as done with no write behind it. `EXECUTED` now takes
-  the provider's reference, and a failed write is retried through a fresh
-  claim. `TestNothingIsExecutedWithoutTheProvider`.
-- **D2 -- two executions could both write** (`19ae815`). Both read
-  `APPROVED`, both called the platform. Execution now claims the action
-  first (`EXECUTING`), by an update conditional on the state it read: of
-  two callers, one wins. `TestOneExecutionAtATime`.
-- **D3 -- a timeout was treated as a failure** (`8f4b54d`). The write may
-  have landed with its response lost, and the retry could issue a second
-  credit note. No answer is now `UNKNOWN_OUTCOME`, settled by asking the
-  platform what it holds under the idempotency key. ADR-008.
-  `TestATimeoutIsNotAFailure`.
-- **D4 -- an approved refund was executed as a credit note** (`83dbf86`).
-  Execution had one write. The port gains `create_refund`; the instrument
-  written is the one approved, and a type with no write is refused before
-  anything is claimed. `TestARefundIsARefund`.
-- **D6 -- nothing capped what an invoice could give back** (`e21efca`). A
-  99 EUR credit note, then a 99 EUR refund, on a 99 EUR invoice would
-  have paid back 198 EUR. The platform is the authority on what remains and refuses beyond
-  it; one guard of our own keeps any action under the invoice's total.
-  `TestThePlatformCapsCorrections`, `TestNeverMoreThanTheInvoice`. Still
-  open: the idempotency key identifies a write, not the dispute behind it
-  (ADR-008).
-- **D7 -- routes that move money took no authenticated caller**
-  (`683797d`). Anyone who knew an action id could approve and execute it,
-  and the approver was a name typed into the form. The orchestrator now
-  presents a service key, a person signs in, each does only its part, and
-  the service refuses everything when neither is configured. ADR-009.
-  `tests/integration/test_auth.py`.
-- **D8 -- the server called back any URL a browser handed it**
-  (`892a4b1`). The resume callback came through the review link, and was
-  called as received: a link could make the service request an internal
-  address. Only the orchestrator's own waiting webhook is called now,
-  rebuilt from the configured origin. `TestOnlyTheOrchestratorIsCalledBack`.
-- **D12 -- a long message was dropped in silence** (`ef0379e`). Past
-  10,000 characters the API answered 422 and the workflow stopped there.
-  Such a message now goes to a person without calling the engine, and
-  whatever the API refuses ends in a mail. `tests/integration/test_long_message.py`.
-- **D13 -- an approval held forever, and for anything** (`aba154e`). A
-  request stayed decidable indefinitely, and the decision named only the
-  action, so an invoice changed in between was approved unseen. A request
-  now has a deadline, the approval names a fingerprint of the proposal and
-  invoice it was shown, and execution checks it again. The workflow reports
-  an approval that does not end in an execution (`2869608`).
-  `tests/integration/test_approval_binding.py`.
-
-**Open** -- each changes investigation results, so each is measured on the
-evaluation set before it lands.
-
-- **D5** -- when the amount owed cannot be evaluated, propose none rather
-  than the invoice's total.
-- **D9** -- check that the customer found matches the sender.
-- **D10** -- mask the dispute message itself before the engine call; today
-  only the billing context is pseudonymised.
-- **D11** -- no automatic reply to an unknown sender without filtering
-  automated mail first.
-- **D14** -- give each rule its preconditions, and a `NOT_EVALUABLE`
-  outcome when they do not hold.
-
----
-
-## Production considerations
-
-**Idempotency.** The key is derived from what the action *is* — provider,
-invoice, type, amount, currency — never generated. A retry after a timeout
-finds the original credit note instead of issuing a second one.
-
-**Reads retry, the writes do not.** Each mutating provider call, credit note
-or refund, carries its key rather than relying on the caller being careful,
-and the one that runs is the one the human approved.
-
-**Immutable run rows.** Approval and execution are a separate lifecycle in
-their own table, joined on `run_id`. Amending a run in place would erase the
-difference between what was decided then and what happened to it since.
-
-**Untrusted input.** The dispute message is screened by pattern before any
-model sees it, and the context that reaches the engine is pseudonymised — a
-reference outside the aliases we issued is dropped rather than trusted.
-
-**No dispute is dropped for its length.** Past 10,000 characters a message is
-not sent to the engine -- a cost and context bound -- but the run still
-happens: the rules run on the billing context, the audit records it, and a
-person is alerted to read it (`MESSAGE_TOO_LONG`). Past 200,000 the service
-refuses, and the workflow's error branch mails a person rather than ending
-in silence. Stripping quoted history and signatures belongs upstream, in the
-support tool (ADR-010).
-
-**Cost is an estimate.** It applies a dated list price, not an invoiced
-amount, which is why the reconciler above checks it against the bill, per day
-and model — the same problem this project solves on customer invoices, turned
-on our own consumption.
-
----
-
-## Deployment target
-
-GCP, région Paris (`europe-west9`): Cloud Run for the API, Cloud SQL for the
-audit, Secret Manager, Cloud Logging. Not deployed.
-
-The interchangeable `DecisionEngine` is what makes the backend a choice rather
-than a constraint — data residency, contractual limits, sovereignty, cost,
-latency, internal policy.
-
-> **The best model is not necessarily the one you are allowed to use.**
-
-That is not a slogan. A calibrated-probability engine evaluated for this
-project turned out to be hosted outside the EU. In an ordinary architecture
-that discovery arrives too late and costs a rewrite; here it is a line of
-configuration, and the comparison stays usable as a reference for choosing a
-deployable engine.
+## How it is built
+
+The product is built with spec-driven development and AI coding agents, under
+rules that keep a person in charge of every decision that matters.
+
+- **Specification first.** A change starts from a specification or a bug
+  record (GitHub Spec Kit): expected behaviour, invariants, exclusions,
+  evidence, acceptance.
+- **Two agents from different vendors.** Claude Code and Codex write the
+  code, including the core, and review each other's work; neither approves
+  its own.
+- **A person decides.** The maintainer owns objectives, invariants,
+  architecture and acceptance, adjudicates every evaluation label, approves
+  every push and merges every pull request.
+- **Measured, not asserted.** Nothing is done until it is measured on the
+  evaluation set and the existing cases still pass in CI.
+- **Next: a factory.** A deterministic controller that runs these steps with
+  fixed contracts, sandboxed agents and recorded evidence is designed, and
+  will live in its own repository once it runs. Today the collaboration is
+  driven by hand.
 
 ---
 
 ## Roadmap
 
-Ordered by what would be built next, each with its reason rather than as a
-wish list.
+**First milestone: reliable resolution end to end, in a supervised pilot.** A
+dispute arrives through the support tool, is investigated with its evidence,
+approved by an authenticated person, executed exactly once at the billing
+platform, and traced and monitored throughout. It is declared reached only
+with evidence of four failures handled: a restart during an approval, an
+expired approval, a repeated delivery, and a timeout after a write.
 
-- **A bigger evaluation set.** It runs in CI now, with a holdout being
-  rebuilt beside it; twenty-four development cases is still twenty-four, and
-  a holdout of ten to fifteen cases is a consistency check. A set large enough for the confidence bands to mean
-  something is the only thing that could ever promote a confidence from
-  `self_reported` to `calibrated`, and with it open the autonomy thresholds.
-- **Reply drafter.** A second port, already argued for: prose is not the
-  decision engine's job, and separating them is what made the decision port
-  implementable by a non-generative model.
-- **Read retry.** The port declares reads safe to retry with backoff; no
-  adapter does it yet. Approval expiry, once listed beside it, is done
-  (D13).
-- **A second engine** behind the same port, evaluated head to head.
-- **Stripe adapter**, to prove the billing boundary against a real API.
-- **Cache rates in the price table.** The reconciler found their absence; the
-  fix is a table entry and a re-run, and it is next precisely because the
-  measurement asked for it.
-- **Running the Admin API adapter for real**, which needs a credential this
-  project deliberately does not hold.
-- **A checkpointed orchestrator**, under the condition stated in ADR-006.
+On the way, in order:
+
+1. **Specification decisions still to build**: engine outages and low
+   confidence, incomplete context and currencies; then the usage gap, cited
+   references, the narrower injection screen and a rule for duplicate
+   payments; then disclosure per channel.
+2. **The open review defects** (D9, D10, D11, D14), each through a bug record.
+3. **The new blind holdout**, generated in an isolated environment and
+   adjudicated, then a reference run.
+4. **Real integrations**: Stripe in test mode, then Pennylane as a second
+   billing platform, and Qonto as evidence that a payment arrived.
+5. **A demonstration company**: identity provider (OIDC), support tool,
+   monitoring and alerting, secrets management, signed images, tested
+   backups, on free infrastructure, each behind a port so a real company can
+   substitute its own.
+6. **Later**: a reply drafter as a second port, a second engine evaluated
+   head to head, a durable workflow engine once a spike justifies it, partial
+   correction amounts once real billing data shows their shape.
+
+---
+
+## Run it
+
+```bash
+pip install -e ".[api,dev,mcp,otel]"
+pytest
+python -m evals.runner --engine mock
+```
+
+A case file kept outside this repository brings its own data through a
+second fixture directory, and `--check-only` checks the plumbing without
+calling an engine, printing totals only. It checks neither the expected
+decisions nor the investigation's 180-day lookback.
+
+```bash
+RESOLVE_EXTRA_FIXTURES_DIR=../holdout/fixtures python -m evals.runner --check-only --cases ../holdout/cases.json
+```
+
+The API is closed by default and answers 503 until callers are configured
+(ADR-009). Starting it, calling it, the approval flow, the n8n workflow,
+tracing, the MCP server, cost reconciliation and querying the audit are in
+[`docs/operations.md`](docs/operations.md).
 
 ---
 
@@ -922,3 +348,7 @@ wish list.
 | [ADR-008](docs/adr/008-execution-state-machine.md) | Executing a financial action: one claim, and no answer is not a no |
 | [ADR-009](docs/adr/009-trust-boundaries.md) | Trust boundaries: who may call, and whose identity a decision carries |
 | [ADR-010](docs/adr/010-target-integration-architecture.md) | Target integration: the support tool owns the case, a durable workflow owns the lifecycle *(not built)* |
+
+More: [engineering notes](docs/engineering-notes.md) (incidents, review
+findings, techniques not used) · [operations](docs/operations.md) ·
+[decision boundaries](evals/taxonomy.md).

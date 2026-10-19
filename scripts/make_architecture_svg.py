@@ -5,8 +5,8 @@
 Four things this draws that an earlier version of the same picture did not,
 each of them a claim the repository has to be able to keep:
 
-**Adapters that do not exist are drawn as not existing.** Stripe, Zuora, Jev
-and Vertex are dashed and labelled `roadmap`. The README has a section naming
+**Adapters that do not exist are drawn as not existing.** Stripe, Pennylane,
+Qonto, Zendesk, Zammad and Vertex are dashed and labelled `planned`. The README has a section naming
 them as absent; a diagram that lists them beside the working ones says the
 opposite, and a picture is believed faster than a paragraph.
 
@@ -110,9 +110,9 @@ add(
 
 inner = [
     ("Load context", "once, in full"),
-    ("Rules", "5 checks, 0 tokens"),
+    ("Rules", "0 tokens"),
     ("Decision engine", "1 call, typed"),
-    ("Action policy", "authorises"),
+    ("Amount + policy", "code prices"),
 ]
 iw, gap = 112, 11
 for i, (t, s) in enumerate(inner):
@@ -141,13 +141,14 @@ step(5, "Outcome", 40, Y2 - 12)
 outcomes = [
     ("Automatic reply", "no money moves", SLATE),
     ("Ask the customer", "which invoice is unclear", BLUE),
-    ("Financial action proposed", "nothing has happened yet", AMBER),
+    ("Financial action proposed", "amount computed by code", AMBER),
+    ("Human review", "no amount, or a blocking finding", CRIMSON),
 ]
-ow, ogap = 320, 30
+ow, ogap = 240, 20
 for i, (t, s, colour) in enumerate(outcomes):
     x = 30 + i * (ow + ogap)
     box(x, Y2, ow, 62, t, s, accent=colour, ink=colour)
-    arrow(IX + IW / 2, Y1 + BH + 20, x + ow / 2, Y2 - 4, colour if i == 2 else LANE)
+    arrow(IX + IW / 2, Y1 + BH + 20, x + ow / 2, Y2 - 4, colour if i >= 2 else LANE)
 
 # --------------------------------------------------------------- row 3: the act
 Y3 = 388
@@ -195,24 +196,32 @@ add(
 )
 add(
     f'<text class="band" x="{W / 2}" y="{Y5 - 12}" fill="{INK}">'
-    "The application depends on contracts, not on vendors</text>"
+    "The application depends on contracts, not on vendors &#8212; dashed: planned, not built</text>"
 )
 
 ports = [
-    ("BillingProvider", ["FakeBillingProvider"], ["Stripe", "Zuora", "OpenCell"]),
-    ("DecisionEngine", ["Mock", "Claude"], ["Jev", "Vertex"]),
+    ("BillingProvider", ["Fake"], ["Stripe", "Pennylane"]),
+    ("DecisionEngine", ["Mock", "Claude"], ["Vertex"]),
+    ("SupportTool", [], ["Zendesk", "Zammad"]),
+    ("BankProvider", [], ["Qonto"]),
     ("UsageReport", ["File export"], ["Admin API*"]),
 ]
-pw, pgap = 314, 24
+pw, pgap = 189, 13
 for i, (name, built, planned) in enumerate(ports):
     x = 45 + i * (pw + pgap)
+    # A port with no implementation does not exist yet either.
+    exists = bool(built)
+    dash = "" if exists else ' stroke-dasharray="5 4"'
+    colour = TEAL_D if exists else LANE
     add(
         f'<rect x="{x}" y="{Y5}" width="{pw}" height="132" rx="9" fill="#ffffff" '
-        f'stroke="{TEAL_D}" stroke-width="1.5"/>'
+        f'stroke="{colour}" stroke-width="1.5"{dash}/>'
     )
-    add(f'<text class="pt" x="{x + pw / 2}" y="{Y5 + 26}" fill="{TEAL_D}">{escape(name)}</text>')
+    add(f'<text class="pt" x="{x + pw / 2}" y="{Y5 + 26}" fill="{colour}">{escape(name)}</text>')
+    label = "built" if exists else "the port itself is planned"
     add(
-        f'<text class="tiny l" x="{x + 14}" y="{Y5 + 48}" fill="{MUTED}">built</text>'
+        f'<text class="tiny l" x="{x + 14}" y="{Y5 + 48}" '
+        f'fill="{MUTED if exists else LANE}">{label}</text>'
     )
     cx = x + 14
     for label in built:
@@ -229,7 +238,7 @@ for i, (name, built, planned) in enumerate(ports):
     # correction 1: what does not exist is drawn as not existing
     add(
         f'<text class="tiny l" x="{x + 14}" y="{Y5 + 94}" fill="{LANE}">'
-        'roadmap &#8212; not implemented</text>'
+        'planned</text>'
     )
     cx = x + 14
     for label in planned:
@@ -280,7 +289,10 @@ ALT = (
     "rules, asks a decision engine only when the rules cannot settle it, and an "
     "action policy decides whether a person must approve. A prompt injection "
     "bypasses the engine entirely. Billing providers, decision engines and usage "
-    "reports sit behind ports, with unimplemented adapters marked roadmap."
+    "reports sit behind ports; the support tool and bank ports, which do not "
+    "exist yet, and every adapter not yet built, are dashed as planned. A "
+    "financial action carries an amount only when the code can compute it; "
+    "otherwise a person reviews."
 )
 
 style = """
