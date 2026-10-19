@@ -13,7 +13,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.api.auth import Service
 from app.api.deps import get_investigator
@@ -28,6 +28,13 @@ from app.domain.models import Dispute
 router = APIRouter(prefix="/api/v1/disputes", tags=["disputes"])
 
 
+#: Bounds on forwarded mail headers. Generous for real mail, and they keep an
+#: untrusted field from becoming a second message body.
+MAX_HEADER_NAMES = 100
+MAX_HEADER_VALUES = 10
+MAX_HEADER_LENGTH = 1_000
+
+
 class InvestigateRequest(BaseModel):
     # Up to the hard limit, every message gets a result; past what an engine
     # is given, that result is a person reading it. D12.
@@ -35,6 +42,31 @@ class InvestigateRequest(BaseModel):
     customer_email: str | None = None
     customer_id: str | None = None
     invoice_id: str | None = None
+    headers: dict[str, str | list[str]] | None = None
+    """Mail headers, when the source has them. Only a few are read, and only
+    ever to withhold an automatic reply (ADR-011)."""
+
+    @field_validator("headers")
+    @classmethod
+    def _bounded(cls, headers: dict[str, str | list[str]] | None):
+        if headers is None:
+            return None
+        if len(headers) > MAX_HEADER_NAMES:
+            raise ValueError(f"at most {MAX_HEADER_NAMES} headers")
+        for name, value in headers.items():
+            values = value if isinstance(value, list) else [value]
+            if len(values) > MAX_HEADER_VALUES:
+                raise ValueError(f"at most {MAX_HEADER_VALUES} values per header")
+            if len(name) > MAX_HEADER_LENGTH or any(len(v) > MAX_HEADER_LENGTH for v in values):
+                raise ValueError(f"header names and values are at most {MAX_HEADER_LENGTH} long")
+        return headers
+
+    def header_pairs(self) -> tuple[tuple[str, str], ...]:
+        pairs: list[tuple[str, str]] = []
+        for name, value in (self.headers or {}).items():
+            for one in value if isinstance(value, list) else [value]:
+                pairs.append((name, one))
+        return tuple(pairs)
 
 
 class ActionOut(BaseModel):
@@ -69,6 +101,12 @@ class InvestigateResponse(BaseModel):
     short_circuited_by: str | None = None
     sender: str
     """`known`, `unknown` or `suspected_impersonation`. See ADR-007."""
+    automatic_reply_allowed: bool
+    """The only permission to send text to the sender unattended (ADR-011)."""
+    automatic_reply_reason: str
+    """Why, from a closed set: `allowed`, `automated_message`,
+    `unknown_sender`, `suspected_impersonation`, `needs_a_person`,
+    `nothing_to_send`."""
 
     @classmethod
     def of(cls, result: InvestigationResult) -> InvestigateResponse:
@@ -89,6 +127,8 @@ class InvestigateResponse(BaseModel):
                 result.short_circuited_by.value if result.short_circuited_by else None
             ),
             sender=result.sender.value,
+            automatic_reply_allowed=result.automatic_reply.allowed,
+            automatic_reply_reason=result.automatic_reply.reason.value,
         )
 
 
@@ -107,6 +147,7 @@ async def investigate(
         customer_id=payload.customer_id,
         customer_email=payload.customer_email,
         invoice_id=payload.invoice_id,
+        headers=payload.header_pairs(),
     )
     result = await investigator.investigate(dispute)
     return InvestigateResponse.of(result)

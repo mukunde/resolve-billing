@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.application import investigate_dispute as investigation_module
+from app.domain import automated as automated_module
 from app.domain import injection as injection_module
 from app.domain import rules as rules_module
 from app.domain.enums import InvoiceStatus, RuleCode, Severity, SubscriptionStatus
@@ -465,10 +466,11 @@ def test_every_rule_code_is_emitted_somewhere(code):
     confuse whoever reads a run two months from now.
 
     The investigation module counts as a source: it emits the input checks
-    that are not billing rules, such as a message too long for the engine.
+    that are not billing rules, such as a message too long for the engine;
+    so does the automated-mail check (ADR-011).
     """
     sources = "".join(
         (Path(module.__file__).read_text(encoding="utf-8"))
-        for module in (rules_module, injection_module, investigation_module)
+        for module in (rules_module, injection_module, automated_module, investigation_module)
     )
     assert f"RuleCode.{code.name}" in sources

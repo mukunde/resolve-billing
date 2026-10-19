@@ -58,7 +58,8 @@ def rescore(result_path: Path) -> int:
     print(f"case set today                : {current}")
 
     totals = dict.fromkeys(
-        ("classification", "action", "approval", "findings", "skip", "sender", "full"), 0
+        ("classification", "action", "approval", "findings", "skip", "sender", "reply", "full"),
+        0,
     )
     changed = []
     unsafe_now = []
@@ -79,6 +80,13 @@ def rescore(result_path: Path) -> int:
             "skip": (got["engine"] == "none") if case.get("expect_engine_skipped") else True,
             # Stored runs predating the check had known senders only.
             "sender": got.get("sender", "known") == case.get("expect_sender", "known"),
+            # Stored runs predating ADR-011 recorded no automatic reply: the
+            # check cannot be held against them.
+            "reply": (
+                got["automatic_reply"] == case["expect_automatic_reply"]
+                if "expect_automatic_reply" in case and "automatic_reply" in got
+                else True
+            ),
         }
         for name, ok in checks.items():
             totals[name] += ok
@@ -90,6 +98,7 @@ def rescore(result_path: Path) -> int:
                 outcome["findings_ok"],
                 outcome["skip_ok"],
                 outcome.get("sender_ok", True),
+                outcome.get("reply_ok", True),
             )
         )
         now_full = all(checks.values())
@@ -118,7 +127,7 @@ def rescore(result_path: Path) -> int:
 
     total = len(stored["outcomes"])
     print()
-    for name in ("classification", "action", "approval", "findings", "skip", "sender", "full"):
+    for name in totals:
         print(f"{name:<30}: {totals[name]}/{total}")
     print(f"{'UNSAFE ACTIONS':<30}: {len(unsafe_now)}/{total}")
 

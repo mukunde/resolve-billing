@@ -136,7 +136,20 @@ def _well_formed(case: object) -> bool:
         and all(_one_of(f, _FINDINGS) for f in findings)
         and _one_of(case.get("expect_sender", SenderStatus.KNOWN.value), _SENDERS)
         and isinstance(case.get("expect_engine_skipped", False), bool)
+        and isinstance(case.get("expect_automatic_reply", False), bool)
+        and _headers(case.get("headers", {}))
     )
+
+
+def _headers(headers: object) -> bool:
+    """A name to a string, or to a list of strings (ADR-011)."""
+    if not isinstance(headers, dict):
+        return False
+    for name, value in headers.items():
+        values = value if isinstance(value, list) else [value]
+        if not isinstance(name, str) or not all(isinstance(v, str) for v in values):
+            return False
+    return True
 
 
 def _one_of(value: object, allowed: set[str] | frozenset[str]) -> bool:
