@@ -332,6 +332,17 @@ separate private repository, with its own fixtures; until it is adjudicated and
 frozen, there is no blind measurement, and its results will not be comparable
 with the first reference run.
 
+That holdout brings its data with it. `RESOLVE_EXTRA_FIXTURES_DIR` names a
+directory whose fixture files are appended to `fixtures/` -- an `id` already
+defined is an error, never an override -- and the runner takes the case file
+by path. `--check-only` checks the plumbing without calling an engine and
+prints totals only: the fixtures load, every case has its fields, and every
+reference resolves the way the case expects.
+
+```bash
+RESOLVE_EXTRA_FIXTURES_DIR=../holdout/fixtures python -m evals.runner --check-only --cases ../holdout/cases.json
+```
+
 The development set has twenty-four cases now. Ten came from the holdout, each
 moved once it could no longer serve as a blind test.
 Two cover a sender the system cannot match to a customer

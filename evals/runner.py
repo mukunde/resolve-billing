@@ -20,6 +20,8 @@ Usage:
     python -m evals.runner --engine claude --runs 5 --json out.json
                                            # pass rate per case, see variance.py
     python -m evals.runner --cases other.json
+    python -m evals.runner --check-only --cases other.json
+                                           # plumbing only, totals only, see check.py
 """
 
 from __future__ import annotations
@@ -468,6 +470,11 @@ def main() -> int:
     parser.add_argument(
         "--write-baseline", type=Path, help="record this run's verdicts as the baseline"
     )
+    parser.add_argument(
+        "--check-only",
+        action="store_true",
+        help="check the case file against the fixtures, call no engine, print totals only",
+    )
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
@@ -477,6 +484,10 @@ def main() -> int:
         parser.error("a baseline is for a single run of a deterministic engine")
     if not args.cases.exists():
         parser.error(f"no such case file: {args.cases}")
+    if args.check_only:
+        from evals import check
+
+        return check.check(args.cases)
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
 

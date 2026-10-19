@@ -13,11 +13,18 @@ Known simplification: a unit price finer than the currency's minor unit
 (0.005 EUR per API call) cannot be represented here. Real platforms carry a
 separate high-precision unit price for that; the fixtures use block pricing
 instead of pretending the problem does not exist.
+
+A second directory can add entries: ``RESOLVE_EXTRA_FIXTURES_DIR``. It is how
+cases kept outside this repository bring their own data without that data
+ever entering ``fixtures/``. Its entries are appended, never substituted: an
+``id`` already present is an error, because a silent override would change
+what every other case sees.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from decimal import Decimal
 from functools import lru_cache
@@ -37,9 +44,45 @@ from app.domain.money import Money
 
 FIXTURES_DIR = Path(__file__).resolve().parents[3] / "fixtures"
 
+#: Names a directory whose fixture files add to those of ``FIXTURES_DIR``.
+EXTRA_FIXTURES_ENV = "RESOLVE_EXTRA_FIXTURES_DIR"
 
-def _read(name: str) -> list[dict[str, Any]]:
-    return json.loads((FIXTURES_DIR / name).read_text(encoding="utf-8"))
+#: Files whose entries carry an ``id``. ``usage.json`` has none: its entries
+#: are only appended.
+_KEYED = frozenset({"customers.json", "subscriptions.json", "invoices.json", "payments.json"})
+
+
+class FixtureError(ValueError):
+    """The fixtures cannot be loaded as one consistent platform."""
+
+
+def extra_fixtures_dir() -> Path | None:
+    """The extra directory, or None when the variable is unset or empty.
+
+    A directory that does not exist is an error, not an empty directory: a
+    typo in the path would otherwise run every case without its data.
+    """
+    raw = os.environ.get(EXTRA_FIXTURES_ENV, "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_dir():
+        raise FixtureError(f"{EXTRA_FIXTURES_ENV} names {path}, which is not a directory")
+    return path
+
+
+def _read(name: str, extra: Path | None = None) -> list[dict[str, Any]]:
+    entries = json.loads((FIXTURES_DIR / name).read_text(encoding="utf-8"))
+    if extra is None or not (extra / name).is_file():
+        return entries
+    added = json.loads((extra / name).read_text(encoding="utf-8"))
+    if name in _KEYED:
+        seen = {entry["id"] for entry in entries}
+        for entry in added:
+            if entry["id"] in seen:
+                raise FixtureError(f"{extra / name}: id {entry['id']!r} is already defined")
+            seen.add(entry["id"])
+    return entries + added
 
 
 def _at(raw: str | None) -> datetime | None:
@@ -130,13 +173,18 @@ def _usage(raw: dict[str, Any]) -> Usage:
 
 @lru_cache(maxsize=1)
 def load_all() -> FixtureSet:
-    """Parse every fixture file once, mapped into domain objects."""
+    """Parse every fixture file once, mapped into domain objects.
+
+    Cached, so ``RESOLVE_EXTRA_FIXTURES_DIR`` is read on the first load; a
+    test that changes it clears the cache.
+    """
+    extra = extra_fixtures_dir()
     return FixtureSet(
-        customers=[_customer(raw) for raw in _read("customers.json")],
-        subscriptions=[_subscription(raw) for raw in _read("subscriptions.json")],
-        invoices=[_invoice(raw) for raw in _read("invoices.json")],
-        payments=[_payment(raw) for raw in _read("payments.json")],
-        usage=[_usage(raw) for raw in _read("usage.json")],
+        customers=[_customer(raw) for raw in _read("customers.json", extra)],
+        subscriptions=[_subscription(raw) for raw in _read("subscriptions.json", extra)],
+        invoices=[_invoice(raw) for raw in _read("invoices.json", extra)],
+        payments=[_payment(raw) for raw in _read("payments.json", extra)],
+        usage=[_usage(raw) for raw in _read("usage.json", extra)],
     )
 
 
