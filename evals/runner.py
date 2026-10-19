@@ -238,14 +238,15 @@ async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[Cas
     carries `prompt_version` next to the model id. A file saying only "claude"
     cannot be held against a later run.
     """
-    from app.api.deps import ENGINES
+    from app.api.deps import ENGINES, wire
 
     if engine_name not in ENGINES:
         sys.exit(f"unknown engine {engine_name!r}; available: {sorted(ENGINES)}")
 
     cases = json.loads(cases_path.read_text(encoding="utf-8"))
-    engine = ENGINES[engine_name]()
-    investigator = DisputeInvestigator(provider=FakeBillingProvider(), engine=engine)
+    provider = FakeBillingProvider()
+    engine = wire(ENGINES[engine_name](), provider)
+    investigator = DisputeInvestigator(provider=provider, engine=engine)
 
     outcomes = []
     try:

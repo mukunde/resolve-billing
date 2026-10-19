@@ -41,7 +41,17 @@ def get_engine() -> DecisionEngine:
         raise RuntimeError(
             f"unknown decision engine {name!r}; available: {sorted(ENGINES)}"
         )
-    return engine()
+    return wire(engine(), get_provider())
+
+
+def wire(engine, provider):
+    """Hand the engine what it needs from the provider: how the platform
+    writes an invoice reference, so a message can be masked (D10). An engine
+    or a provider without the hook is left as it is."""
+    finder = getattr(provider, "invoice_reference_spans", None)
+    if finder is not None and hasattr(engine, "invoice_references"):
+        engine.invoice_references = finder
+    return engine
 
 
 @lru_cache(maxsize=1)

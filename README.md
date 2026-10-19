@@ -127,7 +127,7 @@ agent. Autonomy thresholds exist in the code and are off.
 | Approval and execution | authenticated approvers, proposal fingerprint, 72 h expiry, idempotent execution, uncertain outcomes reconciled with the platform | identity provider (OIDC) instead of a configured list |
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
 | Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository | Stripe (test mode), then Pennylane; Qonto for payment evidence |
-| Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox | message masking before the model (D10); authentication results from a trusted gateway |
+| Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox; the message masked before the model | authentication results from a trusted gateway |
 | Evaluation | 34 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
 
@@ -184,8 +184,10 @@ What the system does not do yet, said plainly.
 
 - **No real billing platform, support tool or deployment.** Everything runs
   on fake data, locally. Tests on a fake prove a contract, not an adapter.
-- **A defect found in review and still open**: masking the message itself
-  before the model (D10).
+- **Masking is not anonymisation.** Before the model, identifiers, the
+  customer's address and name, bank, card and phone numbers are masked in
+  the message; other people's names and free text pass
+  ([ADR-009](docs/adr/009-trust-boundaries.md)).
 - **No reply is sent automatically yet.** The workflow's automatic-reply
   branch is a placeholder and no reply drafter exists; what the system
   decides is whether one *may* be sent (`automatic_reply_allowed`,
@@ -300,12 +302,11 @@ On the way, in order:
 
 1. **The engine-side half of the usage-gap decision**, in a measured prompt
    version; the outgoing-text check comes with the reply drafter.
-2. **The last open review defect** (D10), through a bug record.
-3. **The new blind holdout**, generated in an isolated environment and
+2. **The new blind holdout**, generated in an isolated environment and
    adjudicated, then a reference run.
-4. **Real integrations**: Stripe in test mode, then Pennylane as a second
+3. **Real integrations**: Stripe in test mode, then Pennylane as a second
    billing platform, and Qonto as evidence that a payment arrived.
-5. **A demonstration company**: identity provider (OIDC), support tool,
+4. **A demonstration company**: identity provider (OIDC), support tool,
    monitoring and alerting, secrets management, signed images, tested
    backups, on free infrastructure, each behind a port so a real company can
    substitute its own.

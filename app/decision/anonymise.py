@@ -16,6 +16,8 @@ The mapping lives for one run and is thrown away with it.
 
 from __future__ import annotations
 
+import re
+
 from app.domain.models import BillingContext, RuleFinding
 
 
@@ -54,6 +56,14 @@ class Pseudonyms:
     def known_aliases(self) -> set[str]:
         return set(self._to_real)
 
+    def alias_of(self, real_id: str) -> str | None:
+        """The alias already issued for an identifier, without issuing one."""
+        return self._to_alias.get(real_id)
+
+    def issued(self) -> list[tuple[str, str]]:
+        """Every (real identifier, alias) pair issued for this run."""
+        return list(self._to_alias.items())
+
     def restore(self, text: str) -> str:
         """Put real identifiers back into prose the engine wrote.
 
@@ -64,12 +74,16 @@ class Pseudonyms:
         no way to know which invoices those are: the alias map is discarded
         with the run.
 
-        Longest alias first, so ``INVOICE_1`` does not rewrite the prefix of
-        ``INVOICE_10``.
+        Whole tokens only, in one pass, and only aliases we issued: with
+        ``INVOICE_2`` issued, ``INVOICE_20`` and ``XINVOICE_2`` are left as
+        written, and a placeholder such as ``[INVOICE_REF_1]`` is never read
+        as an alias.
         """
-        for alias in sorted(self._to_real, key=len, reverse=True):
-            text = text.replace(alias, self._to_real[alias])
-        return text
+        if not self._to_real:
+            return text
+        aliases = sorted(self._to_real, key=len, reverse=True)
+        pattern = re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, aliases)) + r")(?![\w-])")
+        return pattern.sub(lambda match: self._to_real[match.group(0)], text)
 
 
 def anonymise(context: BillingContext, findings: list[RuleFinding]) -> tuple[dict, Pseudonyms]:
@@ -95,9 +109,7 @@ def anonymise(context: BillingContext, findings: list[RuleFinding]) -> tuple[dic
             "currency": context.customer.currency,
         },
         "disputed_invoice_ref": (
-            names.alias(context.target_invoice_id, "INVOICE")
-            if context.target_invoice_id
-            else None
+            names.alias(context.target_invoice_id, "INVOICE") if context.target_invoice_id else None
         ),
         "subscriptions": [
             {
@@ -182,8 +194,7 @@ def _alias_evidence(evidence: dict, names: Pseudonyms) -> dict:
             aliased[key] = names._to_alias.get(value, value)
         elif isinstance(value, list):
             aliased[key] = [
-                names._to_alias.get(item, item) if isinstance(item, str) else item
-                for item in value
+                names._to_alias.get(item, item) if isinstance(item, str) else item for item in value
             ]
         else:
             aliased[key] = value

@@ -37,6 +37,7 @@ from app.decision.base import (
     EngineUnavailable,
     RecommendedAction,
 )
+from app.decision.masking import MASKING_VERSION, ReferenceFinder, mask_message
 from app.domain.models import BillingContext, Dispute, RuleFinding
 from app.observability import tracing
 
@@ -100,6 +101,8 @@ PRICING_AS_OF = "2026-06-24"
 PRICED_ON: dict[str, str] = {
     # anthropic.com/claude-haiku-5-5, read 2026-10-08, page dated 2026-10-07.
     "claude-haiku-5-5": "2026-10-07",
+    # claude.com/pricing, read 2026-10-19.
+    "claude-sonnet-5-5": "2026-10-19",
 }
 
 #: List prices in USD per million tokens (input, output), by model.
@@ -133,6 +136,7 @@ PRICED_ON: dict[str, str] = {
 PRICING_PER_MTOK: dict[str, tuple[float, float] | None] = {
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
+    "claude-sonnet-5-5": (2.00, 10.00),
     "claude-haiku-4-5": (1.00, 5.00),
     # Tiered by prompt length: these are the rates for prompts up to 100k
     # tokens ($0.50 / $2.50 above). Every prompt here is a few thousand
@@ -209,9 +213,11 @@ class ClaudeDecisionEngine:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         effort: str = "low",
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        invoice_references: ReferenceFinder | None = None,
     ) -> None:
         self.model = model or os.getenv("CLAUDE_MODEL", DEFAULT_MODEL)
-        self.version = f"{self.model}/{PROMPT_VERSION}"
+        # The masking travels with the prompt: both shape what the model reads.
+        self.version = f"{self.model}/{PROMPT_VERSION}+{MASKING_VERSION}"
         self._max_tokens = max_tokens
         # Classification is not a task that repays deep thinking; the money is
         # in the deterministic findings, which have already run. Raise this
@@ -219,6 +225,9 @@ class ClaudeDecisionEngine:
         self._effort = effort
         self._system = PROMPT_PATH.read_text(encoding="utf-8")
         self._client = client if client is not None else _default_client(timeout_seconds)
+        #: How the billing platform writes an invoice reference, to mask the
+        #: ones a message cites (D10). Wired from the provider in `deps`.
+        self.invoice_references = invoice_references
 
     async def aclose(self) -> None:
         """Release the HTTP client, on the event loop that opened it.
@@ -238,6 +247,10 @@ class ClaudeDecisionEngine:
         findings: list[RuleFinding],
     ) -> Decision:
         payload, names = anonymise(context, findings)
+        # The message is masked like the context (D10): the provider never
+        # receives what the rules can recognise as an identifier or a number
+        # it has no business seeing. The dispute itself is left untouched.
+        message = mask_message(dispute.customer_message, context, names, self.invoice_references)
         started = time.perf_counter()
 
         # The span covers the call and its accounting. It carries counts,
@@ -263,7 +276,7 @@ class ClaudeDecisionEngine:
                         "role": "user",
                         "content": (
                             "<customer_message>\n"
-                            f"{dispute.customer_message}\n"
+                            f"{message}\n"
                             "</customer_message>\n\n"
                             "<billing_context>\n"
                             f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"

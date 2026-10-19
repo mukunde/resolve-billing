@@ -12,7 +12,7 @@ dist/
 .venv/
 venv/
 
-# --- Tests et outils -------------------------------------------------------
+# --- Tests and tools -------------------------------------------------------
 .pytest_cache/
 .ruff_cache/
 .coverage

@@ -43,9 +43,15 @@ class FakeBillingProvider:
         format, and a provider without this method simply has no
         cited-reference check.
         """
-        return {
-            f"inv_{match.group(1).lower()}" for match in self._INVOICE_REFERENCE.finditer(text)
-        }
+        return {invoice_id for _, _, invoice_id in self.invoice_reference_spans(text)}
+
+    def invoice_reference_spans(self, text: str) -> list[tuple[int, int, str]]:
+        """Where each reference sits in `text`, and the id it stands for --
+        for masking it in place (D10). Optional on the port, like the above."""
+        return [
+            (match.start(), match.end(), f"inv_{match.group(1).lower()}")
+            for match in self._INVOICE_REFERENCE.finditer(text)
+        ]
 
     def __init__(self) -> None:
         data = load_all()
