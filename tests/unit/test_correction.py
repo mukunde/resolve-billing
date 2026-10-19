@@ -32,9 +32,10 @@ def payment(
     status: PaymentStatus = PaymentStatus.SUCCEEDED,
     invoice_id: str = "inv_1",
     currency: str = "EUR",
+    payment_id: str = "pay_1",
 ) -> Payment:
     return Payment(
-        id=f"pay_{minor}_{status.value}",
+        id=payment_id,
         invoice_id=invoice_id,
         amount=Money(amount_minor=minor, currency=currency),
         status=status,
@@ -79,10 +80,20 @@ class TestWholeInvoice:
             [payment(status=PaymentStatus.REFUNDED)],
             [payment(status=PaymentStatus.PENDING)],
             [payment(minor=4900)],
+            [payment(minor=4950), payment(minor=4950, payment_id="pay_2")],
             [payment(invoice_id="inv_other")],
             [payment(currency="USD")],
         ],
-        ids=["none", "failed", "refunded", "pending", "partial", "other-invoice", "currency"],
+        ids=[
+            "none",
+            "failed",
+            "refunded",
+            "pending",
+            "partial",
+            "two-partials",
+            "other-invoice",
+            "currency",
+        ],
     )
     def test_no_refund_without_settled_money_to_return(self, payments):
         """S4: nothing to refund is a human's call, not a silent credit note."""
@@ -94,18 +105,24 @@ class TestWholeInvoice:
 class TestExtraPayment:
     """One invoice collected twice: the extra payment is refunded."""
 
+    TWICE = [payment(payment_id="pay_1"), payment(payment_id="pay_2")]
+
     def test_the_extra_payment_is_refunded(self):
-        correction = correction_for("refund", invoice(), [], [payment(), payment()])
+        correction = correction_for("refund", invoice(), [], self.TWICE)
         assert correction.amount == eur(9900)
 
     def test_a_credit_note_does_not_correct_a_payment(self):
-        correction = correction_for("credit_note", invoice(), [], [payment(), payment()])
+        correction = correction_for("credit_note", invoice(), [], self.TWICE)
         assert correction.amount is None
         assert "remboursement" in correction.withheld
 
     def test_a_refunded_second_payment_is_not_a_duplicate(self):
-        payments = [payment(), payment(status=PaymentStatus.REFUNDED)]
+        payments = [payment(), payment(status=PaymentStatus.REFUNDED, payment_id="pay_2")]
         correction = correction_for("refund", invoice(), [], payments)
+        assert correction.amount is None
+
+    def test_the_same_payment_listed_twice_is_one_payment(self):
+        correction = correction_for("refund", invoice(), [], [payment(), payment()])
         assert correction.amount is None
 
 
@@ -127,6 +144,13 @@ class TestNoAmount:
         correction = correction_for("credit_note", invoice(), [DUPLICATE, PRORATION], [payment()])
         assert correction.amount is None
         assert "distinctes" in correction.withheld
+
+    @pytest.mark.parametrize("total_minor", [0, -9900])
+    def test_no_amount_on_a_zero_or_negative_invoice(self, total_minor):
+        zero = [payment(total_minor, payment_id="pay_1"), payment(total_minor, payment_id="pay_2")]
+        for kind, found in (("credit_note", [DUPLICATE]), ("refund", [])):
+            correction = correction_for(kind, invoice(total_minor=total_minor), found, zero)
+            assert correction.amount is None
 
     @pytest.mark.parametrize(
         "status", [InvoiceStatus.DRAFT, InvoiceStatus.UNCOLLECTIBLE, InvoiceStatus.VOID]

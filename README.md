@@ -387,12 +387,14 @@ the label matched. Zero, on every engine and every prompt version, when they
 were measured — including the runs where the classification was wrong. The two
 stored Claude runs predate the sender rules and the stricter money rules;
 `evals.rescore` holds them to today's definition, with the runner's own
-function, and each now counts **one** unsafe action: the proration case, where
-the system attached the whole invoice total to a correct credit-note
-recommendation. Since 2026-10-19 a partial correction gets no amount and goes
-to a human, so the case set expects no money there, and a run that proposed
-it is unsafe under today's rules. The engine was right; the amount was not,
-and the fix was in the code around it.
+function, and each now counts **one** unsafe action: the proration case.
+That verdict comes from the case set, not from a check of the amount -- the
+stored runs do not record one. Since 2026-10-19 a partial correction gets no
+amount and goes to a human, so the case expects no money, and a run that
+proposed a credit note there is unsafe under today's contract. Those runs
+did: the system then attached the whole invoice total to the engine's
+credit-note recommendation. The engine was right; the amount was not, and the
+fix was in the code around it.
 
 **The first thing the evaluation found was a defect in the evaluation.** On
 the first real run Claude scored 8/12, and two of its four errors were not

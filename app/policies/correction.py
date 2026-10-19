@@ -2,12 +2,13 @@
 
 The engine names the *kind* of correction. This module decides whether the
 code can put a number on it. It only can when the whole invoice is the error
-(decision 31, S5 provisional):
+(`evals/taxonomy.md`, S5, provisional rule):
 
 - a duplicated invoice, or an invoice for a period after cancellation: the
   whole invoice is corrected;
-- an invoice collected twice: the extra payment, equal to the total, is
-  refunded.
+- an invoice collected at least twice, by distinct payments each equal to
+  the total: the extra payment is refunded. Any other overpayment is not
+  recognised here.
 
 Everything else -- a mispriced proration, a usage gap, two distinct
 corrections at once, an invoice that cannot be corrected -- goes to a human
@@ -31,13 +32,13 @@ WHOLE_INVOICE_FINDINGS = frozenset(
 )
 
 #: Findings meaning part of the invoice is wrong. No amount until the
-#: correction-amount specification exists (decision 31, S5).
+#: correction-amount specification exists (S5).
 PARTIAL_FINDINGS = {
     RuleCode.PRORATION_MISMATCH: "proration",
     RuleCode.SUSPICIOUS_USAGE_DELTA: "usage",
 }
 
-#: Invoice states on which no correction is proposed (decision 31, S4).
+#: Invoice states on which no correction is proposed (S4).
 NOT_CORRECTABLE = {
     InvoiceStatus.DRAFT: "facture en brouillon, pas encore émise",
     InvoiceStatus.UNCOLLECTIBLE: "facture irrécouvrable",
@@ -62,6 +63,8 @@ def correction_for(
     """The amount of a `credit_note` or `refund` on `invoice`, if any."""
     if invoice.status in NOT_CORRECTABLE:
         return Correction(None, NOT_CORRECTABLE[invoice.status])
+    if invoice.total.amount_minor <= 0:
+        return Correction(None, "montant de facture nul ou négatif")
 
     settled = [
         p
@@ -70,7 +73,7 @@ def correction_for(
     ]
 
     # Count corrections, not findings: a duplicate dated after cancellation
-    # is still one invoice to cancel (decision 31, S3).
+    # is still one invoice to cancel (S3).
     corrections: set[str] = set()
     if any(f.code in WHOLE_INVOICE_FINDINGS for f in findings):
         corrections.add("whole_invoice")
@@ -99,20 +102,21 @@ def correction_for(
             )
         return Correction(invoice.total)
 
-    # The whole invoice is the error.
-    if kind == "refund" and _total(settled, invoice) < invoice.total.amount_minor:
+    # The whole invoice is the error. A refund returns money one settled
+    # payment actually brought in (S4): partial payments adding up to the
+    # total are left to a human.
+    if kind == "refund" and not any(_covers(p, invoice) for p in settled):
         return Correction(None, "aucun paiement encaissé ne couvre le remboursement")
     return Correction(invoice.total)
 
 
 def _collected_twice(invoice: Invoice, settled: list[Payment]) -> bool:
-    """At least two settled payments, each the invoice's full total."""
-    full = [p for p in settled if p.amount == invoice.total]
-    return len(full) >= 2
+    """At least two distinct settled payments, each the invoice's full total."""
+    return len({p.id for p in settled if p.amount == invoice.total}) >= 2
 
 
-def _total(settled: list[Payment], invoice: Invoice) -> int:
-    """Settled payments in the invoice's currency, in minor units."""
-    return sum(
-        p.amount.amount_minor for p in settled if p.amount.currency == invoice.total.currency
+def _covers(payment: Payment, invoice: Invoice) -> bool:
+    return (
+        payment.amount.currency == invoice.total.currency
+        and payment.amount.amount_minor >= invoice.total.amount_minor
     )

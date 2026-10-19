@@ -264,11 +264,12 @@ invoice, and no blocking finding.
 
 **B22 — Money recommended without an amount the code can stand behind** · case, unit
 - An amount exists only when the whole invoice is the error: a duplicated
-  invoice, an invoice after cancellation, or an invoice collected twice
-  (refund of the extra payment). A partial correction, two distinct
-  corrections on one invoice, a draft, uncollectible or void invoice, or a
-  refund no settled payment covers → human review, no amount, nothing queued
-  (S3, S4, S5).
+  invoice, an invoice after cancellation, or an invoice collected by at least
+  two distinct payments each equal to the total (refund of the extra one; no
+  other overpayment is recognised yet). A partial correction, two distinct
+  corrections on one invoice, a draft, uncollectible or void invoice, a zero
+  or negative total, or a refund no single settled payment covers → human
+  review, no amount, nothing queued (S3, S4, S5).
 - Dev: `proration` (partial correction). Unit:
   `tests/unit/test_correction.py`, `tests/unit/test_action_policy.py`.
 
@@ -326,9 +327,9 @@ row says what kind of limit it is, what covers it today, and what could.
 
 ## 4. Specification questions
 
-Code and ADRs did not decide these. All twelve were decided by Gaël on
-2026-10-19 (decision 31 in the coordination repository); each line says
-what was decided and whether it is built yet. No case gets an expected label
+Code and ADRs did not decide these. All twelve were decided by the
+maintainer on 2026-10-19; each line says what was decided and whether it is
+built yet. No case gets an expected label
 on a question before its decision is built.
 
 | | Decision | Built |
@@ -336,7 +337,7 @@ on a question before its decision is built.
 | S1 | A disputed usage gap with the finding present → `unknown` + escalate; no money founded on it before S5's amounts; under-billing → audit note only. A dedicated classification comes with partial amounts | no |
 | S2 | Narrow exemption: "ignore my previous message" (the customer's own message) is not flagged; instructions, rules and prompts still are; the exemption covers that phrase only | no |
 | S3 | Count corrections, not findings: distinct corrections on one invoice → human review, no amount | yes |
-| S4 | A refund needs a settled payment covering it; draft, uncollectible and void invoices get no correction; no rule on paused, trialing, past-due subscriptions | yes |
+| S4 | A refund needs a single settled payment covering it; draft, uncollectible and void invoices get no correction; no rule on paused, trialing, past-due subscriptions | yes |
 | S5 | Money only when the whole invoice is the error; partial corrections → human review without an amount. Partial amounts: computed by code from the findings, never above what remains, specified with the real connectors | provisional rule yes, amounts no |
 | S6 | The message cites recognised invoice references, none of them the designated one → ask which | no |
 | S7 | An unknown reference is looked up directly within the customer; an old invoice → human review; a provider read failure fails visibly | no |

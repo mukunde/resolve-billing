@@ -466,7 +466,7 @@ class DisputeInvestigator:
             Verdict.REQUIRES_APPROVAL,
             Verdict.AUTO,
         }:
-            # Refused money is not shown as a proposal (decision 31, S12): what
+            # Refused money is not shown as a proposal (taxonomy S12): what
             # the result offers matches what the policy allows. What the engine
             # asked for stays in `recommended_action`, the refusal in the reason.
             action = ProposedAction(type="none")
