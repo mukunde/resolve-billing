@@ -30,8 +30,12 @@ def mail(name: str) -> str:
     return json.dumps(node["parameters"], ensure_ascii=False)
 
 
-class TestNothingAboutTheAccountToASuspect:
-    """Rule 1: to a suspected impersonator, nothing about any account."""
+class TestTheOrchestratorsCopyNamesNoAccount:
+    """What this checks, and only this: for a suspected impersonator, the
+    explanation and reason the orchestrator receives -- an internal channel --
+    name none of the targeted account's identifiers. It proves nothing about
+    a text sent to the sender: none is sent today, and its check comes with
+    the reply drafter (rule 1)."""
 
     @pytest.mark.parametrize(
         "payload, account",
@@ -94,3 +98,17 @@ class TestCodesNotEvidence:
             if text.startswith(customer_message, start):
                 after = text[start + len(customer_message):]
                 assert after.startswith(" || '').length"), after[:40]
+
+
+class TestErrorsDoNotReflectInput:
+    def test_a_rejected_message_is_not_echoed_back(self, client):
+        """The 422 for an over-long message names the problem, not the text."""
+        sentinel = "CONFIDENTIAL-SENTINEL "
+        response = client.post(
+            "/api/v1/disputes/investigate",
+            json={"message": sentinel * 20_000, "customer_email": "alice@acme.fr"},
+        )
+        assert response.status_code == 422
+        assert "CONFIDENTIAL-SENTINEL" not in response.text
+        assert response.json()["detail"][0]["loc"] == ["body", "message"]
+

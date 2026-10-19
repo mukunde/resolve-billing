@@ -138,18 +138,29 @@ enough; the evidence stays behind authentication.
 **3. A channel's readers are named.** A channel without a named audience,
 retention and access is a leak waiting for a reader.
 
+In the inventory, a guard is marked **tested** when a test holds it,
+**convention** when only practice does, and **to build** when it does not
+exist yet. One limit runs across every row: a signed-in approver and the
+service caller can read any customer's runs -- nothing scopes a reader to a
+customer, which production would need (roles that carry a scope, above).
+
 | Channel | Read by | Carries | Guard today | Open |
 |---|---|---|---|---|
-| `POST /disputes/investigate` response | the orchestrator (service key) | classification, finding codes, explanation, proposed action, sender, reply permission | service authentication; codes, not evidence | the explanation is internal prose and must never be forwarded to the sender as it is |
-| Reply to the sender | the sender | nothing yet | `automatic_reply_allowed` (ADR-011) | rule 1 and its automatic check, with the reply drafter |
+| `POST /disputes/investigate` response | the orchestrator (service key) | classification, finding codes, explanation, proposed action, sender, reply permission | service authentication; codes, not evidence (**tested**); for a suspected impersonator, explanation and reason name none of the account's identifiers (**tested**) | the explanation is internal prose and must never be forwarded to the sender as it is |
+| JSON reads: `GET /actions/{id}`, `GET /runs/{id}` | the orchestrator, an approver | the action, its amount and fingerprint; the run with its findings, evidence and trace | authentication | no per-customer scope (above) |
+| HTTP errors, 422 included | the caller, then whatever logs or mails it | the location and reason of the problem | a 422 never echoes the value sent (**tested**) | other error texts are not reviewed one by one |
+| Reply to the sender | the sender | nothing yet | `automatic_reply_allowed` (ADR-011) | rule 1 and its automatic check, with the reply drafter (**to build**) |
 | Approval mail | the approvers' mailbox | run, classification, amount, explanation, link | the decision itself needs a signed-in approver | mail is forwarded and archived: the explanation could give way to codes and the link |
-| Review alert, execution alert | the approvers' mailbox | codes, run, link; for an execution, the API's error text | no explanation, no evidence | -- |
-| Triage mail | the triage mailbox | the unknown sender's address, codes, link | no explanation, no evidence; the request to confirm nothing (ADR-011) | -- |
-| API error mail | the approvers' mailbox | sender, cited invoice, message length | never the message itself | -- |
-| Review page, run page | a signed-in approver; the run page, either kind of caller | findings with evidence, explanation, trace | authentication (above) | the run page is readable by the service caller too (known limit above) |
-| Audit database | whoever reads the file | the message verbatim, explanation, findings with evidence, amounts | a local file in this demonstrator | access and retention to define before production (Cloud SQL with IAM in the target, ADR-010) |
-| Telemetry | the trace backend | identifiers, codes, verdict, counts, cost | never the message, the prompt, the context or an address (`tests/integration/test_tracing.py`) | the backend's own retention |
-| Logs | the log sink | dispute id and error category | never an exception's text (taxonomy S7) | -- |
-| Model provider | the engine's vendor | the message verbatim, the context and findings pseudonymised | aliases for every identifier in the context | the message itself is not masked (D10) |
-| MCP server | whoever starts it | any customer's context, invoices and findings | read-only, no mutation reachable | no per-caller scope: it must not be exposed beyond the operator |
-| Evaluation results | readers of this repository | case ids, codes, verdicts | synthetic data only | never run on real data into committed files |
+| Review alert | the approvers' mailbox | codes, run, link | no explanation, no evidence (**tested**) | -- |
+| Execution alert | the approvers' mailbox | action, run, link, and the API's error text | the API's errors no longer echo input | the error text is shown as received (**to build**: a category instead) |
+| Triage mail | the triage mailbox | the unknown sender's address, codes, link | no explanation, no evidence (**tested**); the instruction to confirm nothing (ADR-011) | -- |
+| API error mail | the approvers' mailbox | sender, cited invoice, message length, the API's error text | the customer's message only by its length (**tested**); a 422 echoes no input (**tested**) | the error text is shown as received (**to build**: a category instead) |
+| n8n's execution data | whoever administers n8n | each run's input and the API's answers, as n8n keeps them | n8n holds no financial state (ADR-010) | execution retention and access, set in n8n (**convention**) |
+| Review page | a signed-in approver | the proposal, its amount, codes, the policy's reason | authentication | no per-customer scope (above) |
+| Run page | an approver or the service caller | findings with evidence, explanation, trace | authentication | readable by the service caller too (known limit above) |
+| Audit database | whoever reads the file | the message verbatim, explanation, findings with evidence, amounts | a local file in this demonstrator (**convention**) | access and retention to define before production (Cloud SQL with IAM in the target, ADR-010) |
+| Telemetry | the trace backend | identifiers, codes, verdict, counts, cost, an error's type | the attributes set never include the message, the prompt, the context or an address (**tested**); an exception leaves its type, never its text (**tested**) | the backend's own retention; spans other libraries emit are not reviewed |
+| Logs | the log sink | this code's own warnings: dispute id and error category | the provider-outage warning carries no exception text (**tested**) | logs from the server, n8n and the SDKs are not reviewed |
+| Model provider | the engine's vendor | the message verbatim; the context and findings with identifiers replaced by aliases -- amounts, dates and line descriptions stay as they are | aliases for every identifier (**tested**) | pseudonymising identifiers does not anonymise the data; the message itself is not masked (D10) |
+| MCP server | whoever starts it | any customer's context, invoices and findings | read-only, no mutation reachable (**tested**) | no per-caller scope: it must not be exposed beyond the operator (**convention**) |
+| Evaluation outputs | the person running them; the repository for committed files | stdout, `--json` files and baselines: case ids, codes, verdicts, and the engine's classifications | synthetic data only (**convention**) | a run on real data must stay private, out of committed files, with its own retention |
