@@ -65,11 +65,13 @@ _PHONE = re.compile(
     r"(?<![\w+])\+\d(?:[ .()-]{0,2}\d){8,14}"
     # French national: 0, then nine digits in pairs.
     r"|(?<![\w+])0[1-9](?:[ .-]?\d{2}){4}"
-    r")"
-    # Not an amount or a share: a phone number is not followed by a currency.
-    r"(?!\d)(?!\s*(?:[€$£%]|(?:eur|usd|gbp|chf)\b))",
-    re.IGNORECASE,
+    r")(?!\d)"
 )
+#: A whole run of digits and separators. Whether it is an amount is decided on
+#: the whole run, before any phone number is looked for inside it: the phone
+#: pattern alone could fall back on a prefix and leave "123 EUR" behind.
+_NUMBER_RUN = re.compile(r"(?<![\w+])\+?\d(?:[ .()-]{0,2}\d)*")
+_CURRENCY_AFTER = re.compile(r"\s*(?:[€$£%]|(?:eur|usd|gbp|chf)\b)", re.IGNORECASE)
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}[/.-]\d{2}[/.-]\d{4}")
 
 #: Where two kinds of match cover the same length, which token stands.
@@ -119,9 +121,13 @@ def mask_message(
     for match in _CARD.finditer(text):
         if _luhn_valid(match.group(0)):
             spans.append((match.start(), match.end(), "[CARD]"))
-    for match in _PHONE.finditer(text):
-        if not _DATE.search(match.group(0)):
-            spans.append((match.start(), match.end(), "[PHONE]"))
+    for run in _NUMBER_RUN.finditer(text):
+        # Not an amount or a share: a phone number is not followed by a currency.
+        if _CURRENCY_AFTER.match(text, run.end()):
+            continue
+        for match in _PHONE.finditer(text, run.start(), run.end()):
+            if not _DATE.search(match.group(0)):
+                spans.append((match.start(), match.end(), "[PHONE]"))
 
     return _apply(text, spans)
 

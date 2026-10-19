@@ -190,6 +190,10 @@ class TestPeopleAndNumbers:
         text, _ = masked(f"Sur BE68 5390 0754 7034 {word} merci.")  # ends on a full group
         assert text == f"Sur [IBAN] {word} merci."
 
+    def test_a_phone_inside_a_longer_run_of_numbers_is_still_found(self):
+        text, _ = masked("Appelez le 06 12 34 56 78 - 2 lignes.")
+        assert text == "Appelez le [PHONE] - 2 lignes."
+
     def test_a_long_number_that_passes_luhn_is_masked_as_a_card(self):
         """The deliberate trade-off: an order number lost, never a card sent."""
         text, _ = masked("Commande 4012888888881881 reçue.")
@@ -214,6 +218,8 @@ class TestPeopleAndNumbers:
             "+2026-09-01",
             "+15 %",
             "0612345678 €",
+            "+1 234 567 890 123 EUR",  # no phone-shaped prefix is taken
+            "06 12 34 56 78 90 €",
         ],
     )
     def test_amounts_dates_and_lookalikes_pass_through(self, kept):

@@ -66,7 +66,8 @@ masking inside the Claude adapter, `app/decision/masking.py`.
    (French national format, or an international number written with a
    leading `+` and 9 to 15 digits) become `[IBAN]`, `[CARD]`, `[PHONE]`. A
    number that fails its check is left alone; a signed number followed by a
-   currency or `%`, or shaped as a date, is not a phone number. An IBAN the
+   currency or `%`, or shaped as a date, is not a phone number; the
+   currency test is made on the whole run of digits, never on a prefix. An IBAN the
    pattern runs on past ("... 189 pour") is cut back to its valid length. A long number that passes Luhn by chance -- an
    order number -- is masked as a card: a number lost rather than a card
    sent.
@@ -158,5 +159,6 @@ acceptable variance is borrowed from earlier runs.
 - The development set passes in CI with no unsafe action, and the mock
   baseline is unchanged.
 - The Claude before/after runs show no unsafe action, and every case whose
-  verdict changes is explained -- by the masking or by the model's own
-  run-to-run movement. A signal, read as such.
+  verdict changes is named and read. On one pair of runs its cause -- the
+  masking or the model's own movement -- may stay undetermined, and is then
+  said to be. A signal, read as such.
