@@ -639,7 +639,32 @@ class TestChecksNotEvaluable:
 
     def test_an_invoice_without_period(self):
         bare = invoice("inv_001", lines=[line(9900, start=None, end=None)])
-        assert {"check": "duplicate_invoice", "reason": "invoice_without_period"} in self.gaps(bare)
+        gaps = self.gaps(bare, invoices=[invoice("inv_002")])
+        assert {"check": "duplicate_invoice", "reason": "invoice_without_period"} in gaps
+
+    def test_without_a_candidate_a_missing_period_changes_nothing_for_duplicates(self):
+        bare = invoice("inv_001", lines=[line(9900, start=None, end=None)])
+        assert {"check": "duplicate_invoice", "reason": "invoice_without_period"} not in (
+            self.gaps(bare) or []
+        )
+
+    @pytest.mark.parametrize(
+        "start, end",
+        [(SEPT, SEPT), (OCT, SEPT)],
+        ids=["empty-period", "backwards-period"],
+    )
+    def test_an_invalid_period_counts_as_none(self, start, end):
+        broken = invoice("inv_002", lines=[line(9900, start=start, end=end)])
+        gaps = self.gaps(invoice("inv_001"), invoices=[broken])
+        assert {"check": "duplicate_invoice", "reason": "candidate_without_period"} in gaps
+        own = self.gaps(invoice("inv_001", lines=[line(9900, start=start, end=end)]))
+        assert {"check": "proration", "reason": "line_without_valid_period"} in own
+
+    def test_cancelled_without_a_date(self):
+        undated = subscription(status=SubscriptionStatus.CANCELLED, cancelled_at=None)
+        gaps = self.gaps(invoice("inv_001"), sub=undated)
+        expected = {"check": "billing_after_cancellation", "reason": "cancellation_date_missing"}
+        assert gaps == [expected]
 
     def test_a_candidate_without_period(self):
         other = invoice("inv_002", lines=[line(9900, start=None, end=None)])
@@ -658,7 +683,7 @@ class TestChecksNotEvaluable:
     def test_a_line_without_period_for_proration(self):
         lines = [line(9900), line(500, start=None, end=None)]
         gaps = self.gaps(invoice("inv_001", lines=lines))
-        assert gaps == [{"check": "proration", "reason": "line_without_period"}]
+        assert gaps == [{"check": "proration", "reason": "line_without_valid_period"}]
 
     def test_a_missing_period_no_longer_reads_as_not_a_duplicate(self):
         """The defect itself: the duplicate rule is silent, and now that

@@ -459,7 +459,18 @@ class DisputeInvestigator:
         delta = None
         unchecked: list[str] = []
         for line in metered:
-            comparable = usage is not None and line.metric == usage.metric
+            # The same subscription, the same metric, and a record that covers
+            # the line's own period: a September reading says nothing about
+            # an August line.
+            comparable = (
+                usage is not None
+                and usage.subscription_id == target.subscription_id
+                and line.metric == usage.metric
+                and line.period_start is not None
+                and line.period_end is not None
+                and usage.period_start <= line.period_start
+                and line.period_end <= usage.period_end
+            )
             # One usage record against one line. A metric billed on several
             # lines would need a rule for adding them up, which nothing
             # specifies yet: those lines are said unchecked, not guessed at.

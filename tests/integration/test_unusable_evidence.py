@@ -369,3 +369,19 @@ class TestSubscriptionMissing:
         assert "INVOICE_AFTER_CANCELLATION" not in codes
         assert result.requires_human_approval is True
         assert result.automatic_reply.allowed is False
+
+
+def test_usage_for_another_period_is_not_a_check():
+    """D14: a record for another period says nothing about this line."""
+    lines = TestUsageLineByLine()
+    august = Usage(
+        subscription_id="sub_310",
+        metric="api_calls",
+        quantity=Decimal("1200"),
+        period_start=datetime(2026, 8, 1, tzinfo=UTC),
+        period_end=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    found = lines.findings([lines.metered("api_calls")], august)
+    assert found[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == ["api_calls"]
+    assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found
+

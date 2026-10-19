@@ -67,7 +67,16 @@ The rules have one output for two different facts: "nothing wrong" and
    | duplicate invoice | the invoice is on a subscription | the invoice's period, and the period of every other live invoice on that subscription with the same total | either period is missing |
    | billing after cancellation | the invoice is on a subscription | that subscription | the subscription is not in the context |
    | proration | the invoice is on a subscription | that subscription, its period length, a period on every line | any of them is missing |
-   | usage | the invoice has a metered line | a usage record for its metric | no record (already `USAGE_UNAVAILABLE`) |
+   | usage | the invoice has a metered line | a usage record for the same subscription and metric, covering the line's period | no such record, or the metric billed on several lines (`USAGE_UNAVAILABLE`) |
+   | duplicate payment | the invoice has settled payments | their amounts in the invoice's currency | a payment in another currency (`CURRENCY_MISMATCH`, taxonomy S10) |
+   | currencies | always | the currencies of what is compared | never: a mismatch is said, not a gap |
+
+   Periods must also be real: a line whose period is empty or runs backwards
+   counts as having none. A subscription marked cancelled with no
+   cancellation date cannot be checked for billing after cancellation; one
+   never cancelled is simply outside that check. The duplicate check applies
+   only when another live invoice on the subscription has the same total --
+   without one, a missing period changes nothing.
 
    An invoice with no subscription -- a one-off charge -- is not a gap: the
    subscription checks do not apply to it.
@@ -108,4 +117,8 @@ taxonomy, README, engineering notes.
 - No dispute is called correct, and no correction is proposed, on the strength
   of a check that could not run.
 - A check that does not apply stays silent.
-- The development set and the new case pass in CI, with no unsafe action.
+- The development set passes in CI with no unsafe action. The new case's
+  expectation -- `unknown`, no action, a person reviews -- is the approved
+  one; the mock, which reads only findings, still answers `valid_invoice`
+  with a reply under human review, so the case is safe but not fully
+  correct.
