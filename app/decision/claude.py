@@ -59,25 +59,27 @@ from app.observability import tracing
 PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v3.md"
 
 #: HTTP statuses that mean "try later", not "your request is wrong":
-#: a timeout, a conflict, rate limiting, an overloaded service. With 5xx,
-#: they are an outage (taxonomy S8). Any other 4xx -- a bad request, a
-#: missing key -- is a configuration error and fails the run visibly.
-_TRANSIENT = frozenset({408, 409, 429})
+#: a timeout, a conflict, rate limiting, and the 5xx range of a failing or
+#: overloaded service. They are an outage (taxonomy S8). Any other status --
+#: a bad request, a missing key -- is a configuration error and fails the
+#: run visibly.
+_TRANSIENT = frozenset({408, 409, 429}) | frozenset(range(500, 600))
 
-#: Transport failures, by class name: the SDK is an optional dependency, so
-#: its exception classes cannot be imported where this module is.
-_TRANSPORT = frozenset({"APIConnectionError", "APITimeoutError"})
+try:  # the SDK is an optional dependency (the `claude` extra)
+    from anthropic import APIConnectionError as _Transport
+    from anthropic import APIStatusError as _Status
+except ImportError:  # pragma: no cover -- without the SDK there is no client
+    _Transport = _Status = None
 
 
 def _outage(error: Exception) -> str | None:
-    """Why `error` is an outage, or None when it is not one."""
-    names = {cls.__name__ for cls in type(error).__mro__}
-    if names & _TRANSPORT:
-        return type(error).__name__
-    status = getattr(error, "status_code", None)
-    transient = isinstance(status, int) and (status in _TRANSIENT or status >= 500)
-    if "APIStatusError" in names and transient:
-        return f"HTTP {status}"
+    """Why `error` is an outage, or None when it is not one. Only the SDK's
+    own exception types count: a lookalike from elsewhere stays an error."""
+    if _Transport is not None and isinstance(error, _Transport):
+        return type(error).__name__  # timeouts included: a subclass
+    is_status = _Status is not None and isinstance(error, _Status)
+    if is_status and error.status_code in _TRANSIENT:
+        return f"HTTP {error.status_code}"
     return None
 PROMPT_VERSION = "decision_v3"
 

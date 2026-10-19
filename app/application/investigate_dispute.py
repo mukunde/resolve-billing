@@ -153,8 +153,14 @@ class DisputeInvestigator:
                 result = await self._investigate(dispute, now)
             except ProviderUnavailable as error:
                 # Nothing is decided on a partial read (taxonomy S7). Recorded
-                # here and in the trace; the caller is told, and can retry.
-                log.warning("billing platform unavailable for %s: %s", dispute.id, error)
+                # here and in the trace, by category only: the exception's text
+                # may carry a URL or the platform's answer. The caller is told,
+                # and can retry.
+                log.warning(
+                    "billing platform unavailable: dispute=%s error=%s",
+                    dispute.id,
+                    type(error).__name__,
+                )
                 tracing.set_attributes(current, **{"error.type": "provider_unavailable"})
                 raise
             tracing.set_attributes(
@@ -238,15 +244,17 @@ class DisputeInvestigator:
             decision = await self._engine.decide(dispute, context, findings)
         except EngineUnavailable as outage:
             # An outage is not an abstention (taxonomy S8): the trace says the
-            # engine could not be reached, and nothing about cost is invented.
+            # engine could not be reached, no decision event is written for
+            # an answer that never came, and no cost is invented.
             trace.append(event("decision_engine_unavailable", reason=str(outage)))
             decision = _escalation_after_outage(str(outage))
+            return self._finish(self._assemble(dispute, context, findings, decision), trace)
         trace.append(
             event(
                 "decision_created",
                 classification=decision.classification.value,
                 confidence=decision.confidence,
-                cost_micros=decision.telemetry.cost_micros if decision.telemetry else 0,
+                cost_micros=decision.telemetry.cost_micros if decision.telemetry else None,
             )
         )
         return self._finish(self._assemble(dispute, context, findings, decision), trace)
@@ -375,7 +383,7 @@ class DisputeInvestigator:
             currency_mismatch(target, context.invoices, context.payments),
             detect_duplicate_invoice(target, context.invoices),
             *self._subscription_rules(target, context),
-            self._usage_rule(target, context),
+            *self._usage_rules(target, context),
         ):
             if finding is not None:
                 findings.append(finding)
@@ -390,18 +398,23 @@ class DisputeInvestigator:
             proration_mismatch(target, sub),
         )
 
-    def _usage_rule(self, target, context: BillingContext) -> RuleFinding | None:
-        """Compare metered usage against the quantity actually billed for it."""
+    def _usage_rules(self, target, context: BillingContext) -> tuple:
+        """Compare metered usage against the quantity billed for it, line by
+        line; a metered line with no usage record to compare it with is said,
+        so that silence is never read as "the usage is right" (taxonomy S7)."""
         usage = context.usage
-        if usage is None:
-            # A metered line with nothing to compare it to: said, so that
-            # silence is never read as "the usage is right" (taxonomy S7).
-            metered = [line for line in target.lines if line.metric]
-            return _usage_unavailable(target.id, metered[0].metric) if metered else None
-        line = next((line for line in target.lines if line.metric == usage.metric), None)
-        if line is None:
-            return None
-        return suspicious_usage_delta(expected=usage.quantity, billed=line.quantity)
+        delta = None
+        unchecked: list[str] = []
+        for line in target.lines:
+            if not line.metric:
+                continue
+            if usage is not None and line.metric == usage.metric and delta is None:
+                delta = suspicious_usage_delta(expected=usage.quantity, billed=line.quantity)
+                continue
+            if usage is not None and line.metric == usage.metric:
+                continue  # the same metric billed on two lines: compared once
+            unchecked.append(line.metric)
+        return delta, _usage_unavailable(target.id, unchecked) if unchecked else None
 
     async def _unknown_sender(
         self, dispute: Dispute, trace: list[AuditEvent]
@@ -649,13 +662,13 @@ def _outside_window(invoice_id: str) -> RuleFinding:
     )
 
 
-def _usage_unavailable(invoice_id: str, metric: str) -> RuleFinding:
-    """A metered line with no usage record to compare it with (taxonomy S7)."""
+def _usage_unavailable(invoice_id: str, metrics: list[str]) -> RuleFinding:
+    """Metered lines with no usage record to compare them with (taxonomy S7)."""
     return RuleFinding(
         code=RuleCode.USAGE_UNAVAILABLE,
         severity=Severity.LOW,
-        description="Usage mesuré indisponible : la ligne à l'usage n'a pas pu être vérifiée.",
-        evidence={"invoice_id": invoice_id, "metric": metric},
+        description="Usage mesuré indisponible : des lignes à l'usage n'ont pas pu être vérifiées.",
+        evidence={"invoice_id": invoice_id, "metrics": sorted(set(metrics))},
     )
 
 

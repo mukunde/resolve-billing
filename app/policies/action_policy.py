@@ -134,6 +134,18 @@ class ActionPolicy:
                 ),
             )
 
+        # 1c. "The invoice is correct" cannot rest on usage nobody could
+        #     check -- and an engine that says so while proposing money is
+        #     incoherent twice over. Before the money branch, so neither gets
+        #     through.
+        if decision.classification is Classification.VALID_INVOICE and any(
+            f.code is RuleCode.USAGE_UNAVAILABLE for f in findings
+        ):
+            return ActionAuthorization(
+                verdict=Verdict.HUMAN_REVIEW,
+                reason="Facture déclarée correcte alors que l'usage n'a pas pu être vérifié.",
+            )
+
         # 2. Money, including the case where money was recommended on a
         #    classification that cannot support it.
         if decision.recommended_action in FINANCIAL_ACTIONS:
@@ -170,15 +182,6 @@ class ActionPolicy:
                     "Le moteur n'a pas su classer le litige de façon exploitable "
                     f"({decision.classification.value})."
                 ),
-            )
-
-        # 4b. "The invoice is correct" cannot rest on usage nobody could check.
-        if decision.classification is Classification.VALID_INVOICE and any(
-            f.code is RuleCode.USAGE_UNAVAILABLE for f in findings
-        ):
-            return ActionAuthorization(
-                verdict=Verdict.HUMAN_REVIEW,
-                reason="Facture déclarée correcte alors que l'usage n'a pas pu être vérifié.",
             )
 
         # 5. Everything else is a reply or a question: no money moves, and the

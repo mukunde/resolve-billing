@@ -266,6 +266,16 @@ class TestUsageNobodyChecked:
         )
         assert auth.verdict is Verdict.HUMAN_REVIEW
 
+    def test_valid_invoice_with_money_and_unchecked_usage_goes_to_a_person(self, policy):
+        """An engine that calls the invoice correct and proposes money anyway
+        does not reach the money branch."""
+        auth = policy.evaluate(
+            decision(Classification.VALID_INVOICE, RecommendedAction.PROPOSE_CREDIT_NOTE),
+            [self.usage_unavailable()],
+            NINETY_NINE,
+        )
+        assert auth.verdict is Verdict.HUMAN_REVIEW
+
     def test_other_classifications_are_unchanged(self, policy):
         auth = policy.evaluate(
             decision(

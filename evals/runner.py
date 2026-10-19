@@ -44,6 +44,12 @@ from app.providers.fake.adapter import FakeBillingProvider
 
 CASES_PATH = Path(__file__).parent / "cases.json"
 
+#: The date the case set is evaluated at. Fixed, because the investigation
+#: loads 180 days of history from "now": with the wall clock, every fixture
+#: would drift out of the window and a case would change verdict with no
+#: commit behind it.
+EVALUATION_DATE = datetime(2026, 10, 15, tzinfo=UTC)
+
 #: Bands the accuracy is broken down by. Coarse on purpose: with a dozen cases
 #: finer bands would report noise with a decimal point on it.
 BANDS: list[tuple[str, float, float]] = [
@@ -251,7 +257,8 @@ async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[Cas
                 invoice_id=case["invoice_id"],
                 headers=header_pairs(case.get("headers")),
             )
-            outcomes.append(_evaluate(case, await investigator.investigate(dispute)))
+            result = await investigator.investigate(dispute, now=EVALUATION_DATE)
+            outcomes.append(_evaluate(case, result))
     finally:
         # Whatever the engine holds belongs to this run's event loop, which
         # `asyncio.run` closes on return: release it before then. An engine

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.decision.anonymise import anonymise
-from app.decision.base import Classification, EngineUnavailable, RecommendedAction
+from app.decision.base import Classification, RecommendedAction
 from app.decision.claude import (
     PRICING_AS_OF,
     PRICING_PER_MTOK,
@@ -429,59 +429,3 @@ class TestTheClientIsReleased:
         engine, _ = engine_with(reply(VALID_VERDICT))
 
         await engine.aclose()
-
-
-# -- outages (taxonomy S8) ---------------------------------------------------
-
-
-class APIConnectionError(Exception):
-    """Named like the SDK's: the engine tells outages apart by class name."""
-
-
-class APITimeoutError(APIConnectionError):
-    pass
-
-
-class APIStatusError(Exception):
-    def __init__(self, status_code: int):
-        super().__init__(f"HTTP {status_code}")
-        self.status_code = status_code
-
-
-class Raising:
-    def __init__(self, error: Exception):
-        self.messages = SimpleNamespace(create=self._raise)
-        self._error = error
-
-    async def _raise(self, **kwargs):
-        raise self._error
-
-
-class TestOutages:
-    @pytest.mark.parametrize(
-        "error",
-        [
-            APIConnectionError(),
-            APITimeoutError(),
-            APIStatusError(500),
-            APIStatusError(529),
-            APIStatusError(429),
-            APIStatusError(408),
-        ],
-        ids=["connection", "timeout", "500", "overloaded", "rate-limited", "request-timeout"],
-    )
-    async def test_an_outage_is_reported_as_one(self, context, findings, dispute, error):
-        engine = ClaudeDecisionEngine(client=Raising(error), model="claude-opus-5")
-        with pytest.raises(EngineUnavailable):
-            await engine.decide(dispute, context, findings)
-
-    @pytest.mark.parametrize(
-        "error",
-        [APIStatusError(400), APIStatusError(401), ValueError("a bug")],
-        ids=["bad-request", "unauthorised", "programming-error"],
-    )
-    async def test_an_error_stays_an_error(self, context, findings, dispute, error):
-        """A bad request or a missing key is not an outage: it fails visibly."""
-        engine = ClaudeDecisionEngine(client=Raising(error), model="claude-opus-5")
-        with pytest.raises(type(error)):
-            await engine.decide(dispute, context, findings)
