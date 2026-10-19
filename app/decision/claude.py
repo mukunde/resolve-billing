@@ -101,6 +101,8 @@ PRICING_AS_OF = "2026-06-24"
 PRICED_ON: dict[str, str] = {
     # anthropic.com/claude-haiku-5-5, read 2026-10-08, page dated 2026-10-07.
     "claude-haiku-5-5": "2026-10-07",
+    # claude.com/pricing, read 2026-10-19.
+    "claude-sonnet-5-5": "2026-10-19",
 }
 
 #: List prices in USD per million tokens (input, output), by model.
@@ -134,6 +136,7 @@ PRICED_ON: dict[str, str] = {
 PRICING_PER_MTOK: dict[str, tuple[float, float] | None] = {
     "claude-opus-5": (5.00, 25.00),
     "claude-sonnet-5": (2.00, 10.00),
+    "claude-sonnet-5-5": (2.00, 10.00),
     "claude-haiku-4-5": (1.00, 5.00),
     # Tiered by prompt length: these are the rates for prompts up to 100k
     # tokens ($0.50 / $2.50 above). Every prompt here is a few thousand
