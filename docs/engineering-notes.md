@@ -187,9 +187,10 @@ Code reviews of this repository found fourteen defects, D1 to D14. Each is
 fixed the same way: a test that fails on the code as it was, then the fix,
 one commit per defect. Most of the fixed ones change no investigation result
 -- they sit on execution, the API and the workflow; those that do (D5, D9,
-D10, D14) were measured on the evaluation set before they landed. None is
-open; the new holdout gets its first reference run on the code that fixes
-them all.
+D10, D14) were measured on the evaluation set before they landed. For D10
+that is the mock engine only, which does not read the message: its run with
+Claude is pending (bug record). None is open; the new holdout gets its first
+reference run on the code that fixes them all.
 
 **Fixed**
 
@@ -259,7 +260,8 @@ them all.
   was pseudonymised, the message beside it was not: the provider received
   the real invoice ids, the customer's address and name, and any IBAN or card
   number pasted in. The Claude adapter now masks the message, giving a cited
-  invoice the context's own alias. `tests/unit/test_masking.py`.
+  invoice the context's own alias. `tests/unit/test_masking.py`. Its
+  before/after run with Claude is still to be made.
 - **D11 -- an automatic reply was authorised for robots and strangers**
   (2026-10-19, bug record `.specify/bugs/d11-no-automatic-reply/`). "No
   approval needed" was read as "may answer automatically". Nothing was sent

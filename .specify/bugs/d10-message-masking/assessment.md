@@ -147,10 +147,25 @@ and free text in general, pass through. ADR-009 says so.
 Mock engine: unchanged, case by case, against the stored baseline -- it does
 not read the message. Claude engine: runs on `main` and on this branch, same
 model, same case file, same parameters, each result file carrying its engine
-version (`decision_v3` before, `decision_v3+masking_v1` after) -- to be
-recorded here once run, and compared case by case: every case whose verdict
-changes is named and read, whichever way it moves. No threshold of
-acceptable variance is borrowed from earlier runs.
+version (`decision_v3` before, `decision_v3+masking_v1` after), compared
+case by case: every case whose verdict changes is named and read, whichever
+way it moves. No threshold of acceptable variance is borrowed from earlier
+runs.
+
+**Status: pending.** The maintainer chose Claude Sonnet 5.5, three runs on
+each side (about 1 to 2 USD). On 2026-10-19 the provider refused the first
+call of both runs -- the API account had no credit left -- so nothing ran
+and nothing was spent. The maintainer decided to merge on the evidence
+without a model (the captured-request tests and the unchanged mock
+baseline) and to run the measurement once the account is funded:
+
+    export CLAUDE_MODEL=claude-sonnet-5-5
+    python -m dotenv run --no-override -- python -m evals.runner \
+      --engine claude --runs 3 \
+      --json evals/results/claude-sonnet-5-5_d10-<before|after>_x3.json
+
+on the last commit before this fix (`22e5932`) and on the merged one. Its
+result is recorded here when it exists.
 
 ## Acceptance
 
@@ -158,7 +173,7 @@ acceptable variance is borrowed from earlier runs.
   IBAN, card or phone number in a recognised form reaches the provider.
 - The development set passes in CI with no unsafe action, and the mock
   baseline is unchanged.
-- The Claude before/after runs show no unsafe action, and every case whose
-  verdict changes is named and read. On one pair of runs its cause -- the
+- *Pending, see Measurement.* The Claude before/after runs show no unsafe
+  action, and every case whose verdict changes is named and read. On one pair of runs its cause -- the
   masking or the model's own movement -- may stay undetermined, and is then
   said to be. A signal, read as such.
