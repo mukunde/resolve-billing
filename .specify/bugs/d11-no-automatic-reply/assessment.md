@@ -5,8 +5,8 @@
 - **Source**: code review finding D11 ("no automatic reply to an unknown sender
   without filtering automated mail first"), reassessed against `main` `4554a99`
 - **Verdict**: valid
-- **Severity**: high (no harm today, because nothing is sent; certain harm the
-  day a reply channel is connected)
+- **Severity**: high (no harm today, because nothing is sent; a risk of mail
+  loops and backscatter the day a reply channel is connected)
 
 Written in the format of Spec Kit's `bug` extension, by hand: Spec Kit is not
 merged into `main` yet, and this record does not depend on its tooling.
@@ -24,7 +24,8 @@ comes back as an automatic reply too.
 
 **Observed.** The investigation returns `requires_human_approval: false` with
 a `request_information` or `reply` action for automated mail and for every
-unknown sender, and the n8n workflow routes every such result to its
+unknown sender not suspected of impersonation (those already went to a
+person), and the n8n workflow routes every such result to its
 "automatic reply" branch.
 
 **Today that branch sends nothing**: it is a no-op node, and no reply drafter
@@ -147,8 +148,9 @@ whether *sending text to this address* is safe. Confidence: high.
   a message is still investigated, only the automatic reply is withheld. From
   an unknown sender it is recorded and nobody is alerted -- the accepted cost of
   never answering robots.
-- **Headers are untrusted input.** They only ever *remove* an automatic reply;
-  no header can grant one or widen what the system may do.
+- **Headers are untrusted input.** None can grant an automatic reply or widen
+  what the system may do; an auto-reply marker can set a message aside
+  without alert, which mostly silences its own author (ADR-011).
 - **Metadata absent.** When the source passes no headers, only the sender
   address check applies. The upstream support tool (ADR-010) is where spam
   filtering belongs; this rule is defence in depth until then.

@@ -73,9 +73,12 @@ D9 this change needs; the rest of D9 stays open.)
 
 ## Consequences
 
-Headers are untrusted input, and the design holds anyway: a header can only
-take an automatic reply away. None can grant one, call the engine, or widen
-what the policy allows.
+Headers are untrusted input. None can grant an automatic reply, call the
+engine, or widen what the policy allows. They can take something away, and
+it is more than the reply: `Auto-Submitted: auto-replied` sets a message aside
+without investigation or alert. Only the sender controls the headers of what
+they send, so a forged marker mostly silences its own author; the run is
+still recorded, and a misconfigured mail client is the realistic victim.
 
 A sender whose software marks real mail as automated loses the automatic
 reply, not the investigation, when they are a known customer. An unknown
@@ -83,7 +86,9 @@ sender in that situation is recorded and nobody is alerted -- the accepted
 cost of never answering robots.
 
 Without headers -- a source that does not forward them -- only the sender
-address check applies. Spam filtering belongs to the support tool in the
+address check applies, so this recognises *detected* automated mail, not all
+of it: an auto-responder writing from a known customer's address with no
+headers forwarded can still be allowed an automatic reply. Spam filtering belongs to the support tool in the
 target integration (ADR-010); this rule stays as defence in depth.
 
 `Authentication-Results` is deliberately not read. Only a gateway the system

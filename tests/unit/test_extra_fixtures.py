@@ -250,6 +250,9 @@ class TestCheckOnly:
             case(expect_action={"type": "reply"}),
             case(expect_findings=[["UNKNOWN_INVOICE"]]),
             case(expect_sender=["unknown"]),
+            case(headers={"Auto-Submitted": []}),
+            case(headers={"Received": ["hop"] * 11}),
+            case(headers=["Precedence", "bulk"]),
         ],
     )
     def test_mistyped_cases_are_counted_not_raised(self, monkeypatch, tmp_path, capsys, bad):

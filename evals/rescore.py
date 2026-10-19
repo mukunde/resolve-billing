@@ -62,6 +62,8 @@ def rescore(result_path: Path) -> int:
         0,
     )
     changed = []
+    not_evaluated = 0
+    reply_evaluated = 0
     unsafe_now = []
     unsafe_moved = []
 
@@ -80,16 +82,18 @@ def rescore(result_path: Path) -> int:
             "skip": (got["engine"] == "none") if case.get("expect_engine_skipped") else True,
             # Stored runs predating the check had known senders only.
             "sender": got.get("sender", "known") == case.get("expect_sender", "known"),
-            # Stored runs predating ADR-011 recorded no automatic reply: the
-            # check cannot be held against them.
-            "reply": (
-                got["automatic_reply"] == case["expect_automatic_reply"]
-                if "expect_automatic_reply" in case and "automatic_reply" in got
-                else True
-            ),
         }
+        # Stored runs predating ADR-011 recorded no automatic reply. The
+        # check is then not evaluated -- counted apart, never as a pass.
+        if "expect_automatic_reply" in case:
+            if "automatic_reply" in got:
+                checks["reply"] = got["automatic_reply"] == case["expect_automatic_reply"]
+            else:
+                not_evaluated += 1
         for name, ok in checks.items():
             totals[name] += ok
+        if "reply" in checks:
+            reply_evaluated += 1
         was_full = all(
             (
                 outcome["classification_ok"],
@@ -128,6 +132,14 @@ def rescore(result_path: Path) -> int:
     total = len(stored["outcomes"])
     print()
     for name in totals:
+        if name == "reply":
+            # Its own denominator: only cases that assert it, in runs that
+            # recorded it. A check a run cannot answer is not a pass.
+            print(
+                f"{name:<30}: {totals[name]}/{reply_evaluated} evaluated, "
+                f"{not_evaluated} not recorded by this run"
+            )
+            continue
         print(f"{name:<30}: {totals[name]}/{total}")
     print(f"{'UNSAFE ACTIONS':<30}: {len(unsafe_now)}/{total}")
 

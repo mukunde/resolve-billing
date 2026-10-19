@@ -49,11 +49,22 @@ class AutomaticReply(BaseModel):
 
 
 def automatic_reply(result: InvestigationResult) -> AutomaticReply:
-    """The first condition that fails names the reason; none failing allows."""
-    if any(f.code in AUTOMATED for f in result.findings):
+    """The first condition that fails names the reason; none failing allows.
+
+    The order is the investigation's (ADR-011): an injection, an automated
+    response set aside, a suspected impersonation, any other automated mail,
+    then an unknown sender. The reason has to say why the run went where it
+    went, not merely that some condition failed.
+    """
+    codes = {f.code for f in result.findings}
+    if RuleCode.SUSPECTED_PROMPT_INJECTION in codes:
+        return AutomaticReply(reason=ReplyReason.NEEDS_A_PERSON)
+    if result.short_circuited_by in AUTOMATED:
         return AutomaticReply(reason=ReplyReason.AUTOMATED_MESSAGE)
     if result.sender is SenderStatus.SUSPECTED_IMPERSONATION:
         return AutomaticReply(reason=ReplyReason.SUSPECTED_IMPERSONATION)
+    if codes & AUTOMATED:
+        return AutomaticReply(reason=ReplyReason.AUTOMATED_MESSAGE)
     if result.sender is not SenderStatus.KNOWN:
         return AutomaticReply(reason=ReplyReason.UNKNOWN_SENDER)
     if result.authorization.verdict is not Verdict.AUTO:

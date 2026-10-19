@@ -170,7 +170,7 @@ Each is a decision with a record, and each record says what would change it.
 | An unknown sender gets a result | Nothing about an account is said to someone nobody has verified | [ADR-007](docs/adr/007-unknown-sender.md) |
 | One claim per execution; no answer is not a no | A timeout after a write is reconciled, never retried blind | [ADR-008](docs/adr/008-execution-state-machine.md) |
 | Trust boundaries | Every route that acts takes an authenticated caller; the identity on a decision is the signed-in one | [ADR-009](docs/adr/009-trust-boundaries.md) |
-| No automatic reply unless safe | Needing no approval is not permission to answer; robots and strangers never get an automatic reply | [ADR-011](docs/adr/011-automated-mail-and-automatic-replies.md) |
+| No automatic reply unless safe | Needing no approval is not permission to answer; detected automated mail and unknown senders never get an automatic reply | [ADR-011](docs/adr/011-automated-mail-and-automatic-replies.md) |
 
 Why there is no RAG, no function calling, no multi-agent setup and no
 framework, and the condition under which each would come in, is argued in

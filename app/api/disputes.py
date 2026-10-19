@@ -23,16 +23,10 @@ from app.application.investigate_dispute import (
     InvestigationResult,
     ProposedAction,
 )
+from app.domain.automated import header_problem
 from app.domain.models import Dispute
 
 router = APIRouter(prefix="/api/v1/disputes", tags=["disputes"])
-
-
-#: Bounds on forwarded mail headers. Generous for real mail, and they keep an
-#: untrusted field from becoming a second message body.
-MAX_HEADER_NAMES = 100
-MAX_HEADER_VALUES = 10
-MAX_HEADER_LENGTH = 1_000
 
 
 class InvestigateRequest(BaseModel):
@@ -51,14 +45,8 @@ class InvestigateRequest(BaseModel):
     def _bounded(cls, headers: dict[str, str | list[str]] | None):
         if headers is None:
             return None
-        if len(headers) > MAX_HEADER_NAMES:
-            raise ValueError(f"at most {MAX_HEADER_NAMES} headers")
-        for name, value in headers.items():
-            values = value if isinstance(value, list) else [value]
-            if len(values) > MAX_HEADER_VALUES:
-                raise ValueError(f"at most {MAX_HEADER_VALUES} values per header")
-            if len(name) > MAX_HEADER_LENGTH or any(len(v) > MAX_HEADER_LENGTH for v in values):
-                raise ValueError(f"header names and values are at most {MAX_HEADER_LENGTH} long")
+        if (problem := header_problem(headers)) is not None:
+            raise ValueError(problem)
         return headers
 
     def header_pairs(self) -> tuple[tuple[str, str], ...]:

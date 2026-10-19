@@ -37,6 +37,33 @@ _REPORTERS = frozenset({"mailer-daemon", "postmaster"})
 #: Longest value token kept as evidence: values are untrusted text.
 _TOKEN = 40
 
+#: Bounds on forwarded headers, shared by every intake. Generous for real
+#: mail, and they keep an untrusted field from becoming a second body.
+MAX_HEADER_NAMES = 100
+MAX_HEADER_VALUES = 10
+MAX_HEADER_LENGTH = 1_000
+
+
+def header_problem(headers: object) -> str | None:
+    """Why `headers` -- a name to a string or a non-empty list of strings --
+    is not acceptable, or None. An empty list is refused rather than read as
+    absent: it would erase a header that says the mail is automated."""
+    if not isinstance(headers, dict):
+        return "headers must map a name to a value"
+    if len(headers) > MAX_HEADER_NAMES:
+        return f"at most {MAX_HEADER_NAMES} headers"
+    for name, value in headers.items():
+        values = value if isinstance(value, list) else [value]
+        if not isinstance(name, str) or not all(isinstance(v, str) for v in values):
+            return "header names and values must be strings"
+        if not values:
+            return "a header needs at least one value"
+        if len(values) > MAX_HEADER_VALUES:
+            return f"at most {MAX_HEADER_VALUES} values per header"
+        if len(name) > MAX_HEADER_LENGTH or any(len(v) > MAX_HEADER_LENGTH for v in values):
+            return f"header names and values are at most {MAX_HEADER_LENGTH} long"
+    return None
+
 
 def automated_message(
     sender_email: str | None, headers: Iterable[tuple[str, str]]
