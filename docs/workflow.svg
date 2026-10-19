@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 448"
-     width="980" height="448" role="img" aria-label="One dispute, three outcomes: a duplicate goes to a human for approval, a correct invoice proposes nothing, and an injected instruction stops before the decision engine is ever called.">
+     width="980" height="448" role="img" aria-label="One pipeline, four disputes: a duplicate goes to a human for approval, a correct invoice proposes nothing, a mispriced proration goes to a person without an amount, and an injected instruction stops before the decision engine is ever called.">
   <style>
     text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
          Helvetica,Arial,sans-serif;text-anchor:middle}
@@ -14,7 +14,7 @@
     .l{text-anchor:start}
     .r{text-anchor:end}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
-    @keyframes b0{0.000%{opacity:0.0}1.042%{opacity:0.0}2.500%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}34.375%{opacity:0.0}35.833%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}67.708%{opacity:0.0}69.167%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b1{0.000%{opacity:0.0}4.375%{opacity:0.0}5.833%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}37.708%{opacity:0.0}39.167%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}71.042%{opacity:0.0}72.500%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b2{0.000%{opacity:0.0}7.708%{opacity:0.0}9.167%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}41.042%{opacity:0.0}42.500%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}74.375%{opacity:0.0}75.833%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b3{0.000%{opacity:0.0}11.250%{opacity:0.0}12.708%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}44.583%{opacity:0.0}46.042%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b4{0.000%{opacity:0.0}15.625%{opacity:0.0}17.083%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}48.958%{opacity:0.0}50.417%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}82.292%{opacity:0.0}83.750%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes c0{0.000%{stroke-dashoffset:20.0}2.917%{stroke-dashoffset:20.0}5.208%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:20.0}36.250%{stroke-dashoffset:20.0}38.542%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:20.0}69.583%{stroke-dashoffset:20.0}71.875%{stroke-dashoffset:0.0}98.125%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:20.0}}@keyframes c1{0.000%{stroke-dashoffset:20.0}6.250%{stroke-dashoffset:20.0}8.542%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:20.0}39.583%{stroke-dashoffset:20.0}41.875%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:20.0}72.917%{stroke-dashoffset:20.0}75.208%{stroke-dashoffset:0.0}98.125%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:20.0}}@keyframes c2{0.000%{stroke-dashoffset:20.0}9.583%{stroke-dashoffset:20.0}11.875%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:20.0}42.917%{stroke-dashoffset:20.0}45.208%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:20.0}100.000%{stroke-dashoffset:20.0}}@keyframes c3{0.000%{stroke-dashoffset:20.0}14.167%{stroke-dashoffset:20.0}16.458%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:20.0}47.500%{stroke-dashoffset:20.0}49.792%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:20.0}100.000%{stroke-dashoffset:20.0}}@keyframes bypass{0.000%{stroke-dashoffset:300.0}76.250%{stroke-dashoffset:300.0}79.167%{stroke-dashoffset:0.0}98.125%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:300.0}}@keyframes bypasslbl{0.000%{opacity:0.0}77.500%{opacity:0.0}78.958%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b10{0.000%{opacity:0.0}52.917%{opacity:0.0}54.375%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e0{0.000%{stroke-dashoffset:741.0}50.833%{stroke-dashoffset:741.0}53.125%{stroke-dashoffset:0.0}64.792%{stroke-dashoffset:0.0}67.083%{stroke-dashoffset:741.0}100.000%{stroke-dashoffset:741.0}}@keyframes b11{0.000%{opacity:0.0}19.583%{opacity:0.0}21.042%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e1{0.000%{stroke-dashoffset:466.0}17.500%{stroke-dashoffset:466.0}19.792%{stroke-dashoffset:0.0}31.458%{stroke-dashoffset:0.0}33.750%{stroke-dashoffset:466.0}100.000%{stroke-dashoffset:466.0}}@keyframes b12{0.000%{opacity:0.0}86.250%{opacity:0.0}87.708%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e2{0.000%{stroke-dashoffset:191.0}84.167%{stroke-dashoffset:191.0}86.458%{stroke-dashoffset:0.0}98.125%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:191.0}}@keyframes hA{0.000%{opacity:0.0}0.417%{opacity:0.0}1.875%{opacity:1.0}31.458%{opacity:1.0}32.917%{opacity:0.0}100.000%{opacity:0.0}}@keyframes hB{0.000%{opacity:0.0}33.750%{opacity:0.0}35.208%{opacity:1.0}64.792%{opacity:1.0}66.250%{opacity:0.0}100.000%{opacity:0.0}}@keyframes hF{0.000%{opacity:0.0}67.083%{opacity:0.0}68.542%{opacity:1.0}98.125%{opacity:1.0}99.583%{opacity:0.0}100.000%{opacity:0.0}}
+    @keyframes b0{0.000%{opacity:0.0}0.781%{opacity:0.0}1.875%{opacity:1.0}23.594%{opacity:1.0}24.688%{opacity:0.0}25.781%{opacity:0.0}26.875%{opacity:1.0}48.594%{opacity:1.0}49.688%{opacity:0.0}50.781%{opacity:0.0}51.875%{opacity:1.0}73.594%{opacity:1.0}74.688%{opacity:0.0}75.781%{opacity:0.0}76.875%{opacity:1.0}98.594%{opacity:1.0}99.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b1{0.000%{opacity:0.0}3.281%{opacity:0.0}4.375%{opacity:1.0}23.594%{opacity:1.0}24.688%{opacity:0.0}28.281%{opacity:0.0}29.375%{opacity:1.0}48.594%{opacity:1.0}49.688%{opacity:0.0}53.281%{opacity:0.0}54.375%{opacity:1.0}73.594%{opacity:1.0}74.688%{opacity:0.0}78.281%{opacity:0.0}79.375%{opacity:1.0}98.594%{opacity:1.0}99.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b2{0.000%{opacity:0.0}5.781%{opacity:0.0}6.875%{opacity:1.0}23.594%{opacity:1.0}24.688%{opacity:0.0}30.781%{opacity:0.0}31.875%{opacity:1.0}48.594%{opacity:1.0}49.688%{opacity:0.0}55.781%{opacity:0.0}56.875%{opacity:1.0}73.594%{opacity:1.0}74.688%{opacity:0.0}80.781%{opacity:0.0}81.875%{opacity:1.0}98.594%{opacity:1.0}99.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b3{0.000%{opacity:0.0}8.438%{opacity:0.0}9.531%{opacity:1.0}23.594%{opacity:1.0}24.688%{opacity:0.0}33.438%{opacity:0.0}34.531%{opacity:1.0}48.594%{opacity:1.0}49.688%{opacity:0.0}58.438%{opacity:0.0}59.531%{opacity:1.0}73.594%{opacity:1.0}74.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b4{0.000%{opacity:0.0}11.719%{opacity:0.0}12.812%{opacity:1.0}23.594%{opacity:1.0}24.688%{opacity:0.0}36.719%{opacity:0.0}37.812%{opacity:1.0}48.594%{opacity:1.0}49.688%{opacity:0.0}61.719%{opacity:0.0}62.813%{opacity:1.0}73.594%{opacity:1.0}74.688%{opacity:0.0}86.719%{opacity:0.0}87.812%{opacity:1.0}98.594%{opacity:1.0}99.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes c0{0.000%{stroke-dashoffset:20.0}2.188%{stroke-dashoffset:20.0}3.906%{stroke-dashoffset:0.0}23.594%{stroke-dashoffset:0.0}25.312%{stroke-dashoffset:20.0}27.187%{stroke-dashoffset:20.0}28.906%{stroke-dashoffset:0.0}48.594%{stroke-dashoffset:0.0}50.313%{stroke-dashoffset:20.0}52.188%{stroke-dashoffset:20.0}53.906%{stroke-dashoffset:0.0}73.594%{stroke-dashoffset:0.0}75.312%{stroke-dashoffset:20.0}77.188%{stroke-dashoffset:20.0}78.906%{stroke-dashoffset:0.0}98.594%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:20.0}}@keyframes c1{0.000%{stroke-dashoffset:20.0}4.688%{stroke-dashoffset:20.0}6.406%{stroke-dashoffset:0.0}23.594%{stroke-dashoffset:0.0}25.312%{stroke-dashoffset:20.0}29.688%{stroke-dashoffset:20.0}31.406%{stroke-dashoffset:0.0}48.594%{stroke-dashoffset:0.0}50.313%{stroke-dashoffset:20.0}54.688%{stroke-dashoffset:20.0}56.406%{stroke-dashoffset:0.0}73.594%{stroke-dashoffset:0.0}75.312%{stroke-dashoffset:20.0}79.688%{stroke-dashoffset:20.0}81.406%{stroke-dashoffset:0.0}98.594%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:20.0}}@keyframes c2{0.000%{stroke-dashoffset:20.0}7.187%{stroke-dashoffset:20.0}8.906%{stroke-dashoffset:0.0}23.594%{stroke-dashoffset:0.0}25.312%{stroke-dashoffset:20.0}32.188%{stroke-dashoffset:20.0}33.906%{stroke-dashoffset:0.0}48.594%{stroke-dashoffset:0.0}50.313%{stroke-dashoffset:20.0}57.188%{stroke-dashoffset:20.0}58.906%{stroke-dashoffset:0.0}73.594%{stroke-dashoffset:0.0}75.312%{stroke-dashoffset:20.0}100.000%{stroke-dashoffset:20.0}}@keyframes c3{0.000%{stroke-dashoffset:20.0}10.625%{stroke-dashoffset:20.0}12.344%{stroke-dashoffset:0.0}23.594%{stroke-dashoffset:0.0}25.312%{stroke-dashoffset:20.0}35.625%{stroke-dashoffset:20.0}37.344%{stroke-dashoffset:0.0}48.594%{stroke-dashoffset:0.0}50.313%{stroke-dashoffset:20.0}60.625%{stroke-dashoffset:20.0}62.344%{stroke-dashoffset:0.0}73.594%{stroke-dashoffset:0.0}75.312%{stroke-dashoffset:20.0}100.000%{stroke-dashoffset:20.0}}@keyframes bypass{0.000%{stroke-dashoffset:300.0}82.188%{stroke-dashoffset:300.0}84.375%{stroke-dashoffset:0.0}98.594%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:300.0}}@keyframes bypasslbl{0.000%{opacity:0.0}83.125%{opacity:0.0}84.219%{opacity:1.0}98.594%{opacity:1.0}99.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes b10{0.000%{opacity:0.0}39.688%{opacity:0.0}40.781%{opacity:1.0}48.594%{opacity:1.0}49.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e0{0.000%{stroke-dashoffset:741.0}38.125%{stroke-dashoffset:741.0}39.844%{stroke-dashoffset:0.0}48.594%{stroke-dashoffset:0.0}50.313%{stroke-dashoffset:741.0}100.000%{stroke-dashoffset:741.0}}@keyframes b11{0.000%{opacity:0.0}14.688%{opacity:0.0}15.781%{opacity:1.0}23.594%{opacity:1.0}24.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e1{0.000%{stroke-dashoffset:466.0}13.125%{stroke-dashoffset:466.0}14.844%{stroke-dashoffset:0.0}23.594%{stroke-dashoffset:0.0}25.312%{stroke-dashoffset:466.0}100.000%{stroke-dashoffset:466.0}}@keyframes b12{0.000%{opacity:0.0}64.688%{opacity:0.0}65.781%{opacity:1.0}73.594%{opacity:1.0}74.688%{opacity:0.0}89.688%{opacity:0.0}90.781%{opacity:1.0}98.594%{opacity:1.0}99.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes e2{0.000%{stroke-dashoffset:191.0}63.125%{stroke-dashoffset:191.0}64.844%{stroke-dashoffset:0.0}73.594%{stroke-dashoffset:0.0}75.312%{stroke-dashoffset:191.0}88.125%{stroke-dashoffset:191.0}89.844%{stroke-dashoffset:0.0}98.594%{stroke-dashoffset:0.0}100.000%{stroke-dashoffset:191.0}}@keyframes hA{0.000%{opacity:0.0}0.312%{opacity:0.0}1.406%{opacity:1.0}23.594%{opacity:1.0}24.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes hB{0.000%{opacity:0.0}25.312%{opacity:0.0}26.406%{opacity:1.0}48.594%{opacity:1.0}49.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes hD{0.000%{opacity:0.0}50.313%{opacity:0.0}51.406%{opacity:1.0}73.594%{opacity:1.0}74.688%{opacity:0.0}100.000%{opacity:0.0}}@keyframes hF{0.000%{opacity:0.0}75.312%{opacity:0.0}76.406%{opacity:1.0}98.594%{opacity:1.0}99.688%{opacity:0.0}100.000%{opacity:0.0}}
 </style>
   <rect width="980" height="448" rx="12" fill="#fbfcfd" stroke="#d8dee4"/>
   
@@ -23,7 +23,7 @@
     <text class="t1" x="130.0" y="176" fill="#6e7781">Dispute in</text>
     <text class="t2" x="130.0" y="195" fill="#d8dee4">n8n webhook</text>
   </g>
-  <g style="animation:b0 24.0s linear infinite;opacity:0">
+  <g style="animation:b0 32.0s linear infinite;opacity:0">
     <rect x="50" y="150" width="160" height="62" rx="9" fill="#fff"
           stroke="#004D40" stroke-width="1.8"/>
     <text class="t1" x="130.0" y="176" fill="#004D40">Dispute in</text>
@@ -34,7 +34,7 @@
     <text class="t1" x="310.0" y="176" fill="#6e7781">Extraction</text>
     <text class="t2" x="310.0" y="195" fill="#d8dee4">regex, 0 tokens</text>
   </g>
-  <g style="animation:b1 24.0s linear infinite;opacity:0">
+  <g style="animation:b1 32.0s linear infinite;opacity:0">
     <rect x="230" y="150" width="160" height="62" rx="9" fill="#fff"
           stroke="#004D40" stroke-width="1.8"/>
     <text class="t1" x="310.0" y="176" fill="#004D40">Extraction</text>
@@ -43,20 +43,20 @@
   <g>
     <rect x="410" y="150" width="160" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
     <text class="t1" x="490.0" y="176" fill="#6e7781">Context + rules</text>
-    <text class="t2" x="490.0" y="195" fill="#d8dee4">one load, 5 checks</text>
+    <text class="t2" x="490.0" y="195" fill="#d8dee4">one load, 0 tokens</text>
   </g>
-  <g style="animation:b2 24.0s linear infinite;opacity:0">
+  <g style="animation:b2 32.0s linear infinite;opacity:0">
     <rect x="410" y="150" width="160" height="62" rx="9" fill="#fff"
           stroke="#004D40" stroke-width="1.8"/>
     <text class="t1" x="490.0" y="176" fill="#004D40">Context + rules</text>
-    <text class="t2" x="490.0" y="195" fill="#6e7781">one load, 5 checks</text>
+    <text class="t2" x="490.0" y="195" fill="#6e7781">one load, 0 tokens</text>
   </g>
   <g>
     <rect x="590" y="150" width="160" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
     <text class="t1" x="670.0" y="176" fill="#6e7781">Decision engine</text>
     <text class="t2" x="670.0" y="195" fill="#d8dee4">1 call, typed schema</text>
   </g>
-  <g style="animation:b3 24.0s linear infinite;opacity:0">
+  <g style="animation:b3 32.0s linear infinite;opacity:0">
     <rect x="590" y="150" width="160" height="62" rx="9" fill="#fff"
           stroke="#004D40" stroke-width="1.8"/>
     <text class="t1" x="670.0" y="176" fill="#004D40">Decision engine</text>
@@ -64,43 +64,43 @@
   </g>
   <g>
     <rect x="770" y="150" width="160" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
-    <text class="t1" x="850.0" y="176" fill="#6e7781">Action policy</text>
-    <text class="t2" x="850.0" y="195" fill="#d8dee4">authorises, or not</text>
+    <text class="t1" x="850.0" y="176" fill="#6e7781">Amount + policy</text>
+    <text class="t2" x="850.0" y="195" fill="#d8dee4">code prices, then authorises</text>
   </g>
-  <g style="animation:b4 24.0s linear infinite;opacity:0">
+  <g style="animation:b4 32.0s linear infinite;opacity:0">
     <rect x="770" y="150" width="160" height="62" rx="9" fill="#fff"
           stroke="#004D40" stroke-width="1.8"/>
-    <text class="t1" x="850.0" y="176" fill="#004D40">Action policy</text>
-    <text class="t2" x="850.0" y="195" fill="#6e7781">authorises, or not</text>
+    <text class="t1" x="850.0" y="176" fill="#004D40">Amount + policy</text>
+    <text class="t2" x="850.0" y="195" fill="#6e7781">code prices, then authorises</text>
   </g>
   <line x1="210" y1="181.0" x2="230" y2="181.0" stroke="#d8dee4" stroke-width="2"/>
   <line x1="210" y1="181.0" x2="230" y2="181.0" stroke="#004D40" stroke-width="2.4"
         stroke-dasharray="20" stroke-dashoffset="20"
-        style="animation:c0 24.0s linear infinite"/>
+        style="animation:c0 32.0s linear infinite"/>
   <line x1="390" y1="181.0" x2="410" y2="181.0" stroke="#d8dee4" stroke-width="2"/>
   <line x1="390" y1="181.0" x2="410" y2="181.0" stroke="#004D40" stroke-width="2.4"
         stroke-dasharray="20" stroke-dashoffset="20"
-        style="animation:c1 24.0s linear infinite"/>
+        style="animation:c1 32.0s linear infinite"/>
   <line x1="570" y1="181.0" x2="590" y2="181.0" stroke="#d8dee4" stroke-width="2"/>
   <line x1="570" y1="181.0" x2="590" y2="181.0" stroke="#004D40" stroke-width="2.4"
         stroke-dasharray="20" stroke-dashoffset="20"
-        style="animation:c2 24.0s linear infinite"/>
+        style="animation:c2 32.0s linear infinite"/>
   <line x1="750" y1="181.0" x2="770" y2="181.0" stroke="#d8dee4" stroke-width="2"/>
   <line x1="750" y1="181.0" x2="770" y2="181.0" stroke="#004D40" stroke-width="2.4"
         stroke-dasharray="20" stroke-dashoffset="20"
-        style="animation:c3 24.0s linear infinite"/>
+        style="animation:c3 32.0s linear infinite"/>
   <path d="M 570 157.0 C 612 92, 728 92, 770 157.0" fill="none" stroke="#C2185B" stroke-width="2.4"
         stroke-dasharray="300" stroke-dashoffset="300"
-        style="animation:bypass 24.0s linear infinite"/>
+        style="animation:bypass 32.0s linear infinite"/>
   <text class="t3" x="670.0" y="86" fill="#C2185B"
-        style="animation:bypasslbl 24.0s linear infinite;opacity:0"
+        style="animation:bypasslbl 32.0s linear infinite;opacity:0"
   >the engine is never asked</text>
   <g>
     <rect x="95" y="298" width="240" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
     <text class="t1" x="215.0" y="324" fill="#6e7781">Automatic reply</text>
     <text class="t2" x="215.0" y="343" fill="#d8dee4">no money moves</text>
   </g>
-  <g style="animation:b10 24.0s linear infinite;opacity:0">
+  <g style="animation:b10 32.0s linear infinite;opacity:0">
     <rect x="95" y="298" width="240" height="62" rx="9" fill="#fff"
           stroke="#57606a" stroke-width="1.8"/>
     <text class="t1" x="215.0" y="324" fill="#57606a">Automatic reply</text>
@@ -109,13 +109,13 @@
   <path d="M 850.0 212 L 850.0 255.0 L 215.0 255.0 L 215.0 298" fill="none" stroke="#d8dee4" stroke-width="2"/>
   <path d="M 850.0 212 L 850.0 255.0 L 215.0 255.0 L 215.0 298" fill="none" stroke="#57606a" stroke-width="2.4"
         stroke-dasharray="741.0" stroke-dashoffset="741.0"
-        style="animation:e0 24.0s linear infinite"/>
+        style="animation:e0 32.0s linear infinite"/>
   <g>
     <rect x="370" y="298" width="240" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
     <text class="t1" x="490.0" y="324" fill="#6e7781">Approval e-mail</text>
     <text class="t2" x="490.0" y="343" fill="#d8dee4">a human decides, then a credit note</text>
   </g>
-  <g style="animation:b11 24.0s linear infinite;opacity:0">
+  <g style="animation:b11 32.0s linear infinite;opacity:0">
     <rect x="370" y="298" width="240" height="62" rx="9" fill="#fff"
           stroke="#00695C" stroke-width="1.8"/>
     <text class="t1" x="490.0" y="324" fill="#00695C">Approval e-mail</text>
@@ -124,35 +124,41 @@
   <path d="M 850.0 212 L 850.0 255.0 L 490.0 255.0 L 490.0 298" fill="none" stroke="#d8dee4" stroke-width="2"/>
   <path d="M 850.0 212 L 850.0 255.0 L 490.0 255.0 L 490.0 298" fill="none" stroke="#00695C" stroke-width="2.4"
         stroke-dasharray="466.0" stroke-dashoffset="466.0"
-        style="animation:e1 24.0s linear infinite"/>
+        style="animation:e1 32.0s linear infinite"/>
   <g>
     <rect x="645" y="298" width="240" height="62" rx="9" fill="#fff" stroke="#d8dee4"/>
-    <text class="t1" x="765.0" y="324" fill="#6e7781">Alert, no buttons</text>
-    <text class="t2" x="765.0" y="343" fill="#d8dee4">nothing to approve</text>
+    <text class="t1" x="765.0" y="324" fill="#6e7781">Human review</text>
+    <text class="t2" x="765.0" y="343" fill="#d8dee4">no amount, nothing to approve</text>
   </g>
-  <g style="animation:b12 24.0s linear infinite;opacity:0">
+  <g style="animation:b12 32.0s linear infinite;opacity:0">
     <rect x="645" y="298" width="240" height="62" rx="9" fill="#fff"
           stroke="#C2185B" stroke-width="1.8"/>
-    <text class="t1" x="765.0" y="324" fill="#C2185B">Alert, no buttons</text>
-    <text class="t2" x="765.0" y="343" fill="#6e7781">nothing to approve</text>
+    <text class="t1" x="765.0" y="324" fill="#C2185B">Human review</text>
+    <text class="t2" x="765.0" y="343" fill="#6e7781">no amount, nothing to approve</text>
   </g>
   <path d="M 850.0 212 L 850.0 255.0 L 765.0 255.0 L 765.0 298" fill="none" stroke="#d8dee4" stroke-width="2"/>
   <path d="M 850.0 212 L 850.0 255.0 L 765.0 255.0 L 765.0 298" fill="none" stroke="#C2185B" stroke-width="2.4"
         stroke-dasharray="191.0" stroke-dashoffset="191.0"
-        style="animation:e2 24.0s linear infinite"/>
-  <g style="animation:hA 24.0s linear infinite;opacity:0">
+        style="animation:e2 32.0s linear infinite"/>
+  <g style="animation:hA 32.0s linear infinite;opacity:0">
     <text class="h1" x="490.0" y="36" fill="#004D40">Case A — charged twice</text>
     <text class="h2" x="490.0" y="58" fill="#6e7781">the duplicate is real, so a person signs for the money</text>
     <text class="mono" x="490.0" y="426"
           fill="#6e7781">DUPLICATE_INVOICE → credit_note 99,00 € → pending_approval → executed</text>
   </g>
-  <g style="animation:hB 24.0s linear infinite;opacity:0">
+  <g style="animation:hB 32.0s linear infinite;opacity:0">
     <text class="h1" x="490.0" y="36" fill="#004D40">Case B — the invoice is correct</text>
     <text class="h2" x="490.0" y="58" fill="#6e7781">two debits, both legitimate: the agent proposes nothing</text>
     <text class="mono" x="490.0" y="426"
           fill="#6e7781">no finding → valid_invoice → verdict auto → nothing is queued</text>
   </g>
-  <g style="animation:hF 24.0s linear infinite;opacity:0">
+  <g style="animation:hD 32.0s linear infinite;opacity:0">
+    <text class="h1" x="490.0" y="36" fill="#004D40">Case D — a mispriced proration</text>
+    <text class="h2" x="490.0" y="58" fill="#6e7781">the error is real, its amount is not computable yet: nothing is proposed</text>
+    <text class="mono" x="490.0" y="426"
+          fill="#6e7781">PRORATION_MISMATCH → proration_dispute → no amount → proposed_action none</text>
+  </g>
+  <g style="animation:hF 32.0s linear infinite;opacity:0">
     <text class="h1" x="490.0" y="36" fill="#C2185B">Case F — an injected instruction</text>
     <text class="h2" x="490.0" y="58" fill="#6e7781">screened by a rule, before any model sees it</text>
     <text class="mono" x="490.0" y="426"

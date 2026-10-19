@@ -5,9 +5,11 @@
 Timings are declared in seconds and the CSS keyframe percentages are computed,
 because hand-written percentages make every retiming a rewrite.
 
-Three scenarios share one pipeline and one master loop:
+Four scenarios share one pipeline and one master loop:
   phase A  a duplicate, money on the line, a human approves
   phase B  a correct invoice, nothing proposed
+  phase D  a mispriced proration: the error is real, its amount is not
+           computable yet, so a person reviews and nothing is proposed
   phase F  an injected instruction, the engine is never called
 """
 
@@ -15,9 +17,9 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 W, H = 980, 448
-MASTER = 24.0
+MASTER = 32.0
 PHASE = 8.0
-PHASES = {"A": 0.0, "B": 8.0, "F": 16.0}
+PHASES = {"A": 0.0, "B": 8.0, "D": 16.0, "F": 24.0}
 
 INK = "#1f2328"
 MUTED = "#6e7781"
@@ -38,15 +40,15 @@ OUT_X = [95, 370, 645]
 STAGES = [
     ("Dispute in", "n8n webhook"),
     ("Extraction", "regex, 0 tokens"),
-    ("Context + rules", "one load, 5 checks"),
+    ("Context + rules", "one load, 0 tokens"),
     ("Decision engine", "1 call, typed schema"),
-    ("Action policy", "authorises, or not"),
+    ("Amount + policy", "code prices, then authorises"),
 ]
 
 OUTCOMES = [
     ("Automatic reply", "no money moves", SLATE),
     ("Approval e-mail", "a human decides, then a credit note", TEAL),
-    ("Alert, no buttons", "nothing to approve", CRIMSON),
+    ("Human review", "no amount, nothing to approve", CRIMSON),
 ]
 
 TITLES = {
@@ -55,12 +57,17 @@ TITLES = {
         "Case B — the invoice is correct",
         "two debits, both legitimate: the agent proposes nothing",
     ),
+    "D": (
+        "Case D — a mispriced proration",
+        "the error is real, its amount is not computable yet: nothing is proposed",
+    ),
     "F": ("Case F — an injected instruction", "screened by a rule, before any model sees it"),
 }
 
 CAPTIONS = {
     "A": "DUPLICATE_INVOICE → credit_note 99,00 € → pending_approval → executed",
     "B": "no finding → valid_invoice → verdict auto → nothing is queued",
+    "D": "PRORATION_MISMATCH → proration_dispute → no amount → proposed_action none",
     "F": "SUSPECTED_PROMPT_INJECTION → decision_engine_skipped → no decision_created",
 }
 
@@ -147,7 +154,7 @@ def connector(idx, x1, x2, y, phases, start_rel, accent=TEAL_D):
 mid = BOX_Y + BOX_H / 2
 for i, (title, sub) in enumerate(STAGES):
     # The engine box is lit only when it actually runs.
-    phases = ["A", "B"] if i == 3 else ["A", "B", "F"]
+    phases = ["A", "B", "D"] if i == 3 else ["A", "B", "D", "F"]
     accent = TEAL_D
     body.append(box(i, BOX_X[i], BOX_Y, BOX_W, BOX_H, title, sub, phases, LIT[i], accent))
 
@@ -155,7 +162,7 @@ for i in range(4):
     x1 = BOX_X[i] + BOX_W
     x2 = BOX_X[i + 1]
     # The connector into and out of the engine is dead on the injection path.
-    phases = ["A", "B"] if i in (2, 3) else ["A", "B", "F"]
+    phases = ["A", "B", "D"] if i in (2, 3) else ["A", "B", "D", "F"]
     body.append(connector(i, x1, x2, mid, phases, CONNECT[i]))
 
 # ---------------------------------------------------------------- bypass arc
@@ -172,11 +179,11 @@ body.append(f"""
   >the engine is never asked</text>""")
 
 # ---------------------------------------------------------------- outcomes
-# B -> automatic reply, A -> approval, F -> alert
+# B -> automatic reply, A -> approval, D and F -> human review
 for i, (title, sub, colour) in enumerate(OUTCOMES):
-    phase = ["B", "A", "F"][i]
+    phase = [["B"], ["A"], ["D", "F"]][i]
     body.append(
-        box(10 + i, OUT_X[i], OUT_Y, OUT_W, OUT_H, title, sub, [phase], OUTCOME_AT, colour)
+        box(10 + i, OUT_X[i], OUT_Y, OUT_W, OUT_H, title, sub, phase, OUTCOME_AT, colour)
     )
     # a short elbow from the policy box down to this outcome
     sx = BOX_X[4] + BOX_W / 2
@@ -184,7 +191,7 @@ for i, (title, sub, colour) in enumerate(OUTCOMES):
     tx = OUT_X[i] + OUT_W / 2
     path = f"M {sx} {sy} L {sx} {(sy + OUT_Y) / 2} L {tx} {(sy + OUT_Y) / 2} L {tx} {OUT_Y}"
     length = (OUT_Y - sy) + abs(tx - sx) + 20
-    rules.append(draw_keyframes(f"e{i}", win([phase], OUTCOME_AT - 0.5), length))
+    rules.append(draw_keyframes(f"e{i}", win(phase, OUTCOME_AT - 0.5), length))
     body.append(f"""
   <path d="{path}" fill="none" stroke="{DIM}" stroke-width="2"/>
   <path d="{path}" fill="none" stroke="{colour}" stroke-width="2.4"
@@ -228,9 +235,10 @@ style = f"""
 """
 
 ALT = (
-    "One dispute, three outcomes: a duplicate goes to a human for approval, "
-    "a correct invoice proposes nothing, and an injected instruction stops "
-    "before the decision engine is ever called."
+    "One pipeline, four disputes: a duplicate goes to a human for approval, "
+    "a correct invoice proposes nothing, a mispriced proration goes to a person "
+    "without an amount, and an injected instruction stops before the decision "
+    "engine is ever called."
 )
 
 svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}"
