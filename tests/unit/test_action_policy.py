@@ -225,14 +225,30 @@ class TestAutonomyThresholds:
         assert auth.verdict is Verdict.REQUIRES_APPROVAL
 
 
+class TestWithheld:
+    def test_the_reason_for_no_amount_never_changes_the_verdict(self, policy):
+        """`withheld` words a refusal; it cannot turn one into a permission."""
+        plain = policy.evaluate(decision(), [], amount=None)
+        worded = policy.evaluate(decision(), [], amount=None, withheld="correction partielle")
+        assert plain.verdict is worded.verdict is Verdict.HUMAN_REVIEW
+        assert "correction partielle" in worded.reason
+
+    def test_a_reason_alongside_an_amount_is_ignored(self, policy):
+        auth = policy.evaluate(decision(), [], NINETY_NINE, withheld="ignored")
+        assert auth.verdict is Verdict.REQUIRES_APPROVAL
+        assert "ignored" not in auth.reason
+
+
 class TestIsolation:
     def test_the_policy_never_reads_the_customer_message(self):
         """Checked by signature: evaluate() has no way to see it.
 
         Nothing a customer writes should be able to widen what the system is
-        permitted to do to their account.
+        permitted to do to their account. `withheld` is no exception: it is
+        the reason `correction_for` gives, computed from the records, and it
+        only ever words a refusal.
         """
         import inspect
 
         params = set(inspect.signature(ActionPolicy.evaluate).parameters)
-        assert params == {"self", "decision", "findings", "amount"}
+        assert params == {"self", "decision", "findings", "amount", "withheld"}

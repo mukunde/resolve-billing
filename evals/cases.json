@@ -73,12 +73,12 @@
   },
   {
     "id": "proration",
-    "why": "Case D. Plan change mid-month, half a period billed at the full price.",
+    "why": "Case D. Plan change mid-month, half a period billed at the full price. Until correction amounts are specified, a partial correction gets no amount: the system classifies the dispute and sends it to a human without proposing a credit note (decision of 2026-10-19).",
     "message": "J'ai change de formule le 16, pourquoi payer le mois entier ?",
     "customer_email": "chloe@lyon-industries.fr",
     "invoice_id": "inv_020",
     "expect_classification": "proration_dispute",
-    "expect_action": "credit_note",
+    "expect_action": "none",
     "expect_human_approval": true,
     "expect_findings": [
       "PRORATION_MISMATCH"

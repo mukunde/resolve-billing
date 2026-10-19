@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "ca51c498d6a953f8",
+  "cases_sha256": "ef57eedc0949a8dd",
   "cases": {
     "duplicate_fr": {
       "classification": true,

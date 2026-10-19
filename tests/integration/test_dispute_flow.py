@@ -133,6 +133,20 @@ class TestCaseDProration:
         assert body["classification"] == "proration_dispute"
         assert body["requires_human_approval"] is True
 
+    def test_no_amount_is_proposed_for_a_partial_correction(self, client):
+        """The invoice total would over-credit a proration: until correction
+        amounts are specified, a human decides, and nothing is queued."""
+        body = investigate(
+            client,
+            message="J'ai changé de formule le 16, pourquoi payer le mois entier ?",
+            customer_email="chloe@lyon-industries.fr",
+            invoice_id="inv_020",
+        )
+
+        assert body["proposed_action"]["type"] == "none"
+        assert body["action_id"] is None
+        assert "partielle" in body["authorization_reason"]
+
 
 class TestCaseEBilledAfterCancellation:
     def test_invoice_after_cancellation_is_caught(self, client):
