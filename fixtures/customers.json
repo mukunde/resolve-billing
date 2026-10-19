@@ -76,5 +76,17 @@
     "email": "comptabilite@kalythea-systems.fr",
     "currency": "EUR",
     "display_name": "Kalythéa Systems"
+  },
+  {
+    "id": "cus_sirius",
+    "email": "compta@sirius-labs.fr",
+    "currency": "EUR",
+    "display_name": "Sirius Labs"
+  },
+  {
+    "id": "cus_meridien",
+    "email": "facturation@meridien-data.fr",
+    "currency": "EUR",
+    "display_name": "Meridien Data"
   }
 ]

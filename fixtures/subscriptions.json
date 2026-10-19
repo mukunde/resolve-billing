@@ -116,5 +116,23 @@
     "period_start": "2026-09-01T00:00:00",
     "period_end": "2026-10-01T00:00:00",
     "cancelled_at": null
+  },
+  {
+    "id": "sub_300",
+    "customer_id": "cus_sirius",
+    "state": "active",
+    "plan": "pro_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_310",
+    "customer_id": "cus_meridien",
+    "state": "active",
+    "plan": "usage_monthly",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
   }
 ]

@@ -63,3 +63,10 @@ And a distinction that came out of the same reasoning: an unknown rate records
 self-hosted model with no per-call price is a different fact from a model
 whose rate nobody added. One is a result worth publishing; the other is a
 defect.
+
+## Amendment, 2026-10-19 -- comparisons across currencies
+
+Where a rule must compare amounts in different currencies -- an invoice's
+lines, its payments, another live invoice for the same period -- it does not
+conclude. `CURRENCY_MISMATCH` says so, no amount is proposed, and a person
+reviews. Several currencies on one account are not an anomaly (taxonomy S10).

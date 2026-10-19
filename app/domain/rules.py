@@ -16,9 +16,10 @@ from decimal import Decimal
 
 from app.domain.enums import InvoiceStatus, RuleCode, Severity
 from app.domain.injection import suspected_prompt_injection
-from app.domain.models import Customer, Invoice, RuleFinding, Subscription
+from app.domain.models import Customer, Invoice, Payment, RuleFinding, Subscription
 
 __all__ = [
+    "currency_mismatch",
     "detect_duplicate_invoice",
     "invoice_after_cancellation",
     "proration_mismatch",
@@ -129,6 +130,54 @@ def detect_duplicate_invoice(target: Invoice, recent: list[Invoice]) -> RuleFind
     return None
 
 
+def currency_mismatch(
+    target: Invoice, invoices: list[Invoice], payments: list[Payment]
+) -> RuleFinding | None:
+    """Amounts the rules must compare are in different currencies (taxonomy S10).
+
+    No rule converts: an implicit exchange rate inside a dispute would invent
+    money (ADR-005). Where a comparison is impossible, this says so instead
+    of every other rule concluding in silence -- a duplicate charged once in
+    euros and once in dollars is not "no duplicate". Several currencies on an
+    account are not an anomaly; only the comparisons this invoice needs are
+    checked: its own lines, the payments made against it, and the live
+    invoices covering the same period of the same subscription.
+    """
+    if target.status is InvoiceStatus.VOID:
+        return None
+    currency = target.total.currency
+    clashes: list[dict] = []
+    for index, line in enumerate(target.lines):
+        for amount in (line.unit_amount, line.amount):
+            if amount.currency != currency:
+                clashes.append({"line_index": index, "currency": amount.currency})
+                break
+    for payment in payments:
+        if payment.invoice_id == target.id and payment.amount.currency != currency:
+            clashes.append({"payment_id": payment.id, "currency": payment.amount.currency})
+    for other in invoices:
+        if (
+            other.id != target.id
+            and other.status is not InvoiceStatus.VOID
+            and target.subscription_id is not None
+            and other.subscription_id == target.subscription_id
+            and other.total.currency != currency
+            and target.overlaps_period_of(other)
+        ):
+            clashes.append({"invoice_id": other.id, "currency": other.total.currency})
+    if not clashes:
+        return None
+    return RuleFinding(
+        code=RuleCode.CURRENCY_MISMATCH,
+        severity=Severity.MEDIUM,
+        description=(
+            "Des montants à comparer sont en devises différentes : "
+            "aucune conclusion n'est tirée, une personne examine."
+        ),
+        evidence={"invoice_id": target.id, "currency": currency, "clashes": clashes},
+    )
+
+
 def invoice_after_cancellation(invoice: Invoice, sub: Subscription) -> RuleFinding | None:
     """A subscription was billed for a period starting after its cancellation."""
     if sub.cancelled_at is None or invoice.status is InvoiceStatus.VOID:
@@ -208,7 +257,12 @@ def proration_mismatch(
     """
     if invoice.status is InvoiceStatus.VOID or sub.period_seconds <= 0:
         return None
-
+    currency = invoice.total.currency
+    if any(
+        line.unit_amount.currency != currency or line.amount.currency != currency
+        for line in invoice.lines
+    ):
+        return None  # not comparable; `currency_mismatch` says so
     for index, line in enumerate(invoice.lines):
         line_seconds = line.period_seconds
         if line_seconds is None or line_seconds <= 0 or line_seconds >= sub.period_seconds:

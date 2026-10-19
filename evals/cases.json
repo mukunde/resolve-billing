@@ -396,5 +396,35 @@
     "expect_engine_skipped": true,
     "expect_sender": "unknown",
     "expect_automatic_reply": false
+  },
+  {
+    "id": "invoice_outside_window",
+    "why": "The disputed invoice is the customer's, but older than the 180 days of history the investigation loads. Not found in the window is not 'does not exist': the reference is looked up directly, nothing about the invoice was checked, so a person reviews and the engine is not asked (taxonomy S7).",
+    "message": "Bonjour, la facture inv_299 de février comportait une erreur de montant, pouvez-vous vérifier ?",
+    "customer_email": "compta@sirius-labs.fr",
+    "invoice_id": "inv_299",
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_findings": [
+      "INVOICE_OUTSIDE_WINDOW"
+    ],
+    "expect_engine_skipped": true,
+    "expect_automatic_reply": false
+  },
+  {
+    "id": "duplicate_across_currencies",
+    "why": "Two invoices for the same period of the same subscription, one in euros and one in dollars. Without an exchange rate the amounts cannot be compared, so no rule concludes either way -- not even 'no duplicate' -- and a person reviews (taxonomy S10, ADR-005).",
+    "message": "Nous avons été facturés deux fois pour septembre, une fois en euros et une fois en dollars (inv_301).",
+    "customer_email": "compta@sirius-labs.fr",
+    "invoice_id": "inv_301",
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_findings": [
+      "CURRENCY_MISMATCH"
+    ],
+    "expect_engine_skipped": true,
+    "expect_automatic_reply": false
   }
 ]

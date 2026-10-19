@@ -18,6 +18,7 @@ A probabilistic component is not allowed to pick a number that moves money.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
@@ -30,6 +31,7 @@ from app.decision.base import (
     Decision,
     DecisionEngine,
     EngineTelemetry,
+    EngineUnavailable,
     RecommendedAction,
 )
 from app.domain.automated import automated_message
@@ -37,6 +39,7 @@ from app.domain.enums import RuleCode, SenderStatus, Severity
 from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
 from app.domain.money import Money
 from app.domain.rules import (
+    currency_mismatch,
     detect_duplicate_invoice,
     invoice_after_cancellation,
     proration_mismatch,
@@ -50,7 +53,14 @@ from app.observability import tracing
 from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
 from app.policies.correction import correction_for
 from app.policies.reply import AutomaticReply, automatic_reply
-from app.providers.base import BillingProvider
+from app.providers.base import BillingProvider, ProviderUnavailable
+
+log = logging.getLogger(__name__)
+
+#: Findings meaning the evidence cannot settle the dispute: a person looks,
+#: and the engine is not asked to reason over what the rules could not use
+#: (taxonomy S7, S10).
+_TO_A_PERSON = frozenset({RuleCode.CURRENCY_MISMATCH, RuleCode.INVOICE_OUTSIDE_WINDOW})
 
 #: How far back to pull invoices when assembling the context.
 LOOKBACK = timedelta(days=180)
@@ -139,7 +149,20 @@ class DisputeInvestigator:
         it observes is worse than none.
         """
         with tracing.span("invoke_workflow investigate_dispute") as current:
-            result = await self._investigate(dispute, now)
+            try:
+                result = await self._investigate(dispute, now)
+            except ProviderUnavailable as error:
+                # Nothing is decided on a partial read (taxonomy S7). Recorded
+                # here and in the trace, by category only: the exception's text
+                # may carry a URL or the platform's answer. The caller is told,
+                # and can retry.
+                log.warning(
+                    "billing platform unavailable: dispute=%s error=%s",
+                    dispute.id,
+                    type(error).__name__,
+                )
+                tracing.set_attributes(current, **{"error.type": "provider_unavailable"})
+                raise
             tracing.set_attributes(
                 current,
                 **tracing.workflow_attributes(
@@ -206,13 +229,32 @@ class DisputeInvestigator:
             trace.append(event("decision_engine_skipped"))
             return self._finish(self._short_circuit(dispute, findings, too_long), trace)
 
-        decision = await self._engine.decide(dispute, context, findings)
+        unusable = next((f for f in findings if f.code in _TO_A_PERSON), None)
+        if unusable is not None:
+            trace.append(event("decision_engine_skipped"))
+            result = self._short_circuit(
+                dispute,
+                findings,
+                unusable,
+                reason=f"Revue humaine : {unusable.code.value}. {unusable.description}",
+            )
+            return self._finish(result, trace)
+
+        try:
+            decision = await self._engine.decide(dispute, context, findings)
+        except EngineUnavailable as outage:
+            # An outage is not an abstention (taxonomy S8): the trace says the
+            # engine could not be reached, no decision event is written for
+            # an answer that never came, and no cost is invented.
+            trace.append(event("decision_engine_unavailable", reason=str(outage)))
+            decision = _escalation_after_outage(str(outage))
+            return self._finish(self._assemble(dispute, context, findings, decision), trace)
         trace.append(
             event(
                 "decision_created",
                 classification=decision.classification.value,
                 confidence=decision.confidence,
-                cost_micros=decision.telemetry.cost_micros if decision.telemetry else 0,
+                cost_micros=decision.telemetry.cost_micros if decision.telemetry else None,
             )
         )
         return self._finish(self._assemble(dispute, context, findings, decision), trace)
@@ -286,6 +328,13 @@ class DisputeInvestigator:
         payments = await self._provider.list_payments(customer.id)
 
         target = next((i for i in invoices if i.id == dispute.invoice_id), None)
+        # Not found in the window is not "does not exist" (taxonomy S7): look
+        # the reference up directly, and keep only whether it is this
+        # customer's -- nothing about another account's invoice is kept.
+        outside_window = False
+        if dispute.invoice_id and target is None:
+            found = await self._provider.find_invoice(dispute.invoice_id)
+            outside_window = found is not None and found.customer_id == customer.id
         usage = None
         if target is not None and target.subscription_id:
             usage = await self._provider.get_usage(target.subscription_id)
@@ -297,6 +346,7 @@ class DisputeInvestigator:
             payments=payments,
             usage=usage,
             target_invoice_id=target.id if target else None,
+            target_outside_window=outside_window,
         )
 
     def run_rules(self, dispute: Dispute, context: BillingContext) -> list[RuleFinding]:
@@ -320,6 +370,8 @@ class DisputeInvestigator:
 
         if dispute.invoice_id:
             missing = unknown_invoice(dispute.invoice_id, context.invoices)
+            if missing is not None and context.target_outside_window:
+                missing = _outside_window(dispute.invoice_id)
             if missing is not None:
                 findings.append(missing)
 
@@ -328,9 +380,10 @@ class DisputeInvestigator:
             return findings
 
         for finding in (
+            currency_mismatch(target, context.invoices, context.payments),
             detect_duplicate_invoice(target, context.invoices),
             *self._subscription_rules(target, context),
-            self._usage_rule(target, context),
+            *self._usage_rules(target, context),
         ):
             if finding is not None:
                 findings.append(finding)
@@ -345,15 +398,25 @@ class DisputeInvestigator:
             proration_mismatch(target, sub),
         )
 
-    def _usage_rule(self, target, context: BillingContext) -> RuleFinding | None:
-        """Compare metered usage against the quantity actually billed for it."""
+    def _usage_rules(self, target, context: BillingContext) -> tuple:
+        """Compare metered usage against the quantity billed for it, line by
+        line; a metered line with no usage record to compare it with is said,
+        so that silence is never read as "the usage is right" (taxonomy S7)."""
         usage = context.usage
-        if usage is None:
-            return None
-        line = next((line for line in target.lines if line.metric == usage.metric), None)
-        if line is None:
-            return None
-        return suspicious_usage_delta(expected=usage.quantity, billed=line.quantity)
+        metered = [line for line in target.lines if line.metric]
+        delta = None
+        unchecked: list[str] = []
+        for line in metered:
+            comparable = usage is not None and line.metric == usage.metric
+            # One usage record against one line. A metric billed on several
+            # lines would need a rule for adding them up, which nothing
+            # specifies yet: those lines are said unchecked, not guessed at.
+            alone = sum(other.metric == line.metric for other in metered) == 1
+            if comparable and alone:
+                delta = suspicious_usage_delta(expected=usage.quantity, billed=line.quantity)
+            else:
+                unchecked.append(line.metric)
+        return delta, _usage_unavailable(target.id, unchecked) if unchecked else None
 
     async def _unknown_sender(
         self, dispute: Dispute, trace: list[AuditEvent]
@@ -428,6 +491,7 @@ class DisputeInvestigator:
         findings: list[RuleFinding],
         blocking: RuleFinding,
         sender: SenderStatus = SenderStatus.KNOWN,
+        reason: str | None = None,
     ) -> InvestigationResult:
         """The model is never asked about a message a blocking rule caught:
         one that targets the system, or one that reaches for an account its
@@ -445,7 +509,7 @@ class DisputeInvestigator:
             proposed_action=ProposedAction(type="none"),
             authorization=ActionAuthorization(
                 verdict=Verdict.HUMAN_REVIEW,
-                reason=f"Constat bloquant : {blocking.code.value}.",
+                reason=reason or f"Constat bloquant : {blocking.code.value}.",
             ),
             short_circuited_by=blocking.code,
             sender=sender,
@@ -585,6 +649,42 @@ def _proposed_action(
             return ProposedAction(type="request_information"), None
         case _:
             return ProposedAction(type="none"), None
+
+
+def _outside_window(invoice_id: str) -> RuleFinding:
+    """The customer's invoice, older than the loaded window (taxonomy S7)."""
+    return RuleFinding(
+        code=RuleCode.INVOICE_OUTSIDE_WINDOW,
+        severity=Severity.MEDIUM,
+        description=(
+            f"La facture existe mais sort de la fenêtre d'analyse ({LOOKBACK.days} jours) : "
+            "rien n'a été vérifié, une personne examine."
+        ),
+        evidence={"invoice_id": invoice_id, "window_days": LOOKBACK.days},
+    )
+
+
+def _usage_unavailable(invoice_id: str, metrics: list[str]) -> RuleFinding:
+    """Metered lines with no usage record to compare them with (taxonomy S7)."""
+    return RuleFinding(
+        code=RuleCode.USAGE_UNAVAILABLE,
+        severity=Severity.LOW,
+        description="Usage mesuré indisponible : des lignes à l'usage n'ont pas pu être vérifiées.",
+        evidence={"invoice_id": invoice_id, "metrics": sorted(set(metrics))},
+    )
+
+
+def _escalation_after_outage(reason: str) -> Decision:
+    """What an unreachable engine yields: a person, and no cost invented."""
+    return Decision(
+        classification=Classification.UNKNOWN,
+        confidence=0.0,
+        confidence_kind="self_reported",
+        recommended_action=RecommendedAction.ESCALATE,
+        explanation=(
+            f"Moteur de décision indisponible ({reason}) : le litige part en revue humaine."
+        ),
+    )
 
 
 def _message_too_long(message: str) -> RuleFinding | None:

@@ -34,6 +34,7 @@ from app.decision.base import (
     Classification,
     Decision,
     EngineTelemetry,
+    EngineUnavailable,
     RecommendedAction,
 )
 from app.domain.models import BillingContext, Dispute, RuleFinding
@@ -56,6 +57,30 @@ from app.observability import tracing
 #: 0.60 and 0.62, where the prompt already asked it to withdraw; both of those
 #: answers were wrong.
 PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v3.md"
+
+#: HTTP statuses that mean "try later", not "your request is wrong":
+#: a timeout, a conflict, rate limiting, and the 5xx range of a failing or
+#: overloaded service. They are an outage (taxonomy S8). Any other status --
+#: a bad request, a missing key -- is a configuration error and fails the
+#: run visibly.
+_TRANSIENT = frozenset({408, 409, 429}) | frozenset(range(500, 600))
+
+try:  # the SDK is an optional dependency (the `claude` extra)
+    from anthropic import APIConnectionError as _Transport
+    from anthropic import APIStatusError as _Status
+except ImportError:  # pragma: no cover -- without the SDK there is no client
+    _Transport = _Status = None
+
+
+def _outage(error: Exception) -> str | None:
+    """Why `error` is an outage, or None when it is not one. Only the SDK's
+    own exception types count: a lookalike from elsewhere stays an error."""
+    if _Transport is not None and isinstance(error, _Transport):
+        return type(error).__name__  # timeouts included: a subclass
+    is_status = _Status is not None and isinstance(error, _Status)
+    if is_status and error.status_code in _TRANSIENT:
+        return f"HTTP {error.status_code}"
+    return None
 PROMPT_VERSION = "decision_v3"
 
 DEFAULT_MODEL = "claude-opus-5"
@@ -227,7 +252,8 @@ class ClaudeDecisionEngine:
                 max_tokens=self._max_tokens,
             ),
         ) as current:
-            response = await self._client.messages.create(
+            response = await self._call(
+                self._client.messages.create,
                 model=self.model,
                 max_tokens=self._max_tokens,
                 system=self._system,
@@ -289,6 +315,17 @@ class ClaudeDecisionEngine:
             )
 
     # -- helpers -----------------------------------------------------------
+
+    @staticmethod
+    async def _call(create, **request):
+        """The API call, with outages told apart from errors (taxonomy S8)."""
+        try:
+            return await create(**request)
+        except Exception as error:
+            reason = _outage(error)
+            if reason is None:
+                raise
+            raise EngineUnavailable(reason) from error
 
     def _parse(self, response) -> _ModelVerdict | None:
         """Validate the response, or return None to send the run to a human.

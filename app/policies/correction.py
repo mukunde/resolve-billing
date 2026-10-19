@@ -63,6 +63,8 @@ def correction_for(
     """The amount of a `credit_note` or `refund` on `invoice`, if any."""
     if invoice.status in NOT_CORRECTABLE:
         return Correction(None, NOT_CORRECTABLE[invoice.status])
+    if any(f.code is RuleCode.CURRENCY_MISMATCH for f in findings):
+        return Correction(None, "montants en devises différentes")
     if invoice.total.amount_minor <= 0:
         return Correction(None, "montant de facture nul ou négatif")
 

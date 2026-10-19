@@ -319,5 +319,85 @@
         "period_end": "2026-10-01T00:00:00"
       }
     ]
+  },
+  {
+    "id": "inv_299",
+    "customer_id": "cus_sirius",
+    "subscription_id": "sub_300",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-02-01T09:00:00",
+    "_comment": "Facture de fevrier : hors de la fenetre d'analyse de 180 jours (taxonomie S7).",
+    "lines": [
+      {
+        "label": "Abonnement Pro - fevrier 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-02-01T00:00:00",
+        "period_end": "2026-03-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_300",
+    "customer_id": "cus_sirius",
+    "subscription_id": "sub_300",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_301",
+    "customer_id": "cus_sirius",
+    "subscription_id": "sub_300",
+    "amount": "49.00",
+    "currency": "USD",
+    "state": "open",
+    "issued_at": "2026-09-02T09:00:00",
+    "_comment": "Meme periode que inv_300, en dollars : comparaison impossible sans taux (taxonomie S10).",
+    "lines": [
+      {
+        "label": "Pro subscription - September 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_310",
+    "customer_id": "cus_meridien",
+    "subscription_id": "sub_310",
+    "amount": "12.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Ligne a l'usage sans releve d'usage correspondant (taxonomie S7).",
+    "lines": [
+      {
+        "label": "Appels API - 1200 appels",
+        "metric": "api_calls",
+        "quantity": "1200",
+        "unit_amount": "0.01",
+        "amount": "12.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
   }
 ]

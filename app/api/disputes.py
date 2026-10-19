@@ -25,6 +25,7 @@ from app.application.investigate_dispute import (
 )
 from app.domain.automated import header_problem
 from app.domain.models import Dispute
+from app.providers.base import ProviderUnavailable
 
 router = APIRouter(prefix="/api/v1/disputes", tags=["disputes"])
 
@@ -137,5 +138,12 @@ async def investigate(
         invoice_id=payload.invoice_id,
         headers=payload.header_pairs(),
     )
-    result = await investigator.investigate(dispute)
+    try:
+        result = await investigator.investigate(dispute)
+    except ProviderUnavailable as error:
+        # Nothing was decided (taxonomy S7). The workflow's error branch mails
+        # a person, and the request can be sent again as it is.
+        raise HTTPException(
+            503, "billing platform unavailable: nothing was decided, retry later"
+        ) from error
     return InvestigateResponse.of(result)

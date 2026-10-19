@@ -30,6 +30,17 @@ class ProviderRejected(BillingDomainError):
     """
 
 
+class ProviderUnavailable(Exception):  # noqa: N818 -- a state, not a programming error
+    """A read could not be completed: the platform timed out, failed or is
+    down (taxonomy S7).
+
+    Adapters raise it for reads only, once their own retries are spent. The
+    investigation does not guess around a missing read: it stops, decides
+    nothing, and the caller is told so -- an empty answer would read as "this
+    customer has no invoices".
+    """
+
+
 class ProviderAction(BaseModel):
     """The outcome of a write on the billing platform.
 

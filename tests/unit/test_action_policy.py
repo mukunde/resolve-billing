@@ -222,7 +222,68 @@ class TestAutonomyThresholds:
             decision(confidence=0.60, confidence_kind="calibrated"), [], SMALL
         )
 
-        assert auth.verdict is Verdict.REQUIRES_APPROVAL
+        # Below the confidence floor, not even an approval is proposed: a
+        # person reviews the case itself (taxonomy S8).
+        assert auth.verdict is Verdict.HUMAN_REVIEW
+        assert auth.requires_human_approval
+
+
+class TestConfidenceFloor:
+    """Taxonomy S8: below 0.70 a classification is not used, whatever it is."""
+
+    @pytest.mark.parametrize(
+        "action",
+        [RecommendedAction.PROPOSE_CREDIT_NOTE, RecommendedAction.EXPLAIN_INVOICE],
+    )
+    def test_below_the_floor_a_person_reviews(self, policy, action):
+        auth = policy.evaluate(decision(action=action, confidence=0.69), [], NINETY_NINE)
+        assert auth.verdict is Verdict.HUMAN_REVIEW
+        assert "0.70" in auth.reason
+
+    def test_at_the_floor_the_classification_is_used(self, policy):
+        auth = policy.evaluate(
+            decision(action=RecommendedAction.EXPLAIN_INVOICE, confidence=0.70), [], None
+        )
+        assert auth.verdict is Verdict.AUTO
+
+    def test_a_blocking_finding_still_comes_first(self, policy):
+        auth = policy.evaluate(decision(confidence=0.10), [injection_finding()], NINETY_NINE)
+        assert "Constat bloquant" in auth.reason
+
+
+class TestUsageNobodyChecked:
+    """Taxonomy S7: "the invoice is correct" cannot rest on unchecked usage."""
+
+    def usage_unavailable(self):
+        return RuleFinding(
+            code=RuleCode.USAGE_UNAVAILABLE, severity=Severity.LOW, description="", evidence={}
+        )
+
+    def test_a_valid_invoice_with_unchecked_usage_goes_to_a_person(self, policy):
+        auth = policy.evaluate(
+            decision(Classification.VALID_INVOICE, RecommendedAction.EXPLAIN_INVOICE),
+            [self.usage_unavailable()],
+        )
+        assert auth.verdict is Verdict.HUMAN_REVIEW
+
+    def test_valid_invoice_with_money_and_unchecked_usage_goes_to_a_person(self, policy):
+        """An engine that calls the invoice correct and proposes money anyway
+        does not reach the money branch."""
+        auth = policy.evaluate(
+            decision(Classification.VALID_INVOICE, RecommendedAction.PROPOSE_CREDIT_NOTE),
+            [self.usage_unavailable()],
+            NINETY_NINE,
+        )
+        assert auth.verdict is Verdict.HUMAN_REVIEW
+
+    def test_other_classifications_are_unchanged(self, policy):
+        auth = policy.evaluate(
+            decision(
+                Classification.INSUFFICIENT_INFORMATION, RecommendedAction.REQUEST_INFORMATION
+            ),
+            [self.usage_unavailable()],
+        )
+        assert auth.verdict is Verdict.AUTO
 
 
 class TestWithheld:
