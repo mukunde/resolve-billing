@@ -209,20 +209,21 @@ ports = [
 pw, pgap = 189, 13
 for i, (name, built, planned) in enumerate(ports):
     x = 45 + i * (pw + pgap)
+    # A port with no implementation does not exist yet either.
+    exists = bool(built)
+    dash = "" if exists else ' stroke-dasharray="5 4"'
+    colour = TEAL_D if exists else LANE
     add(
         f'<rect x="{x}" y="{Y5}" width="{pw}" height="132" rx="9" fill="#ffffff" '
-        f'stroke="{TEAL_D}" stroke-width="1.5"/>'
+        f'stroke="{colour}" stroke-width="1.5"{dash}/>'
     )
-    add(f'<text class="pt" x="{x + pw / 2}" y="{Y5 + 26}" fill="{TEAL_D}">{escape(name)}</text>')
+    add(f'<text class="pt" x="{x + pw / 2}" y="{Y5 + 26}" fill="{colour}">{escape(name)}</text>')
+    label = "built" if exists else "the port itself is planned"
     add(
-        f'<text class="tiny l" x="{x + 14}" y="{Y5 + 48}" fill="{MUTED}">built</text>'
+        f'<text class="tiny l" x="{x + 14}" y="{Y5 + 48}" '
+        f'fill="{MUTED if exists else LANE}">{label}</text>'
     )
     cx = x + 14
-    if not built:
-        add(
-            f'<text class="tiny l" x="{cx}" y="{Y5 + 70}" fill="{LANE}">'
-            "none yet</text>"
-        )
     for label in built:
         w = 11 + len(label) * 7.0
         add(
@@ -288,9 +289,10 @@ ALT = (
     "rules, asks a decision engine only when the rules cannot settle it, and an "
     "action policy decides whether a person must approve. A prompt injection "
     "bypasses the engine entirely. Billing providers, decision engines and usage "
-    "reports sit behind ports; the support tool and bank ports, and every adapter "
-    "not yet built, are dashed as planned. A financial action carries an amount "
-    "only when the code can compute it; otherwise a person reviews."
+    "reports sit behind ports; the support tool and bank ports, which do not "
+    "exist yet, and every adapter not yet built, are dashed as planned. A "
+    "financial action carries an amount only when the code can compute it; "
+    "otherwise a person reviews."
 )
 
 style = """

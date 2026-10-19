@@ -88,8 +88,9 @@ a command rather than a claim:
 python -m evals.rescore evals/results/claude-decision_v2.json
 ```
 
-It re-applies today's expectations to that run and names the two cases whose
-verdict changed. An evaluation you never argue with is a second opinion you
+It re-applies today's expectations to that run and names the cases whose
+verdict changed: the two cancellation cases then, and since 2026-10-19 the
+proration case too, now expected to carry no amount. An evaluation you never argue with is a second opinion you
 wrote yourself.
 
 **Claude's two real errors were its two least confident answers.** 0.60 and
@@ -264,9 +265,10 @@ evaluation set before it lands.
 invoice, type, amount, currency — never generated. A retry after a timeout
 finds the original credit note instead of issuing a second one.
 
-**Reads retry, the writes do not.** Each mutating provider call, credit note
+**Writes are never retried blind.** Each mutating provider call, credit note
 or refund, carries its key rather than relying on the caller being careful,
-and the one that runs is the one the human approved.
+and the one that runs is the one the human approved. Reads are declared safe
+to retry by the port; no adapter retries them yet.
 
 **Immutable run rows.** Approval and execution are a separate lifecycle in
 their own table, joined on `run_id`. Amending a run in place would erase the

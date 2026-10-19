@@ -6,7 +6,7 @@ says what the system is and where it stands; this page is the manual.
 ## Running locally
 
 ```bash
-pip install -e ".[api,dev]"
+pip install -e ".[api,dev,mcp,otel]"   # what CI installs; add `claude` for the real engine
 pytest
 ```
 
@@ -40,7 +40,11 @@ curl -X POST http://localhost:8000/api/v1/disputes/investigate \
 }
 ```
 
-Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY` to use the real engine.
+The `curl` above reads `RESOLVE_SERVICE_KEY` from your shell: load `.env`
+there too (`set -a; . ./.env; set +a`) or paste the key.
+
+Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY`, and install the
+`claude` extra, to use the real engine.
 The default is the mock, so tests and demos cost nothing.
 
 ### What CI actually enforces
@@ -187,8 +191,9 @@ python -m app.mcp.server          # stdio
 ```
 
 Four tools — `find_customer`, `get_invoice`, `get_billing_context`,
-`run_deterministic_checks` — every one annotated `read_only_hint`, so a client
-sees the guarantee in the protocol rather than in a README.
+`run_deterministic_checks` — every one annotated `read_only_hint`. That is
+an annotation a client can show, not a guarantee the protocol enforces: what
+enforces it is the paragraph below.
 
 **Nothing there can move money.** The provider's mutating methods, a credit
 note and a refund, are not reachable from the module, and that is asserted against its source rather than
@@ -249,10 +254,13 @@ python -m sqlite3 audit.db "SELECT action_id, state, approved_by FROM pending_ac
 
 See [n8n/README.md](../n8n/README.md) for the workflow.
 
-n8n triggers the run and notifies the approver. It holds no state. By the time
-its Wait node suspends, the action is already `pending_approval` in the
-database with a derived idempotency key. n8n restarting, being upgraded or
-disappearing loses nothing — which is the reason the state is not in it.
+n8n triggers the run and notifies the approver. It holds no financial state.
+By the time its Wait node suspends, the action is already `pending_approval`
+in the database with a derived idempotency key. n8n restarting, being
+upgraded or disappearing loses no decision: the pending action, its approval
+and its execution live in the database, and the review and run pages work
+without n8n. What it can lose is its own workflow state -- a waiting
+execution -- which is why that state is not where the money is decided.
 
 The approval happens on a page the API serves, not in an n8n form. That is
 what finance approval systems do, for three reasons: identity (a controller

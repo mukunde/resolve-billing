@@ -9,8 +9,8 @@ records, checks them with deterministic rules, asks a language model only what
 code cannot settle -- what the customer is actually disputing -- and prepares
 the case for a human: findings with their evidence, a classification, and a
 correction priced by code when the code can price it. Nothing moves money
-without an authenticated person approving it, and every run leaves an audit
-trail.
+without an authenticated person approving it, and every run that completes is
+recorded in an audit trail.
 
 [![evals](https://github.com/mukunde/resolve-billing/actions/workflows/evals.yml/badge.svg)](https://github.com/mukunde/resolve-billing/actions/workflows/evals.yml)
 
@@ -51,8 +51,10 @@ A dispute that needs no money -- a correct invoice to explain, a missing
 invoice reference to ask for -- gets a reply without anyone deciding
 anything; a dispute that needs money reaches a person with the findings, the
 evidence and the proposed correction already assembled. People also step in
-whenever the model is unsure, the message looks like an attack, or a component
-fails.
+when the message looks like an attack, the sender cannot be verified, the
+model says it cannot classify, or the message is too long to send it.
+Sending low-confidence answers and engine outages to a person is decided and
+not built yet.
 
 What is measured so far: on the original twelve cases, one model call cost
 **$0.021** on average, with a **median 4.7 s**. What is not measured yet, and
@@ -88,8 +90,10 @@ dispute → billing context → deterministic rules → decision engine
    money is not shown as a proposal.
 6. **A person approves** on a page the API serves, signed in; the approval
    is bound to what they were shown, and expires.
-7. **Execution happens once**, whatever the network does, and the platform
-   remains the authority on what was written.
+7. **Execution is designed to happen once**: the action is claimed
+   atomically, written with an idempotency key, and an uncertain outcome is
+   reconciled with the platform rather than retried blind -- all of it tested
+   against the fake provider, not yet a real one.
 
 The classification set is the billing vocabulary, and closed:
 
@@ -134,14 +138,14 @@ cases ([evaluation](#evaluation)).
 
 ## Architecture
 
-![Architecture: a dispute arrives through n8n, the application loads the billing context, runs deterministic rules, asks a decision engine only when needed, prices a correction in code when it can, and the action policy decides whether a person must approve. Ports for billing, decisions, support tool, bank and usage, with planned adapters dashed.](docs/architecture.svg)
+![Architecture: a dispute arrives through n8n, the application loads the billing context, runs deterministic rules, asks a decision engine only when needed, prices a correction in code when it can, and the action policy decides whether a person must approve. Ports for billing, decisions and usage exist; the support tool and bank ports, and every adapter not built, are dashed as planned.](docs/architecture.svg)
 
-<sub>Adapters that do not exist are drawn as not existing: everything dashed is
-planned, not built.</sub>
+<sub>What does not exist is drawn as not existing: every dashed port and
+adapter is planned, not built.</sub>
 
 The application depends on contracts, not on vendors. `investigate_dispute.py`
-imports `BillingProvider`, never `stripe`, and `app/api/deps.py` is the only
-module that names a concrete implementation. Swapping the billing platform or
+imports `BillingProvider`, never `stripe`, and in the HTTP application
+`app/api/deps.py` is the only module that names a concrete implementation. Swapping the billing platform or
 the model is an adapter, not a rewrite.
 
 The target integration -- the support tool owns the case, a durable workflow
@@ -158,7 +162,7 @@ Each is a decision with a record, and each record says what would change it.
 |---|---|---|
 | Billing-provider agnostic | Platforms map onto one domain; the rules never see a vendor's vocabulary | [ADR-001](docs/adr/001-provider-agnostic-billing.md) |
 | Decision-engine agnostic | The model can change for residency, contract, cost or latency, not only quality | [ADR-002](docs/adr/002-decision-engine-agnostic.md) |
-| Deterministic before probabilistic | What code can settle never reaches a model; the audit records what each call cost | [ADR-003](docs/adr/003-deterministic-before-ai.md) |
+| Deterministic before probabilistic | What code can settle is settled before the model; the model receives the findings and must not redo them; the audit records what each call cost | [ADR-003](docs/adr/003-deterministic-before-ai.md) |
 | A person approves every financial action | The engine recommends, the policy authorises; a wrong engine cannot widen what is allowed | [ADR-004](docs/adr/004-human-approval-financial-actions.md) |
 | Money as integer minor units | One rounding function, per-currency exponents, floats refused | [ADR-005](docs/adr/005-money-as-minor-units.md) |
 | No agent framework | No loop, no tools, a closed output: a graph orchestrator would add no node | [ADR-006](docs/adr/006-no-agent-framework.md) |
@@ -227,8 +231,11 @@ on the system could read it; it has joined the development set, and a new one
 is being written in a separate private repository, with its own data. Until it
 is adjudicated and frozen there is no blind measurement.
 
-**The first measurement**, on the original twelve cases, 2026-09-21, as
-scored then:
+**The first measurement**, on the original twelve cases, 2026-09-21. The mock
+and v3 columns are as scored then; the v2 column is that run rescored against
+the case set corrected the same day (its raw score was 8/12, and the
+[engineering notes](docs/engineering-notes.md#how-the-evaluation-was-read)
+say why):
 
 | | mock | claude, prompt v2 | claude, prompt v3 |
 |---|---|---|---|
@@ -305,9 +312,18 @@ On the way, in order:
 ## Run it
 
 ```bash
-pip install -e ".[api,dev]"
+pip install -e ".[api,dev,mcp,otel]"
 pytest
 python -m evals.runner --engine mock
+```
+
+A case file kept outside this repository brings its own data through a
+second fixture directory, and `--check-only` checks the plumbing without
+calling an engine, printing totals only. It checks neither the expected
+decisions nor the investigation's 180-day lookback.
+
+```bash
+RESOLVE_EXTRA_FIXTURES_DIR=../holdout/fixtures python -m evals.runner --check-only --cases ../holdout/cases.json
 ```
 
 The API is closed by default and answers 503 until callers are configured
