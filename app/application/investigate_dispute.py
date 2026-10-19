@@ -47,6 +47,7 @@ from app.domain.rules import (
 )
 from app.observability import tracing
 from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
+from app.policies.correction import correction_for
 from app.providers.base import BillingProvider
 
 #: How far back to pull invoices when assembling the context.
@@ -459,7 +460,16 @@ class DisputeInvestigator:
         findings: list[RuleFinding],
         decision: Decision,
     ) -> InvestigationResult:
-        action = _proposed_action(decision, context)
+        action, withheld = _proposed_action(decision, context, findings)
+        authorization = self._policy.evaluate(decision, findings, action.amount, withheld)
+        if action.type in {"credit_note", "refund"} and authorization.verdict not in {
+            Verdict.REQUIRES_APPROVAL,
+            Verdict.AUTO,
+        }:
+            # Refused money is not shown as a proposal (decision 31, S12): what
+            # the result offers matches what the policy allows. What the engine
+            # asked for stays in `recommended_action`, the refusal in the reason.
+            action = ProposedAction(type="none")
         return InvestigationResult(
             run_id=_new_run_id(),
             dispute=dispute,
@@ -472,33 +482,38 @@ class DisputeInvestigator:
             explanation=decision.explanation or deterministic_explanation(findings),
             proposed_action=action,
             recommended_action=decision.recommended_action,
-            authorization=self._policy.evaluate(decision, findings, action.amount),
+            authorization=authorization,
             telemetry=decision.telemetry,
         )
 
 
-def _proposed_action(decision: Decision, context: BillingContext) -> ProposedAction:
+def _proposed_action(
+    decision: Decision, context: BillingContext, findings: list[RuleFinding]
+) -> tuple[ProposedAction, str | None]:
     """Turn a recommended *kind* of action into a concrete one.
 
-    The amount is read off the disputed invoice. No model picks it.
+    The amount is computed in code from the records, never picked by a model,
+    and only when the code can stand behind it (`correction_for`). The second
+    element says why a financial action got no amount.
     """
     match decision.recommended_action:
         case RecommendedAction.PROPOSE_CREDIT_NOTE | RecommendedAction.PROPOSE_REFUND:
             invoice = context.target_invoice
             if invoice is None:
-                return ProposedAction(type="none")
+                return ProposedAction(type="none"), None
             kind = (
                 "credit_note"
                 if decision.recommended_action is RecommendedAction.PROPOSE_CREDIT_NOTE
                 else "refund"
             )
-            return ProposedAction(type=kind, amount=invoice.total)
+            correction = correction_for(kind, invoice, findings, context.payments)
+            return ProposedAction(type=kind, amount=correction.amount), correction.withheld
         case RecommendedAction.EXPLAIN_INVOICE:
-            return ProposedAction(type="reply")
+            return ProposedAction(type="reply"), None
         case RecommendedAction.REQUEST_INFORMATION:
-            return ProposedAction(type="request_information")
+            return ProposedAction(type="request_information"), None
         case _:
-            return ProposedAction(type="none")
+            return ProposedAction(type="none"), None
 
 
 def _message_too_long(message: str) -> RuleFinding | None:

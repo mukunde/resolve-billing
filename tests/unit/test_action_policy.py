@@ -230,9 +230,11 @@ class TestIsolation:
         """Checked by signature: evaluate() has no way to see it.
 
         Nothing a customer writes should be able to widen what the system is
-        permitted to do to their account.
+        permitted to do to their account. `withheld` is no exception: it is
+        the reason `correction_for` gives, computed from the records, and it
+        only ever words a refusal.
         """
         import inspect
 
         params = set(inspect.signature(ActionPolicy.evaluate).parameters)
-        assert params == {"self", "decision", "findings", "amount"}
+        assert params == {"self", "decision", "findings", "amount", "withheld"}

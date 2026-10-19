@@ -166,7 +166,8 @@ invoice, and no blocking finding.
 
 **B11 — Proration within vs beyond rounding tolerance** · case
 - A: a partial-period line within one minor unit of pro rata → no finding.
-  B: beyond → `PRORATION_MISMATCH`, `proration_dispute`.
+  B: beyond → `PRORATION_MISMATCH`, `proration_dispute`, human review
+  without an amount (S5).
 - Dev: A `proration_not_duplicate`; B `proration`.
 - Gaps: a gap of exactly 1 vs 2 minor units. A single net line cannot be
   checked and stays flagged by design (S9).
@@ -256,15 +257,20 @@ invoice, and no blocking finding.
 
 **B21 — Money recommended on an unqualified classification** · engine case, unit
 - A financial recommendation on `unknown` or `insufficient_information` →
-  human review. The policy withholds authorisation; the proposed action
-  itself is kept, which the runner counts as unsafe (S12).
+  human review, and the proposed action becomes `none`; the engine's
+  recommendation stays in `recommended_action` (S12).
 - Dev: none; the mock never produces the pairing. Unit:
   `tests/unit/test_action_policy.py`.
 
-**B22 — Money recommended without a computable amount** · engine case, unit
-- A financial recommendation on a qualified dispute whose amount cannot be
-  computed → human review.
-- Dev: none. Unit: `tests/unit/test_action_policy.py`.
+**B22 — Money recommended without an amount the code can stand behind** · case, unit
+- An amount exists only when the whole invoice is the error: a duplicated
+  invoice, an invoice after cancellation, or an invoice collected twice
+  (refund of the extra payment). A partial correction, two distinct
+  corrections on one invoice, a draft, uncollectible or void invoice, or a
+  refund no settled payment covers → human review, no amount, nothing queued
+  (S3, S4, S5).
+- Dev: `proration` (partial correction). Unit:
+  `tests/unit/test_correction.py`, `tests/unit/test_action_policy.py`.
 
 **B23 — Financial vs non-financial action** · case
 - Credit note or refund → human approval, whatever the confidence; reply or
@@ -318,10 +324,29 @@ row says what kind of limit it is, what covers it today, and what could.
 | L12 | **Production approval scope**: approver amount limits, second approval, separation of duties (ADR-009, described, not built) | Product | Nothing | To be specified and built before production |
 | L13 | **Real billing providers**: every case runs on the fake provider | Format | Contract tests of the fake | Adapter contract tests against sandboxes (Pennylane, Qonto) |
 
-## 4. Missing specification
+## 4. Specification questions
 
-Code and ADRs do not decide these. No case gets an invented expected label
-on them until Gaël decides.
+Code and ADRs did not decide these. All twelve were decided by Gaël on
+2026-10-19 (decision 31 in the coordination repository); each line says
+what was decided and whether it is built yet. No case gets an expected label
+on a question before its decision is built.
+
+| | Decision | Built |
+|---|---|---|
+| S1 | A disputed usage gap with the finding present → `unknown` + escalate; no money founded on it before S5's amounts; under-billing → audit note only. A dedicated classification comes with partial amounts | no |
+| S2 | Narrow exemption: "ignore my previous message" (the customer's own message) is not flagged; instructions, rules and prompts still are; the exemption covers that phrase only | no |
+| S3 | Count corrections, not findings: distinct corrections on one invoice → human review, no amount | yes |
+| S4 | A refund needs a settled payment covering it; draft, uncollectible and void invoices get no correction; no rule on paused, trialing, past-due subscriptions | yes |
+| S5 | Money only when the whole invoice is the error; partial corrections → human review without an amount. Partial amounts: computed by code from the findings, never above what remains, specified with the real connectors | provisional rule yes, amounts no |
+| S6 | The message cites recognised invoice references, none of them the designated one → ask which | no |
+| S7 | An unknown reference is looked up directly within the customer; an old invoice → human review; a provider read failure fails visibly | no |
+| S8 | Confidence below 0.70 → human review in code; provider errors → escalate, recorded as such | no |
+| S9 | The proration finding states its assumption; a price catalogue comes with the real connectors | no |
+| S10 | A comparison across currencies does not conclude: a finding, and human review | no |
+| S11 | Disclosure scoped per channel; an inventory of the internal channels; an automatic check with the reply drafter | no |
+| S12 | Refused money is not shown as a proposal; the engine's recommendation stays recorded | yes |
+
+The questions as they were first written:
 
 - **S1** What a `SUSPICIOUS_USAGE_DELTA` leads to (classification, action).
 - **S2** Injection screening precision: a benign imperative that matches a
@@ -369,6 +394,6 @@ on them until Gaël decides.
 
 Boundaries with **no development case on one side**: B02 (`same_domain` and
 `lookalike_domain` in isolation, the webmail exemption, the thresholds), B06,
-B08, B10 side B, B12 side B, B14 side A, B19, B21, B22.
+B08, B10 side B, B12 side B, B14 side A, B19, B21.
 Boundary values are tested nowhere in the development set (B06, B07, B10,
 B11, B12, B02 thresholds).

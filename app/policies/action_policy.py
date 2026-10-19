@@ -106,7 +106,9 @@ class ActionPolicy:
         decision: Decision,
         findings: list[RuleFinding],
         amount: Money | None = None,
+        withheld: str | None = None,
     ) -> ActionAuthorization:
+        """`withheld` says why no amount could be computed, when none was."""
         # 1. A blocking finding outranks everything, including a confident
         #    engine and a real duplicate sitting right there in the evidence.
         blocking = next((f for f in findings if f.code in BLOCKING_FINDINGS), None)
@@ -127,7 +129,7 @@ class ActionPolicy:
                         f"qualifié ({decision.classification.value})."
                     ),
                 )
-            return self._financial(decision, amount)
+            return self._financial(decision, amount, withheld)
 
         # 3. An engine that asks for a human gets one, whatever it classified.
         #    Read off the action rather than inferred from the classification:
@@ -161,11 +163,14 @@ class ActionPolicy:
             reason="Action non financière, sans effet sur le compte du client.",
         )
 
-    def _financial(self, decision: Decision, amount: Money | None) -> ActionAuthorization:
+    def _financial(
+        self, decision: Decision, amount: Money | None, withheld: str | None = None
+    ) -> ActionAuthorization:
         if amount is None:
+            reason = "Action financière recommandée sans montant calculable"
             return ActionAuthorization(
                 verdict=Verdict.HUMAN_REVIEW,
-                reason="Action financière recommandée sans montant calculable.",
+                reason=f"{reason} : {withheld}." if withheld else f"{reason}.",
             )
 
         would_qualify = (
