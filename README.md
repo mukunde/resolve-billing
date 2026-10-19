@@ -51,7 +51,8 @@ A dispute that needs no money -- a correct invoice to explain, a missing
 invoice reference to ask for -- gets a reply without anyone deciding
 anything; a dispute that needs money reaches a person with the findings, the
 evidence and the proposed correction already assembled. People also step in
-when the message looks like an attack, the sender cannot be verified, the
+when the message looks like an attack, the sender is suspected of
+impersonating a customer, the
 model says it cannot classify, or the message is too long to send it.
 Sending low-confidence answers and engine outages to a person is decided and
 not built yet.
