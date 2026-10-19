@@ -615,6 +615,8 @@ class DisputeInvestigator:
             event("rule_evaluated", code=f.code.value, severity=f.severity.value)
             for f in findings
         )
+        if injection is not None:
+            trace.append(event("injection_suspected", matched=injection.evidence.get("categories")))
         trace.append(event("decision_engine_skipped"))
         return self._short_circuit(
             dispute,

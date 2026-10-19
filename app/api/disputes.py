@@ -127,7 +127,7 @@ async def investigate(
     _orchestrator: Service,
     investigator: Annotated[DisputeInvestigator, Depends(get_investigator)],
 ) -> InvestigateResponse:
-    if not payload.customer_email:
+    if not (payload.customer_email or "").strip():
         # Who wrote is the investigation's first question; a customer id is
         # only a claim to check against the answer (D9).
         raise HTTPException(422, "a dispute must name its sender's address")
