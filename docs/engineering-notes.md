@@ -106,7 +106,7 @@ below 0.70 an instruction rather than a preference. Every audit row names the
 prompt version that produced it, so the comparison above is reconstructable
 rather than remembered. After v3, nothing below 0.70 was returned at all.
 
-**Thirty-three cases is not calibration either, and none of this opens anything.**
+**Thirty-four cases is not calibration either, and none of this opens anything.**
 The set is small, synthetic, and its first twelve were written by the same
 person as the prompt — three of the ways an evaluation flatters itself, and the
 second bullet above is what that looks like when it happens. `confidence_kind`
@@ -245,6 +245,15 @@ once they are fixed.
   sender and is required; a customer id is a claim, and a claim it does not
   support is an identity conflict: a person checks, the claimed account is
   not even loaded. `tests/integration/test_identity.py`.
+- **D14 -- a rule that could not run said nothing, and silence read as
+  "no anomaly"** (2026-10-19, bug record `.specify/bugs/d14-silent-rules/`).
+  An invoice whose lines carry no period was never a duplicate; a
+  subscription missing from the context skipped the cancellation and
+  proration checks without a word. Each check now states when it applies
+  and what it needs; one that applies but cannot conclude yields
+  `NOT_EVALUABLE`, and -- the maintainer's option (a) -- any such uncertainty
+  blocks any correction and sends "the invoice is correct" to a person.
+  `TestChecksNotEvaluable` in `tests/unit/test_rules.py`.
 - **D11 -- an automatic reply was authorised for robots and strangers**
   (2026-10-19, bug record `.specify/bugs/d11-no-automatic-reply/`). "No
   approval needed" was read as "may answer automatically". Nothing was sent
@@ -268,8 +277,6 @@ evaluation set before it lands.
 
 - **D10** -- mask the dispute message itself before the engine call; today
   only the billing context is pseudonymised.
-- **D14** -- give each rule its preconditions, and a `NOT_EVALUABLE`
-  outcome when they do not hold.
 
 ---
 

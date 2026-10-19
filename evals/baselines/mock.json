@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "ce2c508daacfe2ca",
+  "cases_sha256": "8a29d55f0634e21e",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -294,6 +294,15 @@
     "claimed_account_of_another_customer": {
       "classification": true,
       "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true
+    },
+    "duplicate_check_not_evaluable": {
+      "classification": false,
+      "action": false,
       "approval": true,
       "findings": true,
       "skip": true,

@@ -331,3 +331,14 @@ class TestOverBilledUsage:
         )
         assert auth.verdict is Verdict.HUMAN_REVIEW
         assert "dépasse" in auth.reason
+
+
+def test_a_valid_invoice_cannot_rest_on_checks_that_could_not_conclude(policy):
+    unsure = RuleFinding(
+        code=RuleCode.NOT_EVALUABLE, severity=Severity.LOW, description="", evidence={}
+    )
+    auth = policy.evaluate(
+        decision(Classification.VALID_INVOICE, RecommendedAction.EXPLAIN_INVOICE), [unsure]
+    )
+    assert auth.verdict is Verdict.HUMAN_REVIEW
+    assert "pas pu conclure" in auth.reason

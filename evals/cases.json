@@ -476,5 +476,19 @@
     "expect_engine_skipped": true,
     "expect_sender": "suspected_impersonation",
     "expect_automatic_reply": false
+  },
+  {
+    "id": "duplicate_check_not_evaluable",
+    "why": "Two invoices of the same total on the same subscription, whose lines carry no period: whether they overlap cannot be known, so the duplicate check cannot conclude. Its silence must not read as 'not a duplicate': no correction is proposed, the invoice is not called correct, and a person reviews (D14).",
+    "message": "Bonjour, nous avons été facturés deux fois pour l'abonnement Studio de septembre (inv_400 et inv_401).",
+    "customer_email": "compta@lumen-studio.fr",
+    "invoice_id": "inv_401",
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_findings": [
+      "NOT_EVALUABLE"
+    ],
+    "expect_automatic_reply": false
   }
 ]

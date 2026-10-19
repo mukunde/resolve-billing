@@ -130,5 +130,21 @@
     "currency": "EUR",
     "state": "succeeded",
     "received_at": "2026-10-01T09:00:00"
+  },
+  {
+    "id": "pay_400",
+    "invoice_id": "inv_400",
+    "amount": "39.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T09:00:00"
+  },
+  {
+    "id": "pay_401",
+    "invoice_id": "inv_401",
+    "amount": "39.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-04T09:00:00"
   }
 ]

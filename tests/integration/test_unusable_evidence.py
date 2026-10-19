@@ -341,3 +341,68 @@ class TestUnderBillingNeverMovesAnything:
         )
         assert result.proposed_action.type == "none"
         assert result.action_id is None
+
+
+class TestSubscriptionMissing:
+    """D14: the provider does not return the invoice's subscription."""
+
+    def test_the_subscription_checks_say_they_could_not_run(self):
+        class Provider(FakeBillingProvider):
+            async def list_subscriptions(self, customer_id):
+                return []
+
+        import asyncio
+
+        dispute = Dispute(
+            id="dsp",
+            customer_message="J'ai résilié, pourquoi cette facture ?",
+            customer_email="david@bordeaux-retail.fr",
+            invoice_id="inv_030",
+        )
+        result = asyncio.run(
+            DisputeInvestigator(provider=Provider(), engine=MockDecisionEngine()).investigate(
+                dispute, now=NOW
+            )
+        )
+        codes = {f.code.value for f in result.findings}
+        assert "NOT_EVALUABLE" in codes
+        assert "INVOICE_AFTER_CANCELLATION" not in codes
+        assert result.requires_human_approval is True
+        assert result.automatic_reply.allowed is False
+
+
+def test_usage_for_another_period_is_not_a_check():
+    """D14: a record for another period says nothing about this line."""
+    lines = TestUsageLineByLine()
+    august = Usage(
+        subscription_id="sub_310",
+        metric="api_calls",
+        quantity=Decimal("1200"),
+        period_start=datetime(2026, 8, 1, tzinfo=UTC),
+        period_end=datetime(2026, 9, 1, tzinfo=UTC),
+    )
+    found = lines.findings([lines.metered("api_calls")], august)
+    assert found[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == ["api_calls"]
+    assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found
+
+
+@pytest.mark.parametrize(
+    "line_start, line_end",
+    [
+        (datetime(2026, 9, 8, tzinfo=UTC), datetime(2026, 9, 15, tzinfo=UTC)),
+        (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC)),
+        (datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC)),
+    ],
+    ids=["a-week-inside-a-monthly-reading", "empty-line-period", "backwards-line-period"],
+)
+def test_usage_counts_only_for_exactly_the_lines_period(line_start, line_end):
+    """D14: without a rule for splitting usage, only an identical period compares."""
+    lines = TestUsageLineByLine()
+    september = lines.usage("api_calls")
+    line = lines.metered("api_calls").model_copy(
+        update={"period_start": line_start, "period_end": line_end}
+    )
+    found = lines.findings([line], september)
+    assert RuleCode.USAGE_UNAVAILABLE in found
+    assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found
+

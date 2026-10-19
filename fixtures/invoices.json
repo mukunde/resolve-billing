@@ -399,5 +399,40 @@
         "period_end": "2026-10-01T00:00:00"
       }
     ]
+  },
+  {
+    "id": "inv_400",
+    "customer_id": "cus_lumen",
+    "subscription_id": "sub_400",
+    "amount": "39.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Lignes sans periode : le controle de doublon ne peut pas conclure (D14).",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "39.00",
+        "amount": "39.00"
+      }
+    ]
+  },
+  {
+    "id": "inv_401",
+    "customer_id": "cus_lumen",
+    "subscription_id": "sub_400",
+    "amount": "39.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-03T09:00:00",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "39.00",
+        "amount": "39.00"
+      }
+    ]
   }
 ]

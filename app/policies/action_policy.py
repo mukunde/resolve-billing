@@ -78,6 +78,9 @@ MIN_CONFIDENCE = 0.70
 
 #: Usage findings that forbid concluding "the invoice is correct", and why.
 _USAGE_DOUBTS = {
+    RuleCode.NOT_EVALUABLE: (
+        "Facture déclarée correcte alors que des contrôles n'ont pas pu conclure."
+    ),
     RuleCode.USAGE_UNAVAILABLE: (
         "Facture déclarée correcte alors que l'usage n'a pas pu être vérifié."
     ),

@@ -39,6 +39,7 @@ from app.domain.enums import RuleCode, SenderStatus, Severity
 from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
 from app.domain.money import Money
 from app.domain.rules import (
+    checks_not_evaluable,
     cited_invoice_conflict,
     currency_mismatch,
     detect_duplicate_invoice,
@@ -432,6 +433,9 @@ class DisputeInvestigator:
             duplicate_payment(target, context.payments),
             *self._subscription_rules(target, context),
             *self._usage_rules(target, context),
+            checks_not_evaluable(
+                target, context.subscription(target.subscription_id), context.invoices
+            ),
         ):
             if finding is not None:
                 findings.append(finding)
@@ -455,7 +459,19 @@ class DisputeInvestigator:
         delta = None
         unchecked: list[str] = []
         for line in metered:
-            comparable = usage is not None and line.metric == usage.metric
+            # The same subscription, the same metric, and a record for exactly
+            # the line's own, real period: a September reading says nothing
+            # about an August line, and a monthly one nothing about a week of
+            # it until a rule for splitting usage exists.
+            comparable = (
+                usage is not None
+                and usage.subscription_id == target.subscription_id
+                and line.metric == usage.metric
+                and line.period_seconds is not None
+                and line.period_seconds > 0
+                and usage.period_start == line.period_start
+                and usage.period_end == line.period_end
+            )
             # One usage record against one line. A metric billed on several
             # lines would need a rule for adding them up, which nothing
             # specifies yet: those lines are said unchecked, not guessed at.

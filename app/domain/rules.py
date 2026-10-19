@@ -15,11 +15,18 @@ import unicodedata
 from collections.abc import Iterable
 from decimal import Decimal
 
-from app.domain.enums import InvoiceStatus, PaymentStatus, RuleCode, Severity
+from app.domain.enums import (
+    InvoiceStatus,
+    PaymentStatus,
+    RuleCode,
+    Severity,
+    SubscriptionStatus,
+)
 from app.domain.injection import suspected_prompt_injection
 from app.domain.models import Customer, Invoice, Payment, RuleFinding, Subscription
 
 __all__ = [
+    "checks_not_evaluable",
     "cited_invoice_conflict",
     "identity_conflict",
     "currency_mismatch",
@@ -179,6 +186,74 @@ def currency_mismatch(
             "aucune conclusion n'est tirée, une personne examine."
         ),
         evidence={"invoice_id": target.id, "currency": currency, "clashes": clashes},
+    )
+
+
+def checks_not_evaluable(
+    target: Invoice, subscription: Subscription | None, invoices: list[Invoice]
+) -> RuleFinding | None:
+    """The checks that apply to this invoice but cannot conclude (D14).
+
+    A rule returns None both when it found nothing and when it lacked what it
+    needed, and the second must not read as the first. This states, once per
+    invoice, which checks could not conclude and why. A check that does not
+    apply is not listed: an invoice with no subscription -- a one-off charge --
+    has nothing for the subscription checks to say. Usage has its own
+    finding, ``USAGE_UNAVAILABLE``.
+    """
+    if target.status is InvoiceStatus.VOID or target.subscription_id is None:
+        return None
+    gaps: list[dict] = []
+
+    # Duplicate: applies only when another live invoice on the subscription
+    # has the same total; then both periods are needed, and must be real.
+    candidates = [
+        other
+        for other in invoices
+        if other.id != target.id
+        and other.status is not InvoiceStatus.VOID
+        and other.subscription_id == target.subscription_id
+        and other.total == target.total
+    ]
+    if candidates and not _has_period(target):
+        gaps.append({"check": "duplicate_invoice", "reason": "invoice_without_period"})
+    elif any(not _has_period(other) for other in candidates):
+        gaps.append({"check": "duplicate_invoice", "reason": "candidate_without_period"})
+
+    # Cancellation and proration need the subscription itself.
+    if subscription is None:
+        gaps.append({"check": "billing_after_cancellation", "reason": "subscription_not_found"})
+        gaps.append({"check": "proration", "reason": "subscription_not_found"})
+    else:
+        # A subscription marked cancelled with no date: when it ended cannot
+        # be known. One never cancelled simply does not apply.
+        undated = subscription.cancelled_at is None
+        if subscription.status is SubscriptionStatus.CANCELLED and undated:
+            gaps.append(
+                {"check": "billing_after_cancellation", "reason": "cancellation_date_missing"}
+            )
+        if subscription.period_seconds <= 0:
+            gaps.append({"check": "proration", "reason": "subscription_period_unknown"})
+        elif any(line.period_seconds is None or line.period_seconds <= 0 for line in target.lines):
+            gaps.append({"check": "proration", "reason": "line_without_valid_period"})
+
+    if not gaps:
+        return None
+    return RuleFinding(
+        code=RuleCode.NOT_EVALUABLE,
+        severity=Severity.LOW,
+        description=(
+            "Des contrôles n'ont pas pu conclure faute de données : leur silence "
+            "ne vaut pas absence d'anomalie."
+        ),
+        evidence={"invoice_id": target.id, "checks": gaps},
+    )
+
+
+def _has_period(invoice: Invoice) -> bool:
+    """A period that exists and runs forwards, on every line."""
+    return bool(invoice.lines) and all(
+        line.period_seconds is not None and line.period_seconds > 0 for line in invoice.lines
     )
 
 

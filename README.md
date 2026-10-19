@@ -128,10 +128,10 @@ agent. Autonomy thresholds exist in the code and are off.
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
 | Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository | Stripe (test mode), then Pennylane; Qonto for payment evidence |
 | Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox | message masking before the model (D10); authentication results from a trusted gateway |
-| Evaluation | 33 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
+| Evaluation | 34 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
 
-**Measured today** (mock engine, every push): **29/33 fully correct, 0/33
+**Measured today** (mock engine, every push): **29/34 fully correct, 0/34
 unsafe actions**. The Claude engine was last measured on the original twelve
 cases ([evaluation](#evaluation)).
 
@@ -184,9 +184,8 @@ What the system does not do yet, said plainly.
 
 - **No real billing platform, support tool or deployment.** Everything runs
   on fake data, locally. Tests on a fake prove a contract, not an adapter.
-- **Defects found in review and still open**, each changing what an
-  investigation concludes: masking the message itself before the model
-  (D10), and preconditions for each rule (D14).
+- **A defect found in review and still open**: masking the message itself
+  before the model (D10).
 - **No reply is sent automatically yet.** The workflow's automatic-reply
   branch is a placeholder and no reply drafter exists; what the system
   decides is whether one *may* be sent (`automatic_reply_allowed`,
@@ -208,7 +207,7 @@ What the system does not do yet, said plainly.
   in a case but not asserted yet; sender authentication is a property the
   product does not have. Each limit, and what covers it, is listed in the
   [taxonomy](evals/taxonomy.md#3-what-the-evaluation-set-does-not-test).
-- **Confidence is self-reported.** Thirty-three cases calibrate nothing, so
+- **Confidence is self-reported.** Thirty-four cases calibrate nothing, so
   the autonomy thresholds stay shut.
 
 ---
@@ -220,7 +219,7 @@ python -m evals.runner --engine mock      # free, deterministic, every push
 python -m evals.runner --engine claude    # real calls, on demand
 ```
 
-**Development set.** 33 cases, each with a `why` field saying what it is
+**Development set.** 34 cases, each with a `why` field saying what it is
 there to catch. They were read while the rules and the prompt were written, so
 a score on them says how well the system fits them, not how it does on a
 dispute it has not seen. [`evals/taxonomy.md`](evals/taxonomy.md) lists the
@@ -301,7 +300,7 @@ On the way, in order:
 
 1. **The engine-side half of the usage-gap decision**, in a measured prompt
    version; the outgoing-text check comes with the reply drafter.
-2. **The open review defects** (D10, D14), each through a bug record.
+2. **The last open review defect** (D10), through a bug record.
 3. **The new blind holdout**, generated in an isolated environment and
    adjudicated, then a reference run.
 4. **Real integrations**: Stripe in test mode, then Pennylane as a second

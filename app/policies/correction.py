@@ -38,6 +38,9 @@ PARTIAL_FINDINGS = {
     RuleCode.SUSPICIOUS_USAGE_DELTA: "usage",
 }
 
+#: Findings that mean a check could not conclude (D14).
+UNCERTAIN = frozenset({RuleCode.NOT_EVALUABLE, RuleCode.USAGE_UNAVAILABLE})
+
 #: Invoice states on which no correction is proposed (S4).
 NOT_CORRECTABLE = {
     InvoiceStatus.DRAFT: "facture en brouillon, pas encore émise",
@@ -65,6 +68,10 @@ def correction_for(
         return Correction(None, NOT_CORRECTABLE[invoice.status])
     if any(f.code is RuleCode.CURRENCY_MISMATCH for f in findings):
         return Correction(None, "montants en devises différentes")
+    # Option (a) of D14: any check that could not conclude blocks any
+    # correction, whether or not it concerns this one.
+    if any(f.code in UNCERTAIN for f in findings):
+        return Correction(None, "un contrôle n'a pas pu conclure faute de données")
     if invoice.total.amount_minor <= 0:
         return Correction(None, "montant de facture nul ou négatif")
 

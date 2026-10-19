@@ -123,3 +123,6 @@ class RuleCode(StrEnum):
     # The request names a customer the sender's address does not resolve to
     # (D9): a claim, not an identity. Blocking.
     IDENTITY_CONFLICT = "IDENTITY_CONFLICT"
+    # A check that applies but cannot conclude, for lack of data (D14): said,
+    # never read as "nothing found".
+    NOT_EVALUABLE = "NOT_EVALUABLE"
