@@ -121,7 +121,10 @@ other context identifiers take their aliases; the customer's address and
 display name, any other address, IBANs, card numbers and telephone numbers
 become placeholders; a token that looks like one of our aliases is
 neutralised. It is masking, not anonymisation: other people's names and free
-text pass. The dispute itself is not modified. Bug record
+text pass, and recognition is by pattern -- formats outside the tested ones
+pass too. Invoice references in the provider's own formats are recognised
+only when the provider supplies the hook; the API and the evaluation runner
+wire it. The dispute itself is not modified. Bug record
 `.specify/bugs/d10-message-masking/`.
 
 ## Disclosure, channel by channel (2026-10-19)

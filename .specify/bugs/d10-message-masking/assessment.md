@@ -61,15 +61,28 @@ masking inside the Claude adapter, `app/decision/masking.py`.
 2. **The customer's address** becomes `[CUSTOMER_EMAIL]`, any other address
    `[EMAIL]`; **the display name**, with or without its legal form, case
    and accents folded, `[CUSTOMER_NAME]`.
-3. **IBANs** (mod-97 key checked), **card numbers** (Luhn checked) and
-   **telephone numbers** become `[IBAN]`, `[CARD]`, `[PHONE]`. A number that
-   fails its check is left alone: amounts, dates and quantities pass.
-4. **A token that already looks like one of our aliases** (`INVOICE_7`)
-   becomes `[REF]` first, so a message cannot pass itself off as a reference
-   we issued. Only aliases we issued are put back in the engine's output.
-5. Every match is found on the original text and applied once, longest
-   first where two collide. The dispute itself is not modified: the audit
-   and the injection screen see the message as received.
+3. **IBANs** (mod-97 key checked; spaces or dashes, any case), **card
+   numbers** (Luhn checked; spaces or dashes) and **telephone numbers**
+   (French national format, or any international number written with a
+   leading `+`) become `[IBAN]`, `[CARD]`, `[PHONE]`. A number that fails
+   its check is left alone. A long number that passes Luhn by chance -- an
+   order number -- is masked as a card: a number lost rather than a card
+   sent.
+4. **A token that already looks like one of our aliases or placeholders**
+   (`INVOICE_7`, `[INVOICE_REF_1]`) becomes `[REF]` first, so a message
+   cannot pass itself off as a reference we issued. Only aliases we issued,
+   as whole tokens, are put back in the engine's output: with `INVOICE_2`
+   issued, `INVOICE_20` stays as written.
+5. The message is put in Unicode NFC form and neutralised (point 4); every
+   match is then found on that text. Spans that overlap merge into one zone,
+   masked whole under the token of its longest span. The customer's name is
+   matched case- and accent-folded, with a map back to the original
+   positions, its words joined by spaces, dots, dashes or nothing. The
+   dispute itself is not modified: the audit and the injection screen see
+   the message as received.
+6. **The masking has a version** (`masking_v1`), carried in the engine's
+   version next to the prompt's (`<model>/decision_v3+masking_v1`), so every
+   stored result says which masking produced it.
 
 It is masking, not anonymisation: people's names other than the customer's,
 and free text in general, pass through. ADR-009 says so.
@@ -107,23 +120,34 @@ and free text in general, pass through. ADR-009 says so.
 - **The model sees less.** A message's invoice number was already redundant
   with the context's target; an unknown invoice is now a token. The
   before/after measurement below is a signal that nothing broke, not a proof
-  of equivalence: the development set is small.
+  of equivalence: the development set is small, and a model's verdicts move
+  between runs (`evals/results/claude-haiku-5-5_decision_v3_x5.json`: 14 to
+  15 fully correct out of 19 over five identical runs).
 - **A provider's reference format is its own.** Without
   `invoice_reference_spans`, only identifiers written exactly as the context
-  holds them are masked. Each real adapter must provide the hook.
+  holds them are masked, and an invoice outside the context passes as
+  written. The API and the evaluation runner wire the hook (`deps.wire`,
+  tested); an engine built by hand does not have it. The MCP server runs the
+  mock engine, which reads no message. Each real adapter must provide the
+  hook.
 - **Recognition is by pattern.** A phone number in an unusual format, or a
   card number split oddly, can pass. The list of what is masked is the list
   of what is tested.
 
 ## Measurement
 
-Mock engine: unchanged, it does not read the message. Claude engine: one run
-on `main` and one on this branch, same model, same case file, same
-parameters -- to be recorded here once run.
+Mock engine: unchanged, case by case, against the stored baseline -- it does
+not read the message. Claude engine: runs on `main` and on this branch, same
+model, same case file, same parameters, each result file carrying its engine
+version (`decision_v3` before, `decision_v3+masking_v1` after) -- to be
+recorded here once run, read against the run-to-run spread above.
 
 ## Acceptance
 
 - No identifier the context holds, no customer address or display name, no
   IBAN, card or phone number in a recognised form reaches the provider.
-- The development set passes in CI with no unsafe action; the Claude
-  before/after run shows no regression beyond run-to-run variance.
+- The development set passes in CI with no unsafe action, and the mock
+  baseline is unchanged.
+- The Claude before/after runs show no unsafe action, and no drop in fully
+  correct cases outside the spread a model shows between identical runs --
+  a signal, read as such.

@@ -313,7 +313,7 @@ class TestDecisionAndTelemetry:
 
     def test_engine_version_pins_model_and_prompt(self):
         engine, _ = engine_with(reply(VALID_VERDICT))
-        assert engine.version == "claude-opus-5/decision_v3"
+        assert engine.version == "claude-opus-5/decision_v3+masking_v1"
 
 
 class TestCost:

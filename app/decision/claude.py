@@ -37,7 +37,7 @@ from app.decision.base import (
     EngineUnavailable,
     RecommendedAction,
 )
-from app.decision.masking import ReferenceFinder, mask_message
+from app.decision.masking import MASKING_VERSION, ReferenceFinder, mask_message
 from app.domain.models import BillingContext, Dispute, RuleFinding
 from app.observability import tracing
 
@@ -213,7 +213,8 @@ class ClaudeDecisionEngine:
         invoice_references: ReferenceFinder | None = None,
     ) -> None:
         self.model = model or os.getenv("CLAUDE_MODEL", DEFAULT_MODEL)
-        self.version = f"{self.model}/{PROMPT_VERSION}"
+        # The masking travels with the prompt: both shape what the model reads.
+        self.version = f"{self.model}/{PROMPT_VERSION}+{MASKING_VERSION}"
         self._max_tokens = max_tokens
         # Classification is not a task that repays deep thinking; the money is
         # in the deterministic findings, which have already run. Raise this
