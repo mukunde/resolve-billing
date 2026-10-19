@@ -237,3 +237,10 @@ class TestUsageLineByLine:
     def test_a_checked_line_is_not_reported_unavailable(self):
         found = self.findings([self.metered("api_calls")], self.usage("api_calls"))
         assert RuleCode.USAGE_UNAVAILABLE not in found
+
+    def test_a_metric_billed_on_two_lines_is_not_compared(self):
+        """Adding lines up is not specified: both are said unchecked."""
+        lines = [self.metered("api_calls"), self.metered("api_calls")]
+        found = self.findings(lines, self.usage("api_calls"))
+        assert found[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == ["api_calls"]
+        assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found

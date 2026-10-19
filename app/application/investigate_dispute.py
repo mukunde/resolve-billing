@@ -403,17 +403,19 @@ class DisputeInvestigator:
         line; a metered line with no usage record to compare it with is said,
         so that silence is never read as "the usage is right" (taxonomy S7)."""
         usage = context.usage
+        metered = [line for line in target.lines if line.metric]
         delta = None
         unchecked: list[str] = []
-        for line in target.lines:
-            if not line.metric:
-                continue
-            if usage is not None and line.metric == usage.metric and delta is None:
+        for line in metered:
+            comparable = usage is not None and line.metric == usage.metric
+            # One usage record against one line. A metric billed on several
+            # lines would need a rule for adding them up, which nothing
+            # specifies yet: those lines are said unchecked, not guessed at.
+            alone = sum(other.metric == line.metric for other in metered) == 1
+            if comparable and alone:
                 delta = suspicious_usage_delta(expected=usage.quantity, billed=line.quantity)
-                continue
-            if usage is not None and line.metric == usage.metric:
-                continue  # the same metric billed on two lines: compared once
-            unchecked.append(line.metric)
+            else:
+                unchecked.append(line.metric)
         return delta, _usage_unavailable(target.id, unchecked) if unchecked else None
 
     async def _unknown_sender(
