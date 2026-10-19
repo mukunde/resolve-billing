@@ -58,12 +58,19 @@ _IBAN = re.compile(
 )
 _CARD = re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
 _PHONE = re.compile(
-    # International: a leading +, then 7 to 15 digits, with at most two
-    # separators (space, dot, dash, brackets) between two digits.
-    r"(?<![\w+])\+\d(?:[ .()-]{0,2}\d){6,14}(?!\d)"
+    r"(?:"
+    # International: a leading +, then 9 to 15 digits (a country code and a
+    # subscriber number), with at most two separators (space, dot, dash,
+    # brackets) between two digits.
+    r"(?<![\w+])\+\d(?:[ .()-]{0,2}\d){8,14}"
     # French national: 0, then nine digits in pairs.
-    r"|(?<![\w+])0[1-9](?:[ .-]?\d{2}){4}(?!\d)"
+    r"|(?<![\w+])0[1-9](?:[ .-]?\d{2}){4}"
+    r")"
+    # Not an amount or a share: a phone number is not followed by a currency.
+    r"(?!\d)(?!\s*(?:[€$£%]|(?:eur|usd|gbp|chf)\b))",
+    re.IGNORECASE,
 )
+_DATE = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}[/.-]\d{2}[/.-]\d{4}")
 
 #: Where two kinds of match cover the same length, which token stands.
 _PRIORITY = ["[IBAN]", "[CARD]", "[CUSTOMER_EMAIL]", "[EMAIL]", "[PHONE]", "[CUSTOMER_NAME]"]
@@ -106,13 +113,15 @@ def mask_message(
             spans.append((origin[match.start()], origin[match.end() - 1] + 1, "[CUSTOMER_NAME]"))
 
     for match in _IBAN.finditer(text):
-        if _iban_valid(match.group(0)):
-            spans.append((match.start(), match.end(), "[IBAN]"))
+        length = _valid_iban_length(match.group(0))
+        if length:
+            spans.append((match.start(), match.start() + length, "[IBAN]"))
     for match in _CARD.finditer(text):
         if _luhn_valid(match.group(0)):
             spans.append((match.start(), match.end(), "[CARD]"))
     for match in _PHONE.finditer(text):
-        spans.append((match.start(), match.end(), "[PHONE]"))
+        if not _DATE.search(match.group(0)):
+            spans.append((match.start(), match.end(), "[PHONE]"))
 
     return _apply(text, spans)
 
@@ -122,7 +131,9 @@ def _apply(text: str, spans: list[tuple[int, int, str]]) -> str:
 
     The zone takes the token of its longest span -- the most specific reading
     of the zone -- so a short match starting first can never leave the tail of
-    a longer one in clear.
+    a longer one in clear. What the merge buys is confidentiality, not
+    meaning: two objects that overlap become one token, and the model loses
+    the distinction between them.
     """
     zones: list[list] = []  # [start, end, token, length of the token's span]
     for start, end, token in sorted(spans):
@@ -188,6 +199,17 @@ def _name_patterns(display_name: str | None) -> list[re.Pattern]:
         for words in variants
         if words
     ]
+
+
+def _valid_iban_length(raw: str) -> int:
+    """The length of the longest prefix of `raw` that is a valid IBAN, cut at
+    a separator; 0 if none. The pattern can run on into a following word
+    ("... 7890 189 pour"): the IBAN is still found, without the word."""
+    cuts = [len(raw)] + [m.start() for m in re.finditer(r"[ -]", raw)][::-1]
+    for cut in cuts:
+        if _iban_valid(raw[:cut]):
+            return cut
+    return 0
 
 
 def _iban_valid(raw: str) -> bool:

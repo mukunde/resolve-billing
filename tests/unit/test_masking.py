@@ -185,6 +185,11 @@ class TestPeopleAndNumbers:
         text, _ = masked(f"Appelez le {phone} demain.")
         assert text == "Appelez le [PHONE] demain."
 
+    @pytest.mark.parametrize("word", ["pour", "ABCD", "1234"])
+    def test_an_iban_followed_by_a_short_word_is_still_found(self, word):
+        text, _ = masked(f"Sur BE68 5390 0754 7034 {word} merci.")  # ends on a full group
+        assert text == f"Sur [IBAN] {word} merci."
+
     def test_a_long_number_that_passes_luhn_is_masked_as_a_card(self):
         """The deliberate trade-off: an order number lost, never a card sent."""
         text, _ = masked("Commande 4012888888881881 reçue.")
@@ -202,6 +207,13 @@ class TestPeopleAndNumbers:
             "4111 1111 1111 1112",  # sixteen digits that fail Luhn
             "commande 4012888888881882",
             "Abonnement Enterprise",
+            "+1500 appels",
+            "+12 345 678 EUR",
+            "+1 234 567 890 €",
+            "+1234567 appels",
+            "+2026-09-01",
+            "+15 %",
+            "0612345678 €",
         ],
     )
     def test_amounts_dates_and_lookalikes_pass_through(self, kept):
@@ -261,6 +273,22 @@ class TestTheRequestSent:
             "4111",
         ):
             assert sentinel not in sent, sentinel
+
+    @pytest.mark.parametrize(
+        "sentinel, written",
+        [
+            ("3000", IBAN.lower()),
+            ("3000", IBAN.replace(" ", "-")),
+            ("4111", CARD.replace(" ", "-")),
+            ("CME", "\uff21\uff23\uff2d\uff25"),
+            ("CME", "A\u0301CME SAS"),
+            ("7946", "+44 20 7946 0958"),
+        ],
+    )
+    def test_supported_variants_do_not_reach_the_provider(self, sentinel, written):
+        _, _, sent = self.engine_and_request(f"Voir {written} pour inv_002.")
+        assert sentinel not in sent
+        assert written not in sent
 
     def test_the_dispute_itself_is_untouched(self):
         message = "La facture inv_002 est fausse."

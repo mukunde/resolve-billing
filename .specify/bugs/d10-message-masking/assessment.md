@@ -63,9 +63,11 @@ masking inside the Claude adapter, `app/decision/masking.py`.
    and accents folded, `[CUSTOMER_NAME]`.
 3. **IBANs** (mod-97 key checked; spaces or dashes, any case), **card
    numbers** (Luhn checked; spaces or dashes) and **telephone numbers**
-   (French national format, or any international number written with a
-   leading `+`) become `[IBAN]`, `[CARD]`, `[PHONE]`. A number that fails
-   its check is left alone. A long number that passes Luhn by chance -- an
+   (French national format, or an international number written with a
+   leading `+` and 9 to 15 digits) become `[IBAN]`, `[CARD]`, `[PHONE]`. A
+   number that fails its check is left alone; a signed number followed by a
+   currency or `%`, or shaped as a date, is not a phone number. An IBAN the
+   pattern runs on past ("... 189 pour") is cut back to its valid length. A long number that passes Luhn by chance -- an
    order number -- is masked as a card: a number lost rather than a card
    sent.
 4. **A token that already looks like one of our aliases or placeholders**
@@ -75,7 +77,9 @@ masking inside the Claude adapter, `app/decision/masking.py`.
    issued, `INVOICE_20` stays as written.
 5. The message is put in Unicode NFC form and neutralised (point 4); every
    match is then found on that text. Spans that overlap merge into one zone,
-   masked whole under the token of its longest span. The customer's name is
+   masked whole under the token of its longest span -- confidentiality
+   first: two overlapping objects become one token, and the model loses the
+   distinction between them. The customer's name is
    matched case- and accent-folded, with a map back to the original
    positions, its words joined by spaces, dots, dashes or nothing. The
    dispute itself is not modified: the audit and the injection screen see
@@ -121,8 +125,11 @@ and free text in general, pass through. ADR-009 says so.
   with the context's target; an unknown invoice is now a token. The
   before/after measurement below is a signal that nothing broke, not a proof
   of equivalence: the development set is small, and a model's verdicts move
-  between runs (`evals/results/claude-haiku-5-5_decision_v3_x5.json`: 14 to
-  15 fully correct out of 19 over five identical runs).
+  between identical runs -- as an illustration only, five Haiku 5.5 runs on
+  the earlier 19-case set ranged from 14 to 15 fully correct
+  (`evals/results/claude-haiku-5-5_decision_v3_x5.json`). That spread is not
+  a tolerance for this measurement: another case set, another system
+  version.
 - **A provider's reference format is its own.** Without
   `invoice_reference_spans`, only identifiers written exactly as the context
   holds them are masked, and an invoice outside the context passes as
@@ -140,7 +147,9 @@ Mock engine: unchanged, case by case, against the stored baseline -- it does
 not read the message. Claude engine: runs on `main` and on this branch, same
 model, same case file, same parameters, each result file carrying its engine
 version (`decision_v3` before, `decision_v3+masking_v1` after) -- to be
-recorded here once run, read against the run-to-run spread above.
+recorded here once run, and compared case by case: every case whose verdict
+changes is named and read, whichever way it moves. No threshold of
+acceptable variance is borrowed from earlier runs.
 
 ## Acceptance
 
@@ -148,6 +157,6 @@ recorded here once run, read against the run-to-run spread above.
   IBAN, card or phone number in a recognised form reaches the provider.
 - The development set passes in CI with no unsafe action, and the mock
   baseline is unchanged.
-- The Claude before/after runs show no unsafe action, and no drop in fully
-  correct cases outside the spread a model shows between identical runs --
-  a signal, read as such.
+- The Claude before/after runs show no unsafe action, and every case whose
+  verdict changes is explained -- by the masking or by the model's own
+  run-to-run movement. A signal, read as such.
