@@ -196,10 +196,13 @@ What the system does not do yet, said plainly.
   headers the intake forwards; without headers, only the sender address is
   checked. Filtering spam belongs to the support tool in the target
   integration.
-- **Decided, not yet built**: what may be disclosed on each channel, and the
-  engine-side half of the usage-gap decision (a prompt instruction, which
-  needs a measured prompt version). The decisions and their status are in
-  [`evals/taxonomy.md`](evals/taxonomy.md#4-specification-questions).
+- **Decided, not yet built**: the automatic check of outgoing text, which
+  comes with the reply drafter (what each channel may disclose is written
+  down, channel by channel, in
+  [ADR-009](docs/adr/009-trust-boundaries.md#disclosure-channel-by-channel-2026-10-19)),
+  and the engine-side half of the usage-gap decision (a prompt instruction,
+  which needs a measured prompt version). The decisions and their status are
+  in [`evals/taxonomy.md`](evals/taxonomy.md#4-specification-questions).
 - **What a good evaluation score does not cover**: approval expiry,
   concurrent execution and uncertain provider outcomes are out of reach of an
   evaluation case and are tested elsewhere; what a reply discloses is visible
@@ -297,9 +300,8 @@ expired approval, a repeated delivery, and a timeout after a write.
 
 On the way, in order:
 
-1. **Disclosure per channel**, the last specification decision to build,
-   and the engine-side half of the usage-gap decision in a measured prompt
-   version.
+1. **The engine-side half of the usage-gap decision**, in a measured prompt
+   version; the outgoing-text check comes with the reply drafter.
 2. **The open review defects** (D9, D10, D14), each through a bug record.
 3. **The new blind holdout**, generated in an isolated environment and
    adjudicated, then a reference run.

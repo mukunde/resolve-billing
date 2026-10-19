@@ -156,3 +156,17 @@ class TestNothingAboutTheCustomerLeaves:
             for line in traced:
                 for bad in tracing.FORBIDDEN:
                     assert bad not in line, f"{module.__name__}: {line.strip()}"
+
+
+def test_an_exception_leaves_its_type_not_its_text(exporter):
+    """A span keeps the error's type; its message may carry a URL or a token."""
+    exporter.clear()
+    with pytest.raises(RuntimeError), tracing.span("failing"):
+        raise RuntimeError("GET https://billing.example.test/?token=SECRET-TOKEN")
+    (span,) = exporter.get_finished_spans()
+    assert span.attributes["error.type"] == "RuntimeError"
+    everything = str(span.attributes) + str([e.attributes for e in span.events])
+    assert "SECRET-TOKEN" not in everything
+    assert span.status.status_code is trace.StatusCode.ERROR
+    assert not span.status.description
+

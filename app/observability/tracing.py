@@ -122,11 +122,21 @@ def span(name: str, **attributes: Any):
         return
 
     tracer = trace.get_tracer(SERVICE_NAME)
-    with tracer.start_as_current_span(name) as current:
+    # An exception's text can carry a URL, a token or the platform's answer:
+    # the span keeps its type and an error status with no description, never
+    # its message -- neither as an event nor as the status (ADR-009).
+    with tracer.start_as_current_span(
+        name, record_exception=False, set_status_on_exception=False
+    ) as current:
         for key, value in attributes.items():
             if value is not None:
                 current.set_attribute(key, value)
-        yield current
+        try:
+            yield current
+        except Exception as error:
+            current.set_attribute("error.type", type(error).__name__)
+            current.set_status(trace.Status(trace.StatusCode.ERROR))
+            raise
 
 
 def set_attributes(current, **attributes: Any) -> None:
