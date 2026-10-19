@@ -30,3 +30,7 @@ htmlcov/
 # peut inspecter l'exécution est une affirmation, pas un résultat. Le runner
 # n'écrit ici que sur --json explicite, donc le dossier ne se remplit pas tout
 # seul. Voir evals/results/README.md.
+
+# --- Holdout -----------------------------------------------------------------
+# Blind cases live in a separate private repository, never here.
+evals/holdout_cases.json
