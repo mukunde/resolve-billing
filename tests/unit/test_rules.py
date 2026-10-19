@@ -25,6 +25,7 @@ from app.domain.enums import (
 from app.domain.models import Customer, Invoice, InvoiceLine, Payment, Subscription
 from app.domain.money import Money
 from app.domain.rules import (
+    checks_not_evaluable,
     cited_invoice_conflict,
     currency_mismatch,
     detect_duplicate_invoice,
@@ -616,3 +617,54 @@ class TestUsageDirection:
     def test_the_gap_says_which_way(self, expected, billed, direction):
         finding = suspicious_usage_delta(Decimal(expected), Decimal(billed))
         assert finding.evidence["direction"] == direction
+
+
+class TestChecksNotEvaluable:
+    """D14: a check that applies but cannot conclude says so; one that does
+    not apply stays silent."""
+
+    def gaps(self, target, sub="default", invoices=()):
+        sub = subscription() if sub == "default" else sub
+        finding = checks_not_evaluable(target, sub, list(invoices))
+        return None if finding is None else finding.evidence["checks"]
+
+    def test_everything_present_is_no_finding(self):
+        assert self.gaps(invoice("inv_001")) is None
+
+    def test_a_one_off_invoice_is_not_a_gap(self):
+        assert self.gaps(invoice("inv_001", subscription_id=None), sub=None) is None
+
+    def test_a_void_invoice_is_not_a_gap(self):
+        assert self.gaps(invoice("inv_001", status=InvoiceStatus.VOID), sub=None) is None
+
+    def test_an_invoice_without_period(self):
+        bare = invoice("inv_001", lines=[line(9900, start=None, end=None)])
+        assert {"check": "duplicate_invoice", "reason": "invoice_without_period"} in self.gaps(bare)
+
+    def test_a_candidate_without_period(self):
+        other = invoice("inv_002", lines=[line(9900, start=None, end=None)])
+        gaps = self.gaps(invoice("inv_001"), invoices=[other])
+        assert gaps == [{"check": "duplicate_invoice", "reason": "candidate_without_period"}]
+
+    def test_a_candidate_with_another_total_is_no_gap(self):
+        other = invoice("inv_002", total_minor=4900, lines=[line(4900, start=None, end=None)])
+        assert self.gaps(invoice("inv_001"), invoices=[other]) is None
+
+    def test_a_missing_subscription(self):
+        gaps = self.gaps(invoice("inv_001"), sub=None)
+        assert {"check": "billing_after_cancellation", "reason": "subscription_not_found"} in gaps
+        assert {"check": "proration", "reason": "subscription_not_found"} in gaps
+
+    def test_a_line_without_period_for_proration(self):
+        lines = [line(9900), line(500, start=None, end=None)]
+        gaps = self.gaps(invoice("inv_001", lines=lines))
+        assert gaps == [{"check": "proration", "reason": "line_without_period"}]
+
+    def test_a_missing_period_no_longer_reads_as_not_a_duplicate(self):
+        """The defect itself: the duplicate rule is silent, and now that
+        silence is said to be ignorance."""
+        bare = [line(9900, start=None, end=None)]
+        target = invoice("inv_001", lines=bare)
+        other = invoice("inv_002", lines=bare)
+        assert detect_duplicate_invoice(target, [other]) is None
+        assert checks_not_evaluable(target, subscription(), [other]) is not None

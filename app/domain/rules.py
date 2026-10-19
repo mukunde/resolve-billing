@@ -20,6 +20,7 @@ from app.domain.injection import suspected_prompt_injection
 from app.domain.models import Customer, Invoice, Payment, RuleFinding, Subscription
 
 __all__ = [
+    "checks_not_evaluable",
     "cited_invoice_conflict",
     "identity_conflict",
     "currency_mismatch",
@@ -179,6 +180,57 @@ def currency_mismatch(
             "aucune conclusion n'est tirée, une personne examine."
         ),
         evidence={"invoice_id": target.id, "currency": currency, "clashes": clashes},
+    )
+
+
+def checks_not_evaluable(
+    target: Invoice, subscription: Subscription | None, invoices: list[Invoice]
+) -> RuleFinding | None:
+    """The checks that apply to this invoice but cannot conclude (D14).
+
+    A rule returns None both when it found nothing and when it lacked what it
+    needed, and the second must not read as the first. This states, once per
+    invoice, which checks could not conclude and why. A check that does not
+    apply is not listed: an invoice with no subscription -- a one-off charge --
+    has nothing for the subscription checks to say. Usage has its own
+    finding, ``USAGE_UNAVAILABLE``.
+    """
+    if target.status is InvoiceStatus.VOID or target.subscription_id is None:
+        return None
+    gaps: list[dict] = []
+
+    # Duplicate: both periods are needed, the target's and every candidate's.
+    if target.period_start is None or target.period_end is None:
+        gaps.append({"check": "duplicate_invoice", "reason": "invoice_without_period"})
+    elif any(
+        other.id != target.id
+        and other.status is not InvoiceStatus.VOID
+        and other.subscription_id == target.subscription_id
+        and other.total == target.total
+        and (other.period_start is None or other.period_end is None)
+        for other in invoices
+    ):
+        gaps.append({"check": "duplicate_invoice", "reason": "candidate_without_period"})
+
+    # Cancellation and proration need the subscription itself.
+    if subscription is None:
+        gaps.append({"check": "billing_after_cancellation", "reason": "subscription_not_found"})
+        gaps.append({"check": "proration", "reason": "subscription_not_found"})
+    elif subscription.period_seconds <= 0:
+        gaps.append({"check": "proration", "reason": "subscription_period_unknown"})
+    elif any(line.period_seconds is None for line in target.lines):
+        gaps.append({"check": "proration", "reason": "line_without_period"})
+
+    if not gaps:
+        return None
+    return RuleFinding(
+        code=RuleCode.NOT_EVALUABLE,
+        severity=Severity.LOW,
+        description=(
+            "Des contrôles n'ont pas pu conclure faute de données : leur silence "
+            "ne vaut pas absence d'anomalie."
+        ),
+        evidence={"invoice_id": target.id, "checks": gaps},
     )
 
 

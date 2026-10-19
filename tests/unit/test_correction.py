@@ -168,3 +168,15 @@ def test_a_duplicate_payment_finding_without_the_payments_yields_no_amount():
     )
     correction = correction_for("refund", invoice(), [finding], [payment()])
     assert correction.amount is None
+
+
+@pytest.mark.parametrize("code", [RuleCode.NOT_EVALUABLE, RuleCode.USAGE_UNAVAILABLE])
+def test_any_check_that_could_not_conclude_blocks_any_correction(code):
+    """D14, option (a): even a proven duplicate gets no amount."""
+    duplicate = RuleFinding(
+        code=RuleCode.DUPLICATE_INVOICE, severity=Severity.HIGH, description="", evidence={}
+    )
+    unsure = RuleFinding(code=code, severity=Severity.LOW, description="", evidence={})
+    correction = correction_for("credit_note", invoice(), [duplicate, unsure], [payment()])
+    assert correction.amount is None
+    assert "pas pu conclure" in correction.withheld

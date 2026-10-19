@@ -88,5 +88,11 @@
     "email": "facturation@meridien-data.fr",
     "currency": "EUR",
     "display_name": "Meridien Data"
+  },
+  {
+    "id": "cus_lumen",
+    "email": "compta@lumen-studio.fr",
+    "currency": "EUR",
+    "display_name": "Lumen Studio"
   }
 ]

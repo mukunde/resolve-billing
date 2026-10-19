@@ -39,6 +39,7 @@ from app.domain.enums import RuleCode, SenderStatus, Severity
 from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
 from app.domain.money import Money
 from app.domain.rules import (
+    checks_not_evaluable,
     cited_invoice_conflict,
     currency_mismatch,
     detect_duplicate_invoice,
@@ -432,6 +433,9 @@ class DisputeInvestigator:
             duplicate_payment(target, context.payments),
             *self._subscription_rules(target, context),
             *self._usage_rules(target, context),
+            checks_not_evaluable(
+                target, context.subscription(target.subscription_id), context.invoices
+            ),
         ):
             if finding is not None:
                 findings.append(finding)

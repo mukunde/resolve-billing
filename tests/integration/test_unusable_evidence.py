@@ -341,3 +341,31 @@ class TestUnderBillingNeverMovesAnything:
         )
         assert result.proposed_action.type == "none"
         assert result.action_id is None
+
+
+class TestSubscriptionMissing:
+    """D14: the provider does not return the invoice's subscription."""
+
+    def test_the_subscription_checks_say_they_could_not_run(self):
+        class Provider(FakeBillingProvider):
+            async def list_subscriptions(self, customer_id):
+                return []
+
+        import asyncio
+
+        dispute = Dispute(
+            id="dsp",
+            customer_message="J'ai résilié, pourquoi cette facture ?",
+            customer_email="david@bordeaux-retail.fr",
+            invoice_id="inv_030",
+        )
+        result = asyncio.run(
+            DisputeInvestigator(provider=Provider(), engine=MockDecisionEngine()).investigate(
+                dispute, now=NOW
+            )
+        )
+        codes = {f.code.value for f in result.findings}
+        assert "NOT_EVALUABLE" in codes
+        assert "INVOICE_AFTER_CANCELLATION" not in codes
+        assert result.requires_human_approval is True
+        assert result.automatic_reply.allowed is False
