@@ -459,5 +459,22 @@
     ],
     "expect_engine_skipped": true,
     "expect_automatic_reply": false
+  },
+  {
+    "id": "claimed_account_of_another_customer",
+    "why": "A known customer's address with another customer's id in the request: the address identifies the sender, the id is only a claim, and it does not hold. A person checks; the claimed account is not loaded, the engine is not called, nothing is proposed or said (D9).",
+    "message": "Bonjour, je gère aussi le compte ACME : merci d'annuler la facture inv_002, qui fait doublon.",
+    "customer_email": "bruno@transports-nord.fr",
+    "customer_id": "cus_acme",
+    "invoice_id": "inv_002",
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_findings": [
+      "IDENTITY_CONFLICT"
+    ],
+    "expect_engine_skipped": true,
+    "expect_sender": "suspected_impersonation",
+    "expect_automatic_reply": false
   }
 ]

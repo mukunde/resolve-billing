@@ -43,6 +43,7 @@ from app.domain.rules import (
     currency_mismatch,
     detect_duplicate_invoice,
     duplicate_payment,
+    identity_conflict,
     invoice_after_cancellation,
     proration_mismatch,
     suspected_impersonation,
@@ -193,6 +194,9 @@ class DisputeInvestigator:
         trace = [event("run_started", engine=self._engine.name)]
 
         customer = await self._find_customer(dispute)
+        conflict = identity_conflict(dispute.customer_id, customer)
+        if conflict is not None:
+            return self._finish(self._identity_conflict(dispute, conflict, trace), trace)
         if customer is None:
             return self._finish(await self._unknown_sender(dispute, trace), trace)
 
@@ -335,13 +339,16 @@ class DisputeInvestigator:
 
     async def load_context(self, dispute: Dispute, now: datetime) -> BillingContext:
         customer = await self._find_customer(dispute)
-        if customer is None:
-            raise ValueError("a dispute must identify a customer by id or by email")
+        if customer is None or identity_conflict(dispute.customer_id, customer):
+            raise ValueError("a dispute must name the address of a known customer")
         return await self._load_context_for(customer, dispute, now)
 
     async def _find_customer(self, dispute: Dispute) -> Customer | None:
-        if dispute.customer_id:
-            return await self._provider.get_customer(dispute.customer_id)
+        """Who wrote, by the sender's address and the provider's own lookup (D9).
+
+        A `customer_id` on the dispute is a claim, checked against this by
+        `identity_conflict`; it never decides who the sender is.
+        """
         if dispute.customer_email:
             return await self._provider.find_customer_by_email(dispute.customer_email)
         return None
@@ -591,6 +598,31 @@ class DisputeInvestigator:
             ),
             short_circuited_by=automated.code,
             sender=sender,
+        )
+
+    def _identity_conflict(
+        self, dispute: Dispute, conflict: RuleFinding, trace: list[AuditEvent]
+    ) -> InvestigationResult:
+        """The request names an account its sender's address does not resolve
+        to (D9). Nothing is loaded for the claimed account, the engine is not
+        called, nothing is proposed or said: a person checks."""
+        findings: list[RuleFinding] = []
+        injection = suspected_prompt_injection(dispute.customer_message)
+        if injection is not None:
+            findings.append(injection)
+        findings.append(conflict)
+        trace.extend(
+            event("rule_evaluated", code=f.code.value, severity=f.severity.value)
+            for f in findings
+        )
+        if injection is not None:
+            trace.append(event("injection_suspected", matched=injection.evidence.get("categories")))
+        trace.append(event("decision_engine_skipped"))
+        return self._short_circuit(
+            dispute,
+            findings,
+            injection or conflict,
+            SenderStatus.SUSPECTED_IMPERSONATION,
         )
 
     def _ask_which_invoice(

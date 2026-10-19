@@ -89,7 +89,11 @@ _USAGE_DOUBTS = {
 
 #: Findings that stop the system acting, whatever the engine concluded.
 BLOCKING_FINDINGS = frozenset(
-    {RuleCode.SUSPECTED_PROMPT_INJECTION, RuleCode.SUSPECTED_IMPERSONATION}
+    {
+        RuleCode.SUSPECTED_PROMPT_INJECTION,
+        RuleCode.SUSPECTED_IMPERSONATION,
+        RuleCode.IDENTITY_CONFLICT,
+    }
 )
 
 #: Classifications on which no financial action may be taken, whatever the

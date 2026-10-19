@@ -254,6 +254,7 @@ async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[Cas
                 id=f"eval_{case['id']}",
                 customer_message=case["message"],
                 customer_email=case["customer_email"],
+                customer_id=case.get("customer_id"),
                 invoice_id=case["invoice_id"],
                 headers=header_pairs(case.get("headers")),
             )

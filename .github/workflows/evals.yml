@@ -55,7 +55,7 @@ jobs:
       # when the mock genuinely improves; never lower it to make a build pass.
       - name: Evaluation set, mock engine
         run: >-
-          python -m evals.runner --engine mock --min-fully-correct 28
+          python -m evals.runner --engine mock --min-fully-correct 29
           --baseline evals/baselines/mock.json
 
   claude:
