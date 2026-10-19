@@ -459,17 +459,18 @@ class DisputeInvestigator:
         delta = None
         unchecked: list[str] = []
         for line in metered:
-            # The same subscription, the same metric, and a record that covers
-            # the line's own period: a September reading says nothing about
-            # an August line.
+            # The same subscription, the same metric, and a record for exactly
+            # the line's own, real period: a September reading says nothing
+            # about an August line, and a monthly one nothing about a week of
+            # it until a rule for splitting usage exists.
             comparable = (
                 usage is not None
                 and usage.subscription_id == target.subscription_id
                 and line.metric == usage.metric
-                and line.period_start is not None
-                and line.period_end is not None
-                and usage.period_start <= line.period_start
-                and line.period_end <= usage.period_end
+                and line.period_seconds is not None
+                and line.period_seconds > 0
+                and usage.period_start == line.period_start
+                and usage.period_end == line.period_end
             )
             # One usage record against one line. A metric billed on several
             # lines would need a rule for adding them up, which nothing

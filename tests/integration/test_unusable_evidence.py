@@ -385,3 +385,24 @@ def test_usage_for_another_period_is_not_a_check():
     assert found[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == ["api_calls"]
     assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found
 
+
+@pytest.mark.parametrize(
+    "line_start, line_end",
+    [
+        (datetime(2026, 9, 8, tzinfo=UTC), datetime(2026, 9, 15, tzinfo=UTC)),
+        (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC)),
+        (datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC)),
+    ],
+    ids=["a-week-inside-a-monthly-reading", "empty-line-period", "backwards-line-period"],
+)
+def test_usage_counts_only_for_exactly_the_lines_period(line_start, line_end):
+    """D14: without a rule for splitting usage, only an identical period compares."""
+    lines = TestUsageLineByLine()
+    september = lines.usage("api_calls")
+    line = lines.metered("api_calls").model_copy(
+        update={"period_start": line_start, "period_end": line_end}
+    )
+    found = lines.findings([line], september)
+    assert RuleCode.USAGE_UNAVAILABLE in found
+    assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found
+
