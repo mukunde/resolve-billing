@@ -94,8 +94,10 @@ invoice, and no blocking finding.
   action.
 - Dev: B `insufficient_context` (missing), `unknown_invoice_reference`
   (nonexistent).
-- Gaps: a message that cites a different invoice than the `invoice_id` field;
-  several invoices cited (S6).
+- Since S6: a message citing recognised references, none of them the
+  designated one → `INVOICE_REFERENCE_CONFLICT`, ask which
+  (`invoice_reference_conflict`). References written freely ("my September
+  invoice") are not detected.
 - Tests: CP, CD.
 
 ### Untrusted input
@@ -109,10 +111,17 @@ invoice, and no blocking finding.
 - Variable: what the imperative is aimed at. The **implemented** predicate is
   a pattern list tuned for recall, with documented false positives ("vous
   êtes autorisé"); the **intended** boundary is semantic. They differ, and the
-  difference stays visible: "ignore my previous message" can match the
-  override pattern although the dev set expects the normal path (S2).
+  difference stays visible.
 - Dev: A `angry_but_valid`, `benign_ignore_previous_message`; B
-  `injection_refund`, `injection_role`.
+  `injection_refund`, `injection_role`, `withdrawn_message_with_injection`.
+- Since S2: the customer withdrawing their own earlier message is exempt,
+  as that phrase only and only when it stands alone -- once it is set aside,
+  nothing an override reaches for (instructions, rules, a prompt, the
+  system, "everything above", what came before) may be left in the sentence.
+  Every other pattern still applies to the whole text.
+- Known gap of the patterns themselves: an override that names nothing they
+  list ("forget what you were told before") is not caught. The model is
+  told the message is data, and the policy, not the model, authorises.
 - Tests: AD, ML, CP (minimal wording changes), Unicode mutations.
 
 **B06 — Message within vs beyond the engine's input limit** · case
@@ -150,7 +159,8 @@ invoice, and no blocking finding.
   twice → refund of the extra payment, no `DUPLICATE_INVOICE`.
 - Basis: the `Classification` docstring; same classification, different
   instrument.
-- Dev: A `duplicate_fr`, `duplicate_en`; B `duplicate_payment_single_invoice`.
+- Dev: A `duplicate_fr`, `duplicate_en`; B `duplicate_payment_single_invoice`
+  (`DUPLICATE_PAYMENT`, a deterministic rule since lot 3).
 - Gaps: both at once; two payments of which one failed or was refunded.
 - Tests: CP, CO.
 
@@ -377,9 +387,9 @@ row says what kind of limit it is, what covers it today, and what could.
 | L6 | **Disclosure in text**: a correct label does not prove that a reply or explanation reveals nothing of another account or to a suspected impersonator | Assertion | Narrowly: `tests/integration/test_dispute_flow.py` checks that an unknown sender's explanation names no customer; human review of every draft | Deterministic checks on drafts (other customers' ids, names, amounts); a judge model on sampled drafts |
 | L7 | **Evidence fidelity**: an explanation that cites the right evidence for the right reason | Assertion | Cited references outside the context are dropped (`TestEvidenceMapping` in `tests/unit/test_claude_engine.py`): that proves they belong to the context, not that the reasoning is right | Graded review of explanations on samples |
 | L8 | **Incomplete or stale context**: a provider read failure, the 180-day invoice lookback, missing usage data. "Not found" is not "does not exist" | Format (read failures); assertion (data missing from fixtures) | A failed read decides nothing and answers 503; an old invoice, missing usage: `tests/integration/test_unusable_evidence.py` | Fault injection against each real adapter |
-| L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | Outages escalate and are recorded as such; errors fail visibly: `tests/unit/test_claude_engine.py`, `tests/integration/test_unusable_evidence.py` | The same against a real outage, in the pilot |
+| L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | Outages escalate and are recorded as such; errors fail visibly: `tests/unit/test_claude_outages.py` (with the SDK), `tests/integration/test_unusable_evidence.py` | The same against a real outage, in the pilot |
 | L10 | **Sender authentication**: a known address is a lookup, not proof of identity; delegated contacts | Product | Nothing; ADR-007 treats the address as a signal | Verified contacts, signed mail (DKIM/DMARC) at intake, a production identity design |
-| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 30 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
+| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 32 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
 | L12 | **Production approval scope**: approver amount limits, second approval, separation of duties (ADR-009, described, not built) | Product | Nothing | To be specified and built before production |
 | L13 | **Real billing providers**: every case runs on the fake provider | Format | Contract tests of the fake | Adapter contract tests against sandboxes (Pennylane, Qonto) |
 | L14 | **Where mail headers come from**: automated mail is recognised from the headers the intake forwards; their provenance is not verified, and without them only the sender address is checked. Headers can only withhold a reply, never grant one | Format | `tests/unit/test_automated_mail.py` | The support tool or a trusted gateway supplying headers and authentication results (ADR-010, ADR-011) |
@@ -393,15 +403,15 @@ on a question before its decision is built.
 
 | | Decision | Built |
 |---|---|---|
-| S1 | A disputed usage gap with the finding present → `unknown` + escalate; no money founded on it before S5's amounts; under-billing → audit note only. A dedicated classification comes with partial amounts | no |
-| S2 | Narrow exemption: "ignore my previous message" (the customer's own message) is not flagged; instructions, rules and prompts still are; the exemption covers that phrase only | no |
+| S1 | A disputed usage gap with the finding present → `unknown` + escalate; no money founded on it before S5's amounts; under-billing → audit note only. A dedicated classification comes with partial amounts | in part: no money on it, "valid invoice" against an over-billing goes to a person, under-billing is an audit note; the prompt instruction waits for a measured prompt version |
+| S2 | Narrow exemption: "ignore my previous message" (the customer's own message) is not flagged; instructions, rules and prompts still are; the exemption covers that phrase only | yes |
 | S3 | Count corrections, not findings: distinct corrections on one invoice → human review, no amount | yes |
 | S4 | A refund needs a single settled payment covering it; draft, uncollectible and void invoices get no correction; no rule on paused, trialing, past-due subscriptions | yes |
 | S5 | Money only when the whole invoice is the error; partial corrections → human review without an amount. Partial amounts: computed by code from the findings, never above what remains, specified with the real connectors | provisional rule yes, amounts no |
-| S6 | The message cites recognised invoice references, none of them the designated one → ask which | no |
+| S6 | The message cites recognised invoice references, none of them the designated one → ask which | yes |
 | S7 | An unknown reference is looked up directly within the customer; an old invoice → human review; a provider read failure fails visibly | yes |
 | S8 | Confidence below 0.70 → human review in code; engine outages → escalate, recorded as such | yes |
-| S9 | The proration finding states its assumption; a price catalogue comes with the real connectors | no |
+| S9 | The proration finding states its assumption; a price catalogue comes with the real connectors | assumption stated; catalogue with the connectors |
 | S10 | A comparison across currencies does not conclude: a finding, and human review | yes |
 | S11 | Disclosure scoped per channel; an inventory of the internal channels; an automatic check with the reply drafter | no |
 | S12 | Refused money is not shown as a proposal; the engine's recommendation stays recorded | yes |

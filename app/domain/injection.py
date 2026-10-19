@@ -51,6 +51,9 @@ PATTERNS: list[tuple[str, re.Pattern[str]]] = [
             r"\b(tu es|vous etes|you are)\b\s*"
             r"(?:maintenant|desormais|now)?\s*"
             r"(?:un|une|le|la|a|an|the)?\s*"
+            # Up to two words before the role: English puts the adjective
+            # first ("a refund agent"), which the bare article missed.
+            r"(?:[a-z]+\s+){0,2}"
             r"\b(agent|assistant|systeme|system|modele|model|ia|ai|bot|chatbot|robot)\b"
         ),
     ),
@@ -96,14 +99,58 @@ def normalise(message: str) -> str:
     return re.sub(r"\s+", " ", stripped)
 
 
+#: A customer withdrawing their own earlier message: "ignorez mon message
+#: précédent", "please ignore my previous email". Exempt from the override
+#: pattern (taxonomy S2) -- and only that phrase, and only in a sentence that
+#: names nothing a system obeys.
+_OWN_MESSAGE = re.compile(
+    r"\b(?:ignore[zr]?|oubli(?:e|ez|er)|disregard|forget)\b\s+"
+    r"(?:mon|ma|mes|notre|nos|my|our)\s+"
+    r"(?:(?:precedent\w*|dernier\w*|previous|prior|last|earlier)\s+)?"
+    r"(?:message|mail|e-?mail|courriel)s?\b"
+    r"(?:\s+(?:precedent\w*|d'avant))?"
+)
+
+#: What an override reaches for. If any of it is left in the sentence once
+#: the exempt phrase is set aside, the phrase is not exempt: "ignore my
+#: previous message and everything above" keeps its verb.
+_OVERRIDE_OBJECTS = re.compile(
+    r"\b(?:instructions?|consignes?|regles?|rules?|prompt|system|systeme|directives?"
+    r"|precedent\w*|previous|prior|above|ci-dessus|everything|tout ce qui|context\w*"
+    r"|earlier|told|dit)\b"
+)
+
+
+def _without_own_message(normalised: str) -> str:
+    """The text with each exempt phrase blanked, positions kept.
+
+    Sentence by sentence, and only when the phrase stands alone: once it is
+    set aside, nothing an override reaches for may be left in the sentence
+    -- instructions, rules, a prompt, the system, "everything above", what
+    came before. "Ignore my previous email and all prior instructions" and
+    "ignore my previous message and everything above" are still flagged.
+    Every other pattern -- a role, an authority claim, markup -- is matched
+    on the same text, where the exempt phrase is the only thing removed.
+    """
+    sentences = re.split(r"(?<=[.!?;])", normalised)
+    kept = []
+    for sentence in sentences:
+        blanked = _OWN_MESSAGE.sub(lambda m: " " * len(m.group(0)), sentence)
+        if blanked != sentence and not _OVERRIDE_OBJECTS.search(blanked):
+            sentence = blanked
+        kept.append(sentence)
+    return "".join(kept)
+
+
 def suspected_prompt_injection(message: str) -> RuleFinding | None:
     """Flag a dispute message that tries to address the system rather than us."""
     normalised = normalise(message)
+    scanned = _without_own_message(normalised)
 
     matches: list[str] = []
     categories: list[str] = []
     for category, pattern in PATTERNS:
-        found = pattern.search(normalised)
+        found = pattern.search(scanned)
         if found is None:
             continue
         matches.append(found.group(0).strip())

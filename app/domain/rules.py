@@ -12,15 +12,18 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from decimal import Decimal
 
-from app.domain.enums import InvoiceStatus, RuleCode, Severity
+from app.domain.enums import InvoiceStatus, PaymentStatus, RuleCode, Severity
 from app.domain.injection import suspected_prompt_injection
 from app.domain.models import Customer, Invoice, Payment, RuleFinding, Subscription
 
 __all__ = [
+    "cited_invoice_conflict",
     "currency_mismatch",
     "detect_duplicate_invoice",
+    "duplicate_payment",
     "invoice_after_cancellation",
     "proration_mismatch",
     "suspected_impersonation",
@@ -178,6 +181,62 @@ def currency_mismatch(
     )
 
 
+def duplicate_payment(target: Invoice, payments: list[Payment]) -> RuleFinding | None:
+    """One invoice collected twice: two distinct settled payments, each its
+    full total. The payment-side face of a duplicate; the correction is a
+    refund of the extra payment, never a credit note on the invoice."""
+    if target.status is InvoiceStatus.VOID or target.total.amount_minor <= 0:
+        return None
+    full = sorted(
+        {
+            p.id
+            for p in payments
+            if p.invoice_id == target.id
+            and p.status is PaymentStatus.SUCCEEDED
+            and p.amount == target.total
+        }
+    )
+    if len(full) < 2:
+        return None
+    return RuleFinding(
+        code=RuleCode.DUPLICATE_PAYMENT,
+        severity=Severity.HIGH,
+        description="La même facture a été encaissée deux fois, pour son montant total.",
+        evidence={
+            "invoice_id": target.id,
+            "payment_ids": full,
+            "amount_minor": target.total.amount_minor,
+            "currency": target.total.currency,
+        },
+    )
+
+
+def cited_invoice_conflict(
+    cited: Iterable[str], designated: str | None
+) -> RuleFinding | None:
+    """The message cites invoice references, none of them the designated one
+    (taxonomy S6).
+
+    Only a conflict is flagged. A message that cites the designated invoice
+    and others -- a comparison, a history, a suspected duplicate -- is
+    ordinary. `cited` and `designated` come from the provider, which alone
+    knows how its references are written and normalised; a reference written
+    freely ("my September invoice") is not detected.
+    """
+    cited = sorted(set(cited))
+    if not designated or not cited or designated in cited:
+        return None
+    return RuleFinding(
+        code=RuleCode.INVOICE_REFERENCE_CONFLICT,
+        severity=Severity.MEDIUM,
+        description=(
+            "Le message cite d'autres factures que celle désignée : "
+            "demander laquelle est contestée."
+        ),
+        evidence={"designated": designated, "cited": cited},
+    )
+
+
 def invoice_after_cancellation(invoice: Invoice, sub: Subscription) -> RuleFinding | None:
     """A subscription was billed for a period starting after its cancellation."""
     if sub.cancelled_at is None or invoice.status is InvoiceStatus.VOID:
@@ -230,6 +289,9 @@ def suspicious_usage_delta(
             "billed": str(billed),
             "relative_delta": str(relative) if relative is not None else None,
             "tolerance": str(tolerance),
+            # Over-billing is the customer's problem; under-billing is ours,
+            # and is never put to the customer (taxonomy S1).
+            "direction": "over" if billed > expected else "under",
         },
     )
 
@@ -277,8 +339,14 @@ def proration_mismatch(
         return RuleFinding(
             code=RuleCode.PRORATION_MISMATCH,
             severity=Severity.MEDIUM,
-            description="Le montant proratisé ne correspond pas à la période couverte.",
+            description=(
+                "Le montant proratisé ne correspond pas à la période couverte, en "
+                "supposant que chaque ligne porte le prix plein de son forfait."
+            ),
             evidence={
+                # Stated rather than implied (taxonomy S9): a provider billing
+                # one net line breaks it, and nothing here can tell.
+                "assumption": "each line carries the full price of its own plan",
                 "invoice_id": invoice.id,
                 "line_index": index,
                 "line_description": line.description,

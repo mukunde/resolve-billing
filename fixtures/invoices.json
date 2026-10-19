@@ -104,7 +104,7 @@
     "subscription_id": "sub_55",
     "amount": "49.00",
     "currency": "EUR",
-    "state": "open",
+    "state": "paid",
     "issued_at": "2026-09-01T09:00:00",
     "_comment": "Cas E : facture relancee alors que le paiement pay_030 a ete encaisse.",
     "lines": [

@@ -12,6 +12,7 @@ so the fake is the place to prove the application layer relies on it.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 from app.domain.enums import PaymentStatus
@@ -29,6 +30,22 @@ class FakeBillingProvider:
     """In-memory billing platform backed by ``fixtures/``."""
 
     name = "fake"
+
+    #: How this platform writes an invoice reference in free text: `inv_002`,
+    #: `INV-002`, `inv002` -- digits after the prefix, so a word that happens
+    #: to start with "inv" is not one (taxonomy S6).
+    _INVOICE_REFERENCE = re.compile(r"\binv[_-]?(\d{3,})\b", re.IGNORECASE)
+
+    def invoice_references(self, text: str) -> set[str]:
+        """Invoice ids cited in `text`, normalised to this platform's own form.
+
+        Optional on the port (taxonomy S6): only the platform knows its
+        format, and a provider without this method simply has no
+        cited-reference check.
+        """
+        return {
+            f"inv_{match.group(1).lower()}" for match in self._INVOICE_REFERENCE.finditer(text)
+        }
 
     def __init__(self) -> None:
         data = load_all()

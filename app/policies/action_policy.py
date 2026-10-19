@@ -76,6 +76,17 @@ class AutonomyPolicy(BaseModel):
 #: ever sends more disputes to a person, never fewer.
 MIN_CONFIDENCE = 0.70
 
+#: Usage findings that forbid concluding "the invoice is correct", and why.
+_USAGE_DOUBTS = {
+    RuleCode.USAGE_UNAVAILABLE: (
+        "Facture déclarée correcte alors que l'usage n'a pas pu être vérifié."
+    ),
+    RuleCode.SUSPICIOUS_USAGE_DELTA: (
+        "Facture déclarée correcte alors que l'usage facturé dépasse nettement "
+        "l'usage mesuré."
+    ),
+}
+
 #: Findings that stop the system acting, whatever the engine concluded.
 BLOCKING_FINDINGS = frozenset(
     {RuleCode.SUSPECTED_PROMPT_INJECTION, RuleCode.SUSPECTED_IMPERSONATION}
@@ -135,16 +146,17 @@ class ActionPolicy:
             )
 
         # 1c. "The invoice is correct" cannot rest on usage nobody could
-        #     check -- and an engine that says so while proposing money is
-        #     incoherent twice over. Before the money branch, so neither gets
-        #     through.
-        if decision.classification is Classification.VALID_INVOICE and any(
-            f.code is RuleCode.USAGE_UNAVAILABLE for f in findings
-        ):
-            return ActionAuthorization(
-                verdict=Verdict.HUMAN_REVIEW,
-                reason="Facture déclarée correcte alors que l'usage n'a pas pu être vérifié.",
-            )
+        #     check, nor stand against usage the rules found over-billed
+        #     (taxonomy S1, S7) -- and an engine that says so while proposing
+        #     money is incoherent twice over. Before the money branch, so
+        #     neither gets through.
+        if decision.classification is Classification.VALID_INVOICE:
+            usage = next((f for f in findings if f.code in _USAGE_DOUBTS), None)
+            if usage is not None:
+                return ActionAuthorization(
+                    verdict=Verdict.HUMAN_REVIEW,
+                    reason=_USAGE_DOUBTS[usage.code],
+                )
 
         # 2. Money, including the case where money was recommended on a
         #    classification that cannot support it.

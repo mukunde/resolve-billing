@@ -39,8 +39,10 @@ from app.domain.enums import RuleCode, SenderStatus, Severity
 from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
 from app.domain.money import Money
 from app.domain.rules import (
+    cited_invoice_conflict,
     currency_mismatch,
     detect_duplicate_invoice,
+    duplicate_payment,
     invoice_after_cancellation,
     proration_mismatch,
     suspected_impersonation,
@@ -208,6 +210,23 @@ class DisputeInvestigator:
             event("rule_evaluated", code=f.code.value, severity=f.severity.value)
             for f in findings
         )
+        # Under-billing is the business's loss, not the customer's dispute
+        # (taxonomy S1): an audit note, never a finding put to the engine or
+        # in a reply.
+        under = [
+            f
+            for f in findings
+            if f.code is RuleCode.SUSPICIOUS_USAGE_DELTA and f.evidence.get("direction") == "under"
+        ]
+        for finding in under:
+            trace.append(
+                event(
+                    "usage_under_billed",
+                    expected=finding.evidence["expected"],
+                    billed=finding.evidence["billed"],
+                )
+            )
+        findings = [f for f in findings if f not in under]
 
         injection = next(
             (f for f in findings if f.code is RuleCode.SUSPECTED_PROMPT_INJECTION), None
@@ -228,6 +247,13 @@ class DisputeInvestigator:
             trace.append(event("message_too_long", **too_long.evidence))
             trace.append(event("decision_engine_skipped"))
             return self._finish(self._short_circuit(dispute, findings, too_long), trace)
+
+        conflict = next(
+            (f for f in findings if f.code is RuleCode.INVOICE_REFERENCE_CONFLICT), None
+        )
+        if conflict is not None:
+            trace.append(event("decision_engine_skipped"))
+            return self._finish(self._ask_which_invoice(dispute, findings, conflict), trace)
 
         unusable = next((f for f in findings if f.code in _TO_A_PERSON), None)
         if unusable is not None:
@@ -368,6 +394,20 @@ class DisputeInvestigator:
         if automated is not None:
             findings.append(automated)
 
+        references = getattr(self._provider, "invoice_references", None)
+        conflict = (
+            cited_invoice_conflict(
+                references(dispute.customer_message),
+                next(iter(references(dispute.invoice_id)), dispute.invoice_id)
+                if dispute.invoice_id
+                else None,
+            )
+            if references is not None
+            else None
+        )
+        if conflict is not None:
+            findings.append(conflict)
+
         if dispute.invoice_id:
             missing = unknown_invoice(dispute.invoice_id, context.invoices)
             if missing is not None and context.target_outside_window:
@@ -382,6 +422,7 @@ class DisputeInvestigator:
         for finding in (
             currency_mismatch(target, context.invoices, context.payments),
             detect_duplicate_invoice(target, context.invoices),
+            duplicate_payment(target, context.payments),
             *self._subscription_rules(target, context),
             *self._usage_rules(target, context),
         ):
@@ -550,6 +591,37 @@ class DisputeInvestigator:
             ),
             short_circuited_by=automated.code,
             sender=sender,
+        )
+
+    def _ask_which_invoice(
+        self,
+        dispute: Dispute,
+        findings: list[RuleFinding],
+        conflict: RuleFinding,
+    ) -> InvestigationResult:
+        """The message names other invoices than the one designated (taxonomy
+        S6): ask which, rather than investigate -- or correct -- the wrong one.
+        A question moves no money, so the policy authorises it as usual."""
+        decision = Decision(
+            classification=Classification.INSUFFICIENT_INFORMATION,
+            confidence=1.0,
+            confidence_kind="calibrated",  # a rule fired; there is nothing to estimate
+            recommended_action=RecommendedAction.REQUEST_INFORMATION,
+        )
+        return InvestigationResult(
+            run_id=_new_run_id(),
+            dispute=dispute,
+            classification=decision.classification,
+            confidence=decision.confidence,
+            confidence_kind=decision.confidence_kind,
+            decision_engine="none",
+            decision_engine_version="",
+            findings=findings,
+            explanation=deterministic_explanation(findings),
+            proposed_action=ProposedAction(type="request_information"),
+            recommended_action=decision.recommended_action,
+            authorization=self._policy.evaluate(decision, findings),
+            short_circuited_by=conflict.code,
         )
 
     def _ask_for_known_address(

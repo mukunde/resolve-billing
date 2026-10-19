@@ -106,7 +106,7 @@ below 0.70 an instruction rather than a preference. Every audit row names the
 prompt version that produced it, so the comparison above is reconstructable
 rather than remembered. After v3, nothing below 0.70 was returned at all.
 
-**Thirty cases is not calibration either, and none of this opens anything.**
+**Thirty-two cases is not calibration either, and none of this opens anything.**
 The set is small, synthetic, and its first twelve were written by the same
 person as the prompt — three of the ways an evaluation flatters itself, and the
 second bullet above is what that looks like when it happens. `confidence_kind`

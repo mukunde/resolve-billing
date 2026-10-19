@@ -244,3 +244,100 @@ class TestUsageLineByLine:
         found = self.findings(lines, self.usage("api_calls"))
         assert found[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == ["api_calls"]
         assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found
+
+
+class TestCitedInvoice:
+    """Taxonomy S6, through the API."""
+
+    def test_another_invoice_than_the_designated_one_asks_which(self, client):
+        body = investigate(
+            client,
+            message="Ma facture inv_001 de septembre est en double.",
+            customer_email="alice@acme.fr",
+            invoice_id="inv_002",
+        )
+        assert body["findings"][0] == "INVOICE_REFERENCE_CONFLICT"
+        assert body["classification"] == "insufficient_information"
+        assert body["proposed_action"]["type"] == "request_information"
+        assert body["decision_engine"] == "none"
+        assert body["requires_human_approval"] is False
+
+
+class TestUnderBilling:
+    """Taxonomy S1: under-billing is an audit note, never a finding."""
+
+    def test_under_billing_is_noted_not_put_to_the_customer(self):
+        data = FakeBillingProvider()
+        meridien = next(c for c in data._customers if c.id == "cus_meridien")
+        invoice = next(i for i in data._invoices if i.id == "inv_310")
+        usage = Usage(
+            subscription_id="sub_310",
+            metric="api_calls",
+            quantity=Decimal("5000"),
+            period_start=datetime(2026, 9, 1, tzinfo=UTC),
+            period_end=datetime(2026, 10, 1, tzinfo=UTC),
+        )
+
+        class Provider(FakeBillingProvider):
+            async def get_usage(self, subscription_id):
+                return usage
+
+        engine = MockDecisionEngine()
+        investigator = DisputeInvestigator(provider=Provider(), engine=engine)
+        dispute = Dispute(
+            id="dsp",
+            customer_message="Pouvez-vous m'expliquer ma facture ?",
+            customer_email=meridien.email,
+            invoice_id=invoice.id,
+        )
+        import asyncio
+
+        result = asyncio.run(investigator.investigate(dispute, now=NOW))
+        assert "SUSPICIOUS_USAGE_DELTA" not in {f.code.value for f in result.findings}
+        assert "usage_under_billed" in [e.event for e in result.events]
+
+
+class TestUnderBillingNeverMovesAnything:
+    """An engine that tries to act on under-billing gets no money; a reply on
+    another ground stays possible (taxonomy S1)."""
+
+    def test_a_credit_note_on_under_billing_has_no_amount(self):
+        from app.decision.base import Classification, Decision, RecommendedAction
+
+        class Eager:
+            name = "eager"
+            version = "0"
+
+            async def decide(self, dispute, context, findings):
+                return Decision(
+                    classification=Classification.DUPLICATE_BILLING,
+                    confidence=0.99,
+                    confidence_kind="self_reported",
+                    recommended_action=RecommendedAction.PROPOSE_CREDIT_NOTE,
+                )
+
+        usage = Usage(
+            subscription_id="sub_310",
+            metric="api_calls",
+            quantity=Decimal("5000"),
+            period_start=datetime(2026, 9, 1, tzinfo=UTC),
+            period_end=datetime(2026, 10, 1, tzinfo=UTC),
+        )
+
+        class Provider(FakeBillingProvider):
+            async def get_usage(self, subscription_id):
+                return usage
+
+        import asyncio
+
+        dispute = Dispute(
+            id="dsp",
+            customer_message="Pouvez-vous m'expliquer ma facture ?",
+            customer_email="facturation@meridien-data.fr",
+            invoice_id="inv_310",
+        )
+        result = asyncio.run(
+            DisputeInvestigator(provider=Provider(), engine=Eager()).investigate(dispute, now=NOW)
+        )
+        assert result.proposed_action.type == "none"
+        assert result.action_id is None
