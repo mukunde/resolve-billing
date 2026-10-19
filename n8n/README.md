@@ -7,12 +7,18 @@ Litige recu (webhook)
       ↓
 Configuration                    ← the one value to change
       ↓
-Extraction deterministe          ← regex + lookup, no LLM
-      ↓
-POST /disputes/investigate
+Extraction deterministe          ← regex + lookup, no LLM; the sender comes
+      ↓                            from a field, never from the message text
+POST /disputes/investigate       ← message, sender, invoice, mail headers
       ↓
 requires_human_approval ?
-      ├── no  → reponse automatique, no money moves
+      ├── no  → Reponse automatique permise ?   ← automatic_reply_allowed (ADR-011)
+      │         ├── yes → reponse automatique, no money moves (a placeholder:
+      │         │         nothing is sent until a reply drafter exists)
+      │         └── no  → Expediteur inconnu ?
+      │                   ├── yes → Mail de triage   ← to triage_to, not the approvers
+      │                   └── no  → nothing: an auto-reply, a delivery report or
+      │                             bulk mail; the run is in the audit
       └── yes → Action a approuver ?  ← is there anything to decide on?
                 ├── no  → Alerte : revue sans action
                 │         a mail with no buttons, linking to the run page

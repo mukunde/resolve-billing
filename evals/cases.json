@@ -34,7 +34,8 @@
     "expect_classification": "valid_invoice",
     "expect_action": "reply",
     "expect_human_approval": false,
-    "expect_findings": []
+    "expect_findings": [],
+    "expect_automatic_reply": true
   },
   {
     "id": "angry_but_valid",
@@ -208,7 +209,8 @@
       "UNKNOWN_CUSTOMER"
     ],
     "expect_engine_skipped": true,
-    "expect_sender": "unknown"
+    "expect_sender": "unknown",
+    "expect_automatic_reply": false
   },
   {
     "id": "unknown_sender_known_invoice",
@@ -315,5 +317,84 @@
     "why": "Ex-holdout S1, moved to dev on 2026-10-18. The sender address does not belong to any customer, so UNKNOWN_CUSTOMER applies. The only impersonation signal is company_name: the message explicitly names Kalythéa Systems SAS, matching the customer's display name once the legal form is ignored. No invoice reference is supplied, the sender domain is unrelated to every customer domain, and it is not a lookalike. Because SUSPECTED_IMPERSONATION is blocking, no financial action is proposed and the decision engine is skipped.",
     "label_source": "author",
     "generator": "openai/gpt-5.6-sol"
+  },
+  {
+    "id": "known_customer_out_of_office",
+    "why": "An out-of-office reply from a known customer's address, marked by RFC 3834. There is nothing to investigate: the engine is not called, nothing is proposed, nobody is alerted, and no automatic reply is allowed, which is what keeps two responders from answering each other forever (ADR-011).",
+    "message": "Bonjour,\n\nJe suis absente du bureau jusqu'au 3 novembre inclus. Pour toute urgence, merci d'écrire à la comptabilité.\n\nCordialement,\nAlice",
+    "customer_email": "alice@acme.fr",
+    "invoice_id": null,
+    "headers": {
+      "Auto-Submitted": "auto-replied"
+    },
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": false,
+    "expect_findings": [
+      "AUTOMATED_RESPONSE"
+    ],
+    "expect_engine_skipped": true,
+    "expect_automatic_reply": false
+  },
+  {
+    "id": "known_customer_bulk_dispute",
+    "why": "A real duplicate reported by a known customer through software that marks its mail as bulk. A real dispute can come from a machine, so it is investigated as usual and the credit note goes to a human; only the automatic reply is withheld (ADR-011).",
+    "message": "Bonjour, nous avons reçu deux factures pour l'abonnement de septembre (inv_001 et inv_002). Merci de corriger.",
+    "customer_email": "alice@acme.fr",
+    "invoice_id": "inv_002",
+    "headers": {
+      "Precedence": "bulk",
+      "List-Id": "<comptabilite.acme.fr>"
+    },
+    "expect_classification": "duplicate_billing",
+    "expect_action": "credit_note",
+    "expect_human_approval": true,
+    "expect_findings": [
+      "DUPLICATE_INVOICE",
+      "AUTOMATED_MESSAGE"
+    ],
+    "expect_automatic_reply": false
+  },
+  {
+    "id": "unknown_sender_newsletter",
+    "why": "A newsletter from an address no customer holds, naming no customer, invoice or domain. Nobody can be asked anything: nothing is proposed, nobody is alerted, no automatic reply is allowed, and the run is still recorded (ADR-011).",
+    "message": "Offre spéciale d'automne : -30 % sur tous nos forfaits de stockage en ligne. Profitez-en avant le 31 octobre !",
+    "customer_email": "news@promo-stockage.example.test",
+    "invoice_id": null,
+    "headers": {
+      "Precedence": "bulk",
+      "List-Unsubscribe": "<mailto:stop@promo-stockage.example.test>"
+    },
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": false,
+    "expect_findings": [
+      "UNKNOWN_CUSTOMER",
+      "AUTOMATED_MESSAGE"
+    ],
+    "expect_engine_skipped": true,
+    "expect_sender": "unknown",
+    "expect_automatic_reply": false
+  },
+  {
+    "id": "unknown_sender_delivery_report",
+    "why": "A delivery failure report: sent by MAILER-DAEMON with a null return path. Answering it is how mail loops start, and there is nothing to investigate; nothing is proposed and nobody is alerted (ADR-011).",
+    "message": "Delivery Status Notification (Failure)\n\nYour message could not be delivered to one or more recipients. The recipient's mailbox is full.",
+    "customer_email": "MAILER-DAEMON@mx.relais.example.test",
+    "invoice_id": null,
+    "headers": {
+      "Return-Path": "<>",
+      "Auto-Submitted": "auto-replied"
+    },
+    "expect_classification": "unknown",
+    "expect_action": "none",
+    "expect_human_approval": false,
+    "expect_findings": [
+      "UNKNOWN_CUSTOMER",
+      "AUTOMATED_RESPONSE"
+    ],
+    "expect_engine_skipped": true,
+    "expect_sender": "unknown",
+    "expect_automatic_reply": false
   }
 ]

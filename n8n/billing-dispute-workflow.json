@@ -59,6 +59,12 @@
               "name": "notify_from",
               "value": "agent-facturation@acme.test",
               "type": "string"
+            },
+            {
+              "id": "triage-to",
+              "name": "triage_to",
+              "value": "triage@acme.test",
+              "type": "string"
             }
           ]
         },
@@ -77,7 +83,7 @@
         0
       ],
       "parameters": {
-        "jsCode": "// Extraction sans LLM : motif sur la reference de facture,\n// adresse courriel de l'expediteur, corps du message tel quel.\n//\n// Un echec d'extraction n'est pas une erreur : le run part sur\n// insufficient_information, qui est deja un cas gere par l'API.\n// C'est un chemin d'erreur gratuit, et un appel probabiliste de moins.\n\nconst body = $input.first().json.body ?? $input.first().json;\nconst text = String(body.message ?? body.text ?? '');\n\nconst invoice = text.match(/\\binv[_-]?([A-Za-z0-9]{3,})\\b/i);\nconst email =\n  body.customer_email ??\n  body.from ??\n  (text.match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/) || [null])[0];\n\nreturn [{\n  json: {\n    message: text,\n    customer_email: email,\n    invoice_id: invoice ? invoice[0].replace('-', '_') : null,\n    extraction_ok: Boolean(email)\n  }\n}];"
+        "jsCode": "// Extraction sans LLM : motif sur la reference de facture, adresse de\n// l'expediteur, corps du message tel quel, en-tetes du mail s'il y en a.\n//\n// L'expediteur vient d'un champ de la source, jamais du texte du message :\n// une adresse citee dans un message n'est pas celle de qui l'a ecrit\n// (ADR-011). Sans expediteur, l'API refuse la requete et la branche\n// d'erreur previent une personne.\n//\n// Une reference de facture introuvable n'est pas une erreur : le run part\n// sur insufficient_information, deja gere par l'API.\n\nconst body = $input.first().json.body ?? $input.first().json;\nconst text = String(body.message ?? body.text ?? '');\n\nconst invoice = text.match(/\\binv[_-]?([A-Za-z0-9]{3,})\\b/i);\nconst email = body.customer_email ?? body.from ?? null;\nconst headers =\n  body.headers && typeof body.headers === 'object' ? body.headers : null;\n\nreturn [{\n  json: {\n    message: text,\n    customer_email: email,\n    invoice_id: invoice ? invoice[0].replace('-', '_') : null,\n    headers,\n    extraction_ok: Boolean(email)\n  }\n}];"
       }
     },
     {
@@ -103,7 +109,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ message: $json.message, customer_email: $json.customer_email, invoice_id: $json.invoice_id }) }}",
+        "jsonBody": "={{ JSON.stringify({ message: $json.message, customer_email: $json.customer_email, invoice_id: $json.invoice_id, headers: $json.headers }) }}",
         "options": {
           "timeout": 90000
         }
@@ -146,10 +152,10 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        520,
-        160
+        780,
+        100
       ],
-      "notes": "Cas B et C. Le brouillon est relu avant envoi ; aucune action financiere."
+      "notes": "Seulement si automatic_reply_allowed (ADR-011) : client connu, rien a approuver, ni message automatique. Le brouillon est relu avant envoi ; aucune action financiere."
     },
     {
       "id": "notify",
@@ -362,6 +368,103 @@
           "name": "Mailpit local"
         }
       }
+    },
+    {
+      "id": "reply-allowed",
+      "name": "Reponse automatique permise ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "reply-allowed",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.automatic_reply_allowed }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "unknown-sender",
+      "name": "Expediteur inconnu ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        780,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "unknown-sender",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.automatic_reply_reason }}",
+              "rightValue": "unknown_sender"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mail-triage",
+      "name": "Mail de triage (expediteur inconnu)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1000,
+        220
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailpitLocal0001",
+          "name": "Mailpit local"
+        }
+      },
+      "parameters": {
+        "fromEmail": "={{ $('Configuration').first().json.notify_from }}",
+        "toEmail": "={{ $('Configuration').first().json.triage_to }}",
+        "subject": "=[Triage] [{{ $('POST /disputes/investigate').item.json.run_id }}] Expediteur inconnu : {{ $('Extraction deterministe').first().json.customer_email }}",
+        "emailFormat": "text",
+        "text": "=Un message vient d'une adresse qu'aucun client ne detient.\n\nAucune reponse automatique n'a ete envoyee (ADR-011) : on ne sait pas\ndistinguer cet expediteur d'une adresse usurpee. Le systeme propose de lui\ndemander d'ecrire depuis l'adresse connue du client ; c'est a vous de\nl'envoyer, ou non. Ne confirmez a cet expediteur l'existence d'aucun\ncompte ni d'aucune facture.\n\nExpediteur : {{ $('Extraction deterministe').first().json.customer_email }}\nRun        : {{ $('POST /disputes/investigate').item.json.run_id }}\nConstats   : {{ ($('POST /disputes/investigate').item.json.findings ?? []).join(', ') || 'aucun' }}\n\nConsulter le run et sa trace :\n{{ $('Configuration').first().json.public_api }}/api/v1/runs/{{ $('POST /disputes/investigate').item.json.run_id }}/view\n",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "no-reply",
+      "name": "Aucune reponse (message automatique)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        340
+      ],
+      "notes": "Reponse automatique, rapport de remise, message de masse (ADR-011) : personne n'est alerte, aucune reponse ; le run reste dans l'audit."
     }
   ],
   "connections": {
@@ -416,7 +519,7 @@
         ],
         [
           {
-            "node": "Reponse automatique (aucun mouvement d'argent)",
+            "node": "Reponse automatique permise ?",
             "type": "main",
             "index": 0
           }
@@ -492,6 +595,42 @@
         [
           {
             "node": "Alerte : execution non aboutie",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reponse automatique permise ?": {
+      "main": [
+        [
+          {
+            "node": "Reponse automatique (aucun mouvement d'argent)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Expediteur inconnu ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expediteur inconnu ?": {
+      "main": [
+        [
+          {
+            "node": "Mail de triage (expediteur inconnu)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Aucune reponse (message automatique)",
             "type": "main",
             "index": 0
           }

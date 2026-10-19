@@ -32,6 +32,7 @@ from app.decision.base import (
     EngineTelemetry,
     RecommendedAction,
 )
+from app.domain.automated import automated_message
 from app.domain.enums import RuleCode, SenderStatus, Severity
 from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
 from app.domain.money import Money
@@ -48,6 +49,7 @@ from app.domain.rules import (
 from app.observability import tracing
 from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
 from app.policies.correction import correction_for
+from app.policies.reply import AutomaticReply, automatic_reply
 from app.providers.base import BillingProvider
 
 #: How far back to pull invoices when assembling the context.
@@ -99,6 +101,10 @@ class InvestigationResult(BaseModel):
     short_circuited_by: RuleCode | None = None
     sender: SenderStatus = SenderStatus.KNOWN
     """Whether we know who wrote. Decided by the rules, never by the engine."""
+    automatic_reply: AutomaticReply = AutomaticReply()
+    """Whether text may be sent to the sender unattended, and why or why not.
+    The only authority on an automatic reply (ADR-011); set once the run is
+    finished, false until then."""
 
     @property
     def requires_human_approval(self) -> bool:
@@ -188,6 +194,11 @@ class DisputeInvestigator:
             trace.append(event("decision_engine_skipped"))
             return self._finish(self._short_circuit(dispute, findings, injection), trace)
 
+        response = next((f for f in findings if f.code is RuleCode.AUTOMATED_RESPONSE), None)
+        if response is not None:
+            trace.append(event("decision_engine_skipped"))
+            return self._finish(self._set_aside(dispute, findings, response), trace)
+
         too_long = _message_too_long(dispute.customer_message)
         if too_long is not None:
             findings.append(too_long)
@@ -215,7 +226,11 @@ class DisputeInvestigator:
             trace.append(event("approval_requested", verdict=verdict))
 
         action_id = self._queue_for_approval(result, trace)
-        recorded = result.model_copy(update={"events": trace, "action_id": action_id})
+        reply = automatic_reply(result)
+        trace.append(event("automatic_reply", allowed=reply.allowed, reason=reply.reason.value))
+        recorded = result.model_copy(
+            update={"events": trace, "action_id": action_id, "automatic_reply": reply}
+        )
         if self._audit is not None:
             self._audit.record(recorded, billing_provider=self._provider.name)
         return recorded
@@ -299,6 +314,10 @@ class DisputeInvestigator:
         if injection is not None:
             findings.append(injection)
 
+        automated = automated_message(dispute.customer_email, dispute.headers)
+        if automated is not None:
+            findings.append(automated)
+
         if dispute.invoice_id:
             missing = unknown_invoice(dispute.invoice_id, context.invoices)
             if missing is not None:
@@ -358,6 +377,10 @@ class DisputeInvestigator:
         assert unknown is not None  # no customer was found: the rule always fires
         findings.append(unknown)
 
+        automated = automated_message(dispute.customer_email, dispute.headers)
+        if automated is not None:
+            findings.append(automated)
+
         invoice = (
             await self._provider.find_invoice(dispute.invoice_id) if dispute.invoice_id else None
         )
@@ -383,9 +406,18 @@ class DisputeInvestigator:
             if impersonation is not None
             else SenderStatus.UNKNOWN
         )
-        blocking = injection or impersonation
-        if blocking is not None:
-            return self._short_circuit(dispute, findings, blocking, sender)
+        # ADR-011's order: an injection, an automated response, a suspected
+        # impersonation, an automated message, then a person. Impersonation
+        # outranks bulk mail: a marketing mail naming a customer costs one
+        # review, a fraud dressed as marketing costs more.
+        if injection is not None:
+            return self._short_circuit(dispute, findings, injection, sender)
+        if automated is not None and automated.code is RuleCode.AUTOMATED_RESPONSE:
+            return self._set_aside(dispute, findings, automated, sender)
+        if impersonation is not None:
+            return self._short_circuit(dispute, findings, impersonation, sender)
+        if automated is not None:
+            return self._set_aside(dispute, findings, automated, sender)
         return self._ask_for_known_address(dispute, findings, unknown)
 
     # -- assembly ----------------------------------------------------------
@@ -419,17 +451,56 @@ class DisputeInvestigator:
             sender=sender,
         )
 
+    def _set_aside(
+        self,
+        dispute: Dispute,
+        findings: list[RuleFinding],
+        automated: RuleFinding,
+        sender: SenderStatus = SenderStatus.KNOWN,
+    ) -> InvestigationResult:
+        """Automated mail with nothing to act on (ADR-011): an auto-reply or a
+        delivery report, or bulk mail from someone nobody can be asked.
+
+        Nothing is proposed and nobody is alerted -- an approver buried under
+        out-of-office replies stops reading -- but the run is recorded like
+        any other. The verdict is set here rather than by the policy, as for
+        every short circuit: there is no decision for the policy to read.
+        """
+        return InvestigationResult(
+            run_id=_new_run_id(),
+            dispute=dispute,
+            classification=Classification.UNKNOWN,
+            confidence=1.0,
+            confidence_kind="calibrated",  # a rule fired; there is nothing to estimate
+            decision_engine="none",
+            decision_engine_version="",
+            findings=findings,
+            explanation=deterministic_explanation(findings),
+            proposed_action=ProposedAction(type="none"),
+            authorization=ActionAuthorization(
+                verdict=Verdict.AUTO,
+                reason=(
+                    f"Message automatique ({automated.code.value}) : rien à proposer, "
+                    "personne à alerter, aucune réponse automatique."
+                ),
+            ),
+            short_circuited_by=automated.code,
+            sender=sender,
+        )
+
     def _ask_for_known_address(
         self,
         dispute: Dispute,
         findings: list[RuleFinding],
         unknown: RuleFinding,
     ) -> InvestigationResult:
-        """Ask the sender to write from the address we know.
+        """Propose asking the sender to write from the address we know.
 
         Authorised by the policy like any engine decision would be: a question
-        moves no money. The explanation is built from the findings alone, so
-        the reply names no customer.
+        moves no money. But it is never sent automatically (ADR-011): nobody
+        can tell this sender from a forged address, so a person sends it, or
+        not. The explanation is built from the findings alone, so the
+        request names no customer.
         """
         decision = Decision(
             classification=Classification.INSUFFICIENT_INFORMATION,

@@ -127,11 +127,11 @@ agent. Autonomy thresholds exist in the code and are off.
 | Approval and execution | authenticated approvers, proposal fingerprint, 72 h expiry, idempotent execution, uncertain outcomes reconciled with the platform | identity provider (OIDC) instead of a configured list |
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
 | Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository | Stripe (test mode), then Pennylane; Qonto for payment evidence |
-| Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person | message masking before the model (D10); no automatic reply to automated mail (D11) |
-| Evaluation | 24 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
+| Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox | message masking before the model (D10); authentication results from a trusted gateway |
+| Evaluation | 28 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
 
-**Measured today** (mock engine, every push): **18/24 fully correct, 0/24
+**Measured today** (mock engine, every push): **22/28 fully correct, 0/28
 unsafe actions**. The Claude engine was last measured on the original twelve
 cases ([evaluation](#evaluation)).
 
@@ -170,6 +170,7 @@ Each is a decision with a record, and each record says what would change it.
 | An unknown sender gets a result | Nothing about an account is said to someone nobody has verified | [ADR-007](docs/adr/007-unknown-sender.md) |
 | One claim per execution; no answer is not a no | A timeout after a write is reconciled, never retried blind | [ADR-008](docs/adr/008-execution-state-machine.md) |
 | Trust boundaries | Every route that acts takes an authenticated caller; the identity on a decision is the signed-in one | [ADR-009](docs/adr/009-trust-boundaries.md) |
+| No automatic reply unless safe | Needing no approval is not permission to answer; detected automated mail and unknown senders never get an automatic reply | [ADR-011](docs/adr/011-automated-mail-and-automatic-replies.md) |
 
 Why there is no RAG, no function calling, no multi-agent setup and no
 framework, and the condition under which each would come in, is argued in
@@ -185,10 +186,16 @@ What the system does not do yet, said plainly.
   on fake data, locally. Tests on a fake prove a contract, not an adapter.
 - **Defects found in review and still open**, each changing what an
   investigation concludes: matching the customer found to the sender (D9),
-  masking the message itself before the model (D10), no automatic reply to an
-  unknown sender before automated mail is filtered (D11), and preconditions
-  for each rule (D14). Today an unknown sender -- a spammer included -- can
-  receive an automatic request to write from a known address.
+  masking the message itself before the model (D10), and preconditions for
+  each rule (D14).
+- **No reply is sent automatically yet.** The workflow's automatic-reply
+  branch is a placeholder and no reply drafter exists; what the system
+  decides is whether one *may* be sent (`automatic_reply_allowed`,
+  [ADR-011](docs/adr/011-automated-mail-and-automatic-replies.md)).
+- **Spam filtering is not here.** Automated mail is recognised from the
+  headers the intake forwards; without headers, only the sender address is
+  checked. Filtering spam belongs to the support tool in the target
+  integration.
 - **Decided, not yet built**: what a usage gap leads to, a narrower
   injection screen, invoice references cited in the message, incomplete
   context, low confidence and engine outages, currencies, and disclosure per
@@ -200,7 +207,7 @@ What the system does not do yet, said plainly.
   in a case but not asserted yet; sender authentication is a property the
   product does not have. Each limit, and what covers it, is listed in the
   [taxonomy](evals/taxonomy.md#3-what-the-evaluation-set-does-not-test).
-- **Confidence is self-reported.** Twenty-four cases calibrate nothing, so
+- **Confidence is self-reported.** Twenty-eight cases calibrate nothing, so
   the autonomy thresholds stay shut.
 
 ---
@@ -212,7 +219,7 @@ python -m evals.runner --engine mock      # free, deterministic, every push
 python -m evals.runner --engine claude    # real calls, on demand
 ```
 
-**Development set.** 24 cases, each with a `why` field saying what it is
+**Development set.** 28 cases, each with a `why` field saying what it is
 there to catch. They were read while the rules and the prompt were written, so
 a score on them says how well the system fits them, not how it does on a
 dispute it has not seen. [`evals/taxonomy.md`](evals/taxonomy.md) lists the
@@ -221,7 +228,7 @@ decision boundaries they cover, the ones they miss, and their redundancies.
 **What CI enforces.** The build fails if the system would move money where
 the case set says none moves, propose money without a human or to an
 unverified sender, or answer a suspected impersonator. It fails again below
-the mock's measured score (18), and again if any check of any case differs
+the mock's measured score (22), and again if any check of any case differs
 from the recorded baseline -- an improvement included, until the baseline is
 regenerated in the same commit.
 
@@ -295,7 +302,7 @@ On the way, in order:
    confidence, incomplete context and currencies; then the usage gap, cited
    references, the narrower injection screen and a rule for duplicate
    payments; then disclosure per channel.
-2. **The open review defects** (D9, D10, D11, D14), each through a bug record.
+2. **The open review defects** (D9, D10, D14), each through a bug record.
 3. **The new blind holdout**, generated in an isolated environment and
    adjudicated, then a reference run.
 4. **Real integrations**: Stripe in test mode, then Pennylane as a second
@@ -348,6 +355,7 @@ tracing, the MCP server, cost reconciliation and querying the audit are in
 | [ADR-008](docs/adr/008-execution-state-machine.md) | Executing a financial action: one claim, and no answer is not a no |
 | [ADR-009](docs/adr/009-trust-boundaries.md) | Trust boundaries: who may call, and whose identity a decision carries |
 | [ADR-010](docs/adr/010-target-integration-architecture.md) | Target integration: the support tool owns the case, a durable workflow owns the lifecycle *(not built)* |
+| [ADR-011](docs/adr/011-automated-mail-and-automatic-replies.md) | Automated mail, and who may receive an automatic reply |
 
 More: [engineering notes](docs/engineering-notes.md) (incidents, review
 findings, techniques not used) · [operations](docs/operations.md) ·

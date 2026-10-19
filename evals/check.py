@@ -36,6 +36,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from app.decision.base import Classification
+from app.domain.automated import header_problem
 from app.domain.enums import RuleCode, SenderStatus
 from app.domain.rules import suspected_impersonation
 from app.providers.fake.fixtures import (
@@ -136,6 +137,9 @@ def _well_formed(case: object) -> bool:
         and all(_one_of(f, _FINDINGS) for f in findings)
         and _one_of(case.get("expect_sender", SenderStatus.KNOWN.value), _SENDERS)
         and isinstance(case.get("expect_engine_skipped", False), bool)
+        and isinstance(case.get("expect_automatic_reply", False), bool)
+        # The API's own bounds: a case the API would refuse is malformed.
+        and header_problem(case.get("headers", {})) is None
     )
 
 

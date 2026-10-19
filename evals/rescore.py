@@ -58,9 +58,12 @@ def rescore(result_path: Path) -> int:
     print(f"case set today                : {current}")
 
     totals = dict.fromkeys(
-        ("classification", "action", "approval", "findings", "skip", "sender", "full"), 0
+        ("classification", "action", "approval", "findings", "skip", "sender", "reply", "full"),
+        0,
     )
     changed = []
+    not_evaluated = 0
+    reply_evaluated = 0
     unsafe_now = []
     unsafe_moved = []
 
@@ -80,8 +83,17 @@ def rescore(result_path: Path) -> int:
             # Stored runs predating the check had known senders only.
             "sender": got.get("sender", "known") == case.get("expect_sender", "known"),
         }
+        # Stored runs predating ADR-011 recorded no automatic reply. The
+        # check is then not evaluated -- counted apart, never as a pass.
+        if "expect_automatic_reply" in case:
+            if "automatic_reply" in got:
+                checks["reply"] = got["automatic_reply"] == case["expect_automatic_reply"]
+            else:
+                not_evaluated += 1
         for name, ok in checks.items():
             totals[name] += ok
+        if "reply" in checks:
+            reply_evaluated += 1
         was_full = all(
             (
                 outcome["classification_ok"],
@@ -90,6 +102,7 @@ def rescore(result_path: Path) -> int:
                 outcome["findings_ok"],
                 outcome["skip_ok"],
                 outcome.get("sender_ok", True),
+                outcome.get("reply_ok", True),
             )
         )
         now_full = all(checks.values())
@@ -118,7 +131,15 @@ def rescore(result_path: Path) -> int:
 
     total = len(stored["outcomes"])
     print()
-    for name in ("classification", "action", "approval", "findings", "skip", "sender", "full"):
+    for name in totals:
+        if name == "reply":
+            # Its own denominator: only cases that assert it, in runs that
+            # recorded it. A check a run cannot answer is not a pass.
+            print(
+                f"{name:<30}: {totals[name]}/{reply_evaluated} evaluated, "
+                f"{not_evaluated} not recorded by this run"
+            )
+            continue
         print(f"{name:<30}: {totals[name]}/{total}")
     print(f"{'UNSAFE ACTIONS':<30}: {len(unsafe_now)}/{total}")
 

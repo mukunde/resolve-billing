@@ -281,6 +281,36 @@ invoice, and no blocking finding.
   in code and are off (ADR-004).
 - Dev: widely covered on both sides.
 
+### Automated mail and automatic replies (ADR-011)
+
+**B24 — A person vs an automated response** · case
+- A: no automated signal → investigated as usual.
+- B: an auto-reply or a delivery report (`Auto-Submitted: auto-replied`,
+  `Precedence: auto_reply`, a null `Return-Path`, a `MAILER-DAEMON` or
+  `postmaster` sender) → `AUTOMATED_RESPONSE`, engine skipped, nothing
+  proposed, nobody alerted, no automatic reply.
+- Dev: B `known_customer_out_of_office`, `unknown_sender_delivery_report`.
+- Gaps: each signal alone; an auto-reply that quotes a real dispute.
+- Tests: CP, MU, AD (forged or contradictory headers).
+
+**B25 — Investigated, but never answered automatically** · case
+- A known sender's bulk, list or generated mail → investigated as usual,
+  `AUTOMATED_MESSAGE`, `automatic_reply_allowed` false. From an unknown
+  sender → nothing proposed, nobody alerted.
+- Dev: `known_customer_bulk_dispute`, `unknown_sender_newsletter`.
+- Gaps: `X-Auto-Response-Suppress` alone; a newsletter naming a customer
+  (impersonation outranks bulk mail, tested in
+  `tests/integration/test_automatic_reply.py`).
+- Tests: CP, MU.
+
+**B26 — Who may receive an automatic reply** · case
+- Allowed only for a known sender, an `AUTO` verdict, a `reply` or
+  `request_information` action and no automated-mail finding. An unknown
+  sender never gets one: the request goes to a triage mailbox.
+- Dev: allowed `legitimate_overage`; refused `unknown_sender_plain` and the
+  four cases above.
+- Tests: CP.
+
 ## 2. Invariances
 
 Crossed with the boundaries above: a test varies one of them while
@@ -321,9 +351,10 @@ row says what kind of limit it is, what covers it today, and what could.
 | L8 | **Incomplete or stale context**: a provider read failure, the 180-day invoice lookback, missing usage data. "Not found" is not "does not exist" | Format (read failures); assertion (data missing from fixtures) | No targeted coverage identified | Fault injection on the billing provider; a specified outcome first (S7) |
 | L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | `tests/unit/test_claude_engine.py` | A specified, visible outcome for each failure (S8) |
 | L10 | **Sender authentication**: a known address is a lookup, not proof of identity; delegated contacts | Product | Nothing; ADR-007 treats the address as a signal | Verified contacts, signed mail (DKIM/DMARC) at intake, a production identity design |
-| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 24 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
+| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 28 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
 | L12 | **Production approval scope**: approver amount limits, second approval, separation of duties (ADR-009, described, not built) | Product | Nothing | To be specified and built before production |
 | L13 | **Real billing providers**: every case runs on the fake provider | Format | Contract tests of the fake | Adapter contract tests against sandboxes (Pennylane, Qonto) |
+| L14 | **Where mail headers come from**: automated mail is recognised from the headers the intake forwards; their provenance is not verified, and without them only the sender address is checked. Headers can only withhold a reply, never grant one | Format | `tests/unit/test_automated_mail.py` | The support tool or a trusted gateway supplying headers and authentication results (ADR-010, ADR-011) |
 
 ## 4. Specification questions
 

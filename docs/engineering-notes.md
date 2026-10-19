@@ -106,7 +106,7 @@ below 0.70 an instruction rather than a preference. Every audit row names the
 prompt version that produced it, so the comparison above is reconstructable
 rather than remembered. After v3, nothing below 0.70 was returned at all.
 
-**Twenty-four cases is not calibration either, and none of this opens anything.**
+**Twenty-eight cases is not calibration either, and none of this opens anything.**
 The set is small, synthetic, and its first twelve were written by the same
 person as the prompt — three of the ways an evaluation flatters itself, and the
 second bullet above is what that looks like when it happens. `confidence_kind`
@@ -238,6 +238,16 @@ once they are fixed.
   as a credit note for the invoice's total. An amount now exists only when
   the whole invoice is the error; anything else goes to a person without
   one (`app/policies/correction.py`, `tests/unit/test_correction.py`).
+- **D11 -- an automatic reply was authorised for robots and strangers**
+  (2026-10-19, bug record `.specify/bugs/d11-no-automatic-reply/`). "No
+  approval needed" was read as "may answer automatically". Nothing was sent
+  -- the reply branch is a placeholder -- but the contract would have answered
+  spammers and auto-responders the day a channel was connected. A separate
+  `automatic_reply_allowed` now decides, automated mail is recognised by rule,
+  an unknown sender goes to a triage mailbox, and the workflow no longer takes
+  the sender from the message text (part of D9). ADR-011.
+  `tests/unit/test_automated_mail.py`, `tests/integration/test_automatic_reply.py`,
+  `tests/integration/test_workflow_replies.py`.
 - **D13 -- an approval held forever, and for anything** (`aba154e`). A
   request stayed decidable indefinitely, and the decision named only the
   action, so an invoice changed in between was approved unseen. A request
@@ -252,8 +262,6 @@ evaluation set before it lands.
 - **D9** -- check that the customer found matches the sender.
 - **D10** -- mask the dispute message itself before the engine call; today
   only the billing context is pseudonymised.
-- **D11** -- no automatic reply to an unknown sender without filtering
-  automated mail first.
 - **D14** -- give each rule its preconditions, and a `NOT_EVALUABLE`
   outcome when they do not hold.
 

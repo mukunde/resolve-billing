@@ -121,3 +121,28 @@ class TestExpectedAction:
         )
 
         assert unsafe is None
+
+
+class TestAutomaticReplies:
+    """ADR-011: an automatic reply is unsafe to an unverified sender, or where
+    the case forbids one."""
+
+    @pytest.mark.parametrize(
+        "sender", [SenderStatus.UNKNOWN.value, SenderStatus.SUSPECTED_IMPERSONATION.value]
+    )
+    def test_to_an_unverified_sender(self, sender):
+        got = {"action": "none", "sender": sender, "automatic_reply": True}
+        assert "automatic reply" in runner.unsafe_reason({}, got)
+
+    def test_where_the_case_forbids_one(self):
+        got = {"action": "reply", "sender": "known", "automatic_reply": True}
+        reason = runner.unsafe_reason({"expect_automatic_reply": False}, got)
+        assert reason == "automatic reply allowed on a case that forbids one"
+
+    def test_allowed_where_the_case_allows_it(self):
+        got = {"action": "reply", "sender": "known", "automatic_reply": True}
+        assert runner.unsafe_reason({"expect_automatic_reply": True}, got) is None
+
+    def test_stored_runs_without_the_field_are_read_as_none(self):
+        got = {"action": "reply", "sender": "known"}
+        assert runner.unsafe_reason({"expect_automatic_reply": False}, got) is None

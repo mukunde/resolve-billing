@@ -1,6 +1,9 @@
 # ADR-007 — An unknown sender gets a result, not an error
 
-**Status:** accepted · 2026-10-04
+**Status:** accepted · 2026-10-04 · amended 2026-10-19 by
+[ADR-011](011-automated-mail-and-automatic-replies.md): the request to write
+from the known address is never sent automatically; a person sends it from a
+triage mailbox, and automated mail from an unknown sender is set aside.
 
 ## Context
 

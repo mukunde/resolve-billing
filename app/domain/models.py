@@ -132,6 +132,10 @@ class Dispute(BaseModel):
     customer_id: str | None = None
     customer_email: str | None = None
     invoice_id: str | None = None
+    headers: tuple[tuple[str, str], ...] = ()
+    """Mail headers the intake forwarded, as (name, value) pairs, repeats
+    kept. Untrusted like the message: they can only take an automatic reply
+    away (ADR-011)."""
 
 
 class BillingContext(BaseModel):

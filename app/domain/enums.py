@@ -102,3 +102,8 @@ class RuleCode(StrEnum):
     # Not a billing rule: an input check, made before the engine. The message
     # is longer than what is sent to a model, so a person reads it instead.
     MESSAGE_TOO_LONG = "MESSAGE_TOO_LONG"
+    # Input checks on automated mail (ADR-011): never an automatic reply.
+    # An auto-reply or a delivery report, with nothing to investigate...
+    AUTOMATED_RESPONSE = "AUTOMATED_RESPONSE"
+    # ...and generated, bulk or list mail, investigated from a known sender.
+    AUTOMATED_MESSAGE = "AUTOMATED_MESSAGE"
