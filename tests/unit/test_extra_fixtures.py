@@ -246,11 +246,20 @@ class TestCheckOnly:
             case(expect_action="wire_transfer"),
             case(expect_human_approval="yes"),
             case(expect_sender="somebody"),
+            case(expect_classification=["valid_invoice"]),
+            case(expect_action={"type": "reply"}),
+            case(expect_findings=[["UNKNOWN_INVOICE"]]),
+            case(expect_sender=["unknown"]),
         ],
     )
     def test_mistyped_cases_are_counted_not_raised(self, monkeypatch, tmp_path, capsys, bad):
         assert self.run(monkeypatch, tmp_path, [bad]) == 1
         assert "cases malformed               : 1" in capsys.readouterr().out
+
+    def test_an_invoice_on_another_customers_subscription(self, monkeypatch, tmp_path, capsys):
+        crossed = dict(ONE_OF_EACH, **{"invoices.json": [dict(INVOICE, subscription_id="sub_77")]})
+        assert self.run(monkeypatch, tmp_path, [case()], files=crossed) == 1
+        assert "fixture links not resolved    : 1" in capsys.readouterr().out
 
     def test_an_orphan_link_between_fixtures(self, monkeypatch, tmp_path, capsys):
         orphan = dict(ONE_OF_EACH, **{"payments.json": [dict(PAYMENT, invoice_id="inv_ghost")]})

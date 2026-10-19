@@ -105,11 +105,16 @@ def _fail(what: str, category: str) -> int:
 
 def _orphan_links(data: FixtureSet) -> int:
     customers = {c.id for c in data.customers}
-    subscriptions = {s.id for s in data.subscriptions}
+    subscriptions = {s.id: s.customer_id for s in data.subscriptions}
     invoices = {i.id for i in data.invoices}
     links = [s.customer_id in customers for s in data.subscriptions]
     links += [i.customer_id in customers for i in data.invoices]
-    links += [i.subscription_id in subscriptions for i in data.invoices if i.subscription_id]
+    # An invoice's subscription exists and belongs to the same customer.
+    links += [
+        subscriptions.get(i.subscription_id) == i.customer_id
+        for i in data.invoices
+        if i.subscription_id
+    ]
     links += [p.invoice_id in invoices for p in data.payments if p.invoice_id]
     links += [u.subscription_id in subscriptions for u in data.usage]
     return links.count(False)
@@ -124,14 +129,19 @@ def _well_formed(case: object) -> bool:
         all(isinstance(case.get(key), str) and case[key] for key in text)
         and (case.get("invoice_id") is None or isinstance(case.get("invoice_id"), str))
         and "invoice_id" in case
-        and case.get("expect_classification") in _CLASSIFICATIONS
-        and case.get("expect_action") in ACTIONS
+        and _one_of(case.get("expect_classification"), _CLASSIFICATIONS)
+        and _one_of(case.get("expect_action"), ACTIONS)
         and isinstance(case.get("expect_human_approval"), bool)
         and isinstance(findings, list)
-        and all(f in _FINDINGS for f in findings)
-        and case.get("expect_sender", SenderStatus.KNOWN.value) in _SENDERS
+        and all(_one_of(f, _FINDINGS) for f in findings)
+        and _one_of(case.get("expect_sender", SenderStatus.KNOWN.value), _SENDERS)
         and isinstance(case.get("expect_engine_skipped", False), bool)
     )
+
+
+def _one_of(value: object, allowed: set[str] | frozenset[str]) -> bool:
+    """A known string; a list or an object is malformed, not an exception."""
+    return isinstance(value, str) and value in allowed
 
 
 def _fits(case: dict, data: FixtureSet) -> bool:
