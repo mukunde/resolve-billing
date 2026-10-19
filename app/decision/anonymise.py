@@ -54,6 +54,14 @@ class Pseudonyms:
     def known_aliases(self) -> set[str]:
         return set(self._to_real)
 
+    def alias_of(self, real_id: str) -> str | None:
+        """The alias already issued for an identifier, without issuing one."""
+        return self._to_alias.get(real_id)
+
+    def issued(self) -> list[tuple[str, str]]:
+        """Every (real identifier, alias) pair issued for this run."""
+        return list(self._to_alias.items())
+
     def restore(self, text: str) -> str:
         """Put real identifiers back into prose the engine wrote.
 

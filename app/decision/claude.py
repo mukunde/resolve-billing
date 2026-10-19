@@ -37,6 +37,7 @@ from app.decision.base import (
     EngineUnavailable,
     RecommendedAction,
 )
+from app.decision.masking import ReferenceFinder, mask_message
 from app.domain.models import BillingContext, Dispute, RuleFinding
 from app.observability import tracing
 
@@ -209,6 +210,7 @@ class ClaudeDecisionEngine:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         effort: str = "low",
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        invoice_references: ReferenceFinder | None = None,
     ) -> None:
         self.model = model or os.getenv("CLAUDE_MODEL", DEFAULT_MODEL)
         self.version = f"{self.model}/{PROMPT_VERSION}"
@@ -219,6 +221,9 @@ class ClaudeDecisionEngine:
         self._effort = effort
         self._system = PROMPT_PATH.read_text(encoding="utf-8")
         self._client = client if client is not None else _default_client(timeout_seconds)
+        #: How the billing platform writes an invoice reference, to mask the
+        #: ones a message cites (D10). Wired from the provider in `deps`.
+        self.invoice_references = invoice_references
 
     async def aclose(self) -> None:
         """Release the HTTP client, on the event loop that opened it.
@@ -238,6 +243,10 @@ class ClaudeDecisionEngine:
         findings: list[RuleFinding],
     ) -> Decision:
         payload, names = anonymise(context, findings)
+        # The message is masked like the context (D10): the provider never
+        # receives what the rules can recognise as an identifier or a number
+        # it has no business seeing. The dispute itself is left untouched.
+        message = mask_message(dispute.customer_message, context, names, self.invoice_references)
         started = time.perf_counter()
 
         # The span covers the call and its accounting. It carries counts,
@@ -263,7 +272,7 @@ class ClaudeDecisionEngine:
                         "role": "user",
                         "content": (
                             "<customer_message>\n"
-                            f"{dispute.customer_message}\n"
+                            f"{message}\n"
                             "</customer_message>\n\n"
                             "<billing_context>\n"
                             f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"

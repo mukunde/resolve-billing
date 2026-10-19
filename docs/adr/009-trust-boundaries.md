@@ -1,7 +1,7 @@
 # ADR-009 — Trust boundaries: who may call, and whose identity a decision carries
 
-**Status:** accepted · 2026-10-08 · covers D7 and D8; D10 (what reaches the
-model) is recorded here when it is settled
+**Status:** accepted · 2026-10-08 · covers D7 and D8; D10 (what of the
+message reaches the model) added 2026-10-19
 
 ## Context
 
@@ -113,8 +113,16 @@ cleaner design would register the execution when n8n, authenticated,
 creates the case, so that no part of the address ever transits a browser.
 That is the shape ADR-010 adopts; it is not built here.
 
-**To be added to this record:** what of the customer's own message reaches
-the model provider (D10). Its place is the inventory below.
+**What of the customer's message reaches the model (D10, 2026-10-19).**
+The Claude adapter masks the message before the call
+(`app/decision/masking.py`): invoice references the provider recognises take
+the context's alias, or a neutral numbered token for one outside the context;
+other context identifiers take their aliases; the customer's address and
+display name, any other address, IBANs, card numbers and telephone numbers
+become placeholders; a token that looks like one of our aliases is
+neutralised. It is masking, not anonymisation: other people's names and free
+text pass. The dispute itself is not modified. Bug record
+`.specify/bugs/d10-message-masking/`.
 
 ## Disclosure, channel by channel (2026-10-19)
 
@@ -161,6 +169,6 @@ customer, which production would need (roles that carry a scope, above).
 | Audit database | whoever reads the file | the message verbatim, explanation, findings with evidence, amounts | a local file in this demonstrator (**convention**) | access and retention to define before production (Cloud SQL with IAM in the target, ADR-010) |
 | Telemetry | the trace backend | identifiers, codes, verdict, counts, cost, an error's type | the attributes set never include the message, the prompt, the context or an address (**tested**); an exception leaves its type, never its text (**tested**) | the backend's own retention; spans other libraries emit are not reviewed |
 | Logs | the log sink | this code's own warnings: dispute id and error category | the provider-outage warning carries no exception text (**tested**) | logs from the server, n8n and the SDKs are not reviewed |
-| Model provider | the engine's vendor | the message verbatim; the context and findings with identifiers replaced by aliases -- amounts, dates and line descriptions stay as they are | aliases for every identifier (**tested**) | pseudonymising identifiers does not anonymise the data; the message itself is not masked (D10) |
+| Model provider | the engine's vendor | the message masked; the context and findings with identifiers replaced by aliases -- amounts, dates and line descriptions stay as they are | aliases for every identifier; in the message, aliases, placeholders for addresses, the customer's name, IBANs, cards and phones (**tested**, D10) | pseudonymising identifiers does not anonymise the data; masking is by pattern, so other people's names, free text and unusual formats pass |
 | MCP server | whoever starts it | any customer's context, invoices and findings | read-only, no mutation reachable (**tested**) | no per-caller scope: it must not be exposed beyond the operator (**convention**) |
 | Evaluation outputs | the person running them; the repository for committed files | stdout, `--json` files and baselines: case ids, codes, verdicts, and the engine's classifications | synthetic data only (**convention**) | a run on real data must stay private, out of committed files, with its own retention |

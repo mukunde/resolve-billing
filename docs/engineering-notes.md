@@ -186,10 +186,10 @@ the billing port.
 Code reviews of this repository found fourteen defects, D1 to D14. Each is
 fixed the same way: a test that fails on the code as it was, then the fix,
 one commit per defect. Most of the fixed ones change no investigation result
--- they sit on execution, the API and the workflow; D5 does, and was
-measured on the evaluation set before it landed. The open ones change what
-an investigation concludes; the new holdout gets its first reference run
-once they are fixed.
+-- they sit on execution, the API and the workflow; those that do (D5, D9,
+D10, D14) were measured on the evaluation set before they landed. None is
+open; the new holdout gets its first reference run on the code that fixes
+them all.
 
 **Fixed**
 
@@ -254,6 +254,12 @@ once they are fixed.
   `NOT_EVALUABLE`, and -- the maintainer's option (a) -- any such uncertainty
   blocks any correction and sends "the invoice is correct" to a person.
   `TestChecksNotEvaluable` in `tests/unit/test_rules.py`.
+- **D10 -- the customer's message reached the model as written**
+  (2026-10-19, bug record `.specify/bugs/d10-message-masking/`). The context
+  was pseudonymised, the message beside it was not: the provider received
+  the real invoice ids, the customer's address and name, and any IBAN or card
+  number pasted in. The Claude adapter now masks the message, giving a cited
+  invoice the context's own alias. `tests/unit/test_masking.py`.
 - **D11 -- an automatic reply was authorised for robots and strangers**
   (2026-10-19, bug record `.specify/bugs/d11-no-automatic-reply/`). "No
   approval needed" was read as "may answer automatically". Nothing was sent
@@ -272,11 +278,6 @@ once they are fixed.
   an approval that does not end in an execution (`2869608`).
   `tests/integration/test_approval_binding.py`.
 
-**Open** -- each changes investigation results, so each is measured on the
-evaluation set before it lands.
-
-- **D10** -- mask the dispute message itself before the engine call; today
-  only the billing context is pseudonymised.
 
 ---
 
