@@ -76,9 +76,11 @@ D9 this change needs; the rest of D9 stays open.)
 Headers are untrusted input. None can grant an automatic reply, call the
 engine, or widen what the policy allows. They can take something away, and
 it is more than the reply: `Auto-Submitted: auto-replied` sets a message aside
-without investigation or alert. Only the sender controls the headers of what
-they send, so a forged marker mostly silences its own author; the run is
-still recorded, and a misconfigured mail client is the realistic victim.
+without investigation or alert. Senders, their mail software, gateways and
+other intermediaries can all add or change headers, so a wrong marker can
+hide a legitimate request. The run is still recorded; until the intake
+carries headers from a source it trusts (ADR-010), that is the accepted
+risk.
 
 A sender whose software marks real mail as automated loses the automatic
 reply, not the investigation, when they are a known customer. An unknown

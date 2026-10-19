@@ -149,8 +149,9 @@ whether *sending text to this address* is safe. Confidence: high.
   an unknown sender it is recorded and nobody is alerted -- the accepted cost of
   never answering robots.
 - **Headers are untrusted input.** None can grant an automatic reply or widen
-  what the system may do; an auto-reply marker can set a message aside
-  without alert, which mostly silences its own author (ADR-011).
+  what the system may do; but a wrong auto-reply marker, added by the sender
+  or by any intermediary, can set a legitimate message aside without alert
+  (ADR-011).
 - **Metadata absent.** When the source passes no headers, only the sender
   address check applies. The upstream support tool (ADR-010) is where spam
   filtering belongs; this rule is defence in depth until then.
