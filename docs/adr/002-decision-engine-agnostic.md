@@ -61,3 +61,13 @@ was never told one exists.
 
 The port cannot express an engine that needs to fetch data or call tools
 mid-decision. That is intentional and is the same fact ADR-006 rests on.
+
+## Amendment, 2026-10-19 -- an engine that cannot be reached
+
+An engine raises `EngineUnavailable` for transport and service failures only
+-- a timeout, a dropped connection, an overloaded or failing service. The
+investigation turns it into an escalation and records the outage as such,
+distinct from an engine that answered and abstained; no cost is invented. A
+malformed answer stays the engine's own escalation, and a bad request or a
+missing key stays an error. Below a confidence of 0.70 the action policy
+sends any classification to a person (taxonomy S8).

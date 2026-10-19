@@ -15,10 +15,17 @@ from app.application import investigate_dispute as investigation_module
 from app.domain import automated as automated_module
 from app.domain import injection as injection_module
 from app.domain import rules as rules_module
-from app.domain.enums import InvoiceStatus, RuleCode, Severity, SubscriptionStatus
-from app.domain.models import Customer, Invoice, InvoiceLine, Subscription
+from app.domain.enums import (
+    InvoiceStatus,
+    PaymentStatus,
+    RuleCode,
+    Severity,
+    SubscriptionStatus,
+)
+from app.domain.models import Customer, Invoice, InvoiceLine, Payment, Subscription
 from app.domain.money import Money
 from app.domain.rules import (
+    currency_mismatch,
     detect_duplicate_invoice,
     invoice_after_cancellation,
     proration_mismatch,
@@ -474,3 +481,62 @@ def test_every_rule_code_is_emitted_somewhere(code):
         for module in (rules_module, injection_module, automated_module, investigation_module)
     )
     assert f"RuleCode.{code.name}" in sources
+
+
+class TestCurrencyMismatch:
+    """Taxonomy S10: where amounts must be compared across currencies, say so."""
+
+    def usd(self, invoice_id="inv_002"):
+        return invoice(invoice_id).model_copy(
+            update={"total": Money(amount_minor=9900, currency="USD")}
+        )
+
+    def test_a_same_period_invoice_in_another_currency(self):
+        finding = currency_mismatch(invoice("inv_001"), [invoice("inv_001"), self.usd()], [])
+        assert finding.code is RuleCode.CURRENCY_MISMATCH
+        assert finding.evidence["clashes"] == [{"invoice_id": "inv_002", "currency": "USD"}]
+
+    def test_the_duplicate_rule_does_not_conclude_across_currencies(self):
+        assert detect_duplicate_invoice(invoice("inv_001"), [self.usd()]) is None
+
+    def test_a_payment_in_another_currency(self):
+        paid = Payment(
+            id="pay_1",
+            invoice_id="inv_001",
+            amount=Money(amount_minor=9900, currency="USD"),
+            status=PaymentStatus.SUCCEEDED,
+        )
+        finding = currency_mismatch(invoice("inv_001"), [], [paid])
+        assert finding.evidence["clashes"] == [{"payment_id": "pay_1", "currency": "USD"}]
+
+    def test_a_line_in_another_currency_and_proration_stays_silent(self):
+        foreign = InvoiceLine(
+            description="Pro",
+            quantity=Decimal(1),
+            unit_amount=Money(amount_minor=9900, currency="USD"),
+            amount=Money(amount_minor=4950, currency="USD"),
+            period_start=SEPT,
+            period_end=datetime(2026, 9, 16, tzinfo=UTC),
+        )
+        target = invoice("inv_001", lines=[foreign])
+        assert currency_mismatch(target, [], []).code is RuleCode.CURRENCY_MISMATCH
+        assert proration_mismatch(target, subscription()) is None
+
+    @pytest.mark.parametrize(
+        "other_update",
+        [
+            {"subscription_id": "sub_other"},
+            {"status": InvoiceStatus.VOID},
+        ],
+        ids=["other-subscription", "void"],
+    )
+    def test_not_a_comparison_the_invoice_needs(self, other_update):
+        other = self.usd().model_copy(update=other_update)
+        assert currency_mismatch(invoice("inv_001"), [other], []) is None
+
+    def test_another_period_in_another_currency_is_fine(self):
+        other = self.usd().model_copy(
+            update={"lines": [line(9900, start=datetime(2026, 7, 1, tzinfo=UTC),
+                                    end=datetime(2026, 8, 1, tzinfo=UTC))]}
+        )
+        assert currency_mismatch(invoice("inv_001"), [other], []) is None

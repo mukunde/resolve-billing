@@ -243,11 +243,14 @@ invoice, and no blocking finding.
 
 ### Engine output and policy
 
-**B19 — Usable classification vs insufficient confidence** · engine case
-- Prompt v3: below 0.70, return `unknown` with `escalate`. An engine
-  instruction, not a deterministic invariant: the schema accepts a specific
-  classification at any confidence (S8).
-- Dev: none. The mock does not produce low confidence on demand.
+**B19 — Usable classification vs insufficient confidence** · engine case, unit
+- Below 0.70 a classification is not used: human review, whatever it is.
+  Prompt v3 asks the engine to withdraw; the action policy holds when it
+  does not (S8). An engine that cannot be reached yields the same: an
+  escalation, recorded as an outage.
+- Dev: none; the mock's only low confidence comes with an escalation. Unit:
+  `tests/unit/test_action_policy.py`, `tests/unit/test_claude_engine.py`,
+  `tests/integration/test_unusable_evidence.py`.
 
 **B20 — Explicit escalation** · engine case, unit
 - `escalate` → human review whatever the classification and confidence.
@@ -280,6 +283,31 @@ invoice, and no blocking finding.
   or an escalation sends it to human review anyway. Autonomy thresholds exist
   in code and are off (ADR-004).
 - Dev: widely covered on both sides.
+
+### Evidence the rules cannot use (S7, S10)
+
+**B27 — Unknown reference vs the customer's own old invoice** · case
+- A: the reference exists nowhere, or belongs to another customer →
+  `UNKNOWN_INVOICE`, request information, nothing disclosed.
+- B: it is the customer's, older than the 180 days loaded →
+  `INVOICE_OUTSIDE_WINDOW`, engine skipped, human review.
+- Dev: A `unknown_invoice_reference`, `cross_customer_invoice_reference`;
+  B `invoice_outside_window`.
+- Tests: CP, BV (the window's edge).
+
+**B28 — Comparable vs incomparable amounts** · case
+- Amounts the rules must compare -- the invoice's lines, its payments, a live
+  invoice for the same period of the same subscription -- in another
+  currency → `CURRENCY_MISMATCH`, no conclusion either way, engine skipped,
+  human review. Other currencies on the account change nothing.
+- Dev: `duplicate_across_currencies`.
+- Tests: CP, MU.
+
+**B29 — Usage checked vs usage unavailable** · case, integration
+- A metered line with no usage record → `USAGE_UNAVAILABLE`; "the invoice is
+  correct" then goes to a person.
+- Dev: none (`tests/integration/test_unusable_evidence.py`).
+- Tests: CP.
 
 ### Automated mail and automatic replies (ADR-011)
 
@@ -348,10 +376,10 @@ row says what kind of limit it is, what covers it today, and what could.
 | L5 | Amount above the invoice total, currency mismatch, exhausted refund capacity at the provider (ADR-005, ADR-008) | Format | Arithmetic: `tests/unit/test_money.py`; the execution guard before the claim: `test_execute_action.py`; the fake's caps: `test_fake_provider.py` | Contract tests per real provider; the fake proves the contract, not a future adapter |
 | L6 | **Disclosure in text**: a correct label does not prove that a reply or explanation reveals nothing of another account or to a suspected impersonator | Assertion | Narrowly: `tests/integration/test_dispute_flow.py` checks that an unknown sender's explanation names no customer; human review of every draft | Deterministic checks on drafts (other customers' ids, names, amounts); a judge model on sampled drafts |
 | L7 | **Evidence fidelity**: an explanation that cites the right evidence for the right reason | Assertion | Cited references outside the context are dropped (`TestEvidenceMapping` in `tests/unit/test_claude_engine.py`): that proves they belong to the context, not that the reasoning is right | Graded review of explanations on samples |
-| L8 | **Incomplete or stale context**: a provider read failure, the 180-day invoice lookback, missing usage data. "Not found" is not "does not exist" | Format (read failures); assertion (data missing from fixtures) | No targeted coverage identified | Fault injection on the billing provider; a specified outcome first (S7) |
-| L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | `tests/unit/test_claude_engine.py` | A specified, visible outcome for each failure (S8) |
+| L8 | **Incomplete or stale context**: a provider read failure, the 180-day invoice lookback, missing usage data. "Not found" is not "does not exist" | Format (read failures); assertion (data missing from fixtures) | A failed read decides nothing and answers 503; an old invoice, missing usage: `tests/integration/test_unusable_evidence.py` | Fault injection against each real adapter |
+| L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | Outages escalate and are recorded as such; errors fail visibly: `tests/unit/test_claude_engine.py`, `tests/integration/test_unusable_evidence.py` | The same against a real outage, in the pilot |
 | L10 | **Sender authentication**: a known address is a lookup, not proof of identity; delegated contacts | Product | Nothing; ADR-007 treats the address as a signal | Verified contacts, signed mail (DKIM/DMARC) at intake, a production identity design |
-| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 28 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
+| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 30 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
 | L12 | **Production approval scope**: approver amount limits, second approval, separation of duties (ADR-009, described, not built) | Product | Nothing | To be specified and built before production |
 | L13 | **Real billing providers**: every case runs on the fake provider | Format | Contract tests of the fake | Adapter contract tests against sandboxes (Pennylane, Qonto) |
 | L14 | **Where mail headers come from**: automated mail is recognised from the headers the intake forwards; their provenance is not verified, and without them only the sender address is checked. Headers can only withhold a reply, never grant one | Format | `tests/unit/test_automated_mail.py` | The support tool or a trusted gateway supplying headers and authentication results (ADR-010, ADR-011) |
@@ -371,10 +399,10 @@ on a question before its decision is built.
 | S4 | A refund needs a single settled payment covering it; draft, uncollectible and void invoices get no correction; no rule on paused, trialing, past-due subscriptions | yes |
 | S5 | Money only when the whole invoice is the error; partial corrections → human review without an amount. Partial amounts: computed by code from the findings, never above what remains, specified with the real connectors | provisional rule yes, amounts no |
 | S6 | The message cites recognised invoice references, none of them the designated one → ask which | no |
-| S7 | An unknown reference is looked up directly within the customer; an old invoice → human review; a provider read failure fails visibly | no |
-| S8 | Confidence below 0.70 → human review in code; provider errors → escalate, recorded as such | no |
+| S7 | An unknown reference is looked up directly within the customer; an old invoice → human review; a provider read failure fails visibly | yes |
+| S8 | Confidence below 0.70 → human review in code; engine outages → escalate, recorded as such | yes |
 | S9 | The proration finding states its assumption; a price catalogue comes with the real connectors | no |
-| S10 | A comparison across currencies does not conclude: a finding, and human review | no |
+| S10 | A comparison across currencies does not conclude: a finding, and human review | yes |
 | S11 | Disclosure scoped per channel; an inventory of the internal channels; an automatic check with the reply drafter | no |
 | S12 | Refused money is not shown as a proposal; the engine's recommendation stays recorded | yes |
 

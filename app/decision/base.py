@@ -20,6 +20,19 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain.models import BillingContext, Dispute, RuleFinding
 
 
+class EngineUnavailable(Exception):  # noqa: N818 -- a state, not a programming error
+    """The engine could not be reached: a timeout, a dropped connection, an
+    overloaded or failing service (taxonomy S8).
+
+    Engines raise it for transport and service failures only. A malformed
+    answer is the engine's own business (it returns an escalation), and a
+    programming or configuration error -- a bad request, a missing key --
+    stays an error and fails the run visibly. The investigation turns this
+    into an escalation and records the outage as such, distinct from an
+    engine that answered and abstained.
+    """
+
+
 class Classification(StrEnum):
     """What kind of dispute this is. Closed set.
 

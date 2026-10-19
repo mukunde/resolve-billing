@@ -52,10 +52,10 @@ invoice reference to ask for -- gets a reply without anyone deciding
 anything; a dispute that needs money reaches a person with the findings, the
 evidence and the proposed correction already assembled. People also step in
 when the message looks like an attack, the sender is suspected of
-impersonating a customer, the
-model says it cannot classify, or the message is too long to send it.
-Sending low-confidence answers and engine outages to a person is decided and
-not built yet.
+impersonating a customer, the model is unsure (below 0.70) or unreachable,
+the evidence cannot settle the case (an invoice older than the loaded
+history, amounts in different currencies, usage nobody could check), or the
+message is too long to send to the model.
 
 What is measured so far: on the original twelve cases, one model call cost
 **$0.021** on average, with a **median 4.7 s**. What is not measured yet, and
@@ -128,10 +128,10 @@ agent. Autonomy thresholds exist in the code and are off.
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
 | Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository | Stripe (test mode), then Pennylane; Qonto for payment evidence |
 | Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox | message masking before the model (D10); authentication results from a trusted gateway |
-| Evaluation | 28 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
+| Evaluation | 30 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
 
-**Measured today** (mock engine, every push): **22/28 fully correct, 0/28
+**Measured today** (mock engine, every push): **24/30 fully correct, 0/30
 unsafe actions**. The Claude engine was last measured on the original twelve
 cases ([evaluation](#evaluation)).
 
@@ -197,9 +197,8 @@ What the system does not do yet, said plainly.
   checked. Filtering spam belongs to the support tool in the target
   integration.
 - **Decided, not yet built**: what a usage gap leads to, a narrower
-  injection screen, invoice references cited in the message, incomplete
-  context, low confidence and engine outages, currencies, and disclosure per
-  channel. The decisions and their status are in
+  injection screen, invoice references cited in the message, and disclosure
+  per channel. The decisions and their status are in
   [`evals/taxonomy.md`](evals/taxonomy.md#4-specification-questions).
 - **What a good evaluation score does not cover**: approval expiry,
   concurrent execution and uncertain provider outcomes are out of reach of an
@@ -207,7 +206,7 @@ What the system does not do yet, said plainly.
   in a case but not asserted yet; sender authentication is a property the
   product does not have. Each limit, and what covers it, is listed in the
   [taxonomy](evals/taxonomy.md#3-what-the-evaluation-set-does-not-test).
-- **Confidence is self-reported.** Twenty-eight cases calibrate nothing, so
+- **Confidence is self-reported.** Thirty cases calibrate nothing, so
   the autonomy thresholds stay shut.
 
 ---
@@ -219,7 +218,7 @@ python -m evals.runner --engine mock      # free, deterministic, every push
 python -m evals.runner --engine claude    # real calls, on demand
 ```
 
-**Development set.** 28 cases, each with a `why` field saying what it is
+**Development set.** 30 cases, each with a `why` field saying what it is
 there to catch. They were read while the rules and the prompt were written, so
 a score on them says how well the system fits them, not how it does on a
 dispute it has not seen. [`evals/taxonomy.md`](evals/taxonomy.md) lists the
@@ -228,7 +227,7 @@ decision boundaries they cover, the ones they miss, and their redundancies.
 **What CI enforces.** The build fails if the system would move money where
 the case set says none moves, propose money without a human or to an
 unverified sender, or answer a suspected impersonator. It fails again below
-the mock's measured score (22), and again if any check of any case differs
+the mock's measured score (24), and again if any check of any case differs
 from the recorded baseline -- an improvement included, until the baseline is
 regenerated in the same commit.
 
@@ -298,8 +297,7 @@ expired approval, a repeated delivery, and a timeout after a write.
 
 On the way, in order:
 
-1. **Specification decisions still to build**: engine outages and low
-   confidence, incomplete context and currencies; then the usage gap, cited
+1. **Specification decisions still to build**: the usage gap, cited
    references, the narrower injection screen and a rule for duplicate
    payments; then disclosure per channel.
 2. **The open review defects** (D9, D10, D14), each through a bug record.

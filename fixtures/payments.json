@@ -106,5 +106,29 @@
     "currency": "EUR",
     "state": "succeeded",
     "received_at": "2026-09-02T09:18:00"
+  },
+  {
+    "id": "pay_299",
+    "invoice_id": "inv_299",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-02-02T09:00:00"
+  },
+  {
+    "id": "pay_300",
+    "invoice_id": "inv_300",
+    "amount": "49.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T09:00:00"
+  },
+  {
+    "id": "pay_310",
+    "invoice_id": "inv_310",
+    "amount": "12.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-10-01T09:00:00"
   }
 ]

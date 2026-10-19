@@ -107,3 +107,10 @@ class RuleCode(StrEnum):
     AUTOMATED_RESPONSE = "AUTOMATED_RESPONSE"
     # ...and generated, bulk or list mail, investigated from a known sender.
     AUTOMATED_MESSAGE = "AUTOMATED_MESSAGE"
+    # Evidence the rules cannot use (taxonomy S7, S10): said, never guessed.
+    # Two amounts that must be compared are in different currencies...
+    CURRENCY_MISMATCH = "CURRENCY_MISMATCH"
+    # ...the disputed invoice is the customer's, older than what is loaded...
+    INVOICE_OUTSIDE_WINDOW = "INVOICE_OUTSIDE_WINDOW"
+    # ...or a metered line has no usage record to compare it with.
+    USAGE_UNAVAILABLE = "USAGE_UNAVAILABLE"

@@ -70,6 +70,12 @@ class AutonomyPolicy(BaseModel):
     required_confidence_kind: str = "calibrated"
 
 
+#: Below this, a classification is not used, whatever it is (taxonomy S8).
+#: The prompt asks the engine to withdraw below it; this holds when it does
+#: not. Self-reported confidence is weak evidence, which is why the floor only
+#: ever sends more disputes to a person, never fewer.
+MIN_CONFIDENCE = 0.70
+
 #: Findings that stop the system acting, whatever the engine concluded.
 BLOCKING_FINDINGS = frozenset(
     {RuleCode.SUSPECTED_PROMPT_INJECTION, RuleCode.SUSPECTED_IMPERSONATION}
@@ -118,6 +124,16 @@ class ActionPolicy:
                 reason=f"Constat bloquant : {blocking.code.value}.",
             )
 
+        # 1b. A classification the engine is not sure of is not one.
+        if decision.confidence < MIN_CONFIDENCE:
+            return ActionAuthorization(
+                verdict=Verdict.HUMAN_REVIEW,
+                reason=(
+                    f"Confiance de {decision.confidence:.2f}, sous le seuil de "
+                    f"{MIN_CONFIDENCE:.2f} : une personne examine."
+                ),
+            )
+
         # 2. Money, including the case where money was recommended on a
         #    classification that cannot support it.
         if decision.recommended_action in FINANCIAL_ACTIONS:
@@ -154,6 +170,15 @@ class ActionPolicy:
                     "Le moteur n'a pas su classer le litige de façon exploitable "
                     f"({decision.classification.value})."
                 ),
+            )
+
+        # 4b. "The invoice is correct" cannot rest on usage nobody could check.
+        if decision.classification is Classification.VALID_INVOICE and any(
+            f.code is RuleCode.USAGE_UNAVAILABLE for f in findings
+        ):
+            return ActionAuthorization(
+                verdict=Verdict.HUMAN_REVIEW,
+                reason="Facture déclarée correcte alors que l'usage n'a pas pu être vérifié.",
             )
 
         # 5. Everything else is a reply or a question: no money moves, and the

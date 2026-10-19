@@ -53,3 +53,12 @@ documented where the mapping happens.
 
 No empty adapters. A directory named after a platform nobody has integrated
 reads, to whoever inherits this, as a feature that exists.
+
+## Amendment, 2026-10-19 -- a read that fails
+
+A read the platform could not complete raises `ProviderUnavailable`, once
+the adapter's own retries are spent. The investigation decides nothing on a
+partial read -- an empty answer would read as "this customer has no
+invoices" -- and the API answers 503; the caller can send the request again
+as it is. A reference not found in the loaded window is looked up directly,
+and only whether it is the customer's is kept (taxonomy S7).

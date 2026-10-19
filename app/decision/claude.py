@@ -34,6 +34,7 @@ from app.decision.base import (
     Classification,
     Decision,
     EngineTelemetry,
+    EngineUnavailable,
     RecommendedAction,
 )
 from app.domain.models import BillingContext, Dispute, RuleFinding
@@ -56,6 +57,28 @@ from app.observability import tracing
 #: 0.60 and 0.62, where the prompt already asked it to withdraw; both of those
 #: answers were wrong.
 PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v3.md"
+
+#: HTTP statuses that mean "try later", not "your request is wrong":
+#: a timeout, a conflict, rate limiting, an overloaded service. With 5xx,
+#: they are an outage (taxonomy S8). Any other 4xx -- a bad request, a
+#: missing key -- is a configuration error and fails the run visibly.
+_TRANSIENT = frozenset({408, 409, 429})
+
+#: Transport failures, by class name: the SDK is an optional dependency, so
+#: its exception classes cannot be imported where this module is.
+_TRANSPORT = frozenset({"APIConnectionError", "APITimeoutError"})
+
+
+def _outage(error: Exception) -> str | None:
+    """Why `error` is an outage, or None when it is not one."""
+    names = {cls.__name__ for cls in type(error).__mro__}
+    if names & _TRANSPORT:
+        return type(error).__name__
+    status = getattr(error, "status_code", None)
+    transient = isinstance(status, int) and (status in _TRANSIENT or status >= 500)
+    if "APIStatusError" in names and transient:
+        return f"HTTP {status}"
+    return None
 PROMPT_VERSION = "decision_v3"
 
 DEFAULT_MODEL = "claude-opus-5"
@@ -227,7 +250,8 @@ class ClaudeDecisionEngine:
                 max_tokens=self._max_tokens,
             ),
         ) as current:
-            response = await self._client.messages.create(
+            response = await self._call(
+                self._client.messages.create,
                 model=self.model,
                 max_tokens=self._max_tokens,
                 system=self._system,
@@ -289,6 +313,17 @@ class ClaudeDecisionEngine:
             )
 
     # -- helpers -----------------------------------------------------------
+
+    @staticmethod
+    async def _call(create, **request):
+        """The API call, with outages told apart from errors (taxonomy S8)."""
+        try:
+            return await create(**request)
+        except Exception as error:
+            reason = _outage(error)
+            if reason is None:
+                raise
+            raise EngineUnavailable(reason) from error
 
     def _parse(self, response) -> _ModelVerdict | None:
         """Validate the response, or return None to send the run to a human.

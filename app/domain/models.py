@@ -153,6 +153,9 @@ class BillingContext(BaseModel):
     payments: list[Payment] = []
     usage: Usage | None = None
     target_invoice_id: str | None = None
+    target_outside_window: bool = False
+    """The disputed invoice is the customer's, but older than the window
+    loaded here: it exists, and nothing about it was checked (taxonomy S7)."""
 
     @property
     def target_invoice(self) -> Invoice | None:

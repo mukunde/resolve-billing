@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "14c89cc2924dd154",
+  "cases_sha256": "a05b3803c253715d",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -247,6 +247,24 @@
       "reply": true
     },
     "unknown_sender_delivery_report": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true
+    },
+    "invoice_outside_window": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true
+    },
+    "duplicate_across_currencies": {
       "classification": true,
       "action": true,
       "approval": true,
