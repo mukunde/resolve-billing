@@ -6,6 +6,13 @@ and it is manual: no agent factory runs these steps yet.
 
 ## 1. Start from a spec or a bug record
 
+Before designing anything, read the constitution, then
+[`docs/contract/README.md`](docs/contract/README.md) and the contract of
+every capability the change affects, and of those that depend on it; for a
+capability not yet covered, the records the coverage table names. (Spec
+Kit's plan template has its own `contracts/` folder, for interface
+contracts of one feature; it is not the product contract.)
+
 - **A feature** starts with Spec Kit: `/speckit-specify`, then
   `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`,
   `/speckit-converge`. A change to the money-moving core, or a production

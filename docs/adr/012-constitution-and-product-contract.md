@@ -8,7 +8,9 @@ choices and the sources behind them
 ResolveBilling is built with spec-driven development (SDD) and coding agents
 from two vendors, Claude Code and Codex, under one maintainer. Adopting
 GitHub Spec Kit brings a **constitution** -- the project's non-negotiable
-principles, read by every Spec Kit command -- and **feature directories**
+principles, read by its planning and implementation commands (not by the bug
+extension's, which is why `CLAUDE.md` now sends every agent to it) -- and
+**feature directories**
 (`specs/<nnn-feature>/`: spec, plan, tasks), one per piece of work.
 
 A draft constitution written on 2026-10-17 had fallen behind the code within
@@ -136,7 +138,7 @@ patterns differ in what they keep after a change ships.
   pull request, and detects drift. Third-party, not core Spec Kit.
   [Living Specs in SpecKit](https://dev.to/alfredoperez/living-specs-in-speckit-3a3j)
 - **Birgitta Böckeler (Thoughtworks), on martinfowler.com**, distinguishes
-  *spec-first* (written before the work, then left), *spec-anchored* (kept and
+  *spec-first* (written before the work), *spec-anchored* (kept and
   maintained as the system evolves) and *spec-as-source* (the spec is the
   maintained artifact, code derived from it), and finds most tools at the
   first level; she warns that spec-as-source risks combining model-driven
@@ -153,8 +155,8 @@ patterns differ in what they keep after a change ships.
   make the current state of the system hard to assemble.
   [intent-driven.dev](https://intent-driven.dev/knowledge/spec-kit-vs-openspec/)
 - **Tessl** keeps specs and tests in the codebase as the long-term memory of
-  intended behaviour; Böckeler describes specs placed beside the code they
-  generate, marked as generated, aiming at spec-as-source. **BMAD**
+  intended behaviour; Böckeler describes each spec placed beside the code it
+  generates, that code marked as generated, aiming at spec-as-source. **BMAD**
   separates the product requirements document (what to build and why) from
   the epics and stories that divide the work. Neither documents a single
   consolidated behavioural contract maintained after each change.
@@ -166,8 +168,9 @@ often teams actually maintain such contracts.
 
 ## Consequences
 
-- The constitution is ratified at version 1.0.0 with these two sections.
-  Spec Kit is merged; its commands grant no permission of their own.
+- Once the maintainer ratifies it, the constitution is at version 1.0.0
+  with these two sections, and Spec Kit is merged; its commands grant no
+  permission of their own.
 - No contract file exists yet. The first change to touch a capability writes
   its contract, which makes that change larger than it would otherwise be.
 - Until a capability is covered, two kinds of record coexist: the contract

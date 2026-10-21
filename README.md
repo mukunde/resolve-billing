@@ -275,17 +275,19 @@ rules that keep a person in charge of every decision that matters.
   record (GitHub Spec Kit): expected behaviour, invariants, exclusions,
   evidence, acceptance. The [constitution](.specify/memory/constitution.md)
   holds the principles every change respects; the product's current
-  behaviour is kept, capability by capability, in a
-  [living contract](docs/contract/README.md); [CONTRIBUTING](CONTRIBUTING.md)
-  is the procedure.
+  behaviour is to be kept, capability by capability, in a
+  [living contract](docs/contract/README.md), written as each capability is
+  first touched -- none is covered yet; [CONTRIBUTING](CONTRIBUTING.md) is the
+  procedure.
 - **Two agents from different vendors.** Claude Code and Codex write the
   code, including the core, and review each other's work; neither approves
   its own.
 - **A person decides.** The maintainer owns objectives, invariants,
   architecture and acceptance, adjudicates every evaluation label, approves
   every push and merges every pull request.
-- **Measured, not asserted.** Nothing is done until it is measured on the
-  evaluation set and the existing cases still pass in CI.
+- **Measured, not asserted.** A behaviour change is done only once it is
+  measured on the evaluation set, and every change keeps the existing cases
+  passing in CI.
 - **Next: a factory.** A deterministic controller that runs these steps with
   fixed contracts, sandboxed agents and recorded evidence is designed, and
   will live in its own repository once it runs. Today the collaboration is

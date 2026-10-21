@@ -66,10 +66,12 @@ constrains the product, not the tools used to develop it.
 
 ### VI. Auditable by Design; the Platform Is Authoritative
 
-Every investigation that completes leaves a run row naming the provider, the
-engine and its version, the confidence and its kind, the findings with their
-evidence, the authorisation verdict and its reason, and the cost -- recorded
-as unknown when no price is known, never as zero. Run rows are never amended
+The service MUST record a run row for every investigation that completes --
+the API wires the audit; a test or an evaluation run may go without one. The
+row names the provider, the findings with their evidence, the authorisation
+verdict and its reason, and, when an engine was consulted, the engine and its
+version, the confidence and its kind, and the cost -- recorded as unknown
+when no price is known, never as zero. Run rows are never amended
 in place; approval and execution are a separate lifecycle. No ledger is kept
 here: the billing platform is the authority on amounts and on what an
 invoice can still give back.
@@ -82,16 +84,18 @@ what happened since.
 ### VII. Untrusted Input, Explicit Trust Boundaries
 
 The dispute message is untrusted. It is screened before any model sees it,
-and what reaches a model provider is reduced: the context is pseudonymised
-and the message masked -- masking, not anonymisation. The sender's address
+and what reaches a model provider MUST be reduced: today the context is
+pseudonymised and, in the Claude engine, the message is masked for the
+formats the masking recognises -- masking, not anonymisation. The sender's address
 resolves the sender to a customer; it does not authenticate them, and a
 customer identifier in a request is only a claim, which an address that does
 not support it turns into a case for a person, without loading the claimed
 account. An unknown sender gets a result, not an error, and nothing about any
 account. Sending text is authorised separately from moving money: only the
 automatic-reply decision permits an automatic reply, and detected automated
-mail or an unknown sender never gets one. What each channel may disclose is
-limited to its recipients. Every route that acts takes an authenticated
+mail or an unknown sender never gets one. What each channel discloses MUST be limited to its recipients: the
+inventory exists, and its enforcement is partly built -- the outgoing-text
+check comes with the reply drafter *(adopted)*. Every route that acts takes an authenticated
 caller, the identity recorded is the authenticated one, and such a route
 refuses when its kind of caller is not configured.
 
