@@ -123,9 +123,10 @@ def problems(cases: list[dict], known: dict[str, Boundary]) -> list[str]:
             continue
         seen = set()
         for tag in covers:
-            found.extend(f"{name}: {p}" for p in _tag_problems(tag, case, known, ids))
-            if isinstance(tag, dict):
-                key = (tag.get("boundary"), tag.get("side"))
+            tag_problems = _tag_problems(tag, case, known, ids)
+            found.extend(f"{name}: {p}" for p in tag_problems)
+            if not tag_problems:  # only a well-typed tag can be compared
+                key = (tag["boundary"], tag.get("side"))
                 if key in seen:
                     found.append(f"{name}: {key[0]} side {key[1]} tagged twice")
                 seen.add(key)

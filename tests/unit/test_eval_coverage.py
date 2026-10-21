@@ -58,6 +58,8 @@ def with_tag(**tag):
         ({"boundary": "B07", "side": "A", "type": "EX", "outcome": "x"}, "side X and B26 only"),
         ({"boundary": "B26", "type": "EX"}, "must match `expect_automatic_reply`"),
         ({"boundary": "B07", "side": 1, "type": "EX"}, "`side` is a string"),
+        ({"boundary": "B07", "side": ["A"], "type": "EX"}, "`side` is a string"),
+        ({"boundary": {"id": "B07"}, "side": "A", "type": "EX"}, "`boundary` is a string"),
         (
             {"boundary": "B05", "side": "A", "type": "MU", "with": "duplicate_fr", "varies": "x"},
             "is not another case",
