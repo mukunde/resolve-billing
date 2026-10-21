@@ -56,25 +56,27 @@ currencies raises.
 
 ### V. A Model Acts Only Within Bounds the Code Sets
 
-What a model's output may set off is decided by deterministic code and by
-this constitution, never by the model. Money and writes to the billing
-platform never move without a human approval (II). A message reaches a
-customer without a person only when the deterministic automatic-reply
-decision allows it (VII), and after a check of the outgoing text, which comes
-with the reply drafter *(adopted)*. The model writes content; code decides
-whether to send, to whom, and about which account -- the recipient and the
-account come from the trusted context, never from generated text, and the
-outgoing check stops a text that tries to redirect. The kinds of decision
-that steer what happens next take values in closed sets, and a value outside
-them goes to a person; references the model cites are kept only if they were issued to it. A
-tool given to a model MUST be read-only and scoped to the dispute's own
-customer; a loop MUST have a bound and a stop condition. Once orchestration
-has more than one call per investigation, every call -- failed or
-interrupted ones included -- MUST be traceable, without keeping sensitive
-content; today the run row of VI records the one call there is. Widening what a model may set off -- a new kind of effect, or
-a check removed -- is a sensitive change (Development Workflow); money stays
-human whatever the model (II). How models are orchestrated is an ADR
-decision, not this constitution's.
+What a model's output may set off is decided by deterministic code and by this
+constitution, never by the model. Money and writes to the billing platform
+never move without a human approval (II). A message reaches a customer without
+a person only when the deterministic automatic-reply decision allows it (VII),
+and after a check of the outgoing text, which comes with the reply drafter
+*(adopted)*. The model writes content; code decides whether to send, to whom,
+and about which account -- the recipient and the account come from the trusted
+context, never from generated text, and the outgoing check stops a text that
+tries to redirect. The kinds of decision that steer what happens next take
+values in closed sets, and a value outside them goes to a person; references
+the model cites are kept only if they were issued to it. A tool given to a
+model MUST be read-only and scoped to the dispute's own customer; a loop MUST
+have a bound and a stop condition. Once orchestration has more than one call
+per investigation, every call -- failed or interrupted ones included -- MUST
+be traceable, without keeping sensitive content. Today the run row of VI
+records the engine's outcome when an investigation completes; per-call
+tracing, failures and interruptions included, is to be built before any
+multi-call orchestration. Widening what a model may set off -- a new kind of
+effect, or a check removed -- is a sensitive change (Development Workflow);
+money stays human whatever the model (II). How models are orchestrated is an
+ADR decision, not this constitution's.
 
 *Implemented by:* ADR-006 (today: no framework, no loop, no tool, and the
 condition under which that would change); ADR-011. *Rationale:* the risk is
@@ -99,26 +101,26 @@ what happened since.
 
 ### VII. Untrusted Input, Explicit Trust Boundaries
 
-The dispute message is untrusted, and so are a tool's results, a
-retrieved document and a model's output: none of them can change a
-permission, a recipient, the customer in scope or an approval condition, and
-a second model may give an opinion, never replace a deterministic
-authorisation. A generated explanation shown to an approver is not verified
-evidence. The message is screened before any model sees it,
-and what reaches a model provider MUST be reduced: today the context is
-pseudonymised and, in the Claude engine, the message is masked for the
-formats the masking recognises -- masking, not anonymisation. The sender's address
-resolves the sender to a customer; it does not authenticate them, and a
-customer identifier in a request is only a claim, which an address that does
-not support it turns into a case for a person, without loading the claimed
-account. An unknown sender gets a result, not an error, and nothing about any
-account. Sending text is authorised separately from moving money: only the
-automatic-reply decision permits an automatic reply, and detected automated
-mail or an unknown sender never gets one. What each channel discloses MUST be limited to its recipients: the
-inventory exists, and its enforcement is partly built -- the outgoing-text
-check comes with the reply drafter *(adopted)*. Every route that acts takes an authenticated
-caller, the identity recorded is the authenticated one, and such a route
-refuses when its kind of caller is not configured.
+The dispute message is untrusted, and so are a tool's results, a retrieved
+document and a model's output: none of them can change a permission, a
+recipient, the customer in scope or an approval condition, and a second model
+may give an opinion, never replace a deterministic authorisation. A generated
+explanation shown to an approver is not verified evidence. The message is
+screened before any model sees it, and what reaches a model provider MUST be
+reduced: today the context is pseudonymised and, in the Claude engine, the
+message is masked for the formats the masking recognises -- masking, not
+anonymisation. The sender's address resolves the sender to a customer; it does
+not authenticate them, and a customer identifier in a request is only a claim,
+which an address that does not support it turns into a case for a person,
+without loading the claimed account. An unknown sender gets a result, not an
+error, and nothing about any account. Sending text is authorised separately
+from moving money: only the automatic-reply decision permits an automatic
+reply, and detected automated mail or an unknown sender never gets one. What
+each channel discloses MUST be limited to its recipients: the inventory
+exists, and its enforcement is partly built -- the outgoing-text check comes
+with the reply drafter *(adopted)*. Every route that acts takes an
+authenticated caller, the identity recorded is the authenticated one, and such
+a route refuses when its kind of caller is not configured.
 
 *Implemented by:* ADR-007; ADR-009, including "Disclosure, channel by
 channel"; ADR-011; `.specify/bugs/d9-sender-matches-customer/`,
