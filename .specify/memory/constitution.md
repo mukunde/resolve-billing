@@ -269,4 +269,4 @@ section or materially expanded guidance, PATCH for wording. CLAUDE.md remains
 the agents' short operating rules and MUST NOT contradict this document. A
 plan or review that departs from a principle states which one, and why.
 
-**Version**: 1.0.0 | **Ratified**: TODO(RATIFICATION_DATE): set when the maintainer approves this text | **Last Amended**: TODO(RATIFICATION_DATE)
+**Version**: 1.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21

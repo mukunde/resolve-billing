@@ -206,8 +206,8 @@ often teams actually maintain such contracts.
 
 ## Consequences
 
-- Once the maintainer ratifies it, the constitution is at version 1.0.0
-  with these two sections, and Spec Kit is merged; its commands grant no
+- The maintainer ratified the constitution at version 1.0.0 on 2026-10-21,
+  with these choices; Spec Kit comes in with it, and its commands grant no
   permission of their own.
 - No contract file exists yet. The first change to touch a capability writes
   its contract, which makes that change larger than it would otherwise be.
