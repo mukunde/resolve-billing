@@ -58,6 +58,11 @@ jobs:
           python -m evals.runner --engine mock --min-fully-correct 29
           --baseline evals/baselines/mock.json
 
+      # The coverage tables of the taxonomy are generated from the case tags:
+      # an invalid tag, or a table that no longer matches them, fails here.
+      - name: Coverage tables
+        run: python -m evals.coverage --check
+
   claude:
     name: the evaluation set against the live engine
     runs-on: ubuntu-latest
