@@ -273,7 +273,11 @@ rules that keep a person in charge of every decision that matters.
 
 - **Specification first.** A change starts from a specification or a bug
   record (GitHub Spec Kit): expected behaviour, invariants, exclusions,
-  evidence, acceptance.
+  evidence, acceptance. The [constitution](.specify/memory/constitution.md)
+  holds the principles every change respects; the product's current
+  behaviour is kept, capability by capability, in a
+  [living contract](docs/contract/README.md); [CONTRIBUTING](CONTRIBUTING.md)
+  is the procedure.
 - **Two agents from different vendors.** Claude Code and Codex write the
   code, including the core, and review each other's work; neither approves
   its own.
@@ -355,6 +359,7 @@ tracing, the MCP server, cost reconciliation and querying the audit are in
 | [ADR-009](docs/adr/009-trust-boundaries.md) | Trust boundaries: who may call, and whose identity a decision carries |
 | [ADR-010](docs/adr/010-target-integration-architecture.md) | Target integration: the support tool owns the case, a durable workflow owns the lifecycle *(not built)* |
 | [ADR-011](docs/adr/011-automated-mail-and-automatic-replies.md) | Automated mail, and who may receive an automatic reply |
+| [ADR-012](docs/adr/012-constitution-and-product-contract.md) | The constitution, the product contract, and where factory rules live |
 
 More: [engineering notes](docs/engineering-notes.md) (incidents, review
 findings, techniques not used) · [operations](docs/operations.md) ·
