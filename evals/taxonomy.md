@@ -23,9 +23,17 @@ No evaluation results were used.
   flips on noise fails differently from one that misses a flip, so both are
   listed. Invariances cut across boundaries: they are crossed with them, not
   counted as extra business boundaries.
+- **Sides A and B** are the two situations a boundary separates, which must
+  get different decisions. Each boundary defines its own: there is no common
+  order. For a billing anomaly, A is usually the anomaly and B the
+  look-alike that must not trigger it (B07); for identity and scope, A is
+  usually the ordinary path and B the one a blocking finding stops (B01).
+  Some boundaries state a single rule with its two outcomes instead of
+  naming sides (B19 to B23, B25, B26, B28, B29).
 - **No finding is not a verdict.** When a rule does not fire, the
-  investigation continues; another anomaly may remain. "Side B" below means
-  "this finding must not fire", not "the invoice is valid", unless stated.
+  investigation continues; another anomaly may remain. A side where a
+  finding must not fire does not mean "the invoice is valid", unless the
+  boundary says so.
 - **Verification level**: *case* (an evaluation case: message + fixtures in,
   decision out), *engine case* (a case that needs an engine to produce a
   given output: a live engine, or a scripted fake engine, which does not
@@ -472,8 +480,53 @@ The questions as they were first written:
 
 ## 6. Coverage at a glance
 
-Boundaries with **no development case on one side**: B02 (`same_domain` and
-`lookalike_domain` in isolation, the webmail exemption, the thresholds), B06,
-B08, B10 side B, B12 side B, B14 side A, B19, B21.
-Boundary values are tested nowhere in the development set (B06, B07, B10,
-B11, B12, B02 thresholds).
+Which development cases sit on each side of each boundary, which test types
+the boundary calls for, and what is missing. The table restates the *Dev*
+and *Tests* lines of section 1 and is no more precise than they are: the
+development cases are not tagged with the test type they exercise, so the
+table shows the types a boundary **calls for**, not the ones covered. "Every
+ordinary case" means the side most cases take without being written for it.
+
+| | Boundary | Dev, side A | Dev, side B | Test types called for | Missing |
+|---|---|---|---|---|---|
+| B01 | Known vs unknown sender | every known-sender case | `unknown_sender_plain` | CP, BV, MU | case and whitespace variants |
+| B02 | Plain vs suspected impersonation | `unknown_sender_plain` | `unknown_sender_known_invoice`, `unknown_sender_before_valid_dispute`, `external_accountant_names_client` | CP, BV, AD | `same_domain`, `lookalike_domain` alone, the webmail exemption, the thresholds |
+| B03 | Invoice inside vs outside scope | every ordinary case | `cross_customer_invoice_reference`, `foreign_customer_invoice_reference` (one mechanism) | CP, AD, ML | |
+| B04 | Designated vs unresolved target | every ordinary case | `insufficient_context`, `unknown_invoice_reference` | CP, CD | |
+| B05 | Instruction to the system vs customer language | `angry_but_valid`, `benign_ignore_previous_message` | `injection_refund`, `injection_role`, `withdrawn_message_with_injection` | CP, MU (Unicode), AD, ML | |
+| B06 | Message within vs beyond the input limit | every ordinary case | none | BV | side B; boundary values |
+| B07 | Duplicate invoice vs distinct charges | `duplicate_fr`, `duplicate_en` | `legitimate_overage`, `proration_not_duplicate` | CP, BV, MU | boundary values |
+| B08 | Live vs void invoice | every ordinary case | none | MU, CD | side B |
+| B09 | Invoice or payment duplicated | `duplicate_fr`, `duplicate_en` | `duplicate_payment_single_invoice` | CP, CO | |
+| B10 | Billed after cancellation | `billed_after_cancellation`, `vague_but_scoped` | none | BV | side B; boundary values |
+| B11 | Proration within vs beyond tolerance | `proration_not_duplicate` | `proration` | CP, BV | boundary values |
+| B12 | Usage within vs beyond tolerance | `legitimate_overage` | none | CP, BV | side B; boundary values |
+| B13 | Billing dispute vs out of scope | `vague_but_scoped` | `out_of_scope` | CP, ML | |
+| B14 | Payment recorded vs claimed | none | `claimed_payment_without_evidence` | CP, CD | side A |
+| B15 | Failed collection vs invalid invoice | `failed_payment_valid_invoice` | none as a controlled pair | CP, MU, CD | a controlled pair |
+| B16 | Correction made vs still warranted | `refund_already_completed` | no matched pair | MU, CD | a matched pair |
+| B17 | Credit note by default vs refund | `duplicate_fr`, `proration` | `billed_after_cancellation`, `vague_but_scoped` | CP, MU, ML | intent alone |
+| B18 | A blocking finding outranks an anomaly | not listed | `injection_refund`, `injection_role`, `unknown_sender_before_valid_dispute` | CO, MU | |
+| B19 | Usable vs insufficient confidence | *single rule:* none (unit tests) | | engine case | an engine case |
+| B20 | Explicit escalation | *single rule:* none directly (unit tests) | | engine case | an engine case |
+| B21 | Money on an unqualified classification | *single rule:* none (unit tests) | | engine case | an engine case |
+| B22 | Money without an amount code stands behind | *single rule:* `proration` (unit tests) | | | |
+| B23 | Financial vs non-financial action | *single rule:* widely covered | | | |
+| B24 | A person vs an automated response | every ordinary case | `known_customer_out_of_office`, `unknown_sender_delivery_report` | CP, MU, AD | |
+| B25 | Investigated, never answered automatically | *single rule:* `known_customer_bulk_dispute`, `unknown_sender_newsletter` | | CP, MU | |
+| B26 | Who may receive an automatic reply | *single rule:* allowed `legitimate_overage`; refused `unknown_sender_plain` and the four B24–B25 cases | | CP | |
+| B27 | Unknown reference vs own old invoice | `unknown_invoice_reference`, `cross_customer_invoice_reference` | `invoice_outside_window` | CP, BV | the window's edge |
+| B28 | Comparable vs incomparable amounts | *single rule:* `duplicate_across_currencies` | | CP, MU | |
+| B29 | Usage checked vs unavailable | *single rule:* none (integration test) | | CP | a case |
+
+Test types: CP contrast pair · BV boundary value · MU mutation · AD
+adversarial · ML multilingual · CD conflicting data · CO compound.
+
+In short: boundaries with **no development case on one side** are B02 (the
+signals in isolation, the webmail exemption, the thresholds), B06, B08, B10
+side B, B12 side B, B14 side A, B19, B21. Boundary values are tested nowhere
+in the development set (B06, B07, B10, B11, B12, B02 thresholds).
+
+Tagging each development case with the boundary, side and test type it
+exercises would let this table be generated from `evals/cases.json` and
+show the types actually covered; it is planned, not built.
