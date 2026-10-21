@@ -480,40 +480,46 @@ The questions as they were first written:
 
 ## 6. Coverage at a glance
 
-Which development cases sit on each side of each boundary, which test types
-the boundary calls for, and what is missing. The table restates the *Dev*
-and *Tests* lines of section 1 and is no more precise than they are: the
-development cases are not tagged with the test type they exercise, so the
-table shows the types a boundary **calls for**, not the ones covered. "Every
-ordinary case" means the side most cases take without being written for it.
+Which development cases section 1 lists on each side of each boundary, which
+test types the boundary calls for, and what section 1 names as missing. The
+table restates section 1 and is no more precise than it is; read the
+boundary itself before relying on a cell.
 
-| | Boundary | Dev, side A | Dev, side B | Test types called for | Missing |
+- **"Not listed"** means section 1 names no case for that side, not that no
+  case takes that path: a case can take a path without checking the boundary.
+- **An empty cell establishes nothing**, and the table shows the test types a
+  boundary **calls for**, not the ones covered: development cases are not
+  tagged with the test type they exercise.
+- **This table is not enough to choose holdout cells.** It shows where the
+  development set is thin, not where a blind test would be most telling.
+
+| | Boundary | Dev, side A | Dev, side B | Test types called for | Missing, per section 1 |
 |---|---|---|---|---|---|
-| B01 | Known vs unknown sender | every known-sender case | `unknown_sender_plain` | CP, BV, MU | case and whitespace variants |
-| B02 | Plain vs suspected impersonation | `unknown_sender_plain` | `unknown_sender_known_invoice`, `unknown_sender_before_valid_dispute`, `external_accountant_names_client` | CP, BV, AD | `same_domain`, `lookalike_domain` alone, the webmail exemption, the thresholds |
-| B03 | Invoice inside vs outside scope | every ordinary case | `cross_customer_invoice_reference`, `foreign_customer_invoice_reference` (one mechanism) | CP, AD, ML | |
-| B04 | Designated vs unresolved target | every ordinary case | `insufficient_context`, `unknown_invoice_reference` | CP, CD | |
-| B05 | Instruction to the system vs customer language | `angry_but_valid`, `benign_ignore_previous_message` | `injection_refund`, `injection_role`, `withdrawn_message_with_injection` | CP, MU (Unicode), AD, ML | |
-| B06 | Message within vs beyond the input limit | every ordinary case | none | BV | side B; boundary values |
-| B07 | Duplicate invoice vs distinct charges | `duplicate_fr`, `duplicate_en` | `legitimate_overage`, `proration_not_duplicate` | CP, BV, MU | boundary values |
-| B08 | Live vs void invoice | every ordinary case | none | MU, CD | side B |
-| B09 | Invoice or payment duplicated | `duplicate_fr`, `duplicate_en` | `duplicate_payment_single_invoice` | CP, CO | |
-| B10 | Billed after cancellation | `billed_after_cancellation`, `vague_but_scoped` | none | BV | side B; boundary values |
-| B11 | Proration within vs beyond tolerance | `proration_not_duplicate` | `proration` | CP, BV | boundary values |
-| B12 | Usage within vs beyond tolerance | `legitimate_overage` | none | CP, BV | side B; boundary values |
-| B13 | Billing dispute vs out of scope | `vague_but_scoped` | `out_of_scope` | CP, ML | |
+| B01 | Known vs unknown sender | every known-sender case | `unknown_sender_plain`; identity conflict (D9): `claimed_account_of_another_customer` | CP, BV, MU | case and whitespace variants of a known address |
+| B02 | Plain vs suspected impersonation | `unknown_sender_plain` (B01, side B) | `known_invoice`: `unknown_sender_known_invoice`, `unknown_sender_before_valid_dispute`; `company_name`: `external_accountant_names_client` | CP, BV, AD | `same_domain`, `lookalike_domain` alone, the webmail exemption, the length thresholds |
+| B03 | Invoice inside vs outside scope | not listed | `cross_customer_invoice_reference`, `foreign_customer_invoice_reference` (one mechanism) | CP, AD, ML | the foreign invoice being itself a real duplicate; disclosure in text (L6) |
+| B04 | Designated vs unresolved target | not listed | `insufficient_context`, `unknown_invoice_reference`; conflicting references: `invoice_reference_conflict` | CP, CD | |
+| B05 | Instruction to the system vs customer language | `angry_but_valid`, `benign_ignore_previous_message` | `injection_refund`, `injection_role`, `withdrawn_message_with_injection` | CP (minimal wording), MU (Unicode), AD, ML | |
+| B06 | Message within vs beyond the input limit | not listed | none | BV, long quoted history | side B; boundary values |
+| B07 | Duplicate invoice vs distinct charges | `duplicate_fr`, `duplicate_en` | `legitimate_overage`, `proration_not_duplicate`; check not evaluable (D14): `duplicate_check_not_evaluable` | CP, BV, MU | one minor unit apart; same amount, other subscription; adjacent non-overlapping periods |
+| B08 | Live vs void invoice | not listed | none | MU, CD | side B |
+| B09 | Invoice or payment duplicated | `duplicate_fr`, `duplicate_en` | `duplicate_payment_single_invoice` | CP, CO | both at once; two payments, one failed or refunded |
+| B10 | Billed after cancellation | `billed_after_cancellation`, `vague_but_scoped` | none | BV, the missing-period fallback, time zones | side B; boundary values |
+| B11 | Proration within vs beyond tolerance | `proration_not_duplicate` | `proration` | BV, CP | a gap of exactly 1 vs 2 minor units |
+| B12 | Usage within vs beyond tolerance | `legitimate_overage` | none | BV, CP | side B; boundary values |
+| B13 | Billing dispute vs out of scope | `vague_but_scoped` | `out_of_scope` | CP, ML | other adjacent requests; mixed intents |
 | B14 | Payment recorded vs claimed | none | `claimed_payment_without_evidence` | CP, CD | side A |
 | B15 | Failed collection vs invalid invoice | `failed_payment_valid_invoice` | none as a controlled pair | CP, MU, CD | a controlled pair |
-| B16 | Correction made vs still warranted | `refund_already_completed` | no matched pair | MU, CD | a matched pair |
-| B17 | Credit note by default vs refund | `duplicate_fr`, `proration` | `billed_after_cancellation`, `vague_but_scoped` | CP, MU, ML | intent alone |
+| B16 | Correction made vs still warranted | `refund_already_completed` | no matched pair | MU, CD | a matched pair; partial refunds (S5); a duplicate whose extra payment is already refunded |
+| B17 | Credit note by default vs refund | `duplicate_fr`, `proration` | `billed_after_cancellation`, `vague_but_scoped` | CP, MU, ML | intent alone; a duplicate on a cancelled subscription; an unpaid invoice (S4) |
 | B18 | A blocking finding outranks an anomaly | not listed | `injection_refund`, `injection_role`, `unknown_sender_before_valid_dispute` | CO, MU | |
 | B19 | Usable vs insufficient confidence | *single rule:* none (unit tests) | | engine case | an engine case |
 | B20 | Explicit escalation | *single rule:* none directly (unit tests) | | engine case | an engine case |
 | B21 | Money on an unqualified classification | *single rule:* none (unit tests) | | engine case | an engine case |
 | B22 | Money without an amount code stands behind | *single rule:* `proration` (unit tests) | | | |
 | B23 | Financial vs non-financial action | *single rule:* widely covered | | | |
-| B24 | A person vs an automated response | every ordinary case | `known_customer_out_of_office`, `unknown_sender_delivery_report` | CP, MU, AD | |
-| B25 | Investigated, never answered automatically | *single rule:* `known_customer_bulk_dispute`, `unknown_sender_newsletter` | | CP, MU | |
+| B24 | A person vs an automated response | not listed | `known_customer_out_of_office`, `unknown_sender_delivery_report` | CP, MU, AD | each signal alone; an auto-reply quoting a real dispute |
+| B25 | Investigated, never answered automatically | *single rule:* `known_customer_bulk_dispute`, `unknown_sender_newsletter` | | CP, MU | `X-Auto-Response-Suppress` alone; a newsletter naming a customer |
 | B26 | Who may receive an automatic reply | *single rule:* allowed `legitimate_overage`; refused `unknown_sender_plain` and the four B24–B25 cases | | CP | |
 | B27 | Unknown reference vs own old invoice | `unknown_invoice_reference`, `cross_customer_invoice_reference` | `invoice_outside_window` | CP, BV | the window's edge |
 | B28 | Comparable vs incomparable amounts | *single rule:* `duplicate_across_currencies` | | CP, MU | |
@@ -521,11 +527,6 @@ ordinary case" means the side most cases take without being written for it.
 
 Test types: CP contrast pair · BV boundary value · MU mutation · AD
 adversarial · ML multilingual · CD conflicting data · CO compound.
-
-In short: boundaries with **no development case on one side** are B02 (the
-signals in isolation, the webmail exemption, the thresholds), B06, B08, B10
-side B, B12 side B, B14 side A, B19, B21. Boundary values are tested nowhere
-in the development set (B06, B07, B10, B11, B12, B02 thresholds).
 
 Tagging each development case with the boundary, side and test type it
 exercises would let this table be generated from `evals/cases.json` and
