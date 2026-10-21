@@ -66,8 +66,9 @@ fix after review is reviewed again.
   pull request only after that approval.
 - The pull request says **"behaviour changed"** (with the capabilities and
   requirements affected) or **"behaviour unchanged"** (with a reason).
-- A change to the money-moving core and its policies, to trust boundaries or
-  disclosure, to the evaluation gates or the holdout policy, or a normative
+- A change to the money-moving core and its policies, to what a model's
+  output may set off, to trust boundaries or disclosure, to the evaluation
+  gates or the holdout policy, or a normative
   change to the constitution, an ADR or the contract needs the maintainer's
   explicit approval of the final diff, identified by its commit.
 - CI must pass on that commit. Only the maintainer merges.

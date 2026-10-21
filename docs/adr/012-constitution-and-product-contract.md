@@ -1,6 +1,6 @@
 # ADR-012 — The constitution, the product contract, and where factory rules live
 
-**Status:** accepted · 2026-10-21 · adopts Spec Kit; records two governance
+**Status:** accepted · 2026-10-21 · adopts Spec Kit; records three governance
 choices and the sources behind them
 
 ## Context
@@ -30,7 +30,11 @@ it raised two questions that the draft left open.
 
 Both were argued between the two agents, in writing, before the maintainer
 decided: each stated its position, answered the other's strongest argument,
-and said where it could move.
+and said where it could move. A third question came from the maintainer on reading the
+draft:
+
+- **C. Should the constitution forbid agent loops in the product?** The
+  draft carried ADR-006 over as a principle.
 
 ## Decision A — product authorities in the constitution, mechanisms in the factory
 
@@ -39,7 +43,8 @@ governance states how a factory meets them.**
 
 - The constitution names a short, closed list of sensitive areas, judged by
   the effect of a change and not by the files it touches: the money-moving
-  core and its policies, trust boundaries and disclosure, the evaluation
+  core and its policies, what a model's output may set off, trust boundaries
+  and disclosure, the evaluation
   gates and the holdout policy, and normative changes to the constitution,
   an ADR or the product contract. Any such change needs the maintainer's
   explicit approval of the final diff, identified by its commit. An
@@ -108,6 +113,37 @@ Claude Code first proposed deciding the location at the first feature.
 Spec Kit's documentation, which Codex found, changed that: the persistence
 model is a project convention to record up front, and leaving it to the first
 feature would let one change set the layout for all.
+
+## Decision C — the constitution bounds what a model may set off, not how it is orchestrated
+
+The 2026-10-17 draft carried ADR-006 into the constitution as "No agent
+framework on the main pipeline": no loop, no tool, a model's output never
+fed back to a model. The maintainer objected, and the objection held on
+three counts.
+
+- **It froze a choice its own record expects to revisit.** ADR-006 states
+  when it would change: a refinement loop, or a flow beyond about five nodes
+  with mid-run resumption. In a constitution, that change becomes a major
+  amendment; the constitution itself leaves architectural boundaries to the
+  ADRs.
+- **It contradicted the project's aim**, an agentic dispute workflow.
+- **It guarded the wrong thing.** A first rewrite, "a model proposes, it
+  never acts", was wrong too, as the maintainer pointed out: once the reply
+  drafter exists, text the model wrote will reach a customer with no person
+  reading it, whenever the automatic-reply decision allows. The model does
+  act.
+
+The invariant that holds is therefore about bounds, not orchestration:
+**what a model's output may set off is decided by code and by the
+constitution, never by the model.** Money and platform writes always take a
+human approval; a message goes out on its own only when the deterministic
+reply decision allows it and the outgoing text has been checked; the model
+writes content, code decides whether to send, to whom and about which
+account; steering outputs are closed sets; tools read-only and scoped to the
+dispute's customer; loops bounded. Widening those bounds joins the sensitive
+areas that need the maintainer's approval of the final diff. ADR-006 stays
+the record of today's orchestration -- none -- and can change by a new ADR
+without touching the constitution, as long as the bounds hold.
 
 ## What practice shows (sources consulted, 2026-10-21)
 

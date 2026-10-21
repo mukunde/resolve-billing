@@ -54,15 +54,27 @@ currencies raises.
 
 *Implemented by:* ADR-005.
 
-### V. No Agent Framework on the Main Pipeline
+### V. A Model Acts Only Within Bounds the Code Sets
 
-The product contains no agent loop: nothing routes a model's output back into
-a model, and the model holds no tools. The classification and the
-recommended action take values in closed sets; the explanation is free text
-and the evidence references are checked against what was issued. This
-constrains the product, not the tools used to develop it.
+What a model's output may set off is decided by deterministic code and by
+this constitution, never by the model. Money and writes to the billing
+platform never move without a human approval (II). A message reaches a
+customer without a person only when the deterministic automatic-reply
+decision allows it (VII), and after a check of the outgoing text, which comes
+with the reply drafter *(adopted)*. The model writes content; code decides
+whether to send, to whom, and about which account. Outputs that steer what
+happens next take values in closed sets, and a value outside them goes to a
+person; references the model cites are kept only if they were issued to it. A
+tool given to a model MUST be read-only and scoped to the dispute's own
+customer; a loop MUST have a bound and a stop condition; every model call is
+auditable (VI). Widening what a model may set off -- a new kind of effect, or
+a check removed -- is a sensitive change (Development Workflow); money stays
+human whatever the model (II). How models are orchestrated is an ADR
+decision, not this constitution's.
 
-*Implemented by:* ADR-006.
+*Implemented by:* ADR-006 (today: no framework, no loop, no tool, and the
+condition under which that would change); ADR-011. *Rationale:* the risk is
+not a loop or a tool, it is an effect nobody bounded.
 
 ### VI. Auditable by Design; the Platform Is Authoritative
 
@@ -191,6 +203,7 @@ by step.
   effect and not by the files it touches, needs the maintainer's explicit
   approval of the final diff, identified by its commit:
   - the money-moving core and its policies (II, IV);
+  - what a model's output may set off (V);
   - trust boundaries and disclosure (VII);
   - the evaluation gates and the holdout policy (VIII, IX);
   - normative changes to this constitution, to an ADR or to the product
