@@ -51,6 +51,9 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Spec Kit's own scripts, rewritten by `specify` on every refresh: linting
+# them would mean editing vendored files that the next upgrade overwrites.
+extend-exclude = [".specify/scripts", ".specify/extensions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
