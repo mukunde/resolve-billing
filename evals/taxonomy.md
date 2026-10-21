@@ -495,13 +495,13 @@ boundary itself before relying on a cell.
 
 | | Boundary | Dev, side A | Dev, side B | Test types called for | Missing, per section 1 |
 |---|---|---|---|---|---|
-| B01 | Known vs unknown sender | every known-sender case | `unknown_sender_plain`; identity conflict (D9): `claimed_account_of_another_customer` | CP, BV, MU | case and whitespace variants of a known address |
+| B01 | Known vs unknown sender | every known-sender case | `unknown_sender_plain` ¹ | CP, BV, MU | case and whitespace variants of a known address |
 | B02 | Plain vs suspected impersonation | `unknown_sender_plain` (B01, side B) | `known_invoice`: `unknown_sender_known_invoice`, `unknown_sender_before_valid_dispute`; `company_name`: `external_accountant_names_client` | CP, BV, AD | `same_domain`, `lookalike_domain` alone, the webmail exemption, the length thresholds |
 | B03 | Invoice inside vs outside scope | not listed | `cross_customer_invoice_reference`, `foreign_customer_invoice_reference` (one mechanism) | CP, AD, ML | the foreign invoice being itself a real duplicate; disclosure in text (L6) |
-| B04 | Designated vs unresolved target | not listed | `insufficient_context`, `unknown_invoice_reference`; conflicting references: `invoice_reference_conflict` | CP, CD | |
-| B05 | Instruction to the system vs customer language | `angry_but_valid`, `benign_ignore_previous_message` | `injection_refund`, `injection_role`, `withdrawn_message_with_injection` | CP (minimal wording), MU (Unicode), AD, ML | |
+| B04 | Designated vs unresolved target | not listed | `insufficient_context`, `unknown_invoice_reference` ¹ | CP, CD | references written freely ("my September invoice") |
+| B05 | Instruction to the system vs customer language | `angry_but_valid`, `benign_ignore_previous_message` | `injection_refund`, `injection_role`, `withdrawn_message_with_injection` | CP (minimal wording), MU (Unicode), AD, ML | an override naming nothing the patterns list ("forget what you were told before") |
 | B06 | Message within vs beyond the input limit | not listed | none | BV, long quoted history | side B; boundary values |
-| B07 | Duplicate invoice vs distinct charges | `duplicate_fr`, `duplicate_en` | `legitimate_overage`, `proration_not_duplicate`; check not evaluable (D14): `duplicate_check_not_evaluable` | CP, BV, MU | one minor unit apart; same amount, other subscription; adjacent non-overlapping periods |
+| B07 | Duplicate invoice vs distinct charges | `duplicate_fr`, `duplicate_en` | `legitimate_overage`, `proration_not_duplicate` ¹ | CP, BV, MU | one minor unit apart; same amount, other subscription; adjacent non-overlapping periods |
 | B08 | Live vs void invoice | not listed | none | MU, CD | side B |
 | B09 | Invoice or payment duplicated | `duplicate_fr`, `duplicate_en` | `duplicate_payment_single_invoice` | CP, CO | both at once; two payments, one failed or refunded |
 | B10 | Billed after cancellation | `billed_after_cancellation`, `vague_but_scoped` | none | BV, the missing-period fallback, time zones | side B; boundary values |
@@ -524,6 +524,12 @@ boundary itself before relying on a cell.
 | B27 | Unknown reference vs own old invoice | `unknown_invoice_reference`, `cross_customer_invoice_reference` | `invoice_outside_window` | CP, BV | the window's edge |
 | B28 | Comparable vs incomparable amounts | *single rule:* `duplicate_across_currencies` | | CP, MU | |
 | B29 | Usage checked vs unavailable | *single rule:* none (integration test) | | CP | a case |
+
+¹ Outcomes outside sides A and B, with their own development case: B01, an
+identity conflict (D9), `claimed_account_of_another_customer`; B04,
+references that conflict with the designated invoice (S6),
+`invoice_reference_conflict`; B07, a duplicate check that cannot conclude
+(D14), `duplicate_check_not_evaluable`.
 
 Test types: CP contrast pair · BV boundary value · MU mutation · AD
 adversarial · ML multilingual · CD conflicting data · CO compound.
