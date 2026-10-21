@@ -515,7 +515,7 @@ example.
 
 ### Cases by boundary
 
-| | Boundary | Side A | Side B | Outside A and B | Called for | Exercised |
+| | Boundary | Side A | Side B | Outside A and B | Called for | Tagged types |
 |---|---|---|---|---|---|---|
 | B01 | Known vs unknown sender | not listed | `unknown_sender_plain` | `claimed_account_of_another_customer` (identity conflict) | CP, BV, MU | AD, EX |
 | B02 | Unknown sender: plain vs suspected impersonation, one signal at a time | `unknown_sender_plain` | `unknown_sender_known_invoice`, `unknown_sender_before_valid_dispute`, `external_accountant_names_client` |  | CP, BV, AD | EX |
@@ -535,10 +535,10 @@ example.
 | B16 | Correction already made vs still warranted | `refund_already_completed` | none |  | MU, CD | EX |
 | B17 | Credit note by default vs refund | `duplicate_fr`, `duplicate_en`, `known_customer_bulk_dispute` | `billed_after_cancellation`, `vague_but_scoped` |  | CP, MU, ML | MU, ML, EX |
 | B18 | A blocking finding outranks a real anomaly | not listed | `injection_refund`, `injection_role`, `unknown_sender_before_valid_dispute`, `withdrawn_message_with_injection` |  | MU, CO | CO, EX |
-| B19 | Usable classification vs insufficient confidence | *one rule:* none |  |  |  | none |
-| B20 | Explicit escalation | *one rule:* none |  |  |  | none |
-| B21 | Money recommended on an unqualified classification | *one rule:* none |  |  |  | none |
-| B22 | Money recommended without an amount the code can stand behind | *one rule:* `proration`, `duplicate_check_not_evaluable` |  |  |  | EX |
+| B19 | Usable classification vs insufficient confidence | *one rule:* none |  |  | not specified | none |
+| B20 | Explicit escalation | *one rule:* none |  |  | not specified | none |
+| B21 | Money recommended on an unqualified classification | *one rule:* none |  |  | not specified | none |
+| B22 | Money recommended without an amount the code can stand behind | *one rule:* `proration`, `duplicate_check_not_evaluable` |  |  | not specified | EX |
 | B27 | Unknown reference vs the customer's own old invoice | `unknown_invoice_reference`, `cross_customer_invoice_reference`, `foreign_customer_invoice_reference` | `invoice_outside_window` |  | CP, BV | EX |
 | B28 | Comparable vs incomparable amounts | *one rule:* `duplicate_across_currencies` |  |  | CP, MU | EX |
 | B29 | Usage checked vs usage unavailable | *one rule:* none |  |  | CP | none |

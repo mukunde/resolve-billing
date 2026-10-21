@@ -42,9 +42,24 @@ INVARIANCES = ("I1", "I2", "I3", "I4", "I5")
 #: membership is not a check, so B23 is reported from the expectations instead.
 UNTAGGED = frozenset({"B23"})
 FINANCIAL = frozenset({"credit_note", "refund"})
+#: The outcomes outside sides A and B that section 1 defines, by boundary.
+OUTSIDE = {
+    "B01": frozenset({"identity_conflict"}),
+    "B04": frozenset({"reference_conflict"}),
+    "B07": frozenset({"not_evaluable"}),
+}
+#: B26 states who may receive an automatic reply; a tag on it says which way
+#: the case expects it, and must agree with the case's expectation.
+REPLY = {"allowed": True, "refused": False}
 
+SECTION_1 = "\n## 1. Boundaries the evaluation set can test\n"
+SECTION_2 = "\n## 2. Invariances\n"
 _BOUNDARY = re.compile(r"^\*\*(B\d+) — (.+?)\*\* · (.+)$")
 _TESTS = re.compile(r"^- Tests: (.+)$")
+
+
+class TaxonomyError(ValueError):
+    """Section 1 cannot be read as boundaries without guessing."""
 
 
 @dataclass(frozen=True)
@@ -56,22 +71,44 @@ class Boundary:
 
 
 def boundaries(taxonomy: str) -> dict[str, Boundary]:
-    """The boundaries of section 1, in the order they are written."""
-    section = taxonomy.split("\n## 2. Invariances")[0]
+    """The boundaries of section 1, in the order they are written.
+
+    Strict on purpose: a boundary the parser could not read would drop out of
+    the generated tables with the check still green. So a heading that looks
+    like a boundary but does not parse, a repeated id, or a line that looks
+    like a *Tests* line but does not parse, or names no known type, raises.
+    A boundary may have no *Tests* line at all (B19 to B23).
+    """
+    if SECTION_1 not in taxonomy or SECTION_2 not in taxonomy:
+        raise TaxonomyError("section 1 or section 2 heading not found")
+    section = taxonomy.split(SECTION_1, 1)[1].split(SECTION_2, 1)[0]
     found: dict[str, Boundary] = {}
-    for block in re.split(r"\n(?=\*\*B\d+ — )", section):
-        lines = block.strip().splitlines()
-        head = _BOUNDARY.match(lines[0]) if lines else None
-        if head is None:
+    current: dict | None = None
+    for line in section.splitlines():
+        if line.startswith("**B"):
+            head = _BOUNDARY.match(line)
+            if head is None:
+                raise TaxonomyError(f"unreadable boundary heading: {line[:60]!r}")
+            if head.group(1) in found:
+                raise TaxonomyError(f"{head.group(1)} is defined twice")
+            current = {"id": head.group(1), "title": head.group(2), "sided": False, "called": ()}
+            found[head.group(1)] = current  # type: ignore[assignment]
+        elif current is None:
             continue
-        sided = any(re.match(r"^- A: |^A: ", line) for line in lines)
-        called: tuple[str, ...] = ()
-        for line in lines:
+        elif re.match(r"^(- )?A: ", line):
+            current["sided"] = True
+        elif re.match(r"^- Tests?\b", line):
             tests = _TESTS.match(line)
-            if tests:
-                called = tuple(t for t in TYPES if re.search(rf"\b{t}\b", tests.group(1)))
-        found[head.group(1)] = Boundary(head.group(1), head.group(2), sided, called)
-    return found
+            called = tuple(t for t in TYPES if tests and re.search(rf"\b{t}\b", tests.group(1)))
+            if not called:
+                raise TaxonomyError(f"{current['id']}: unreadable Tests line")
+            current["called"] = called
+    if not found:
+        raise TaxonomyError("no boundary found in section 1")
+    return {
+        b: Boundary(v["id"], v["title"], v["sided"], v["called"])  # type: ignore[index]
+        for b, v in found.items()
+    }
 
 
 def problems(cases: list[dict], known: dict[str, Boundary]) -> list[str]:
@@ -84,39 +121,59 @@ def problems(cases: list[dict], known: dict[str, Boundary]) -> list[str]:
         if not isinstance(covers, list) or not covers:
             found.append(f"{name}: no `covers`")
             continue
+        seen = set()
         for tag in covers:
-            found.extend(f"{name}: {p}" for p in _tag_problems(tag, known, ids))
-        for inv in case.get("invariance", []):
+            found.extend(f"{name}: {p}" for p in _tag_problems(tag, case, known, ids))
+            if isinstance(tag, dict):
+                key = (tag.get("boundary"), tag.get("side"))
+                if key in seen:
+                    found.append(f"{name}: {key[0]} side {key[1]} tagged twice")
+                seen.add(key)
+        invariance = case.get("invariance", [])
+        if not isinstance(invariance, list):
+            found.append(f"{name}: `invariance` is a list")
+            continue
+        for inv in invariance:
             if inv not in INVARIANCES:
                 found.append(f"{name}: unknown invariance {inv!r}")
     return found
 
 
-def _tag_problems(tag: object, known: dict[str, Boundary], ids: set[str]) -> list[str]:
+def _tag_problems(tag: object, case: dict, known: dict[str, Boundary], ids: set[str]) -> list[str]:
     if not isinstance(tag, dict):
         return ["a tag is not an object"]
+    for field in ("boundary", "side", "type", "with", "varies", "outcome", "asserts"):
+        if field in tag and not isinstance(tag[field], str):
+            return [f"`{field}` is a string"]
     boundary = known.get(tag.get("boundary", ""))
     if boundary is None or boundary.id in UNTAGGED:
         return [f"unknown or untaggable boundary {tag.get('boundary')!r}"]
+    b = boundary.id
     found = []
     if tag.get("type") not in TYPES:
-        found.append(f"{boundary.id}: unknown type {tag.get('type')!r}")
-    side = tag.get("side")
+        found.append(f"{b}: unknown type {tag.get('type')!r}")
+    side, outcome = tag.get("side"), tag.get("outcome")
     if boundary.sided and side not in SIDES:
-        found.append(f"{boundary.id}: a side A, B or X is required")
+        found.append(f"{b}: a side A, B or X is required")
     if not boundary.sided and side is not None:
-        found.append(f"{boundary.id}: states one rule and has no sides")
-    if side == "X" and not tag.get("outcome"):
-        found.append(f"{boundary.id}: side X names its outcome")
+        found.append(f"{b}: states one rule and has no sides")
+    if side == "X" and outcome not in OUTSIDE.get(b, ()):
+        found.append(f"{b}: side X names an outcome section 1 defines, not {outcome!r}")
+    if b == "B26":
+        expected = case.get("expect_automatic_reply")
+        if outcome not in REPLY or expected is None or REPLY[outcome] is not expected:
+            found.append(f"{b}: outcome {outcome!r} must match `expect_automatic_reply`")
+    elif side != "X" and outcome is not None:
+        found.append(f"{b}: `outcome` belongs to side X and B26 only")
     partner = tag.get("with")
     if tag.get("type") in NEEDS_PARTNER and not partner:
-        found.append(f"{boundary.id}: {tag.get('type')} names the case it varies from")
-    if partner is not None and partner not in ids:
-        found.append(f"{boundary.id}: partner {partner!r} is not a case")
+        found.append(f"{b}: {tag.get('type')} names the case it varies from")
+    if partner is not None and (partner not in ids or partner == case["id"]):
+        found.append(f"{b}: partner {partner!r} is not another case")
     if partner is not None and not tag.get("varies"):
-        found.append(f"{boundary.id}: a partner comes with what `varies`")
+        found.append(f"{b}: a partner comes with what `varies`")
     if tag.get("asserts", "decision") not in ("decision", "finding"):
-        found.append(f"{boundary.id}: `asserts` is decision or finding")
+        found.append(f"{b}: `asserts` is decision or finding")
     return found
 
 
@@ -136,7 +193,7 @@ def render(cases: list[dict], known: dict[str, Boundary]) -> str:
             types[b][tag["type"]].add(case["id"])
 
     out = [BEGIN, "", "### Cases by boundary", ""]
-    out.append("| | Boundary | Side A | Side B | Outside A and B | Called for | Exercised |")
+    out.append("| | Boundary | Side A | Side B | Outside A and B | Called for | Tagged types |")
     out.append("|---|---|---|---|---|---|---|")
     for b in known.values():
         if b.id in UNTAGGED:
@@ -146,10 +203,11 @@ def render(cases: list[dict], known: dict[str, Boundary]) -> str:
         if not b.sided:
             side_a = "*one rule:* " + (", ".join(r["rule"]) or "none")
         side_b = ", ".join(r["B"]) or ("none" if b.sided else "")
-        exercised = ", ".join(t for t in TYPES if types[b.id][t]) or "none"
+        tagged = ", ".join(t for t in TYPES if types[b.id][t]) or "none"
+        called = ", ".join(b.called_for) or "not specified"
         out.append(
             f"| {b.id} | {b.title} | {side_a} | {side_b} | {', '.join(r['X'])} "
-            f"| {', '.join(b.called_for)} | {exercised} |"
+            f"| {called} | {tagged} |"
         )
 
     out += ["", "### Boundaries by test type", ""]

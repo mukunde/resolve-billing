@@ -50,21 +50,21 @@
         "side": "A",
         "type": "ML",
         "with": "duplicate_fr",
-        "varies": "language"
+        "varies": "language; the English also asks for a credit note"
       },
       {
         "boundary": "B09",
         "side": "A",
         "type": "ML",
         "with": "duplicate_fr",
-        "varies": "language"
+        "varies": "language; the English also asks for a credit note"
       },
       {
         "boundary": "B17",
         "side": "A",
         "type": "ML",
         "with": "duplicate_fr",
-        "varies": "language"
+        "varies": "language; the English also asks for a credit note"
       }
     ],
     "invariance": [
@@ -419,7 +419,7 @@
         "side": "A",
         "type": "MU",
         "with": "legitimate_overage",
-        "varies": "one sentence"
+        "varies": "the message"
       }
     ]
   },
