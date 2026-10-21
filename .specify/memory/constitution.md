@@ -62,12 +62,16 @@ platform never move without a human approval (II). A message reaches a
 customer without a person only when the deterministic automatic-reply
 decision allows it (VII), and after a check of the outgoing text, which comes
 with the reply drafter *(adopted)*. The model writes content; code decides
-whether to send, to whom, and about which account. Outputs that steer what
-happens next take values in closed sets, and a value outside them goes to a
-person; references the model cites are kept only if they were issued to it. A
+whether to send, to whom, and about which account -- the recipient and the
+account come from the trusted context, never from generated text, and the
+outgoing check stops a text that tries to redirect. The kinds of decision
+that steer what happens next take values in closed sets, and a value outside
+them goes to a person; references the model cites are kept only if they were issued to it. A
 tool given to a model MUST be read-only and scoped to the dispute's own
-customer; a loop MUST have a bound and a stop condition; every model call is
-auditable (VI). Widening what a model may set off -- a new kind of effect, or
+customer; a loop MUST have a bound and a stop condition. Once orchestration
+has more than one call per investigation, every call -- failed or
+interrupted ones included -- MUST be traceable, without keeping sensitive
+content; today the run row of VI records the one call there is. Widening what a model may set off -- a new kind of effect, or
 a check removed -- is a sensitive change (Development Workflow); money stays
 human whatever the model (II). How models are orchestrated is an ADR
 decision, not this constitution's.
@@ -95,7 +99,12 @@ what happened since.
 
 ### VII. Untrusted Input, Explicit Trust Boundaries
 
-The dispute message is untrusted. It is screened before any model sees it,
+The dispute message is untrusted, and so are a tool's results, a
+retrieved document and a model's output: none of them can change a
+permission, a recipient, the customer in scope or an approval condition, and
+a second model may give an opinion, never replace a deterministic
+authorisation. A generated explanation shown to an approver is not verified
+evidence. The message is screened before any model sees it,
 and what reaches a model provider MUST be reduced: today the context is
 pseudonymised and, in the Claude engine, the message is masked for the
 formats the masking recognises -- masking, not anonymisation. The sender's address

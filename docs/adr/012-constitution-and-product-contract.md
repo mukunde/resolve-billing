@@ -126,7 +126,9 @@ three counts.
   with mid-run resumption. In a constitution, that change becomes a major
   amendment; the constitution itself leaves architectural boundaries to the
   ADRs.
-- **It contradicted the project's aim**, an agentic dispute workflow.
+- **It constrained the project's agentic aim for no gain**: an agentic
+  dispute workflow does not need a loop, but a constitution should not rule
+  one out ahead of the evidence.
 - **It guarded the wrong thing.** A first rewrite, "a model proposes, it
   never acts", was wrong too, as the maintainer pointed out: once the reply
   drafter exists, text the model wrote will reach a customer with no person
