@@ -69,5 +69,9 @@ An engine raises `EngineUnavailable` for transport and service failures only
 investigation turns it into an escalation and records the outage as such,
 distinct from an engine that answered and abstained; no cost is invented. A
 malformed answer stays the engine's own escalation, and a bad request or a
-missing key stays an error. Below a confidence of 0.70 the action policy
+missing key stays an error -- raised, since 2026-10-22, as `EngineRejected`
+(a status and a category, never the provider's text), so that a caller can
+name it without importing a vendor's SDK. It is never turned into an
+escalation: a refused request is a configuration or account problem, and a
+plausible decision would hide it. Below a confidence of 0.70 the action policy
 sends any classification to a person (taxonomy S8).

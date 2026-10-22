@@ -34,26 +34,40 @@ caught it.
 1. `EngineRejected` in `app/decision/base.py`, beside `EngineUnavailable`: the
    provider refused the request. Engine-agnostic.
 2. The Claude adapter raises it for any SDK status error that is not
-   transient (`_TRANSIENT`), with the status code and the provider's message
-   (cut at 300 characters). Transient statuses stay `EngineUnavailable`; a
-   programming error or a lookalike exception stays what it is.
+   transient (`_TRANSIENT`), with the status code and a category (request,
+   authentication, permission, not found, too large; "account out of credit"
+   recognised from the SDK's structured error body). **Never the provider's
+   own text**, which can quote the request, a URL or a credential.
+   Transient statuses stay `EngineUnavailable`; a programming error or a
+   lookalike exception stays what it is.
 3. The evaluation runner catches it around each run: one line on standard
-   error, the run stops whole, no result file, exit code 2.
-4. Unchanged: the investigation does not catch it. Through the API, a refused
-   request still fails the request, as before -- an escalation would hide a
-   configuration problem behind a plausible decision.
+   error, naming the run in a series; the whole series stops, earlier
+   complete runs included; nothing is written, and an existing `--json` file
+   is left as it was (the message says so); exit code 2.
+4. Unchanged in behaviour: the investigation does not catch it. Through the
+   API a refused request still fails the request (500), as before, now with
+   `EngineRejected` rather than the SDK's exception; an escalation would hide
+   a configuration problem behind a plausible decision. ADR-002 names the
+   contract.
 
 ## Tests
 
-- `tests/unit/test_engine_refusal.py`: the runner stops with the diagnosis, no
-  traceback, no result file, exit 2 (fails on the code before the fix: the
-  exception did not exist); the Claude engine reports HTTP 400, 401, 403, 404
-  as `EngineRejected` with the provider's message.
+- `tests/unit/test_engine_refusal.py` (no SDK needed, so it runs in the free
+  CI job): the runner stops with the diagnosis, no traceback, no result file,
+  exit 2; a series stops at the refused run and writes nothing; an existing
+  result file is left and named.
+- `tests/unit/test_claude_refusal.py` (with the SDK): HTTP 400, 401, 403, 404
+  become `EngineRejected` with a category; sentinels in the provider's
+  message (a key, a URL, newlines, long text) never reach it; the credit case
+  is recognised from the structured body.
+- `tests/unit/test_engine_refusal.py` also: the investigation lets a refusal
+  through rather than turning it into an escalation (what the API then
+  answers with a 500, as before).
 - `tests/unit/test_claude_outages.py`: 400 and 401 now expected as refusals;
   outages and other errors unchanged.
 
 ## Acceptance
 
-- A run against a refusing engine ends with the provider's reason and exit 2,
+- A run against a refusing engine ends with a status and a category, exit 2,
   writes nothing, and shows no traceback.
 - Outages still escalate; the mock baseline is unchanged.

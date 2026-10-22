@@ -39,8 +39,9 @@ class EngineRejected(Exception):  # noqa: N818 -- a state, not a programming err
     Not an outage -- trying later changes nothing until someone fixes the
     configuration or the account -- and not an answer, so it is never turned
     into an escalation: it fails the investigation, and a caller that can say
-    so plainly (the evaluation runner) stops with the provider's reason
-    rather than a traceback.
+    so plainly (the evaluation runner) stops with one line rather than a
+    traceback. Its text is a status and a category, never the provider's own
+    words, which can quote the request or a credential.
     """
 
 
