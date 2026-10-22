@@ -132,9 +132,11 @@ class StripeReader:
         found = await self._every(self._v1.invoices.list_async, params={"customer": customer_id})
         return [await self._with_every_line(payload) for payload in found]
 
-    async def invoice(self, invoice_id: str) -> dict:
+    async def invoice(self, invoice_id: str, *, every_line: bool = True) -> dict:
+        """The invoice; its lines complete unless only the invoice itself is
+        wanted (`every_line=False`, for its owner)."""
         payload = await self._call(self._v1.invoices.retrieve_async, invoice_id)
-        return await self._with_every_line(payload)
+        return await self._with_every_line(payload) if every_line else payload
 
     async def _with_every_line(self, payload: dict) -> dict:
         if payload["lines"].get("has_more"):

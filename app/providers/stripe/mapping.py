@@ -164,8 +164,7 @@ def invoice(
         raise ProviderUnsupported("invoice_tax")
     if any(discount["amount"] for discount in payload.get("total_discount_amounts") or ()):
         raise ProviderUnsupported("invoice_discount")
-    if _discounted(payload.get("total_pretax_credit_amounts")):
-        raise ProviderUnsupported("invoice_discount")
+    _refuse_pretax_credits(payload.get("total_pretax_credit_amounts"))
 
     parent = payload.get("parent") or {}
     details = parent.get("subscription_details") or {}
@@ -194,8 +193,7 @@ def _line(
         raise ProviderUnsupported("invoice_tax")
     if any(discount["amount"] for discount in payload.get("discount_amounts") or ()):
         raise ProviderUnsupported("invoice_discount")
-    if _discounted(payload.get("pretax_credit_amounts")):
-        raise ProviderUnsupported("invoice_discount")
+    _refuse_pretax_credits(payload.get("pretax_credit_amounts"))
 
     pricing = _required(payload.get("pricing"))
     unit = Decimal(str(_required(pricing.get("unit_amount_decimal"))))
@@ -218,9 +216,14 @@ def _line(
     )
 
 
-def _discounted(credits: Iterable[Payload] | None) -> bool:
-    """A pre-tax credit that is a discount, for a non-zero amount."""
-    return any(c["amount"] and c.get("type") == "discount" for c in credits or ())
+def _refuse_pretax_credits(credits: Iterable[Payload] | None) -> None:
+    """Amounts taken off before tax: a discount is `invoice_discount`; any
+    other -- a credit balance applied, a kind this version does not name --
+    is `invoice_credit`. The domain holds neither."""
+    for credit in credits or ():
+        if credit["amount"]:
+            discount = credit.get("type") == "discount"
+            raise ProviderUnsupported("invoice_discount" if discount else "invoice_credit")
 
 
 def _line_price(payload: Payload, prices: Mapping[str, Payload]) -> Payload | None:

@@ -45,6 +45,7 @@ class TestOneAnUnknownIdentifier:
 
     async def test_a_find_answers_none(self, platform):
         assert await platform.provider.find_invoice(MISSING_INVOICE) is None
+        assert await platform.provider.invoice_owner(MISSING_INVOICE) is None
         assert await platform.provider.find_customer_by_email("nobody@missing.test") is None
 
 
@@ -75,6 +76,7 @@ class TestFourTheWindow:
             i.id for i in await provider.list_invoices(platform.customer_id, later)
         }
         assert (await provider.find_invoice(invoice.id)).id == invoice.id
+        assert await provider.invoice_owner(invoice.id) == platform.customer_id
 
 
 class TestFiveSubscriptions:
@@ -139,6 +141,9 @@ class TestNineUnsupportedData:
         with pytest.raises(ProviderUnsupported) as raised:
             await investigator.load_context(dispute, seeded.investigate_at)
         assert raised.value.reason == world.unsupported
+        # Whose the invoice is, though, is always answered.
+        owner = await platform.provider.invoice_owner(seeded.target_invoice)
+        assert owner == seeded.customer_id
 
 
 class TestTenWrites:

@@ -38,6 +38,7 @@ from pydantic import ValidationError
 from app.decision.base import Classification
 from app.domain.automated import header_problem
 from app.domain.enums import RuleCode, SenderStatus
+from app.domain.models import InvoiceOwner
 from app.domain.rules import suspected_impersonation
 from app.providers.fake.fixtures import (
     DuplicateFixture,
@@ -169,8 +170,9 @@ def _fits(case: dict, data: FixtureSet) -> bool:
     if sender in _UNKNOWN_SENDERS:
         if customer is not None:
             return False
+        cited = InvoiceOwner(invoice.id, invoice.customer_id) if invoice is not None else None
         reaches = suspected_impersonation(
-            case["customer_email"], case["message"], invoice, data.customers
+            case["customer_email"], case["message"], cited, data.customers
         )
         return (reaches is not None) == (sender == SenderStatus.SUSPECTED_IMPERSONATION.value)
 

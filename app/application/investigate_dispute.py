@@ -36,7 +36,14 @@ from app.decision.base import (
 )
 from app.domain.automated import automated_message
 from app.domain.enums import RuleCode, SenderStatus, Severity
-from app.domain.models import BillingContext, Customer, Dispute, Invoice, RuleFinding
+from app.domain.models import (
+    BillingContext,
+    Customer,
+    Dispute,
+    Invoice,
+    InvoiceOwner,
+    RuleFinding,
+)
 from app.domain.money import Money
 from app.domain.rules import (
     checks_not_evaluable,
@@ -372,13 +379,13 @@ class DisputeInvestigator:
         payments = await self._provider.list_payments(customer.id)
 
         target = next((i for i in invoices if i.id == dispute.invoice_id), None)
-        # Not found in the window is not "does not exist" (taxonomy S7): look
-        # the reference up directly, and keep only whether it is this
-        # customer's -- nothing about another account's invoice is kept.
+        # Not found in the window is not "does not exist" (taxonomy S7): ask
+        # whose the reference is, and nothing else -- nothing about another
+        # account's invoice is read, so nothing of it can surface.
         outside_window = False
         if dispute.invoice_id and target is None:
-            found = await self._provider.find_invoice(dispute.invoice_id)
-            outside_window = found is not None and found.customer_id == customer.id
+            owner = await self._provider.invoice_owner(dispute.invoice_id)
+            outside_window = owner == customer.id
         usage = None
         period = _metered_period(target) if target is not None else None
         if period is not None and target.subscription_id:
@@ -519,13 +526,15 @@ class DisputeInvestigator:
         if automated is not None:
             findings.append(automated)
 
-        invoice = (
-            await self._provider.find_invoice(dispute.invoice_id) if dispute.invoice_id else None
+        # Whose the cited invoice is, and nothing else of it: the sender is
+        # nobody we know.
+        owner = (
+            await self._provider.invoice_owner(dispute.invoice_id) if dispute.invoice_id else None
         )
         impersonation = suspected_impersonation(
             dispute.customer_email,
             dispute.customer_message,
-            invoice,
+            InvoiceOwner(dispute.invoice_id, owner) if owner is not None else None,
             await self._provider.list_customers(),
         )
         if impersonation is not None:

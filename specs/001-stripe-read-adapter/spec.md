@@ -14,10 +14,12 @@ clarifications recorded below.
 
 **Behaviour changed**: capability *Billing platform*
 ([contract](../../docs/contract/billing-platform.md)) -- a second
-implementation of the port, selectable by configuration, and three additions
+implementation of the port, selectable by configuration, and four additions
 to the port (an unknown-identifier error, an unsupported-data error, a
-declaration that a platform cannot write). Rules, engines and policies do not
-change; the execution service gains one refusal.
+declaration that a platform cannot write, and whose an invoice is). Engines
+and policies do not change; one rule changes what it takes -- the
+impersonation check receives whose the cited invoice is, not the invoice;
+the execution service gains one refusal.
 
 **Sensitive change**: yes. It touches what identifies a sender (trust
 boundaries, VII) and the evidence financial proposals rest on (II). The pull
@@ -49,6 +51,16 @@ request needs the maintainer's explicit approval of the final diff.
   findings and engine context are compared on every development case before
   and after, and any change is submitted to the maintainer. Amends FR-016
   and ADR-001.
+- Q: (2026-10-22, at implementation review r118) Three decisions of the
+  maintainer. → A: (1) An invoice that may be another customer's is read for
+  its owner only: the port gains `invoice_owner` (FR-004), and the
+  impersonation check takes the owner, so nothing of another account's
+  invoice -- not even a refusal on its content -- can surface. (2) A pre-tax
+  credit that is not a discount (a credit balance applied) is refused with a
+  new reason, `invoice_credit` (FR-013). (3) Two departures from the plan's
+  null handling are approved: a customer's currency Stripe holds none of maps
+  to none; a customer without an address is never a match in the lookup and
+  is `missing_field` when it must be mapped (FR-010).
 - Q: Invoice references in a message? → A: Stripe identifiers (`in_…`) only in
   this slice. Invoice numbers come with a later slice and a port change,
   resolved within the disputing customer's invoices.
@@ -161,10 +173,21 @@ account, on the closed list of properties below.
 - **FR-003**: A platform MUST declare whether it can write. The execution
   service MUST refuse, before claiming the action, to execute on a platform
   that cannot; nothing is sent and no reconciliation is attempted.
+- **FR-004** *(added 2026-10-22, review r118)*: The port MUST name
+  `invoice_owner(invoice_id)`: the customer an invoice belongs to, or `None`
+  when there is no such invoice. It reads nothing else of the invoice and
+  never refuses on its content. The investigation uses it wherever only
+  ownership matters -- a reference outside the customer's window, a reference
+  cited by an unknown sender -- and the impersonation check takes the owner,
+  never the invoice.
 
 **Reading** (selected by configuration; the fake stays the default)
 
-- **FR-010**: Customers: identifier, address, currency (upper-case), name.
+- **FR-010** *(amended 2026-10-22, review r118)*: Customers: identifier,
+  address, currency (upper-case), name. A currency Stripe holds none of (a
+  customer never billed) maps to none. A customer without an address cannot
+  be represented: the lookup never matches it, and mapping it -- listing
+  every customer for the impersonation check -- is `ProviderUnsupported`.
 - **FR-011**: The address lookup MUST scan every customer page by page --
   including customers attached to test clocks, which Stripe's list leaves out
   unless asked, each customer counted once -- in a fixed order (creation, then
@@ -185,9 +208,10 @@ account, on the closed list of properties below.
   uncollectible map to themselves; issued when finalised (a draft: when
   created); total and lines in integer minor units with their periods.
   An invoice carrying tax (exclusive or inclusive), a discount (on a line or
-  on the invoice), a negative line or a fractional unit price is
-  `ProviderUnsupported` in this slice; each marker is detected from Stripe's
-  structured fields and tested.
+  on the invoice, pre-tax ones included), a pre-tax credit that is not a
+  discount (`invoice_credit`, added 2026-10-22), a negative line or a
+  fractional unit price is `ProviderUnsupported` in this slice; each marker
+  is detected from Stripe's structured fields and tested.
 - **FR-014**: `list_invoices(customer, since)` returns invoices issued at or
   after `since`; `find_invoice` finds one whatever its age.
 - **FR-015**: Payments: one per invoice payment attached to one invoice. A
@@ -230,8 +254,9 @@ account, on the closed list of properties below.
 - **FR-023**: Stripe is named only in the adapter package, the wiring
   (`deps`), the seed script and Stripe-specific tests. The domain, the
   application and the policies stay independent of Stripe; the changes they
-  get are the three port additions (FR-001 to FR-003), the investigation and
-  API handling of `ProviderUnsupported`, and the execution service's refusal.
+  get are the four port additions (FR-001 to FR-004), the impersonation
+  check taking the owner, the investigation and API handling of
+  `ProviderUnsupported`, and the execution service's refusal.
   The SDK is an optional extra.
 - **FR-024**: Keys come from the environment and are never logged, printed,
   traced or written to the audit.

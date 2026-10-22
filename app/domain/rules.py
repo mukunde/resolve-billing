@@ -23,7 +23,14 @@ from app.domain.enums import (
     SubscriptionStatus,
 )
 from app.domain.injection import suspected_prompt_injection
-from app.domain.models import Customer, Invoice, Payment, RuleFinding, Subscription
+from app.domain.models import (
+    Customer,
+    Invoice,
+    InvoiceOwner,
+    Payment,
+    RuleFinding,
+    Subscription,
+)
 
 __all__ = [
     "checks_not_evaluable",
@@ -503,7 +510,7 @@ def unknown_customer(email: str | None, customer: Customer | None) -> RuleFindin
 def suspected_impersonation(
     email: str | None,
     message: str,
-    invoice: Invoice | None,
+    cited: InvoiceOwner | None,
     customers: list[Customer],
 ) -> RuleFinding | None:
     """An unknown sender reaches for a known customer's account. See ADR-007.
@@ -511,7 +518,8 @@ def suspected_impersonation(
     Only meaningful once the sender has matched no customer. Any one signal is
     enough, and every signal found is reported:
 
-    - ``known_invoice``: the dispute cites an invoice we hold;
+    - ``known_invoice``: the dispute cites an invoice we hold -- `cited`,
+      whose it is and nothing else of it;
     - ``same_domain``: the sender writes from a customer's domain, or a
       subdomain of it. Most likely a colleague -- which a human confirms with
       the known contact before anything is said about the account;
@@ -523,12 +531,12 @@ def suspected_impersonation(
     sender_domain = _domain(email)
     signals: list[dict] = []
 
-    if invoice is not None:
+    if cited is not None:
         signals.append(
             {
                 "signal": "known_invoice",
-                "customer_id": invoice.customer_id,
-                "invoice_id": invoice.id,
+                "customer_id": cited.customer_id,
+                "invoice_id": cited.invoice_id,
             }
         )
 

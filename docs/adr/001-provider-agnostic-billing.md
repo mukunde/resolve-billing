@@ -66,7 +66,7 @@ and only whether it is the customer's is kept (taxonomy S7).
 ## Amendment, 2026-10-22 -- what every platform says the same way
 
 With the first real platform (Stripe, read-only; specs/001-stripe-read-adapter)
-the port names three things every adapter needs, so that no caller depends on
+the port names four things every adapter needs, so that no caller depends on
 one adapter's own errors:
 
 - **`NotFound`**: an unknown identifier on `get_customer`, `get_subscription`,
@@ -79,6 +79,13 @@ one adapter's own errors:
   category -- never the platform's data.
 - **`can_write`**: whether the platform can make the two writes. One that
   cannot is never asked (ADR-008, same date).
+- **`invoice_owner`**: the customer an invoice belongs to, or `None`, reading
+  nothing else of it. Where only ownership matters -- a reference outside the
+  customer's window, one an unknown sender cites -- the investigation asks
+  this and nothing more, so a property of another account's invoice cannot
+  surface, not even as a refusal on its content; the impersonation check
+  takes the owner, not the invoice. Added at implementation review, and
+  approved by the maintainer, the same day.
 
 Usage is read for a period, `get_usage(subscription_id, period)`: Stripe bills
 metered usage in arrears, so the period the invoice covers is not the item's

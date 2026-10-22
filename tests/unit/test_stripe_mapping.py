@@ -196,6 +196,20 @@ class TestInvoice:
         with refused("invoice_discount"):
             invoice([stripe.line(pretax_credit_amounts=[stripe.pretax_credit()])])
 
+    @pytest.mark.parametrize("kind", ["credit_balance_transaction", "a_kind_not_known_yet"])
+    def test_a_pre_tax_credit_on_the_invoice_is_refused(self, kind):
+        with refused("invoice_credit"):
+            invoice(total_pretax_credit_amounts=[stripe.pretax_credit(kind=kind)])
+
+    def test_a_pre_tax_credit_on_a_line_is_refused(self):
+        credit = stripe.pretax_credit(kind="credit_balance_transaction")
+        with refused("invoice_credit"):
+            invoice([stripe.line(pretax_credit_amounts=[credit])])
+
+    def test_a_pre_tax_credit_of_zero_is_no_credit(self):
+        credit = stripe.pretax_credit(0, kind="credit_balance_transaction")
+        assert invoice(total_pretax_credit_amounts=[credit]).lines
+
     def test_a_pre_tax_discount_of_zero_is_no_discount(self):
         assert invoice(total_pretax_credit_amounts=[stripe.pretax_credit(0)]).lines
 

@@ -104,6 +104,17 @@ class StripeBillingProvider:
                 return None
             return await _Lookups(self.reader).invoice(payload)
 
+    async def invoice_owner(self, invoice_id: str) -> str | None:
+        """Read from the invoice alone, never mapped: whatever it holds, the
+        answer is whose it is."""
+        async with self._bounded():
+            try:
+                payload = await self.reader.invoice(invoice_id, every_line=False)
+            except NotFound:
+                return None
+            customer = payload.get("customer")
+            return mapping.identifier(customer) if customer else None
+
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]:
         """The customer's invoices issued at or after `since`. Read in full,
         but only those kept are mapped: an older invoice is not refused."""

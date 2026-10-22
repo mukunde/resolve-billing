@@ -63,6 +63,7 @@ NOT_SEEDED = {
     "cancellation_without_end": "a subscription the seed cancels is expected to carry `ended_at`.",
     "unplaced_payment": "an invoice payment without a payment intent is not built here.",
     "missing_field": "the seed fills every field the mapping needs; absences are mapping tests.",
+    "invoice_credit": "billing credits are not built by the seed in this slice.",
 }
 
 WORLDS = SUPPORTED + UNSUPPORTED

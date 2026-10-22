@@ -126,6 +126,20 @@ unchanged.
   `scripts/stripe_seed.py` and Stripe tests (static check of imports); then
   `app/api/deps.py`.
 
+### Decided at review r118 (2026-10-22)
+
+- [ ] T028 Test first, `tests/integration/test_foreign_invoice.py`,
+  `tests/unit/test_rules.py`, the fake's and the adapter's tests, the
+  contract: `invoice_owner` on the port, the fake and Stripe (never mapped);
+  the investigation reads only the owner for a reference outside the window
+  and for one an unknown sender cites; `suspected_impersonation` takes an
+  `InvoiceOwner`. Then `app/providers/base.py`, the two adapters,
+  `app/domain/models.py`, `app/domain/rules.py`,
+  `app/application/investigate_dispute.py`, `evals/check.py`; ADR-001.
+- [ ] T029 Test first, `tests/unit/test_stripe_mapping.py`: a non-zero
+  pre-tax credit that is not a discount is `invoice_credit`; then the
+  reason in `app/providers/base.py` and `mapping.py`.
+
 **Checkpoint**: CI green without the SDK; the adapter proven on stubs; the
 contract tests pass on the fake.
 

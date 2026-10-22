@@ -97,6 +97,10 @@ class FakeBillingProvider:
     async def find_invoice(self, invoice_id: str) -> Invoice | None:
         return next((i for i in self._invoices if i.id == invoice_id), None)
 
+    async def invoice_owner(self, invoice_id: str) -> str | None:
+        # Read on its own, not through `find_invoice`: whose it is, nothing else.
+        return next((i.customer_id for i in self._invoices if i.id == invoice_id), None)
+
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]:
         return [
             i for i in self._invoices if i.customer_id == customer_id and i.issued_at >= since

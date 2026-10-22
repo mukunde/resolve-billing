@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+from typing import NamedTuple
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
@@ -100,6 +101,18 @@ class Invoice(BaseModel):
         if None in (self.period_start, self.period_end, other.period_start, other.period_end):
             return False
         return self.period_start < other.period_end and other.period_start < self.period_end
+
+
+class InvoiceOwner(NamedTuple):
+    """Whose an invoice is, and nothing else about it.
+
+    What a check needs when the invoice may be another customer's: knowing
+    the owner is enough, and reading nothing more means nothing more of
+    another account can surface (ADR-001, 2026-10-22).
+    """
+
+    invoice_id: str
+    customer_id: str
 
 
 class Payment(BaseModel):

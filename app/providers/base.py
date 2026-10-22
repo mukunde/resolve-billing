@@ -45,6 +45,7 @@ UNSUPPORTED_REASONS = frozenset(
         "unplaced_payment",
         "unrepresentable_period",
         "missing_field",
+        "invoice_credit",
     }
 )
 
@@ -153,6 +154,13 @@ class BillingProvider(Protocol):
     async def get_invoice(self, invoice_id: str) -> Invoice: ...
 
     async def find_invoice(self, invoice_id: str) -> Invoice | None: ...
+
+    async def invoice_owner(self, invoice_id: str) -> str | None:
+        """The customer an invoice belongs to, or None when there is no such
+        invoice. Reads nothing else of it, so it never refuses on content:
+        the check on an invoice that may be another customer's learns whose
+        it is, and nothing more (ADR-001, 2026-10-22)."""
+        ...
 
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]: ...
 

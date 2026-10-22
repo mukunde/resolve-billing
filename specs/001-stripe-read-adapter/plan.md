@@ -8,7 +8,8 @@
 
 A second implementation of the `BillingProvider` port, reading a Stripe test
 account, selected by configuration. The port gains what every platform needs
-(`NotFound`, `ProviderUnsupported`, `can_write`, `PlatformCannotWrite`); every
+(`NotFound`, `ProviderUnsupported`, `can_write`, `PlatformCannotWrite`, and
+`invoice_owner`); every
 API surface that reads the platform answers unsupported data with a 422 and a
 category; the execution service refuses writes on a platform that cannot make
 them (409) before reading or claiming anything. Mapping is pure functions on
@@ -52,7 +53,7 @@ platform text in any output.
 
 | Principle | How this plan meets it |
 |---|---|
-| I. Deterministic before probabilistic | Untouched: mapping is deterministic, rules unchanged. |
+| I. Deterministic before probabilistic | Untouched: mapping is deterministic; one rule, the impersonation check, takes the cited invoice's owner instead of the invoice (2026-10-22, review r118). |
 | II. Evidence, then human approval, before money | No write can reach Stripe: no mutating call in the adapter, a read-only key, execution refusing before any read or claim. Unsupported data decides nothing. |
 | III. Provider-agnostic boundaries | Stripe behind the port only; the port additions are vendor-neutral. |
 | IV. Money in minor units | Stripe amounts are minor units; mapped through `Money`. A currency the domain does not know gets its default two-decimal exponent (ADR-005's table): the seed uses EUR only, and an unknown currency is noted as a limit. |
@@ -76,7 +77,13 @@ No violation; no complexity to justify.
   `cancellation_without_end`, `invoice_tax`, `invoice_discount`,
   `negative_line`, `fractional_unit_price`, `partial_refund`,
   `multi_invoice_payment`, `unplaced_payment`, `unrepresentable_period`,
-  `missing_field`. Its message is the category, never the platform's data.
+  `missing_field`, and `invoice_credit` (added 2026-10-22, review r118). Its
+  message is the category, never the platform's data.
+- **`invoice_owner(invoice_id) -> str | None`** (added 2026-10-22, review
+  r118): whose an invoice is, reading nothing else of it, so it never refuses
+  on content. The investigation uses it for a reference outside the window
+  and for one an unknown sender cites; `suspected_impersonation` takes an
+  `InvoiceOwner` (invoice id, customer id) instead of the invoice.
 - **`can_write: bool`** on the protocol: the fake `True`, Stripe `False`.
 - **`PlatformCannotWrite(Exception)`**: raised by a platform that cannot
   write if a write or `find_action` is called anyway. Unreachable through the
@@ -131,8 +138,15 @@ No violation; no complexity to justify.
 request; a time budget exceeded → `ProviderUnavailable`.
 
 **Nulls**: a field the mapping needs and Stripe returns null
-(`customer.email`, `customer.currency`, a price, a period) is
+(`customer.email`, a price, a period) is
 `ProviderUnsupported("missing_field")`, never a blind `.upper()` or `.strip()`.
+Two departures, approved by the maintainer on 2026-10-22 (review r118):
+`customer.currency` null maps to none -- the domain's field is optional, and
+Stripe leaves it null until a customer is first billed, so refusing would
+fail every address scan on an account holding one such customer; and a
+customer without an address is never a match in the lookup (compared on the
+raw payload, only the match is mapped), while listing every customer -- the
+impersonation check, for an unknown sender -- refuses with `missing_field`.
 `customer.name` maps to the optional display name and stays `None`. A line's
 `description`, required by the domain (`InvoiceLine.description: str`), maps
 to the empty string when Stripe has none -- it is informative only, read by
@@ -159,7 +173,9 @@ the engine, never by a rule -- with a test on both.
   entry in the invoice's `total_taxes` or a line's `taxes` (exclusive or
   inclusive) → `invoice_tax`; any non-zero `discount_amounts` on a line or
   `total_discount_amounts` on the invoice → `invoice_discount`; a negative
-  line `amount` → `negative_line`; a line price whose
+  line `amount` → `negative_line`; a non-zero `pretax_credit_amounts` on a
+  line or `total_pretax_credit_amounts` on the invoice → `invoice_discount`
+  when its type is `discount`, `invoice_credit` otherwise; a line price whose
   `pricing.unit_amount_decimal` has a non-zero fractional part (`"1000"` and
   `"1000.000"` are whole) → `fractional_unit_price`.
 - *Price and meter*: when a line or an item carries only a price id, the

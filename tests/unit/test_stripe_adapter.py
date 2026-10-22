@@ -223,6 +223,21 @@ class TestInvoices:
         with pytest.raises(NotFound):
             await adapter.get_invoice("in_1RbMissing0000001")
 
+    async def test_the_owner_is_read_without_mapping_the_invoice(self):
+        held = account()
+        held.invoices = [stripe.invoice(total_taxes=[stripe.tax()])]  # unsupported content
+        assert await provider(held).invoice_owner(stripe.INVOICE) == stripe.CUSTOMER
+        assert not held.calls_to("v1.prices.retrieve_async")
+        assert not held.calls_to("v1.invoices.line_items.list_async")
+
+    async def test_an_expanded_customer_still_gives_its_identifier(self):
+        held = account()
+        held.invoices = [stripe.invoice(customer=stripe.customer())]
+        assert await provider(held).invoice_owner(stripe.INVOICE) == stripe.CUSTOMER
+
+    async def test_an_unknown_invoice_has_no_owner(self):
+        assert await provider(account()).invoice_owner("in_1RbMissing0000001") is None
+
     @pytest.mark.parametrize("read", ["get_invoice", "find_invoice"])
     async def test_a_price_stripe_cannot_find_never_makes_the_invoice_absent(self, read):
         held = account()

@@ -66,6 +66,12 @@ class TestReads:
     async def test_find_invoice_returns_none_on_an_unknown_reference(self, provider):
         assert await provider.find_invoice("inv_nope") is None
 
+    async def test_the_owner_of_an_invoice_is_its_customer(self, provider):
+        assert await provider.invoice_owner("inv_002") == "cus_acme"
+
+    async def test_an_unknown_invoice_has_no_owner(self, provider):
+        assert await provider.invoice_owner("inv_nope") is None
+
     async def test_lists_every_customer_with_its_display_name(self, provider):
         customers = {c.id: c for c in await provider.list_customers()}
         assert customers["cus_acme"].display_name == "ACME SAS"

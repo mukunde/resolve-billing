@@ -106,6 +106,10 @@ class TestTheClaimDoesNotHold:
                 reads.append(("find_invoice", invoice_id))
                 return await super().find_invoice(invoice_id)
 
+            async def invoice_owner(self, invoice_id):
+                reads.append(("invoice_owner", invoice_id))
+                return await super().invoice_owner(invoice_id)
+
             async def get_invoice(self, invoice_id):
                 reads.append(("get_invoice", invoice_id))
                 return await super().get_invoice(invoice_id)

@@ -22,7 +22,14 @@ from app.domain.enums import (
     Severity,
     SubscriptionStatus,
 )
-from app.domain.models import Customer, Invoice, InvoiceLine, Payment, Subscription
+from app.domain.models import (
+    Customer,
+    Invoice,
+    InvoiceLine,
+    InvoiceOwner,
+    Payment,
+    Subscription,
+)
 from app.domain.money import Money
 from app.domain.rules import (
     checks_not_evaluable,
@@ -375,7 +382,10 @@ class TestSuspectedImpersonation:
 
     def test_fires_on_a_known_invoice_reference(self):
         finding = suspected_impersonation(
-            "jean.perso@gmail.com", "Merci de corriger la facture.", invoice("inv_002"), CUSTOMERS
+            "jean.perso@gmail.com",
+            "Merci de corriger la facture.",
+            InvoiceOwner("inv_002", "cus_acme"),
+            CUSTOMERS,
         )
 
         assert finding is not None
@@ -457,7 +467,7 @@ class TestSuspectedImpersonation:
 
     def test_reports_every_signal_found(self):
         finding = suspected_impersonation(
-            "compta@acme-fr.com", "Facture ACME.", invoice("inv_002"), CUSTOMERS
+            "compta@acme-fr.com", "Facture ACME.", InvoiceOwner("inv_002", "cus_acme"), CUSTOMERS
         )
 
         assert finding is not None
