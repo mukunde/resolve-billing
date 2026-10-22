@@ -240,14 +240,17 @@ full (test-clock customers included) and keeps those issued at or after
   found by its event name and checked for its configuration. A run lists
   what exists and completes what is missing, a half-created world included;
   nothing is made twice.
-- **One run at a time**: an exclusive lock on the machine, held for the run
-  and freed if the process dies; a second run is refused.
+- **One run at a time**: an exclusive lock on a file in the temporary
+  directory, held for the run and freed if the process dies; a second run is
+  refused. It holds between runs of one environment only -- Windows and WSL
+  do not lock each other out -- so the seed is always run from the same one.
 - **A manifest makes a clock the seed's**: a customer of its own, without a
   clock, whose metadata names each world's generation (`g_<world>`: its
   number, month and opening time) and clock (`c_<world>`). Exactly one
-  manifest, readable and consistent -- a clock named with no generation, a
-  generation that cannot be read, a clock whose name is not its generation's
-  -- or every world is reported before anything is made. A clock the
+  manifest, readable and consistent -- a clock named with no generation, or
+  a generation that cannot be read -- or every world is reported before
+  anything is made; a clock whose name is not its generation's is found while
+  its world is processed, and that world alone is reported. A clock the
   manifest does not name is never used, whatever it is called. A generation
   an earlier run opened and stopped before noting its clock re-sends the
   clock's creation with its key: within the day Stripe remembers keys, that

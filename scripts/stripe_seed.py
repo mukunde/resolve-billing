@@ -106,8 +106,10 @@ CYCLE = "subscription_cycle"
 #: past it, the seed cannot tell, and asks the maintainer.
 KEYS_REMEMBERED = 23 * 3600
 
-#: One seed run at a time on this machine: two would each read the manifest
-#: and could open one generation twice, on different months.
+#: One seed run at a time: two would each read the manifest and could open
+#: one generation twice, on different months. The lock holds between runs
+#: sharing this temporary directory -- one environment: Windows and WSL, say,
+#: do not lock each other out, so the seed is always run from the same one.
 LOCK = os.path.join(tempfile.gettempdir(), "rb-stripe-seed.lock")
 
 #: Shared by every world, found by fixed identifiers or lookup keys and
