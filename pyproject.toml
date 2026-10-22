@@ -21,6 +21,8 @@ claude = [
 # (2026-07-29.dahlia), and its payload tests are written to it.
 stripe = [
     "stripe==15.4.0",
+    # The SDK's async calls, which the adapter makes, go through httpx.
+    "httpx>=0.27",
 ]
 # Optional on purpose: the MCP server is a second face on the billing port,
 # not something the API or the tests need in order to run.

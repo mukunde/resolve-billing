@@ -84,4 +84,9 @@ Usage is read for a period, `get_usage(subscription_id, period)`: Stripe bills
 metered usage in arrears, so the period the invoice covers is not the item's
 current one. The investigation asks for the period the target invoice's
 metered lines share; the fake answers its record only when it covers that
-period exactly.
+period exactly. Lines on distinct periods, on no real period, or no metered
+line at all ask for nothing. So an invoice without metered lines no longer
+brings a usage record into the engine's context: no rule compared it. On the
+development set this changes the engine context of four cases (`duplicate_fr`,
+`duplicate_en`, `known_customer_bulk_dispute`, `proration`) and no finding;
+the maintainer accepted it on 2026-10-22.

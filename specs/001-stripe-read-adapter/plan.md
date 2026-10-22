@@ -178,8 +178,8 @@ the engine, never by a rule -- with a test on both.
 - *Usage*: the subscription's metered items. Exactly one, and its meter used
   by no other item of the customer's subscriptions (checked over every item
   read) → the meter's event summaries for `customer` and the meter id, with
-  `start_time` (inclusive) and `end_time` (exclusive) set to the item's
-  current period; both must fall on whole minutes, else
+  `start_time` (inclusive) and `end_time` (exclusive) set to the period asked
+  (option (a), decided below); both must fall on whole minutes, else
   `unrepresentable_period`; quantities summed. No summary, or a shared meter
   → `None`; a summary of zero → zero.
 - *References*: `in_` followed by at least 14 alphanumeric characters, as a

@@ -19,6 +19,8 @@ from app.infrastructure.actions import SqliteActionStore
 from app.infrastructure.audit import SqliteAuditRepository
 from app.providers.base import BillingProvider
 from app.providers.fake.adapter import FakeBillingProvider
+from app.providers.stripe.adapter import StripeBillingProvider
+from app.providers.stripe.client import connect
 
 #: Engines that exist today. The roadmap ones are absent on purpose: an empty
 #: stub in this table would suggest an integration that is not there.
@@ -28,9 +30,20 @@ ENGINES: dict[str, type] = {
 }
 
 
+#: Billing platforms that exist today. The fake stays the default.
+PROVIDERS = ("fake", "stripe")
+
+
 @lru_cache(maxsize=1)
 def get_provider() -> BillingProvider:
-    return FakeBillingProvider()
+    name = os.getenv("BILLING_PROVIDER", "fake").lower()
+    if name == "fake":
+        return FakeBillingProvider()
+    if name == "stripe":
+        # The restricted read-only test key, read here and nowhere else, and
+        # checked before anything else is done (FR-021, FR-024).
+        return StripeBillingProvider(connect(os.getenv("STRIPE_API_KEY")))
+    raise RuntimeError(f"unknown billing provider {name!r}; available: {list(PROVIDERS)}")
 
 
 @lru_cache(maxsize=1)
