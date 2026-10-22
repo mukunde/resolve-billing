@@ -60,7 +60,24 @@ pass, and the work is committed locally.
   trace by category, let through), `app/mcp/server.py` (tool error).
 - [ ] T016 [P] `docs/adr/001-provider-agnostic-billing.md`,
   `docs/adr/008-execution-state-machine.md`: amendments for the port
-  additions and read-only platforms.
+  additions, read-only platforms, and usage read for a period.
+
+### Usage for a period (option (a), FR-016 amended)
+
+- [ ] T017 Before anything changes: record, for every development case, the
+  findings and `BillingContext.usage` the investigation produces today
+  (`scratchpad`, not committed).
+- [ ] T018 Test first, `tests/unit/test_fake_provider.py` and
+  `tests/integration/test_unusable_evidence.py`: the fake answers a usage
+  record only for the exact period asked; the investigation asks for the
+  period the target's metered lines share; distinct or unreal periods ask
+  for nothing (lines unchecked); two metrics on distinct periods; a record
+  on another period.
+- [ ] T019 `app/providers/base.py` (`get_usage(subscription_id, period)`),
+  `app/providers/fake/adapter.py`, `app/application/investigate_dispute.py`;
+  then the T017 comparison again: findings and context identical on every
+  development case, or the differences submitted to the maintainer before
+  going on.
 
 **Checkpoint**: the port carries the new contract; existing behaviour
 unchanged.
@@ -122,7 +139,7 @@ contract tests pass on the fake.
 - [ ] T031 `scripts/stripe_seed.py`: the worlds of plan §6, every invoice on
   its world's subscription, preconditions read back and checked; a world
   that cannot be built or whose facts do not hold is reported, not dropped.
-  The usage world waits for the maintainer's decision (plan, "Open decision").
+  The usage world as plan §6 (option (a)).
 - [ ] T032 **Maintainer**: create the account's two keys; run the seed twice,
   locally. No agent runs it.
 

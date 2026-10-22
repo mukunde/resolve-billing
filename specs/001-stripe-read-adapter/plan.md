@@ -232,8 +232,13 @@ full (test-clock customers included) and keeps those issued at or after
     invoice for September issued afterwards; target = it;
   - *failed payment*: a customer with Stripe's declining test card; the
     September invoice's payment fails; target = it;
-  - *usage*: see "Open decision" below: as the port stands, a usage world
-    cannot reproduce its fake counterpart.
+  - *usage*: a metered price on a meter; usage events sent inside the
+    September period (within Stripe's accepted window for meter events
+    relative to the clock, checked when T031 is written); the clock advanced
+    past the period's end and the arrears invoice finalised; target = that
+    invoice, investigated right after, its line's period being September.
+    If Stripe refuses the events on a clock, the world is reported to the
+    maintainer (see above), not dropped.
 - Unsupported worlds: **one per `ProviderUnsupported` reason the seed can
   produce in test mode** (mixed item periods, multiple prices, an
   unsupported status, tax, discount, negative line, fractional unit price,
@@ -255,7 +260,7 @@ full (test-clock customers included) and keeps those issued at or after
 | Contract | `tests/contract/test_billing_platform.py` | fake in CI; Stripe locally with `STRIPE_API_KEY`, else skipped with the reason |
 | Investigation on Stripe | `tests/contract/test_stripe_investigation.py` | local: each world's target invoice at its instant, against its fake counterpart (SC-001) |
 
-## Open decision: usage and the current period (maintainer)
+## Decided 2026-10-22: usage and the current period -- option (a)
 
 Stripe bills metered usage **in arrears**: the invoice finalised at the end of
 a period carries the usage of the period that just ended, while the
@@ -288,7 +293,7 @@ hold for a usage world.
   world's expected result in SC-001 becomes `USAGE_UNAVAILABLE`, a deviation
   from its fake counterpart that the maintainer approves.
 
-Until the maintainer decides, the usage world and FR-016's tasks wait.
+**The maintainer chose (a) on 2026-10-22**, amending FR-016 and ADR-001.
 
 ## Project Structure
 

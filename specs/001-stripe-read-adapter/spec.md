@@ -41,6 +41,14 @@ request needs the maintainer's explicit approval of the final diff.
   summary over the item's current period; no summary means unavailable, never
   zero. An older invoice's line then simply does not match the period, and the
   comparison does not conclude (D14).
+- Q: (2026-10-22, at plan approval) Usage is billed in arrears on Stripe: the
+  item's current period is never the invoiced one. → A: Option (a): the port
+  reads usage for a period, `get_usage(subscription_id, period)`, the period
+  shared by the target invoice's metered lines; distinct or unreal periods
+  ask for nothing. The fake answers only a record covering that period;
+  findings and engine context are compared on every development case before
+  and after, and any change is submitted to the maintainer. Amends FR-016
+  and ADR-001.
 - Q: Invoice references in a message? → A: Stripe identifiers (`in_…`) only in
   this slice. Invoice numbers come with a later slice and a port change,
   resolved within the disputing customer's invoices.
@@ -190,10 +198,15 @@ account, on the closed list of properties below.
   pending while it is in progress, refunded only when fully refunded. A
   partial refund, a payment allocated across invoices, or a payment the
   domain cannot place is `ProviderUnsupported`.
-- **FR-016**: Usage: for a subscription with exactly one metered item whose
-  meter no other item of the customer uses, the meter's summary over that
-  item's current period; no summary, or a shared meter, is `None`
-  (unavailable), never zero. A summary that exists and says zero is zero.
+- **FR-016** *(amended 2026-10-22, option (a))*: The port reads usage for a
+  period: `get_usage(subscription_id, period)`. The investigation asks for the
+  period all the target invoice's metered lines share, when it is real;
+  otherwise it asks for nothing and the lines are unchecked. On Stripe: for a
+  subscription with exactly one metered item whose meter no other item of the
+  customer uses, the meter's summary over **that period**; no summary, or a
+  shared meter, is `None` (unavailable), never zero; a summary that exists and
+  says zero is zero. The fake answers its record only when it covers that
+  period exactly.
 - **FR-017**: References: `invoice_references` and `invoice_reference_spans`
   recognise Stripe invoice identifiers (`in_…`) only.
 - **FR-018**: Every list MUST be read to its end, nested lists included, within
