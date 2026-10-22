@@ -9,11 +9,12 @@ for this layout are in
 
 ## Coverage
 
-No capability is covered yet. Until one is, its behaviour is described by
-the existing records, which remain authoritative.
+One capability is covered. For the others, behaviour is described by the
+existing records, which remain authoritative.
 
 | Capability | Contract | Authoritative today |
 |---|---|---|
+| Billing platform | [billing-platform.md](billing-platform.md) | the contract, then ADR-001, ADR-008 |
 | Intake and sender identity | not written | ADR-007, ADR-009, ADR-011 |
 | Investigation and rules | not written | ADR-003, `evals/taxonomy.md` |
 | Decision engine | not written | ADR-002, ADR-006, ADR-009 (model provider) |
