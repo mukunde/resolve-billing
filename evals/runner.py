@@ -531,10 +531,23 @@ def main() -> int:
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
 
+    from app.decision.base import EngineRejected
+
     runs: list[dict] = []
     for index in range(args.runs):
         ran_at = datetime.now(UTC).isoformat()
-        outcomes, engine_version = asyncio.run(run(args.engine, args.cases))
+        try:
+            outcomes, engine_version = asyncio.run(run(args.engine, args.cases))
+        except EngineRejected as refusal:
+            # A configuration or account problem, not a result: the run
+            # stops whole, nothing is written, and the provider's reason is
+            # the message.
+            print(
+                f"the engine refused the request: {refusal}\n"
+                "The run stopped; no result was written.",
+                file=sys.stderr,
+            )
+            return 2
         runs.append({"ran_at": ran_at, "outcomes": [vars(o) for o in outcomes]})
         if args.runs > 1:
             print(f"run {index + 1}/{args.runs} done", file=sys.stderr)

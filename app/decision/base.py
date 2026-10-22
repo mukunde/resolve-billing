@@ -25,11 +25,22 @@ class EngineUnavailable(Exception):  # noqa: N818 -- a state, not a programming 
     overloaded or failing service (taxonomy S8).
 
     Engines raise it for transport and service failures only. A malformed
-    answer is the engine's own business (it returns an escalation), and a
-    programming or configuration error -- a bad request, a missing key --
-    stays an error and fails the run visibly. The investigation turns this
-    into an escalation and records the outage as such, distinct from an
-    engine that answered and abstained.
+    answer is the engine's own business (it returns an escalation); a request
+    the provider refuses is :class:`EngineRejected`; a programming error stays
+    what it is. The investigation turns this into an escalation and records
+    the outage as such, distinct from an engine that answered and abstained.
+    """
+
+
+class EngineRejected(Exception):  # noqa: N818 -- a state, not a programming error
+    """The provider refused the request: a bad request, a key it rejects, an
+    account out of credit.
+
+    Not an outage -- trying later changes nothing until someone fixes the
+    configuration or the account -- and not an answer, so it is never turned
+    into an escalation: it fails the investigation, and a caller that can say
+    so plainly (the evaluation runner) stops with the provider's reason
+    rather than a traceback.
     """
 
 

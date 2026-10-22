@@ -33,6 +33,7 @@ from app.decision.anonymise import anonymise
 from app.decision.base import (
     Classification,
     Decision,
+    EngineRejected,
     EngineTelemetry,
     EngineUnavailable,
     RecommendedAction,
@@ -62,8 +63,8 @@ PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v3.md"
 #: HTTP statuses that mean "try later", not "your request is wrong":
 #: a timeout, a conflict, rate limiting, and the 5xx range of a failing or
 #: overloaded service. They are an outage (taxonomy S8). Any other status --
-#: a bad request, a missing key -- is a configuration error and fails the
-#: run visibly.
+#: a bad request, a rejected key, an account out of credit -- is a refusal
+#: (`EngineRejected`) and fails the run visibly.
 _TRANSIENT = frozenset({408, 409, 429}) | frozenset(range(500, 600))
 
 try:  # the SDK is an optional dependency (the `claude` extra)
@@ -336,9 +337,12 @@ class ClaudeDecisionEngine:
             return await create(**request)
         except Exception as error:
             reason = _outage(error)
-            if reason is None:
-                raise
-            raise EngineUnavailable(reason) from error
+            if reason is not None:
+                raise EngineUnavailable(reason) from error
+            if _Status is not None and isinstance(error, _Status):
+                message = str(getattr(error, "message", "") or error)[:300]
+                raise EngineRejected(f"HTTP {error.status_code}: {message}") from error
+            raise
 
     def _parse(self, response) -> _ModelVerdict | None:
         """Validate the response, or return None to send the run to a human.
