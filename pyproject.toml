@@ -16,6 +16,12 @@ api = [
 claude = [
     "anthropic>=0.40",
 ]
+# Stripe as a billing platform, read-only (specs/001-stripe-read-adapter).
+# Pinned exactly: the adapter pins the API version this release targets
+# (2026-07-29.dahlia), and its payload tests are written to it.
+stripe = [
+    "stripe==15.4.0",
+]
 # Optional on purpose: the MCP server is a second face on the billing port,
 # not something the API or the tests need in order to run.
 mcp = [
@@ -47,6 +53,9 @@ include = ["app*"]
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "contract: a property of the billing port, checked against every platform",
+]
 
 [tool.ruff]
 line-length = 100
