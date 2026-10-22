@@ -80,6 +80,28 @@ class TestReads:
         assert {p.id for p in payments} == {"pay_010", "pay_011"}
 
 
+class TestUsageForAPeriod:
+    """FR-016 as amended (option (a)): a record answers only for its own
+    period, exactly -- not one it contains, not one next to it."""
+
+    SEPTEMBER = (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC))
+
+    async def test_the_record_for_exactly_that_period(self, provider):
+        usage = await provider.get_usage("sub_88", self.SEPTEMBER)
+        assert (usage.metric, usage.quantity) == ("api_call_blocks_100", Decimal("47"))
+
+    async def test_nothing_for_another_period(self, provider):
+        august = (datetime(2026, 8, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC))
+        assert await provider.get_usage("sub_88", august) is None
+
+    async def test_nothing_for_a_period_that_only_contains_the_record(self, provider):
+        wider = (self.SEPTEMBER[0], datetime(2026, 11, 1, tzinfo=UTC))
+        assert await provider.get_usage("sub_88", wider) is None
+
+    async def test_nothing_for_another_subscription(self, provider):
+        assert await provider.get_usage("sub_nope", self.SEPTEMBER) is None
+
+
 class TestIdempotentWrite:
     """The behaviour a real adapter must have, proven on the fake."""
 

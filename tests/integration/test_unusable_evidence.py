@@ -246,6 +246,104 @@ class TestUsageLineByLine:
         assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found
 
 
+class TestUsageIsReadForTheLinesPeriod:
+    """FR-016 as amended (option (a)): usage is read for the one real period
+    the target's metered lines share -- the invoiced one, which on a platform
+    billing in arrears is not the subscription's current one. Otherwise
+    nothing is asked, and the lines are said unchecked."""
+
+    SEPTEMBER = (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC))
+    AUGUST = (datetime(2026, 8, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC))
+
+    def line(self, metric="api_call_blocks_100", period=SEPTEMBER):
+        overage = next(i for i in FakeBillingProvider()._invoices if i.id == "inv_011")
+        start, end = period
+        return overage.lines[0].model_copy(
+            update={"metric": metric, "period_start": start, "period_end": end}
+        )
+
+    async def load(self, lines=None, email="bruno@transports-nord.fr", invoice_id="inv_011"):
+        """The context and findings for inv_011, its lines replaced by `lines`,
+        and every usage read the investigation asked for."""
+        asked = []
+
+        class Asking(FakeBillingProvider):
+            async def list_invoices(self, customer_id, since):
+                invoices = await super().list_invoices(customer_id, since)
+                if lines is None:
+                    return invoices
+                return [
+                    i.model_copy(update={"lines": lines}) if i.id == invoice_id else i
+                    for i in invoices
+                ]
+
+            async def get_usage(self, subscription_id, period):
+                asked.append((subscription_id, period))
+                return await super().get_usage(subscription_id, period)
+
+        investigator = DisputeInvestigator(provider=Asking(), engine=MockDecisionEngine())
+        dispute = Dispute(
+            id="dsp", customer_message="Usage ?", customer_email=email, invoice_id=invoice_id
+        )
+        context = await investigator.load_context(dispute, NOW)
+        findings = {f.code: f for f in investigator.run_rules(dispute, context)}
+        return context, findings, asked
+
+    async def test_the_period_the_metered_lines_share_is_asked(self):
+        context, findings, asked = await self.load()
+        assert asked == [("sub_88", self.SEPTEMBER)]
+        assert context.usage.quantity == Decimal("47")
+        assert RuleCode.USAGE_UNAVAILABLE not in findings
+
+    async def test_a_record_on_another_period_is_not_in_the_context(self):
+        context, findings, asked = await self.load([self.line(period=self.AUGUST)])
+        assert asked == [("sub_88", self.AUGUST)]
+        assert context.usage is None
+        assert findings[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == [
+            "api_call_blocks_100"
+        ]
+
+    async def test_lines_on_distinct_periods_ask_for_nothing(self):
+        """No line is picked: the September line, which the September record
+        would have checked, is said unchecked with the other."""
+        lines = [self.line(), self.line("storage_gb", self.AUGUST)]
+        context, findings, asked = await self.load(lines)
+        assert asked == []
+        assert context.usage is None
+        assert findings[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == [
+            "api_call_blocks_100",
+            "storage_gb",
+        ]
+
+    async def test_two_metrics_on_one_period_ask_for_it(self):
+        lines = [self.line(), self.line("storage_gb")]
+        context, findings, asked = await self.load(lines)
+        assert asked == [("sub_88", self.SEPTEMBER)]
+        assert context.usage.metric == "api_call_blocks_100"
+        assert findings[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == ["storage_gb"]
+
+    @pytest.mark.parametrize(
+        "period",
+        [
+            (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC)),
+            (datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC)),
+            (None, None),
+        ],
+        ids=["empty", "reversed", "absent"],
+    )
+    async def test_a_period_that_is_not_real_asks_for_nothing(self, period):
+        context, findings, asked = await self.load([self.line(period=period)])
+        assert asked == []
+        assert context.usage is None
+        assert RuleCode.USAGE_UNAVAILABLE in findings
+
+    async def test_an_invoice_without_metered_lines_asks_for_nothing(self):
+        """A record the rules have no line to compare with is not loaded."""
+        context, findings, asked = await self.load(email="alice@acme.fr", invoice_id="inv_002")
+        assert asked == []
+        assert context.usage is None
+
+
 class TestCitedInvoice:
     """Taxonomy S6, through the API."""
 
@@ -279,7 +377,7 @@ class TestUnderBilling:
         )
 
         class Provider(FakeBillingProvider):
-            async def get_usage(self, subscription_id):
+            async def get_usage(self, subscription_id, period):
                 return usage
 
         engine = MockDecisionEngine()
@@ -325,7 +423,7 @@ class TestUnderBillingNeverMovesAnything:
         )
 
         class Provider(FakeBillingProvider):
-            async def get_usage(self, subscription_id):
+            async def get_usage(self, subscription_id, period):
                 return usage
 
         import asyncio

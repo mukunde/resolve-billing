@@ -36,7 +36,7 @@ from app.decision.base import (
 )
 from app.domain.automated import automated_message
 from app.domain.enums import RuleCode, SenderStatus, Severity
-from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
+from app.domain.models import BillingContext, Customer, Dispute, Invoice, RuleFinding
 from app.domain.money import Money
 from app.domain.rules import (
     checks_not_evaluable,
@@ -380,8 +380,9 @@ class DisputeInvestigator:
             found = await self._provider.find_invoice(dispute.invoice_id)
             outside_window = found is not None and found.customer_id == customer.id
         usage = None
-        if target is not None and target.subscription_id:
-            usage = await self._provider.get_usage(target.subscription_id)
+        period = _metered_period(target) if target is not None else None
+        if period is not None and target.subscription_id:
+            usage = await self._provider.get_usage(target.subscription_id, period)
 
         return BillingContext(
             customer=customer,
@@ -792,6 +793,21 @@ def _outside_window(invoice_id: str) -> RuleFinding:
         ),
         evidence={"invoice_id": invoice_id, "window_days": LOOKBACK.days},
     )
+
+
+def _metered_period(invoice: Invoice) -> tuple[datetime, datetime] | None:
+    """The one real period every metered line of `invoice` covers, or None.
+
+    Usage is read for it (FR-016 as amended, option (a)). Lines on distinct
+    periods, or on no real one, ask for nothing: no line is picked, and the
+    usage rules say them unchecked. An invoice without metered lines asks for
+    nothing either -- no rule has a line to compare a record with.
+    """
+    metered = [line for line in invoice.lines if line.metric]
+    periods = {(line.period_start, line.period_end) for line in metered}
+    if len(periods) != 1 or not (metered[0].period_seconds or 0) > 0:
+        return None
+    return periods.pop()
 
 
 def _usage_unavailable(invoice_id: str, metrics: list[str]) -> RuleFinding:

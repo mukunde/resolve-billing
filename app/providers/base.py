@@ -156,7 +156,17 @@ class BillingProvider(Protocol):
 
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]: ...
 
-    async def get_usage(self, subscription_id: str) -> Usage | None: ...
+    async def get_usage(
+        self, subscription_id: str, period: tuple[datetime, datetime]
+    ) -> Usage | None:
+        """The subscription's metered usage over `period` (start, end), or None.
+
+        The period is the one the invoice's metered lines cover: on a platform
+        that bills usage in arrears, not the subscription's current one
+        (ADR-001, 2026-10-22). None when the platform holds nothing for
+        exactly that period -- unavailable, never zero.
+        """
+        ...
 
     async def list_payments(self, customer_id: str) -> list[Payment]: ...
 
