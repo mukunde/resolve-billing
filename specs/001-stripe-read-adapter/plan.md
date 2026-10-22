@@ -266,12 +266,24 @@ compared with the wrong period: the investigation finds `USAGE_UNAVAILABLE`
 (D14) and sends "the invoice is correct" to a person. Safe, but SC-001 cannot
 hold for a usage world.
 
-- **(a) Recommended -- amend the port**: `get_usage(subscription_id, period)`,
-  the period being that of the line compared. The fake returns its record when
-  it covers that period exactly (the investigation already requires it), so
-  the fake's behaviour does not change; Stripe reads the meter's summary over
-  that period. Amends the approved spec (FR-016) and ADR-001; the
-  investigation passes the line's period.
+- **(a) Recommended -- amend the port**: `get_usage(subscription_id, period)`.
+  - *Which period*: the target invoice's metered lines must all share one
+    real period (start before end); the investigation then asks for that
+    period. Lines with distinct periods, or no real period, ask for nothing:
+    usage stays `None`, the lines are said unchecked (`USAGE_UNAVAILABLE`),
+    exactly as today for a metric billed on several lines. No line is chosen
+    arbitrarily.
+  - *The fake* returns its record only when it covers that period exactly.
+    The deterministic findings cannot change -- the rules already require the
+    exact period -- but the context given to the engine can: a record that
+    does not match the period no longer appears in it. So neutrality is
+    **verified, not assumed**: the mock baseline matched case by case; a
+    comparison of the engine context (`BillingContext.usage`) for every
+    development case before and after, expected identical; tests for a
+    record on another period and for lines on distinct periods. A case whose
+    context changes is reported before anything merges.
+  - *Stripe* reads the meter's summary over that period.
+  - Amends the approved spec (FR-016) and ADR-001.
 - **(b) Keep the port**: on Stripe a usage dispute never concludes; the usage
   world's expected result in SC-001 becomes `USAGE_UNAVAILABLE`, a deviation
   from its fake counterpart that the maintainer approves.
