@@ -53,7 +53,7 @@ def connect(
     check_read_key(api_key)
     import stripe
 
-    _silence(stripe)
+    silence(stripe)
     sdk = stripe.StripeClient(
         api_key,
         stripe_version=API_VERSION,
@@ -64,7 +64,7 @@ def connect(
     return StripeReader(sdk)
 
 
-def _silence(stripe: Any) -> None:
+def silence(stripe: Any) -> None:
     """Keep the SDK from saying what Stripe answered (FR-020, FR-024).
 
     Before raising, the SDK logs Stripe's error message, and in debug the

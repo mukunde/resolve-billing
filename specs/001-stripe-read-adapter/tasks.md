@@ -149,7 +149,9 @@ contract tests pass on the fake.
   anything but `sk_test_`; one clock per world; plans only what is missing (a
   half-created world completed, nothing twice); records each world's target
   invoice and investigation instant; stays within scope plus the unsupported
-  worlds it can produce; waits within a bound, never writes a zero.
+  worlds it can produce; waits within a bound, never writes a zero; the dates
+  of the month before the run (decided 2026-10-23); the counterparts'
+  amounts; each world's preconditions on the domain objects.
 - [ ] T031 `scripts/stripe_seed.py`: the worlds of plan §6, every invoice on
   its world's subscription, preconditions read back and checked; a world
   that cannot be built or whose facts do not hold is reported, not dropped.

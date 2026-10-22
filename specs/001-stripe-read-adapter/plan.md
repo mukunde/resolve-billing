@@ -221,14 +221,34 @@ full (test-clock customers included) and keeps those issued at or after
 
 ### 6. Seed script (`scripts/stripe_seed.py`)
 
-- Refuses anything but `sk_test_`. Idempotent: every object carries metadata
-  `rb_world=<name>`; a run lists what exists and completes what is missing, a
-  half-created world included.
+- Refuses anything but `sk_test_`, before any call. Idempotent: every
+  object it makes carries metadata `rb_world=<name>` and `rb_step=<world>/<step>`,
+  and each step looks for its object before making one; shared objects
+  (products, prices, the meter, the coupon) carry fixed identifiers or lookup
+  keys. A run lists what exists and completes what is missing, a
+  half-created world included; nothing is made twice. A meter event carries
+  a fixed identifier and is sent only while the meter's summary for its
+  period is still empty.
+- **Dates, decided by the maintainer on 2026-10-23**: every world is built
+  on **the month that ends just before the seed runs**, not on fixed dates.
+  With `last` the day before the run: the month starts on the same day of
+  the previous month (at most the 28th, so month arithmetic stays exact),
+  midnight UTC, and ends one month later -- at the latest on `last`. A world
+  that needs history starts one month earlier. So no clock is ever ahead of
+  the real time a world needs, and meter events stay inside Stripe's accepted
+  window (35 days back, 5 minutes ahead), whichever clock it judges them by.
+  The investigation instant each world records is what the contract tests
+  use; the fake counterparts keep their own dates.
+- **Amounts are the fake counterpart's**, in EUR, because SC-001 compares the
+  whole proposal: 99.00 for the duplicate and the proration target, 49.00 for
+  the cancellation and failed-payment targets, 47 blocks at 0.50 (23.50) for
+  the usage target.
 - **One test clock per world** (a clock holds at most three customers; one
-  per world also keeps worlds from moving each other). Each world records in
-  its clock's name and its customer's metadata the **target invoice** and the
-  **investigation instant** -- right after the target invoice is finalised,
-  before any renewal can add an invoice the test did not expect.
+  per world also keeps worlds from moving each other), named `rb:<world>`.
+  Each world records in its customer's metadata the **target invoice** and
+  the **investigation instant** -- right after the target invoice is
+  finalised, before any renewal can add an invoice the test did not expect --
+  and only once its preconditions hold.
 - **Every invoice of a world belongs to the world's subscription**: invoices
   are created with the `subscription` parameter, their items carrying the
   subscription and an explicit period, so the rules see what they compare
@@ -238,35 +258,58 @@ full (test-clock customers included) and keeps those issued at or after
   world exists for (two live invoices on one subscription with equal totals
   and overlapping periods; a line covering half a period at the full price;
   an invoice period starting after the subscription ended; a failed payment;
-  usage over the target line's period). A world Stripe does not let the seed
-  build, or whose facts do not hold, is **reported to the maintainer, never
-  dropped silently**: removing a world from SC-001 needs his approval.
-- Supported worlds, each modelled on a development situation:
-  - *duplicate*: a monthly subscription from 2026-09-01; at 2026-09-02 a
-    one-off invoice for the same period and amount; the clock advanced past
-    finalisation; target = the one-off invoice;
-  - *proration*: an invoice item for half of September at the full monthly
-    price (positive line only); target = that invoice;
-  - *billed after cancellation*: a subscription ended at 2026-08-31; an
-    invoice for September issued afterwards; target = it;
-  - *failed payment*: a customer with Stripe's declining test card; the
-    September invoice's payment fails; target = it;
-  - *usage*: a metered price on a meter; usage events sent inside the
-    September period (within Stripe's accepted window for meter events
-    relative to the clock, checked when T031 is written); the clock advanced
-    past the period's end and the arrears invoice finalised; target = that
-    invoice, investigated right after, its line's period being September.
-    If Stripe refuses the events on a clock, the world is reported to the
-    maintainer (see above), not dropped.
+  usage over the target line's period equal to its quantity; the target's
+  total equal to the counterpart's; for an unsupported world, its reason). A
+  world Stripe does not let the seed build, or whose facts do not hold, is
+  **reported to the maintainer, never dropped silently**: removing a world
+  from SC-001 needs his approval. A Stripe refusal is reported by its type,
+  code, parameter and request id (to find it in the Dashboard's logs), not by
+  its message.
+- Supported worlds, each modelled on a development situation (S the month's
+  start, E its end, P one month before S):
+  - *duplicate* (`duplicate_fr`): an Enterprise subscription at 99.00 from S,
+    its first invoice paid; at S + 1 day a one-off item of 99.00 for [S, E)
+    on that subscription, invoiced, finalised and paid; target = that invoice;
+  - *proration* (`proration`): a Pro subscription at 49.00 from S; at the
+    middle of the month the price moves to Enterprise without proration, and
+    an item of 99.00 -- the full monthly price -- for [middle, E) is invoiced
+    and finalised, left open; target = that invoice;
+  - *billed after cancellation* (`billed_after_cancellation`): a Pro
+    subscription from P; at S - 1 day an item of 49.00 for [S, E) on it, then
+    the subscription cancelled at once with a final invoice, which takes the
+    pending item; finalised and paid; target = it;
+  - *failed payment* (`failed_payment_valid_invoice`): a Pro subscription from
+    P paid with a test card that works; before S the default card becomes
+    Stripe's `pm_card_chargeCustomerFail`; the clock passes S + 1 hour, the
+    renewal invoice for [S, E) is finalised and its payment fails; target = it;
+  - *usage* (`legitimate_overage`): a Pro subscription and a metered one (0.50
+    per block, on the meter `rb_api_call_blocks`) from S; at E - 1 day a
+    meter event of 47, sent with the clock's time; the seed waits for the
+    summary to say 47, then the clock passes E + 1 hour and the arrears
+    invoice for [S, E) is finalised and paid; target = it.
 - Unsupported worlds: **one per `ProviderUnsupported` reason the seed can
-  produce in test mode** (mixed item periods, multiple prices, an
-  unsupported status, tax, discount, negative line, fractional unit price,
-  partial refund, a payment across invoices where the API allows it, a
-  credit balance applied before tax, a period off whole minutes); a
-  reason the seed cannot produce is covered by mapping tests only, and listed.
+  produce in test mode**, each a subscription from S whose first invoice is
+  the target unless said: mixed item periods (a monthly and a yearly price,
+  flexible billing mode), multiple prices (two monthly prices), an
+  unsupported status (a declining card, `default_incomplete`), tax (a 20%
+  exclusive rate), discount (a 10% coupon), negative line (an invoice with a
+  49.00 item and a -10.00 one), fractional unit price (a price of 4900.5
+  cents), partial refund (10.00 refunded on a paid invoice), a payment
+  across invoices (one payment intent attached to two invoices, where the API
+  allows it), a credit balance applied before tax (a billing credit grant on a
+  metered subscription; target = the arrears invoice), and a period off whole
+  minutes (a metered subscription on a clock started 30 seconds past a minute;
+  target = the arrears invoice). A reason the seed cannot produce is covered
+  by mapping tests only, and listed (`scripts/stripe_worlds.py`).
 - Waits, within a bound, for each clock to be `ready`, the target invoices
   finalised and the meter summaries present; never writes a zero in place of
-  a delay.
+  a delay. The bound is the seed's, and a wait past it reports the world.
+- **Expected finding for Phase 5**: the proration check compares a line with
+  the subscription's *current* period. Where a world's target lies in another
+  period of a different length -- the arrears invoice once the subscription
+  has renewed, the cancelled subscription's last period -- it can see a
+  mismatch the fake never shows, depending on the run's month. SC-001 would
+  then report it; the fix belongs to the rule, not to the seed's dates.
 
 ### 7. Tests
 
