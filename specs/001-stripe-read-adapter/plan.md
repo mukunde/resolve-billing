@@ -274,14 +274,14 @@ hold for a usage world.
     exactly as today for a metric billed on several lines. No line is chosen
     arbitrarily.
   - *The fake* returns its record only when it covers that period exactly.
-    The deterministic findings cannot change -- the rules already require the
-    exact period -- but the context given to the engine can: a record that
-    does not match the period no longer appears in it. So neutrality is
-    **verified, not assumed**: the mock baseline matched case by case; a
-    comparison of the engine context (`BillingContext.usage`) for every
-    development case before and after, expected identical; tests for a
-    record on another period and for lines on distinct periods. A case whose
-    context changes is reported before anything merges.
+    Findings and engine context can both change: with two metrics on
+    distinct periods, a line the current record checks today becomes
+    unchecked; a record on another period disappears from the context. So
+    both are **compared, not assumed**: the mock baseline matched case by
+    case; findings and `BillingContext.usage` compared on every development
+    case before and after; counter-tests for a record on another period and
+    for two metrics on distinct periods. **Any change is submitted to the
+    maintainer** before anything merges.
   - *Stripe* reads the meter's summary over that period.
   - Amends the approved spec (FR-016) and ADR-001.
 - **(b) Keep the port**: on Stripe a usage dispute never concludes; the usage
