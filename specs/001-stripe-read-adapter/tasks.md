@@ -49,12 +49,15 @@ pass, and the work is committed locally.
 - [ ] T014 Test first, `tests/integration/test_unsupported_platform_data.py`:
   a provider raising `ProviderUnsupported("mixed_item_periods")` gives 422
   `{"category": "provider_unsupported", "reason": "mixed_item_periods"}` on the
-  investigation, the approval read and the review page; no run row, nothing
-  queued, no state change; no platform text in any response or log; the S11
-  validation 422 keeps its own shape; executing on a read-only provider gives
-  409, never 504; the MCP read tools return a tool error with the category.
-- [ ] T015 `app/main.py` (the handler), `app/application/investigate_dispute.py`
-  (log and trace by category, let through), `app/mcp/server.py` (tool error).
+  investigation, `GET /actions/{id}`, approve, the review page, and execute on
+  a writable provider (never 504); no run row, nothing queued, no transition
+  caused by the read (time-based expiry unchanged); no platform text in any
+  response or log; the S11 validation 422 keeps its own shape; executing on a
+  read-only provider gives 409; the MCP read tools return a tool error with
+  the category.
+- [ ] T015 `app/main.py` (the handler), `app/api/approvals.py` (re-raise ahead
+  of the execute catch-all), `app/application/investigate_dispute.py` (log and
+  trace by category, let through), `app/mcp/server.py` (tool error).
 - [ ] T016 [P] `docs/adr/001-provider-agnostic-billing.md`,
   `docs/adr/008-execution-state-machine.md`: amendments for the port
   additions and read-only platforms.
@@ -116,8 +119,10 @@ contract tests pass on the fake.
   half-created world completed, nothing twice); records each world's target
   invoice and investigation instant; stays within scope plus the unsupported
   worlds it can produce; waits within a bound, never writes a zero.
-- [ ] T031 `scripts/stripe_seed.py`: the worlds of plan §6, after checking
-  Stripe's window for meter events on a clock (plan §6, usage world).
+- [ ] T031 `scripts/stripe_seed.py`: the worlds of plan §6, every invoice on
+  its world's subscription, preconditions read back and checked; a world
+  that cannot be built or whose facts do not hold is reported, not dropped.
+  The usage world waits for the maintainer's decision (plan, "Open decision").
 - [ ] T032 **Maintainer**: create the account's two keys; run the seed twice,
   locally. No agent runs it.
 

@@ -94,8 +94,16 @@ No violation; no complexity to justify.
 - The investigation logs and traces it by category
   (`error.type = provider_unsupported`) and lets it through: no decision, no
   proposal, no queued action, no run row.
-- No state changes on any surface: an approval page that cannot read the
-  invoice shows nothing to approve and records nothing.
+- **No state change caused by the read.** `approve()` and `read_action` first
+  apply the existing time-based expiry (`expire_if_overdue`: a deadline that
+  passed expires the action whatever the platform says, as today), then read
+  the fingerprint; if that read raises, nothing further is transitioned. The
+  execute endpoint's catch-all (`except Exception` → 504, unknown outcome)
+  gets an `except ProviderUnsupported: raise` ahead of it, so the handler
+  answers 422 and the action keeps its state; a read before the claim never
+  leaves an unknown outcome. For Stripe, execution is refused even earlier
+  (§3). Tests pin each path: approve, read action, review page, execute on a
+  writable provider whose invoice read is unsupported.
 - The MCP server's read tools turn it into a tool error with the category.
 
 ### 3. Execution (`app/application/execute_action.py`)
@@ -124,8 +132,11 @@ request; a time budget exceeded → `ProviderUnavailable`.
 
 **Nulls**: a field the mapping needs and Stripe returns null
 (`customer.email`, `customer.currency`, a price, a period) is
-`ProviderUnsupported("missing_field")`, never a blind `.upper()` or `.strip()`;
-an optional one (`customer.name`, a description) stays `None`.
+`ProviderUnsupported("missing_field")`, never a blind `.upper()` or `.strip()`.
+`customer.name` maps to the optional display name and stays `None`. A line's
+`description`, required by the domain (`InvoiceLine.description: str`), maps
+to the empty string when Stripe has none -- it is informative only, read by
+the engine, never by a rule -- with a test on both.
 
 **Mappings** (spec FR-010 to FR-017):
 
@@ -199,6 +210,18 @@ full (test-clock customers included) and keeps those issued at or after
   its clock's name and its customer's metadata the **target invoice** and the
   **investigation instant** -- right after the target invoice is finalised,
   before any renewal can add an invoice the test did not expect.
+- **Every invoice of a world belongs to the world's subscription**: invoices
+  are created with the `subscription` parameter, their items carrying the
+  subscription and an explicit period, so the rules see what they compare
+  (same subscription, same or later period, same total).
+- **Preconditions checked before a world is recorded**: the seed reads the
+  world back through the adapter's own mapping and checks the facts the
+  world exists for (two live invoices on one subscription with equal totals
+  and overlapping periods; a line covering half a period at the full price;
+  an invoice period starting after the subscription ended; a failed payment;
+  usage over the target line's period). A world Stripe does not let the seed
+  build, or whose facts do not hold, is **reported to the maintainer, never
+  dropped silently**: removing a world from SC-001 needs his approval.
 - Supported worlds, each modelled on a development situation:
   - *duplicate*: a monthly subscription from 2026-09-01; at 2026-09-02 a
     one-off invoice for the same period and amount; the clock advanced past
@@ -209,15 +232,8 @@ full (test-clock customers included) and keeps those issued at or after
     invoice for September issued afterwards; target = it;
   - *failed payment*: a customer with Stripe's declining test card; the
     September invoice's payment fails; target = it;
-  - *usage*: a metered price on a meter; the clock frozen inside the period;
-    meter events sent with timestamps inside that period and inside Stripe's
-    accepted window for meter events relative to the clock's time; the clock
-    then advanced past the period's end and the invoice finalised; target =
-    that invoice, investigated on that period. The exact window is checked
-    against Stripe's documentation when T031 is written; if historical events
-    cannot be accepted on a clock, the usage world is dropped from SC-001,
-    usage stays proven by the mapping and adapter tests, and the contract
-    says so.
+  - *usage*: see "Open decision" below: as the port stands, a usage world
+    cannot reproduce its fake counterpart.
 - Unsupported worlds: **one per `ProviderUnsupported` reason the seed can
   produce in test mode** (mixed item periods, multiple prices, an
   unsupported status, tax, discount, negative line, fractional unit price,
@@ -238,6 +254,29 @@ full (test-clock customers included) and keeps those issued at or after
 | Wiring | `tests/unit/test_provider_wiring.py` | CI: `BILLING_PROVIDER` selects; the key read in `deps` only; `stripe` imported only where allowed (static check) |
 | Contract | `tests/contract/test_billing_platform.py` | fake in CI; Stripe locally with `STRIPE_API_KEY`, else skipped with the reason |
 | Investigation on Stripe | `tests/contract/test_stripe_investigation.py` | local: each world's target invoice at its instant, against its fake counterpart (SC-001) |
+
+## Open decision: usage and the current period (maintainer)
+
+Stripe bills metered usage **in arrears**: the invoice finalised at the end of
+a period carries the usage of the period that just ended, while the
+subscription item's *current* period is already the next one. The port's
+`get_usage(subscription_id)` has no period, and the approved spec (FR-016)
+reads the item's current period. So on Stripe, a metered invoice is always
+compared with the wrong period: the investigation finds `USAGE_UNAVAILABLE`
+(D14) and sends "the invoice is correct" to a person. Safe, but SC-001 cannot
+hold for a usage world.
+
+- **(a) Recommended -- amend the port**: `get_usage(subscription_id, period)`,
+  the period being that of the line compared. The fake returns its record when
+  it covers that period exactly (the investigation already requires it), so
+  the fake's behaviour does not change; Stripe reads the meter's summary over
+  that period. Amends the approved spec (FR-016) and ADR-001; the
+  investigation passes the line's period.
+- **(b) Keep the port**: on Stripe a usage dispute never concludes; the usage
+  world's expected result in SC-001 becomes `USAGE_UNAVAILABLE`, a deviation
+  from its fake counterpart that the maintainer approves.
+
+Until the maintainer decides, the usage world and FR-016's tasks wait.
 
 ## Project Structure
 
