@@ -188,6 +188,17 @@ class TestInvoice:
         with refused("invoice_discount"):
             invoice([stripe.line(discount_amounts=[stripe.discount_amount()])])
 
+    def test_a_pre_tax_discount_on_the_invoice_is_refused(self):
+        with refused("invoice_discount"):
+            invoice(total_pretax_credit_amounts=[stripe.pretax_credit()])
+
+    def test_a_pre_tax_discount_on_a_line_is_refused(self):
+        with refused("invoice_discount"):
+            invoice([stripe.line(pretax_credit_amounts=[stripe.pretax_credit()])])
+
+    def test_a_pre_tax_discount_of_zero_is_no_discount(self):
+        assert invoice(total_pretax_credit_amounts=[stripe.pretax_credit(0)]).lines
+
     def test_a_discount_of_zero_is_no_discount(self):
         assert invoice([stripe.line(discount_amounts=[stripe.discount_amount(0)])]).lines
 

@@ -70,7 +70,12 @@ def _decimal(value: Any) -> Decimal:
 
 
 def customer(payload: Payload) -> Customer:
-    """The address as written: the lookup compares it normalised (`address`)."""
+    """The address as written: the lookup compares it normalised (`address`).
+
+    A customer without an address cannot be represented: `missing_field`.
+    The lookup never maps one (it never matches), but listing every customer
+    -- the impersonation check, for an unknown sender -- then refuses.
+    """
     currency = payload.get("currency")
     return Customer(
         id=payload["id"],
@@ -159,6 +164,8 @@ def invoice(
         raise ProviderUnsupported("invoice_tax")
     if any(discount["amount"] for discount in payload.get("total_discount_amounts") or ()):
         raise ProviderUnsupported("invoice_discount")
+    if _discounted(payload.get("total_pretax_credit_amounts")):
+        raise ProviderUnsupported("invoice_discount")
 
     parent = payload.get("parent") or {}
     details = parent.get("subscription_details") or {}
@@ -187,6 +194,8 @@ def _line(
         raise ProviderUnsupported("invoice_tax")
     if any(discount["amount"] for discount in payload.get("discount_amounts") or ()):
         raise ProviderUnsupported("invoice_discount")
+    if _discounted(payload.get("pretax_credit_amounts")):
+        raise ProviderUnsupported("invoice_discount")
 
     pricing = _required(payload.get("pricing"))
     unit = Decimal(str(_required(pricing.get("unit_amount_decimal"))))
@@ -207,6 +216,11 @@ def _line(
         period_end=_at(period.get("end")),
         metric=_metric(_line_price(payload, prices), meters),
     )
+
+
+def _discounted(credits: Iterable[Payload] | None) -> bool:
+    """A pre-tax credit that is a discount, for a non-zero amount."""
+    return any(c["amount"] and c.get("type") == "discount" for c in credits or ())
 
 
 def _line_price(payload: Payload, prices: Mapping[str, Payload]) -> Payload | None:

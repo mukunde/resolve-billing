@@ -8,6 +8,8 @@ mapping to the real thing.
 
 from __future__ import annotations
 
+import json
+import logging
 import sys
 from datetime import UTC, datetime, timedelta
 
@@ -221,6 +223,20 @@ class TestInvoices:
         with pytest.raises(NotFound):
             await adapter.get_invoice("in_1RbMissing0000001")
 
+    @pytest.mark.parametrize("read", ["get_invoice", "find_invoice"])
+    async def test_a_price_stripe_cannot_find_never_makes_the_invoice_absent(self, read):
+        held = account()
+        held.prices = {}
+        with pytest.raises(ProviderUnsupported, match="missing_field"):
+            await getattr(provider(held), read)(stripe.INVOICE)
+
+    async def test_a_meter_stripe_cannot_find_never_makes_the_invoice_absent(self):
+        held = account()
+        held.invoices = [stripe.invoice([stripe.line(line_price=stripe.METERED_PRICE)])]
+        held.prices[stripe.METERED_PRICE] = stripe.metered_price()
+        with pytest.raises(ProviderUnsupported, match="missing_field"):
+            await provider(held).find_invoice(stripe.INVOICE)
+
     async def test_a_price_is_read_once_per_call(self):
         held = account()
         held.invoices = [
@@ -360,6 +376,56 @@ class TestReferences:
         text = "Facture in_1RbWorld00000001, pas inv_002."
         assert adapter.invoice_references(text) == {"in_1RbWorld00000001"}
         assert adapter.invoice_reference_spans(text) == [(8, 27, "in_1RbWorld00000001")]
+
+
+class TestTheSdkSaysNothing:
+    """The SDK logs Stripe's error message before raising, and prints it when
+    console logging is on: nothing Stripe answered reaches a log or stderr."""
+
+    def canned(self, sdk, status: int, body: dict):
+        class Canned(sdk.HTTPClient):
+            name = "canned"
+
+            async def request_async(self, method, url, headers, post_data=None):
+                return json.dumps(body).encode(), status, {"request-id": "req_RbCanned"}
+
+            async def close_async(self):
+                return None
+
+        return Canned()
+
+    async def test_an_error_stripe_answered_is_in_no_log_and_not_on_stderr(
+        self, caplog, capsys, monkeypatch
+    ):
+        sdk = pytest.importorskip("stripe")
+        monkeypatch.delenv("STRIPE_LOG", raising=False)
+        caplog.set_level(logging.DEBUG)
+        body = {
+            "error": {
+                "type": "invalid_request_error",
+                "code": "resource_missing",
+                "message": SENTINEL,
+            }
+        }
+        reader = connect("rk_test_51RbAbc", retries=0, http_client=self.canned(sdk, 404, body))
+        with pytest.raises(NotFound):
+            await reader.customer(stripe.CUSTOMER)
+        assert SENTINEL not in caplog.text
+        assert SENTINEL not in capsys.readouterr().err
+
+    def test_console_logging_from_the_environment_is_refused(self, monkeypatch):
+        pytest.importorskip("stripe")
+        monkeypatch.setenv("STRIPE_LOG", "debug")
+        with pytest.raises(ProviderConfigurationError) as raised:
+            connect("rk_test_51RbAbc")
+        assert raised.value.category == "sdk_logging"
+
+    def test_console_logging_set_on_the_sdk_is_refused(self, monkeypatch):
+        sdk = pytest.importorskip("stripe")
+        monkeypatch.delenv("STRIPE_LOG", raising=False)
+        monkeypatch.setattr(sdk, "log", "info")
+        with pytest.raises(ProviderConfigurationError):
+            connect("rk_test_51RbAbc")
 
 
 class TestAgainstTheRealSdk:

@@ -21,6 +21,7 @@ from app.providers.base import (
     PlatformCannotWrite,
     ProviderAction,
     ProviderUnavailable,
+    ProviderUnsupported,
 )
 from app.providers.stripe import mapping
 from app.providers.stripe.client import StripeReader
@@ -94,10 +95,14 @@ class StripeBillingProvider:
             return await _Lookups(self.reader).invoice(await self.reader.invoice(invoice_id))
 
     async def find_invoice(self, invoice_id: str) -> Invoice | None:
-        try:
-            return await self.get_invoice(invoice_id)
-        except NotFound:
-            return None
+        """None only when the invoice itself is absent: a price or a meter it
+        names and Stripe cannot find is a defect of its data, not an absence."""
+        async with self._bounded():
+            try:
+                payload = await self.reader.invoice(invoice_id)
+            except NotFound:
+                return None
+            return await _Lookups(self.reader).invoice(payload)
 
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]:
         """The customer's invoices issued at or after `since`. Read in full,
@@ -129,7 +134,7 @@ class StripeBillingProvider:
             if meter_id is None:
                 return None
             start, end = mapping.summary_window(period)
-            meter = await self.reader.meter(meter_id)
+            meter = await _dependency(self.reader.meter, meter_id)
             summaries = await self.reader.meter_summaries(meter_id, customer_id, start, end)
             return mapping.usage(subscription_id, meter["event_name"], period, summaries)
 
@@ -178,7 +183,17 @@ class _Lookups:
 
     async def invoice(self, payload: dict) -> Invoice:
         for price_id in mapping.line_price_ids(payload) - self._prices.keys():
-            self._prices[price_id] = await self._reader.price(price_id)
+            self._prices[price_id] = await _dependency(self._reader.price, price_id)
         for meter_id in mapping.line_meter_ids(payload, self._prices) - self._meters.keys():
-            self._meters[meter_id] = await self._reader.meter(meter_id)
+            self._meters[meter_id] = await _dependency(self._reader.meter, meter_id)
         return mapping.invoice(payload, self._prices, self._meters)
+
+
+async def _dependency(read, identifier: str) -> dict:
+    """An object another one names. Absent, it makes that one unreadable --
+    `missing_field` -- and never makes it absent itself: a `NotFound` here
+    would read as "no such invoice"."""
+    try:
+        return await read(identifier)
+    except NotFound:
+        raise ProviderUnsupported("missing_field") from None

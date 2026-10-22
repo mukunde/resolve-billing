@@ -115,14 +115,41 @@ class TestWhereStripeIsNamed:
     def test_the_core_never_imports_the_adapter(self):
         """The domain, the application, the policies and the engines depend on
         the port alone; only the wiring names the Stripe package."""
-        offenders = []
-        for path in (ROOT / "app").rglob("*.py"):
-            name = relative(path)
-            if name.startswith("app/providers/stripe/") or name == "app/api/deps.py":
-                continue
-            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-                if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
-                    "app.providers.stripe"
-                ):
-                    offenders.append(name)
+        offenders = [
+            relative(path)
+            for path in (ROOT / "app").rglob("*.py")
+            if not relative(path).startswith("app/providers/stripe/")
+            and relative(path) != "app/api/deps.py"
+            and imports_the_adapter(path.read_text(encoding="utf-8"))
+        ]
         assert offenders == []
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "from app.providers.stripe.adapter import StripeBillingProvider",
+            "from app.providers.stripe import mapping",
+            "import app.providers.stripe.client",
+            "import app.providers.stripe as platform",
+        ],
+    )
+    def test_every_form_of_that_import_is_seen(self, source):
+        assert imports_the_adapter(source)
+
+    def test_another_provider_is_not_that_import(self):
+        assert not imports_the_adapter("from app.providers.base import BillingProvider")
+
+
+def imports_the_adapter(source: str) -> bool:
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+            modules = [node.module or ""]
+        else:
+            continue
+        if any(
+            m == "app.providers.stripe" or m.startswith("app.providers.stripe.") for m in modules
+        ):
+            return True
+    return False

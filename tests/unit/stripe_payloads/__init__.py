@@ -331,6 +331,15 @@ def discount_amount(amount: int = 490) -> dict:
     return {"amount": amount, "discount": "di_RbTenPercent001"}
 
 
+def pretax_credit(amount: int = 490, kind: str = "discount") -> dict:
+    return {
+        "amount": amount,
+        "credit_balance_transaction": "cbtxn_Rb0000001" if kind != "discount" else None,
+        "discount": "di_RbTenPercent001" if kind == "discount" else None,
+        "type": kind,
+    }
+
+
 def charge(**changes) -> dict:
     return _with(
         {

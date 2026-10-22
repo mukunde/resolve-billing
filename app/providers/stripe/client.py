@@ -11,6 +11,8 @@ client, so the tests hand it an account in memory instead.
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any
 
 from app.providers.base import NotFound, ProviderUnavailable
@@ -32,20 +34,52 @@ PAGE = 100
 PAYMENT_EXPANSION = ["data.payment.payment_intent.latest_charge"]
 
 
+#: The SDK's console logging levels: at these it prints to stderr.
+_CONSOLE_LEVELS = {"debug", "info"}
+
+
 def connect(
-    api_key: str | None, *, api_base: str | None = None, retries: int = NETWORK_RETRIES
+    api_key: str | None,
+    *,
+    api_base: str | None = None,
+    retries: int = NETWORK_RETRIES,
+    http_client: Any = None,
 ) -> StripeReader:
-    """A reader on the account `api_key` opens, once the key is checked."""
+    """A reader on the account `api_key` opens, once the key is checked.
+
+    `http_client` replaces the SDK's own, for tests that must not reach the
+    network.
+    """
     check_read_key(api_key)
     import stripe
 
+    _silence(stripe)
     sdk = stripe.StripeClient(
         api_key,
         stripe_version=API_VERSION,
         max_network_retries=retries,
         base_addresses={"api": api_base} if api_base else None,
+        http_client=http_client,
     )
     return StripeReader(sdk)
+
+
+def _silence(stripe: Any) -> None:
+    """Keep the SDK from saying what Stripe answered (FR-020, FR-024).
+
+    Before raising, the SDK logs Stripe's error message, and in debug the
+    body of every answer, to its `stripe` logger -- and prints them to stderr
+    when console logging is on (`STRIPE_LOG` or `stripe.log`). The logger is
+    switched off; console logging, which would bypass it, is refused.
+    """
+    console = {
+        stripe.log,
+        os.environ.get("STRIPE_LOG"),
+        getattr(getattr(stripe, "_util", None), "STRIPE_LOG", None),
+    }
+    if console & _CONSOLE_LEVELS:
+        raise ProviderConfigurationError("sdk_logging")
+    logging.getLogger("stripe").disabled = True
 
 
 class StripeReader:

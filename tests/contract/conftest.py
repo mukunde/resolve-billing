@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -99,29 +98,42 @@ async def stripe_platform() -> Platform:
 
 
 async def _ready(provider) -> dict[str, Seeded]:
-    """The seeded worlds, once the account has settled; fails past the bound."""
-    deadline = time.monotonic() + READY_WITHIN
-    while True:
-        seeded, waiting = await _look(provider)
-        if not waiting:
-            return seeded
-        if time.monotonic() > deadline:
-            pytest.fail(f"the seeded account is not ready after {READY_WITHIN}s: {waiting}")
-        await asyncio.sleep(LOOK_EVERY)
+    """The seeded worlds, once the account has settled. The whole wait is
+    bounded, every read in it included: an account that never settles, or a
+    read that never returns, fails."""
+    waiting = ["nothing read yet"]
+    try:
+        async with asyncio.timeout(READY_WITHIN):
+            while True:
+                seeded, waiting = await _look(provider)
+                if not waiting:
+                    return seeded
+                await asyncio.sleep(LOOK_EVERY)
+    except TimeoutError:
+        pytest.fail(f"the seeded account is not ready after {READY_WITHIN}s: {waiting}")
 
 
 async def _look(provider) -> tuple[dict[str, Seeded], list[str]]:
+    """The catalogue's worlds as the account holds them, and what is still
+    settling. Only their clocks are watched: another clock on the account is
+    none of the contract's business."""
     reader = provider.reader
-    clocks = await reader.test_clocks()
-    customers = [c for clock in clocks for c in await reader.customers(test_clock=clock["id"])]
-    by_world = {
-        c["metadata"][worlds.WORLD]: c for c in customers if worlds.WORLD in (c["metadata"] or {})
-    }
-    missing = [w.name for w in worlds.WORLDS if w.name not in by_world]
+    names = {w.name for w in worlds.WORLDS}
+    by_world: dict[str, dict] = {}
+    their_clocks: dict[str, dict] = {}
+    for clock in await reader.test_clocks():
+        for customer in await reader.customers(test_clock=clock["id"]):
+            name = (customer.get("metadata") or {}).get(worlds.WORLD)
+            if name in names:
+                by_world[name] = customer
+                their_clocks[clock["id"]] = clock
+    missing = sorted(names - by_world.keys())
     if missing:
         pytest.fail(f"worlds missing from the seeded account (run the seed, or ask): {missing}")
 
-    waiting = [f"clock {c['id']} is {c['status']}" for c in clocks if c["status"] != "ready"]
+    waiting = [
+        f"clock {i} is {c['status']}" for i, c in their_clocks.items() if c["status"] != "ready"
+    ]
     seeded = {}
     for name, customer in by_world.items():
         metadata = customer["metadata"]

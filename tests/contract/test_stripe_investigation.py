@@ -36,11 +36,17 @@ async def outcome(provider, case, email, invoice_id, now):
     )
     investigator = DisputeInvestigator(provider=provider, engine=MockDecisionEngine())
     result = await investigator.investigate(dispute, now=now)
-    return (
-        sorted(f.code.value for f in result.findings),
-        result.classification,
-        result.proposed_action.type,
-    )
+    # The whole proposal, its amount and currency included -- a refund ten
+    # times too large is not "the same action" -- and what follows from it.
+    # The target is the dispute's invoice on both sides, by construction.
+    return {
+        "findings": sorted(f.code.value for f in result.findings),
+        "classification": result.classification,
+        "recommended_action": result.recommended_action,
+        "proposed_action": result.proposed_action.model_dump(mode="json"),
+        "verdict": result.authorization.verdict,
+        "requires_human_approval": result.requires_human_approval,
+    }
 
 
 @pytest.mark.parametrize("world", worlds.SUPPORTED, ids=lambda w: w.name)

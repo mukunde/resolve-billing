@@ -60,9 +60,9 @@ UNSUPPORTED = tuple(
 
 #: Reasons no world produces, and why: the mapping tests cover them alone.
 NOT_SEEDED = {
-    "cancellation_without_end": "Stripe sets `ended_at` on every canceled subscription.",
+    "cancellation_without_end": "a subscription the seed cancels is expected to carry `ended_at`.",
     "unplaced_payment": "an invoice payment without a payment intent is not built here.",
-    "missing_field": "Stripe fills the fields the mapping needs on objects it creates.",
+    "missing_field": "the seed fills every field the mapping needs; absences are mapping tests.",
 }
 
 WORLDS = SUPPORTED + UNSUPPORTED
