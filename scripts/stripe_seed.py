@@ -6,13 +6,20 @@ locally -- never by an agent -- with the secret test key in `STRIPE_SEED_KEY`:
     python -m dotenv run -- python -m scripts.stripe_seed
 
 Anything but a secret test key is refused before the SDK is even loaded.
-Every world is built on the month that ends just before the run, with the
-amounts of its fake counterpart, on its own test clock. A run completes what
-is missing and makes nothing twice. A world is recorded -- the invoice a
-dispute targets and the instant to investigate it at, on its customer --
-only once its facts, read back through the adapter's own mapping, hold. A
-world that cannot be built, or whose facts do not hold, is reported, never
-dropped: removing a world from the contract needs the maintainer.
+Every world is built on the month that ended just before its first run, with
+the amounts of its fake counterpart, on its own test clock -- whose name
+keeps that month, so a later run resumes the same world on the same dates.
+A run completes what is missing and makes nothing twice: every object is
+tagged with the step that made it and looked for before it is made, and
+every creation carries an idempotency key. The seed touches only what it
+made: a clock holding a customer it did not make, or a shared object it
+would reuse but did not make, is a collision, reported and left alone.
+
+A world is recorded -- the invoice a dispute targets and the instant to
+investigate it at, on its customer -- only once its facts, read back through
+the adapter's own mapping, hold; a recorded world is checked again on every
+run. A world that cannot be built, or whose facts do not hold, is reported,
+never dropped: removing a world from the contract needs the maintainer.
 """
 
 from __future__ import annotations
@@ -43,8 +50,9 @@ EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 #: Every amount is in euros, as the fake counterparts are.
 CURRENCY = "eur"
 
-#: What each target invoice totals, in cents: its fake counterpart's
-#: (SC-001 compares the whole proposal, amount included).
+#: What each target invoice totals, in cents -- its fake counterpart's
+#: (SC-001 compares the whole proposal, amount included) -- and the state it
+#: must be in.
 TARGET_TOTALS = {
     "duplicate": 9900,
     "proration": 9900,
@@ -52,19 +60,32 @@ TARGET_TOTALS = {
     "failed_payment": 4900,
     "usage": 2350,
 }
+TARGET_STATUSES = {
+    "duplicate": InvoiceStatus.PAID,
+    "proration": InvoiceStatus.OPEN,
+    "billed_after_cancellation": InvoiceStatus.PAID,
+    "failed_payment": InvoiceStatus.OPEN,
+    "usage": InvoiceStatus.PAID,
+}
 
 #: The usage world's blocks of 100 API calls, at 0.50 each: 23.50.
 BLOCKS = 47
 
-#: Stripe's test cards: one that pays, one that attaches and then declines.
+#: Stripe's test cards, one that pays and one that attaches then declines,
+#: and the last four digits they leave on the payment method.
 CARD = "pm_card_visa"
 DECLINING_CARD = "pm_card_chargeCustomerFail"
+LAST4 = {CARD: "4242", DECLINING_CARD: "0341"}
 
-#: Metadata on everything a world makes: which step made it.
+#: Metadata the seed sets: which step made an object, which card a customer
+#: was given, and where a world's one meter event stands.
 STEP = "rb_step"
 CARD_SET = "rb_card"
+USAGE_EVENT = "rb_usage_event"
 
-#: Shared by every world, with fixed identifiers or lookup keys.
+#: Shared by every world, found by fixed identifiers or lookup keys and
+#: tagged `shared/<kind>/<key>`; the meter, which has no metadata, by its
+#: event name and checked for its configuration.
 PRODUCTS = {
     "rb_pro": "Pro",
     "rb_enterprise": "Enterprise",
@@ -72,8 +93,15 @@ PRODUCTS = {
     "rb_blocks": "API call blocks",
 }
 METER_EVENT = "rb_api_call_blocks"
-COUPON = "rb_ten_percent"
-TAX_RATE = "shared/tax_rate"
+METER = {
+    "display_name": "RB API call blocks",
+    "event_name": METER_EVENT,
+    "default_aggregation": {"formula": "sum"},
+    "customer_mapping": {"type": "by_id", "event_payload_key": "stripe_customer_id"},
+    "value_settings": {"event_payload_key": "value"},
+}
+COUPON = {"id": "rb_ten_percent", "percent_off": 10, "duration": "forever"}
+TAX_RATE = {"display_name": "TVA", "percentage": 20, "inclusive": False}
 MONTHLY = {"interval": "month"}
 PRICES: dict[str, dict[str, Any]] = {
     "rb_pro_monthly": {"product": "rb_pro", "unit_amount": 4900, "recurring": MONTHLY},
@@ -111,13 +139,16 @@ LOOK_EVERY = 5
 
 @dataclass(frozen=True)
 class Dates:
-    """The month that ends just before the run (decided 2026-10-23), in Unix
-    seconds: `start` to `end`, and `previous`, one month before `start`, for
-    a world that needs history."""
+    """A world's month, in Unix seconds: `start` to `end`, and `previous`,
+    one month before `start`, for a world that needs history."""
 
     start: int
     end: int
     previous: int
+
+    @property
+    def start_day(self) -> date:
+        return datetime.fromtimestamp(self.start, UTC).date()
 
     @property
     def middle(self) -> int:
@@ -130,17 +161,21 @@ class Dates:
         return self.end - DAY
 
     @classmethod
-    def before(cls, run_at: datetime) -> Dates:
-        """With `last` the day before the run, the month starts on the same day
-        of the month before `last` -- at most the 28th, so that adding a month
-        is exact, as Stripe adds it -- and ends one month later."""
-        last = (run_at.astimezone(UTC) - timedelta(days=1)).date()
-        start = _months(last.replace(day=min(last.day, 28)), -1)
+    def starting(cls, day: date) -> Dates:
         return cls(
-            start=_midnight(start),
-            end=_midnight(_months(start, 1)),
-            previous=_midnight(_months(start, -1)),
+            start=_midnight(day),
+            end=_midnight(_months(day, 1)),
+            previous=_midnight(_months(day, -1)),
         )
+
+    @classmethod
+    def before(cls, run_at: datetime) -> Dates:
+        """The month that ends just before the run (decided 2026-10-23). With
+        `last` the day before the run, it starts on the same day of the month
+        before `last` -- at most the 28th, so that adding a month is exact, as
+        Stripe adds it -- and ends one month later."""
+        last = (run_at.astimezone(UTC) - timedelta(days=1)).date()
+        return cls.starting(_months(last.replace(day=min(last.day, 28)), -1))
 
 
 def _months(day: date, count: int) -> date:
@@ -152,6 +187,16 @@ def _midnight(day: date) -> int:
     return int(datetime(day.year, day.month, day.day, tzinfo=UTC).timestamp())
 
 
+def clock_name(world: str, dates: Dates) -> str:
+    """`rb:<world>@<first day of its month>`: the name keeps the month, so a
+    run on another day resumes the world on its own dates."""
+    return f"rb:{world}@{dates.start_day.isoformat()}"
+
+
+def dates_of(name: str) -> Dates:
+    return Dates.starting(date.fromisoformat(name.rsplit("@", 1)[1]))
+
+
 def starts_at(name: str, dates: Dates) -> int:
     """When a world's clock starts."""
     if name in ("billed_after_cancellation", "failed_payment"):
@@ -161,13 +206,20 @@ def starts_at(name: str, dates: Dates) -> int:
     return dates.start
 
 
+def arrears_due(name: str, dates: Dates) -> int:
+    """When a metered subscription started with its world's clock has its
+    first arrears invoice finalised: fixed by the dates, so a second run
+    never moves the clock further."""
+    return starts_at(name, dates) + (dates.end - dates.start) + HOUR + MINUTE
+
+
 # -- what a run says ---------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Outcome:
     world: str
-    #: "complete" (an earlier run recorded it), "built" or "reported".
+    #: "complete" (recorded earlier, and still holding), "built" or "reported".
     state: str
     target: str | None = None
     instant: datetime | None = None
@@ -186,8 +238,35 @@ class NotReady(Exception):  # noqa: N818 -- a state, not a programming error
     """Stripe had not settled within the seed's bound."""
 
 
+class Unexpected(Exception):  # noqa: N818
+    """Stripe answered, with a state the world does not expect."""
+
+
+class Collision(Exception):  # noqa: N818
+    """Something the seed would use or advance is not the seed's own."""
+
+
+class Uncertain(Exception):  # noqa: N818
+    """A write may or may not have reached Stripe: the maintainer reconciles."""
+
+
+_REPORTED = (
+    NotReady,
+    Unexpected,
+    Collision,
+    Uncertain,
+    NotFound,
+    ProviderUnavailable,
+    ProviderConfigurationError,
+)
+
+
+def _names(error: Exception) -> set[str]:
+    return {cls.__name__ for cls in type(error).__mro__}
+
+
 def _is_stripe(error: Exception) -> bool:
-    return "StripeError" in {cls.__name__ for cls in type(error).__mro__}
+    return "StripeError" in _names(error)
 
 
 def _missing(error: Exception) -> bool:
@@ -195,12 +274,18 @@ def _missing(error: Exception) -> bool:
 
 
 def _refusal(error: Exception) -> str:
-    """A Stripe refusal, by its structured fields -- the request id finds it in
-    the Dashboard's logs -- never by its message."""
-    return (
-        f"Stripe refused: {type(error).__name__} code={getattr(error, 'code', None)} "
+    """What Stripe said, by its structured fields -- the request id finds it
+    in the Dashboard's logs -- never by its message."""
+    fields = (
+        f"{type(error).__name__} code={getattr(error, 'code', None)} "
         f"param={getattr(error, 'param', None)} request={getattr(error, 'request_id', None)}"
     )
+    if "APIConnectionError" in _names(error):
+        return (
+            f"no answer from Stripe ({fields}): the outcome is unknown; the next run "
+            "looks for what this step may have made"
+        )
+    return f"Stripe refused: {fields}"
 
 
 # -- the seeder ----------------------------------------------------------------
@@ -224,6 +309,7 @@ class Seeder:
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.v1 = sdk.v1
+        #: The month a world gets when its first run is this one.
         self.dates = Dates.before(run_at)
         self.provider = StripeBillingProvider(StripeReader(sdk))
         self.worlds = worlds
@@ -241,22 +327,26 @@ class Seeder:
         try:
             await self._shared()
         except Exception as error:
-            if not _is_stripe(error):
+            if not (_is_stripe(error) or isinstance(error, _REPORTED)):
                 raise
-            detail = f"shared objects: {_refusal(error)}"
+            detail = f"shared objects: {_refusal(error) if _is_stripe(error) else error}"
             return [Outcome(spec.name, "reported", detail=detail) for spec in self.worlds]
         return [await self._world(spec) for spec in self.worlds]
 
     async def _world(self, spec: worlds.World) -> Outcome:
         try:
             clock = await self._clock(spec)
-            customer = await self._customer(spec, clock)
-            recorded = customer.get("metadata") or {}
+            world = World(self, spec, clock, await self._customer(spec, clock))
+            recorded = world.customer.get("metadata") or {}
             if worlds.TARGET_INVOICE in recorded:
+                target = recorded[worlds.TARGET_INVOICE]
+                problems = await self.checks[spec.name](world, target)
+                if problems:
+                    detail = "recorded, but no longer holds: " + "; ".join(problems)
+                    return Outcome(spec.name, "reported", target=target, detail=detail)
                 instant = datetime.fromisoformat(recorded[worlds.INVESTIGATE_AT])
-                return Outcome(spec.name, "complete", recorded[worlds.TARGET_INVOICE], instant)
+                return Outcome(spec.name, "complete", target, instant)
 
-            world = World(self, spec, clock, customer)
             target = await self.builders[spec.name](world)
             problems = await self.checks[spec.name](world, target)
             if problems:
@@ -264,7 +354,7 @@ class Seeder:
             instant = datetime.fromtimestamp(await world.now() + MINUTE, UTC)
             await self.call(
                 self.v1.customers.update_async,
-                customer["id"],
+                world.customer_id,
                 params={
                     "metadata": {
                         worlds.TARGET_INVOICE: target,
@@ -273,7 +363,7 @@ class Seeder:
                 },
             )
             return Outcome(spec.name, "built", target, instant)
-        except (NotReady, NotFound, ProviderUnavailable, ProviderConfigurationError) as error:
+        except _REPORTED as error:
             return Outcome(spec.name, "reported", detail=str(error))
         except Exception as error:
             if not _is_stripe(error):
@@ -281,13 +371,30 @@ class Seeder:
             return Outcome(spec.name, "reported", detail=_refusal(error))
 
     async def _clock(self, spec: worlds.World) -> dict:
-        name = f"rb:{spec.name}"
-        for clock in await self.every(self.v1.test_helpers.test_clocks.list_async):
-            if clock.get("name") == name:
-                return clock
+        """The world's clock -- found by its name, whatever its month -- or a
+        new one on this run's month. Only a clock all of whose customers are
+        this world's is ever used."""
+        prefix = f"rb:{spec.name}@"
+        clocks = await self.every(self.v1.test_helpers.test_clocks.list_async)
+        found = [c for c in clocks if (c.get("name") or "").startswith(prefix)]
+        if len(found) > 1:
+            raise Collision(f"{len(found)} clocks named {prefix}...: keep one, delete the others")
+        if found:
+            [clock] = found
+            for customer in await self.every(
+                self.v1.customers.list_async, params={"test_clock": clock["id"]}
+            ):
+                if (customer.get("metadata") or {}).get(worlds.WORLD) != spec.name:
+                    raise Collision(
+                        f"clock {clock['name']} holds a customer the seed did not make: "
+                        "rename or delete that clock"
+                    )
+            return clock
+        name = clock_name(spec.name, self.dates)
         return await self.call(
             self.v1.test_helpers.test_clocks.create_async,
             params={"frozen_time": starts_at(spec.name, self.dates), "name": name},
+            key=f"{name}/clock",
         )
 
     async def _customer(self, spec: worlds.World, clock: dict) -> dict:
@@ -307,18 +414,28 @@ class Seeder:
                     "test_clock": clock["id"],
                     "metadata": {worlds.WORLD: spec.name},
                 },
+                key=f"{clock['name']}/customer",
             )
-        if not (customer.get("invoice_settings") or {}).get("default_payment_method"):
-            customer = await self.card(customer, CARD)
+        if (customer.get("metadata") or {}).get(CARD_SET) is None:
+            customer = await self.card(customer, CARD, clock["name"])
         return customer
 
-    async def card(self, customer: dict, token: str) -> dict:
-        """`token`'s card as the customer's default, once."""
+    async def card(self, customer: dict, token: str, generation: str) -> dict:
+        """`token`'s card as the customer's default, once: a card the customer
+        already holds is reused, so an interrupted run attaches nothing twice."""
         if (customer.get("metadata") or {}).get(CARD_SET) == token:
             return customer
-        method = await self.call(
-            self.v1.payment_methods.attach_async, token, params={"customer": customer["id"]}
+        held = await self.every(
+            self.v1.payment_methods.list_async, params={"customer": customer["id"], "type": "card"}
         )
+        method = next((m for m in held if (m.get("card") or {}).get("last4") == LAST4[token]), None)
+        if method is None:
+            method = await self.call(
+                self.v1.payment_methods.attach_async,
+                token,
+                params={"customer": customer["id"]},
+                key=f"{generation}/card/{token}",
+            )
         return await self.call(
             self.v1.customers.update_async,
             customer["id"],
@@ -328,96 +445,157 @@ class Seeder:
             },
         )
 
+    # -- the shared objects ------------------------------------------------
+
     async def _shared(self) -> None:
         for product, name in PRODUCTS.items():
+            tag = f"shared/product/{product}"
             try:
-                await self.call(self.v1.products.retrieve_async, product)
+                found = await self.call(self.v1.products.retrieve_async, product)
             except Exception as error:
                 if not _missing(error):
                     raise
-                await self.call(self.v1.products.create_async, params={"id": product, "name": name})
+                found = await self.call(
+                    self.v1.products.create_async,
+                    params={"id": product, "name": name, "metadata": {STEP: tag}},
+                    key=tag,
+                )
+            _own_shared(found, tag)
 
         meters = await self.every(self.v1.billing.meters.list_async, params={"status": "active"})
         meter = next((m for m in meters if m.get("event_name") == METER_EVENT), None)
         if meter is None:
             meter = await self.call(
-                self.v1.billing.meters.create_async,
-                params={
-                    "display_name": "RB API call blocks",
-                    "event_name": METER_EVENT,
-                    "default_aggregation": {"formula": "sum"},
-                    "customer_mapping": {
-                        "type": "by_id",
-                        "event_payload_key": "stripe_customer_id",
-                    },
-                    "value_settings": {"event_payload_key": "value"},
-                },
+                self.v1.billing.meters.create_async, params=METER, key="shared/meter"
             )
+        for field in ("default_aggregation", "customer_mapping", "value_settings"):
+            if meter.get(field) != METER[field]:
+                raise Collision(f"the meter {METER_EVENT} exists with another {field}")
         self.meter_id = meter["id"]
 
         for lookup_key, spec in PRICES.items():
+            tag = f"shared/price/{lookup_key}"
+            if spec.get("recurring", {}).get("usage_type") == "metered":
+                spec = {**spec, "recurring": {**spec["recurring"], "meter": self.meter_id}}
             found = await self.every(
                 self.v1.prices.list_async, params={"lookup_keys": [lookup_key]}
             )
-            if not found:
-                params = {**spec, "currency": CURRENCY, "lookup_key": lookup_key}
-                if spec.get("recurring", {}).get("usage_type") == "metered":
-                    params["recurring"] = {**spec["recurring"], "meter": self.meter_id}
-                found = [await self.call(self.v1.prices.create_async, params=params)]
-            self.prices[lookup_key] = found[0]["id"]
+            if found:
+                [price] = found
+            else:
+                price = await self.call(
+                    self.v1.prices.create_async,
+                    params={
+                        **spec,
+                        "currency": CURRENCY,
+                        "lookup_key": lookup_key,
+                        "metadata": {STEP: tag},
+                    },
+                    key=tag,
+                )
+            _own_shared(price, tag)
+            if not _same_price(price, spec):
+                raise Collision(f"the price {lookup_key} exists with other terms")
+            self.prices[lookup_key] = price["id"]
 
+        tag = "shared/coupon"
         try:
-            await self.call(self.v1.coupons.retrieve_async, COUPON)
+            coupon = await self.call(self.v1.coupons.retrieve_async, COUPON["id"])
         except Exception as error:
             if not _missing(error):
                 raise
-            await self.call(
-                self.v1.coupons.create_async,
-                params={"id": COUPON, "percent_off": 10, "duration": "forever"},
+            coupon = await self.call(
+                self.v1.coupons.create_async, params={**COUPON, "metadata": {STEP: tag}}, key=tag
             )
+        _own_shared(coupon, tag)
+        if coupon.get("percent_off") != COUPON["percent_off"]:
+            raise Collision(f"the coupon {COUPON['id']} exists with other terms")
 
+        tag = "shared/tax_rate"
         rates = await self.every(self.v1.tax_rates.list_async, params={"active": True})
-        rate = next((r for r in rates if (r.get("metadata") or {}).get(STEP) == TAX_RATE), None)
+        rate = next((r for r in rates if (r.get("metadata") or {}).get(STEP) == tag), None)
         if rate is None:
             rate = await self.call(
                 self.v1.tax_rates.create_async,
-                params={
-                    "display_name": "TVA",
-                    "percentage": 20,
-                    "inclusive": False,
-                    "metadata": {STEP: TAX_RATE},
-                },
+                params={**TAX_RATE, "metadata": {STEP: tag}},
+                key=tag,
             )
+        if (Decimal(str(rate.get("percentage"))), rate.get("inclusive")) != (Decimal(20), False):
+            raise Collision("the seed's tax rate exists with other terms")
         self.tax_rate_id = rate["id"]
 
-    # -- the two primitives ------------------------------------------------
+    # -- the primitives --------------------------------------------------------
 
     async def every(self, method, *args: Any, params: dict | None = None) -> list[dict]:
+        """Every object of a list, to its end: a list cut short is never taken
+        for a complete one, which would let a step make its object twice."""
         params = {**(params or {}), "limit": 100}
         found: list[dict] = []
         while True:
             page = await self.call(method, *args, params=params)
             found.extend(page["data"])
-            if not page.get("has_more") or not page["data"]:
+            if not page.get("has_more"):
                 return found
+            if not page["data"]:
+                raise Unexpected("a Stripe list announced more and gave nothing")
             params = {**params, "starting_after": page["data"][-1]["id"]}
 
-    async def call(self, method, *args: Any, params: dict | None = None) -> dict:
-        response = await method(*args, params=params) if params is not None else await method(*args)
+    async def call(
+        self, method, *args: Any, params: dict | None = None, key: str | None = None
+    ) -> dict:
+        """One request. `key`, on a creation, is its idempotency key: two
+        runs, or one retried, make the object once."""
+        kwargs: dict[str, Any] = {}
+        if params is not None:
+            kwargs["params"] = params
+        if key is not None:
+            kwargs["options"] = {"idempotency_key": f"rb-seed/{key}"}
+        response = await method(*args, **kwargs)
         return response.to_dict() if hasattr(response, "to_dict") else dict(response)
 
     async def wait_for(self, what: str, ready: Callable[[], Awaitable[bool]]) -> None:
-        """Until `ready()`, looking every few seconds, within the bound."""
+        """Until `ready()`, looking every few seconds. Bounded as a whole,
+        reads included: a read that never returns ends the wait too."""
         deadline = self.monotonic() + self.wait_within
-        while not await ready():
-            if self.monotonic() >= deadline:
-                raise NotReady(f"{what}: not ready within {self.wait_within:g}s")
-            await self.sleep(self.look_every)
+        try:
+            async with asyncio.timeout(self.wait_within):
+                while not await ready():
+                    if self.monotonic() >= deadline:
+                        break
+                    await self.sleep(self.look_every)
+                else:
+                    return
+        except TimeoutError:
+            pass
+        raise NotReady(f"{what}: not ready within {self.wait_within:g}s")
+
+
+def _own_shared(found: dict, tag: str) -> None:
+    if (found.get("metadata") or {}).get(STEP) != tag:
+        raise Collision(f"{found['id']} exists, and the seed did not make it ({tag})")
+
+
+def _same_price(price: dict, spec: dict) -> bool:
+    def amount(terms: dict) -> Decimal:
+        return Decimal(str(terms.get("unit_amount_decimal") or terms.get("unit_amount")))
+
+    def recurring(terms: dict | None) -> tuple | None:
+        if not terms:
+            return None
+        return terms.get("interval"), terms.get("usage_type") or "licensed", terms.get("meter")
+
+    product = price.get("product")
+    return (
+        (product if isinstance(product, str) else product["id"]) == spec["product"]
+        and price.get("currency") == CURRENCY
+        and amount(price) == amount(spec)
+        and recurring(price.get("recurring")) == recurring(spec.get("recurring"))
+    )
 
 
 @dataclass
 class World:
-    """One world being built: its clock, its customer, and the steps."""
+    """One world being built: its clock, its customer, its month, the steps."""
 
     seeder: Seeder
     spec: worlds.World
@@ -434,7 +612,8 @@ class World:
 
     @property
     def dates(self) -> Dates:
-        return self.seeder.dates
+        """The month in the clock's name: the one the world was begun on."""
+        return dates_of(self.clock["name"])
 
     @property
     def v1(self) -> Any:
@@ -443,8 +622,8 @@ class World:
     def price(self, lookup_key: str) -> str:
         return self.seeder.prices[lookup_key]
 
-    async def call(self, method, *args: Any, params: dict | None = None) -> dict:
-        return await self.seeder.call(method, *args, params=params)
+    async def call(self, method, *args: Any, params: dict | None = None, key: str | None = None):
+        return await self.seeder.call(method, *args, params=params, key=key)
 
     async def wait_for(self, what: str, ready: Callable[[], Awaitable[bool]]) -> None:
         await self.seeder.wait_for(what, ready)
@@ -456,7 +635,39 @@ class World:
             if (found.get("metadata") or {}).get(STEP) == tag:
                 return found
         metadata = {**params.get("metadata", {}), worlds.WORLD: self.name, STEP: tag}
-        return await self.call(create, params={**params, "metadata": metadata})
+        return await self.call(
+            create, params={**params, "metadata": metadata}, key=f"{self.clock['name']}/{step}"
+        )
+
+    async def taken(self, step: str, subscription: dict, *, optional: bool = False) -> dict | None:
+        """An invoice Stripe made itself -- a first invoice, a renewal, a final
+        or an arrears one -- taken as `step` once: tagged, so a later run finds
+        this one, not whatever is latest by then. An invoice already taken as
+        another step is never retaken."""
+        tag = f"{self.name}/{step}"
+        invoices = await self.seeder.every(
+            self.v1.invoices.list_async, params={"customer": self.customer_id}
+        )
+        for invoice in invoices:
+            if (invoice.get("metadata") or {}).get(STEP) == tag:
+                return invoice
+        current = await self.call(self.v1.subscriptions.retrieve_async, subscription["id"])
+        latest = current.get("latest_invoice")
+        if latest is None:
+            if optional:
+                return None
+            raise Unexpected(f"subscription {subscription['id']} has no invoice for {step}")
+        invoice = await self.call(
+            self.v1.invoices.retrieve_async, latest if isinstance(latest, str) else latest["id"]
+        )
+        taken_as = (invoice.get("metadata") or {}).get(STEP)
+        if taken_as is not None:
+            raise Unexpected(f"no new invoice for {step}: the latest is {taken_as}")
+        return await self.call(
+            self.v1.invoices.update_async,
+            invoice["id"],
+            params={"metadata": {worlds.WORLD: self.name, STEP: tag}},
+        )
 
     # -- the clock -----------------------------------------------------------
 
@@ -479,12 +690,12 @@ class World:
             )
             return clock["status"] == "ready"
 
-        await self.wait_for(f"clock rb:{self.name}", settled)
+        await self.wait_for(f"clock {self.clock['name']}", settled)
 
     # -- the steps a world is made of -----------------------------------------
 
     async def card(self, token: str) -> None:
-        self.customer = await self.seeder.card(self.customer, token)
+        self.customer = await self.seeder.card(self.customer, token, self.clock["name"])
 
     async def subscription(self, step: str, *prices: str, **extra: Any) -> dict:
         return await self.once(
@@ -541,13 +752,6 @@ class World:
             },
         )
 
-    async def latest_invoice(self, subscription: dict) -> dict:
-        current = await self.call(self.v1.subscriptions.retrieve_async, subscription["id"])
-        latest = current["latest_invoice"]
-        return await self.call(
-            self.v1.invoices.retrieve_async, latest if isinstance(latest, str) else latest["id"]
-        )
-
     async def finalized(self, invoice: dict) -> dict:
         invoice = await self.call(self.v1.invoices.retrieve_async, invoice["id"])
         if invoice["status"] == "draft":
@@ -562,6 +766,8 @@ class World:
         invoice = await self.finalized(invoice)
         if invoice["status"] == "open":
             invoice = await self.call(self.v1.invoices.pay_async, invoice["id"])
+        if invoice["status"] != "paid":
+            raise Unexpected(f"invoice {invoice['id']} is {invoice['status']}, not paid")
         return invoice
 
     async def repriced(self, subscription: dict, price: str) -> dict:
@@ -601,24 +807,47 @@ class World:
         return sum((Decimal(str(s["aggregated_value"])) for s in found), Decimal(0))
 
     async def usage_reported(self, value: int) -> None:
-        """One meter event of `value`, sent at the clock's time, once: a fixed
-        identifier, and nothing sent once the summary shows usage."""
-        if (await self.summary() or 0) > 0:
-            return
-        await self.call(
-            self.v1.billing.meter_events.create_async,
-            params={
-                "event_name": METER_EVENT,
-                "identifier": f"rb-{self.name}-{self.dates.start}",
-                "timestamp": await self.now(),
-                "payload": {"stripe_customer_id": self.customer_id, "value": str(value)},
-            },
-        )
+        """One meter event of `value`, at the month's event day, sent once.
+
+        Its state is kept on the customer: `sending` before the request,
+        `sent` after. A run that finds `sending` -- the request may or may not
+        have reached Stripe -- sends nothing: usage already aggregated settles
+        it, and otherwise the maintainer is asked to check the meter. Stripe's
+        own deduplication by identifier lasts a day at least, not forever.
+        """
+        state = (self.customer.get("metadata") or {}).get(USAGE_EVENT)
+        if state == "sending":
+            if not (await self.summary() or 0) > 0:
+                raise Uncertain(
+                    f"a meter event for {self.name} may have reached Stripe: check the meter "
+                    f"{METER_EVENT} in the Dashboard; to send it again, remove {USAGE_EVENT} "
+                    "from the customer's metadata"
+                )
+            await self._usage_state("sent")
+        elif state != "sent":
+            await self._usage_state("sending")
+            await self.call(
+                self.v1.billing.meter_events.create_async,
+                params={
+                    "event_name": METER_EVENT,
+                    "identifier": f"rb-{self.clock['name']}",
+                    "timestamp": self.dates.event_day,
+                    "payload": {"stripe_customer_id": self.customer_id, "value": str(value)},
+                },
+            )
+            await self._usage_state("sent")
 
         async def aggregated() -> bool:
             return await self.summary() == value
 
         await self.wait_for(f"a meter summary of {value}", aggregated)
+
+    async def _usage_state(self, state: str) -> None:
+        self.customer = await self.call(
+            self.v1.customers.update_async,
+            self.customer_id,
+            params={"metadata": {USAGE_EVENT: state}},
+        )
 
 
 # -- the worlds ----------------------------------------------------------------
@@ -626,7 +855,7 @@ class World:
 
 async def _duplicate(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_enterprise_monthly")
-    await w.paid(await w.latest_invoice(subscription))
+    await w.paid(await w.taken("first_invoice", subscription))
     await w.advance(w.dates.start + DAY)
     await w.item(
         "item",
@@ -639,7 +868,7 @@ async def _duplicate(w: World) -> str:
 
 async def _proration(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.latest_invoice(subscription))
+    await w.paid(await w.taken("first_invoice", subscription))
     await w.advance(w.dates.middle)
     await w.repriced(subscription, "rb_enterprise_monthly")
     await w.item(
@@ -653,33 +882,34 @@ async def _proration(w: World) -> str:
 
 async def _billed_after_cancellation(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.latest_invoice(subscription))
+    await w.paid(await w.taken("first_invoice", subscription))
     await w.advance(w.dates.start - DAY)
     await w.item(
         "item", subscription=subscription, period=(w.dates.start, w.dates.end), price="rb_pro_once"
     )
     subscription = await w.cancelled(subscription)
-    return (await w.paid(await w.latest_invoice(subscription)))["id"]
+    return (await w.paid(await w.taken("final_invoice", subscription)))["id"]
 
 
 async def _failed_payment(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.latest_invoice(subscription))
+    await w.paid(await w.taken("first_invoice", subscription))
     await w.advance(w.dates.start - DAY)
     await w.card(DECLINING_CARD)
     # The renewal is finalised an hour after it is made, then collected.
     await w.advance(w.dates.start + HOUR + MINUTE)
-    return (await w.latest_invoice(subscription))["id"]
+    return (await w.taken("renewal", subscription))["id"]
 
 
 async def _usage(w: World) -> str:
     base = await w.subscription("base", "rb_pro_monthly")
-    await w.paid(await w.latest_invoice(base))
+    await w.paid(await w.taken("base_first_invoice", base))
     metered = await w.subscription("metered", "rb_blocks_metered")
+    await w.taken("metered_first_invoice", metered, optional=True)
     await w.advance(w.dates.event_day)
     await w.usage_reported(BLOCKS)
     await w.advance(w.dates.end + HOUR + MINUTE)
-    return (await w.latest_invoice(metered))["id"]
+    return (await w.taken("arrears", metered))["id"]
 
 
 def _first_invoice_of(*prices: str, card: str | None = None, **extra: Any) -> Builder:
@@ -689,14 +919,19 @@ def _first_invoice_of(*prices: str, card: str | None = None, **extra: Any) -> Bu
         if card is not None:
             await w.card(card)
         subscription = await w.subscription("subscription", *prices, **extra)
-        return (await w.latest_invoice(subscription))["id"]
+        return (await w.taken("first_invoice", subscription))["id"]
 
     return build
 
 
+async def _tax(w: World) -> str:
+    rate = w.seeder.tax_rate_id
+    return await _first_invoice_of("rb_pro_monthly", default_tax_rates=[rate])(w)
+
+
 async def _negative_line(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.latest_invoice(subscription))
+    await w.paid(await w.taken("first_invoice", subscription))
     await w.advance(w.dates.start + DAY)
     period = (w.dates.start, w.dates.end)
     await w.item("item", subscription=subscription, period=period, price="rb_pro_once")
@@ -706,7 +941,7 @@ async def _negative_line(w: World) -> str:
 
 async def _partial_refund(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    first = await w.paid(await w.latest_invoice(subscription))
+    first = await w.paid(await w.taken("first_invoice", subscription))
     [payment] = await w.seeder.provider.reader.invoice_payments(first["id"])
     intent = payment["payment"]["payment_intent"]["id"]
     await w.once(
@@ -721,7 +956,7 @@ async def _partial_refund(w: World) -> str:
 
 async def _multi_invoice_payment(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.latest_invoice(subscription))
+    await w.paid(await w.taken("first_invoice", subscription))
     await w.advance(w.dates.start + DAY)
     period = (w.dates.start, w.dates.end)
     invoices = []
@@ -753,22 +988,17 @@ async def _multi_invoice_payment(w: World) -> str:
     return invoices[0]["id"]
 
 
-def arrears_due(name: str, dates: Dates) -> int:
-    """When a metered subscription started with its world's clock has its
-    first arrears invoice finalised: fixed by the dates, so a second run
-    never moves the clock further."""
-    return starts_at(name, dates) + (dates.end - dates.start) + HOUR + MINUTE
-
-
 async def _arrears(w: World) -> str:
     """A metered subscription's invoice for its first period, once it ended."""
     subscription = await w.subscription("subscription", "rb_blocks_metered")
+    await w.taken("first_invoice", subscription, optional=True)
     await w.advance(arrears_due(w.name, w.dates))
-    return (await w.latest_invoice(subscription))["id"]
+    return (await w.taken("arrears", subscription))["id"]
 
 
 async def _invoice_credit(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_blocks_metered")
+    await w.taken("first_invoice", subscription, optional=True)
     await w.once(
         "credit",
         find=w.v1.billing.credit_grants.list_async,
@@ -785,12 +1015,7 @@ async def _invoice_credit(w: World) -> str:
     await w.advance(w.dates.event_day)
     await w.usage_reported(BLOCKS)
     await w.advance(w.dates.end + HOUR + MINUTE)
-    return (await w.latest_invoice(subscription))["id"]
-
-
-async def _tax(w: World) -> str:
-    rate = w.seeder.tax_rate_id
-    return await _first_invoice_of("rb_pro_monthly", default_tax_rates=[rate])(w)
+    return (await w.taken("arrears", subscription))["id"]
 
 
 BUILDERS: dict[str, Builder] = {
@@ -808,7 +1033,7 @@ BUILDERS: dict[str, Builder] = {
     ),
     "unsupported_invoice_tax": _tax,
     "unsupported_invoice_discount": _first_invoice_of(
-        "rb_pro_monthly", discounts=[{"coupon": COUPON}]
+        "rb_pro_monthly", discounts=[{"coupon": COUPON["id"]}]
     ),
     "unsupported_negative_line": _negative_line,
     "unsupported_fractional_unit_price": _first_invoice_of("rb_pro_fractional"),
@@ -829,6 +1054,12 @@ def total_facts(target: Invoice, expected_minor: int) -> list[str]:
     if total.amount_minor == expected_minor and total.currency == CURRENCY.upper():
         return []
     return [f"its total is {total.amount_minor} {total.currency}, not {expected_minor}"]
+
+
+def status_facts(target: Invoice, expected: InvoiceStatus) -> list[str]:
+    return (
+        [] if target.status is expected else [f"it is {target.status.value}, not {expected.value}"]
+    )
 
 
 def duplicate_facts(target: Invoice, invoices: list[Invoice]) -> list[str]:
@@ -927,7 +1158,11 @@ def _supported(name: str, read: Callable[[World, Invoice], Awaitable[list[str]]]
             target = await w.seeder.provider.get_invoice(target_id)
             if target.subscription_id is None:
                 return ["the target belongs to no subscription"]
-            return total_facts(target, TARGET_TOTALS[name]) + await read(w, target)
+            return (
+                total_facts(target, TARGET_TOTALS[name])
+                + status_facts(target, TARGET_STATUSES[name])
+                + await read(w, target)
+            )
         except ProviderUnsupported as error:
             return [f"the adapter refuses it: {error.reason}"]
 
@@ -978,10 +1213,7 @@ def main() -> int:
         return 2
     sdk = stripe.StripeClient(key, stripe_version=API_VERSION, max_network_retries=NETWORK_RETRIES)
     seeder = Seeder(sdk, run_at=datetime.now(UTC))
-    start, end = (
-        datetime.fromtimestamp(t, UTC).date() for t in (seeder.dates.start, seeder.dates.end)
-    )
-    print(f"stripe_seed: worlds on the month {start} to {end}")
+    print(f"stripe_seed: a new world is built on the month from {seeder.dates.start_day}")
     outcomes = asyncio.run(seeder.run())
     for outcome in outcomes:
         print(outcome.line())

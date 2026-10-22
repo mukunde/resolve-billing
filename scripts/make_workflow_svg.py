@@ -84,9 +84,7 @@ def keyframes(name: str, windows, ramp: float = 0.35) -> str:
         stops[pct(start + ramp)] = 1.0
         stops[pct(end)] = 1.0
         stops[pct(end + ramp)] = 0.0
-    body = "".join(
-        f"{p:.3f}%{{opacity:{v}}}" for p, v in sorted(stops.items())
-    )
+    body = "".join(f"{p:.3f}%{{opacity:{v}}}" for p, v in sorted(stops.items()))
     return f"@keyframes {name}{{{body}}}"
 
 
@@ -98,16 +96,14 @@ def draw_keyframes(name: str, windows, length: float, ramp: float = 0.55) -> str
         stops[pct(start + ramp)] = 0.0
         stops[pct(end)] = 0.0
         stops[pct(end + ramp)] = length
-    body = "".join(
-        f"{p:.3f}%{{stroke-dashoffset:{v:.1f}}}" for p, v in sorted(stops.items())
-    )
+    body = "".join(f"{p:.3f}%{{stroke-dashoffset:{v:.1f}}}" for p, v in sorted(stops.items()))
     return f"@keyframes {name}{{{body}}}"
 
 
 # -- when each thing is lit, relative to the start of its phase -------------
-LIT = [0.25, 1.05, 1.85, 2.70, 3.75]        # the five pipeline boxes
-CONNECT = [0.70, 1.50, 2.30, 3.40]           # the four connectors between them
-HOLD = 7.55                                   # everything stays lit until here
+LIT = [0.25, 1.05, 1.85, 2.70, 3.75]  # the five pipeline boxes
+CONNECT = [0.70, 1.50, 2.30, 3.40]  # the four connectors between them
+HOLD = 7.55  # everything stays lit until here
 BYPASS_AT = 2.30
 OUTCOME_AT = 4.70
 
@@ -182,9 +178,7 @@ body.append(f"""
 # B -> automatic reply, A -> approval, D and F -> human review
 for i, (title, sub, colour) in enumerate(OUTCOMES):
     phase = [["B"], ["A"], ["D", "F"]][i]
-    body.append(
-        box(10 + i, OUT_X[i], OUT_Y, OUT_W, OUT_H, title, sub, phase, OUTCOME_AT, colour)
-    )
+    body.append(box(10 + i, OUT_X[i], OUT_Y, OUT_W, OUT_H, title, sub, phase, OUTCOME_AT, colour))
     # a short elbow from the policy box down to this outcome
     sx = BOX_X[4] + BOX_W / 2
     sy = BOX_Y + BOX_H
@@ -231,7 +225,7 @@ style = f"""
     .l{{text-anchor:start}}
     .r{{text-anchor:end}}
     .mono{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}}
-    {''.join(rules)}
+    {"".join(rules)}
 """
 
 ALT = (
@@ -245,7 +239,7 @@ svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}"
      width="{W}" height="{H}" role="img" aria-label="{ALT}">
   <style>{style}</style>
   <rect width="{W}" height="{H}" rx="12" fill="{CARD}" stroke="{DIM}"/>
-  {''.join(body)}
+  {"".join(body)}
 </svg>
 """
 

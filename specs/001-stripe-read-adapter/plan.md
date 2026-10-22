@@ -221,14 +221,30 @@ full (test-clock customers included) and keeps those issued at or after
 
 ### 6. Seed script (`scripts/stripe_seed.py`)
 
-- Refuses anything but `sk_test_`, before any call. Idempotent: every
-  object it makes carries metadata `rb_world=<name>` and `rb_step=<world>/<step>`,
-  and each step looks for its object before making one; shared objects
-  (products, prices, the meter, the coupon) carry fixed identifiers or lookup
-  keys. A run lists what exists and completes what is missing, a
-  half-created world included; nothing is made twice. A meter event carries
-  a fixed identifier and is sent only while the meter's summary for its
-  period is still empty.
+- Refuses anything but `sk_test_`, before the SDK is loaded. Idempotent:
+  every object it makes carries metadata `rb_world=<name>` and
+  `rb_step=<world>/<step>`, each step looks for its object before making one,
+  and every creation carries an idempotency key (so two runs at once, or a
+  retried request, make it once). An invoice Stripe makes itself -- a first
+  invoice, a renewal, a final or an arrears one -- is tagged as its step when
+  the seed takes it, and an invoice already taken is never taken as another.
+  A card already on the customer is reused. Shared objects (products,
+  prices, the coupon, the tax rate) carry fixed identifiers or lookup keys
+  and the tag `shared/<kind>/<key>`; the meter, which has no metadata, is
+  found by its event name and checked for its configuration. A run lists
+  what exists and completes what is missing, a half-created world included;
+  nothing is made twice.
+- **Only what the seed made is touched.** A clock holding a customer the
+  seed did not make, two clocks for one world, or a shared object that exists
+  untagged or on other terms is a collision: reported, and left alone.
+- **A world's one meter event** carries a fixed identifier and the month's
+  event day as its timestamp. Its state is kept on the customer (`sending`
+  before the request, `sent` after): a run that finds `sending` sends
+  nothing -- usage already aggregated settles it, and otherwise the
+  maintainer is asked to check the meter -- since Stripe deduplicates by
+  identifier for a day at least, not forever.
+- Lists are read to their end, and one cut short is an error, never a
+  shorter answer.
 - **Dates, decided by the maintainer on 2026-10-23**: every world is built
   on **the month that ends just before the seed runs**, not on fixed dates.
   With `last` the day before the run: the month starts on the same day of
@@ -237,14 +253,19 @@ full (test-clock customers included) and keeps those issued at or after
   that needs history starts one month earlier. So no clock is ever ahead of
   the real time a world needs, and meter events stay inside Stripe's accepted
   window (35 days back, 5 minutes ahead), whichever clock it judges them by.
-  The investigation instant each world records is what the contract tests
-  use; the fake counterparts keep their own dates.
+  A world keeps the month of its first run: its clock is named
+  `rb:<world>@<first day of its month>`, and a later run -- another day,
+  another month -- resumes it on those dates. A new month is a new
+  generation, chosen by deleting the world's clock (Stripe deletes a clock 30
+  days after its creation anyway). The investigation instant each world
+  records is what the contract tests use; the fake counterparts keep their
+  own dates.
 - **Amounts are the fake counterpart's**, in EUR, because SC-001 compares the
   whole proposal: 99.00 for the duplicate and the proration target, 49.00 for
   the cancellation and failed-payment targets, 47 blocks at 0.50 (23.50) for
   the usage target.
 - **One test clock per world** (a clock holds at most three customers; one
-  per world also keeps worlds from moving each other), named `rb:<world>`.
+  per world also keeps worlds from moving each other), named as above.
   Each world records in its customer's metadata the **target invoice** and
   the **investigation instant** -- right after the target invoice is
   finalised, before any renewal can add an invoice the test did not expect --
@@ -259,12 +280,16 @@ full (test-clock customers included) and keeps those issued at or after
   and overlapping periods; a line covering half a period at the full price;
   an invoice period starting after the subscription ended; a failed payment;
   usage over the target line's period equal to its quantity; the target's
-  total equal to the counterpart's; for an unsupported world, its reason). A
+  total equal to the counterpart's and its state the counterpart's -- paid,
+  or open; for an unsupported world, its reason). A world already recorded
+  is checked again, without writing, on every run: one that no longer holds
+  is reported, not called complete. A
   world Stripe does not let the seed build, or whose facts do not hold, is
   **reported to the maintainer, never dropped silently**: removing a world
   from SC-001 needs his approval. A Stripe refusal is reported by its type,
   code, parameter and request id (to find it in the Dashboard's logs), not by
-  its message.
+  its message; a request Stripe did not answer is reported as an outcome to
+  reconcile, which the next run does by looking for what the step made.
 - Supported worlds, each modelled on a development situation (S the month's
   start, E its end, P one month before S):
   - *duplicate* (`duplicate_fr`): an Enterprise subscription at 99.00 from S,
@@ -303,13 +328,16 @@ full (test-clock customers included) and keeps those issued at or after
   by mapping tests only, and listed (`scripts/stripe_worlds.py`).
 - Waits, within a bound, for each clock to be `ready`, the target invoices
   finalised and the meter summaries present; never writes a zero in place of
-  a delay. The bound is the seed's, and a wait past it reports the world.
+  a delay. The bound holds for the whole wait, reads included, and a wait
+  past it reports the world.
 - **Expected finding for Phase 5**: the proration check compares a line with
   the subscription's *current* period. Where a world's target lies in another
   period of a different length -- the arrears invoice once the subscription
   has renewed, the cancelled subscription's last period -- it can see a
-  mismatch the fake never shows, depending on the run's month. SC-001 would
-  then report it; the fix belongs to the rule, not to the seed's dates.
+  mismatch the fake never shows when that line's period is shorter than the
+  current one and the gap passes the tolerance, depending on the run's month.
+  SC-001 would then report it; the fix belongs to the rule, not to the seed's
+  dates, and goes to the maintainer separately.
 
 ### 7. Tests
 

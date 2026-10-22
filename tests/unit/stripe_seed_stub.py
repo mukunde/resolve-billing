@@ -40,7 +40,18 @@ SERVICES = {
 FILTERS = ("customer", "test_clock", "subscription", "payment_intent", "invoice")
 
 #: Methods that change the account, for "made nothing" checks.
-WRITES = ("create_async", "update_async", "advance_async", "attach_async", "cancel_async")
+WRITES = (
+    "create_async",
+    "update_async",
+    "advance_async",
+    "attach_async",
+    "cancel_async",
+    "finalize_invoice_async",
+    "pay_async",
+)
+
+#: The last four digits Stripe's test cards leave on a payment method.
+LAST4 = {"pm_card_visa": "4242", "pm_card_chargeCustomerFail": "0341"}
 
 
 class Account:
@@ -48,6 +59,12 @@ class Account:
         self.page_size = page_size
         self.objects: dict[str, list[dict]] = {service: [] for service in SERVICES}
         self.calls: list[tuple[str, tuple, dict]] = []
+        #: The options of each call, in the same order (idempotency keys).
+        self.options: list[dict] = []
+        #: What each idempotency key made: the same key makes the object once.
+        self.idempotent: dict[str, dict] = {}
+        #: Lists that announce more and give nothing.
+        self.truncated: set[str] = set()
         #: What a clock's status is once it has been advanced.
         self.clock_status = "ready"
         #: A method that fails once, then answers.
@@ -70,8 +87,14 @@ class Account:
     async def serve(self, path: str, *args: Any, params: dict | None = None, options=None):
         params = copy.deepcopy(params or {})
         self.calls.append((path, args, params))
+        self.options.append(dict(options or {}))
         if path in self.fail_once:
             raise self.fail_once.pop(path)
+        if path in self.truncated:
+            return StripeObject({"object": "list", "data": [], "has_more": True})
+        key = (options or {}).get("idempotency_key")
+        if key is not None and key in self.idempotent:
+            return StripeObject(copy.deepcopy(self.idempotent[key]))
         service, method = path.rsplit(".", 1)
         if service == "v1.billing.meters.event_summaries":
             return StripeObject(
@@ -82,7 +105,10 @@ class Account:
         handler = getattr(self, "_" + method.removesuffix("_async"), None)
         if handler is None:
             raise AssertionError(f"the seed called {path}, which this account does not serve")
-        return StripeObject(handler(service, *args, params=params))
+        answer = handler(service, *args, params=params)
+        if key is not None:
+            self.idempotent[key] = answer
+        return StripeObject(copy.deepcopy(answer))
 
     # -- the methods -----------------------------------------------------------
 
@@ -94,8 +120,21 @@ class Account:
         }
         if service == "v1.test_helpers.test_clocks":
             made["status"] = "ready"
+        if service == "v1.invoices":
+            made.setdefault("status", "draft")
+        if service == "v1.billing.meter_events":
+            self._aggregate(made)
         self.objects[service].append(made)
         return made
+
+    def _aggregate(self, event):
+        """What Stripe does later, done at once: the event in its meter's summary."""
+        meter = next(
+            m for m in self.objects["v1.billing.meters"] if m["event_name"] == event["event_name"]
+        )
+        customer = event["payload"]["stripe_customer_id"]
+        summaries = self.summaries.setdefault((meter["id"], customer), [])
+        summaries.append({"aggregated_value": float(event["payload"]["value"])})
 
     def _list(self, service, params):
         found = self.objects[service]
@@ -124,7 +163,14 @@ class Account:
         return found
 
     def _attach(self, service, token, params):
-        return self._create(service, {"card": token, "customer": params["customer"]})
+        card = {"last4": LAST4[token]}
+        return self._create(service, {"card": card, "customer": params["customer"]})
+
+    def _finalize_invoice(self, service, identifier, params):
+        return self._update(service, identifier, {"status": "open"})
+
+    def _pay(self, service, identifier, params):
+        return self._update(service, identifier, {"status": "paid"})
 
     def _page(self, objects, params):
         start = 0
