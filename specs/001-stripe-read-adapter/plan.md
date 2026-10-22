@@ -224,19 +224,31 @@ full (test-clock customers included) and keeps those issued at or after
 - Refuses anything but `sk_test_`, before the SDK is loaded. Idempotent:
   every object it makes carries metadata `rb_world=<name>` and
   `rb_step=<world>/<step>`, each step looks for its object before making one,
-  and every creation carries an idempotency key (so two runs at once, or a
-  retried request, make it once). An invoice Stripe makes itself -- a first
-  invoice, a renewal, a final or an arrears one -- is tagged as its step when
-  the seed takes it, and an invoice already taken is never taken as another.
+  and every creation carries an idempotency key of its world, generation and
+  step (so two runs at once, or a retried request, make it once, and a new
+  generation reuses no key). An invoice Stripe makes itself -- a first
+  invoice, a renewal, a final or an arrears one -- is taken as its step only
+  if Stripe made it for that step's billing reason and no step took it yet;
+  the choice is kept on the subscription (`rb_taken_<step>`, or `none` when
+  Stripe made none) and on the invoice, so a later run never looks at
+  whatever is latest by then.
   A card already on the customer is reused. Shared objects (products,
   prices, the coupon, the tax rate) carry fixed identifiers or lookup keys
   and the tag `shared/<kind>/<key>`; the meter, which has no metadata, is
   found by its event name and checked for its configuration. A run lists
   what exists and completes what is missing, a half-created world included;
   nothing is made twice.
+- **A manifest makes a clock the seed's**: a customer of its own, without a
+  clock, whose metadata names each world's generation (`g_<world>`: its
+  number and month) and clock (`c_<world>`). A clock the manifest does not
+  name is never used, whatever it is called -- except, for a generation an
+  earlier run opened and stopped before noting its clock, the clock bearing
+  that generation's exact name.
 - **Only what the seed made is touched.** A clock holding a customer the
-  seed did not make, two clocks for one world, or a shared object that exists
-  untagged or on other terms is a collision: reported, and left alone.
+  seed did not make, or a shared object that exists untagged or on other
+  terms (a price's amount, interval and count, usage type, meter, scheme or
+  quantity transform; the coupon's percentage and duration; the tax rate;
+  the meter's configuration) is a collision: reported, and left alone.
 - **A world's one meter event** carries a fixed identifier and the month's
   event day as its timestamp. Its state is kept on the customer (`sending`
   before the request, `sent` after): a run that finds `sending` sends
@@ -253,11 +265,13 @@ full (test-clock customers included) and keeps those issued at or after
   that needs history starts one month earlier. So no clock is ever ahead of
   the real time a world needs, and meter events stay inside Stripe's accepted
   window (35 days back, 5 minutes ahead), whichever clock it judges them by.
-  A world keeps the month of its first run: its clock is named
-  `rb:<world>@<first day of its month>`, and a later run -- another day,
-  another month -- resumes it on those dates. A new month is a new
-  generation, chosen by deleting the world's clock (Stripe deletes a clock 30
-  days after its creation anyway). The investigation instant each world
+  A world keeps the month of its generation, noted in the manifest, and a
+  later run -- another day, another month -- resumes it on those dates. A new
+  generation is opened by deleting the world's clock (Stripe deletes a clock
+  30 days after its creation anyway): the next run builds it again on that
+  run's month, under the next number, reusing no object and no key. Its clock
+  is named `rb:<world>@<first day of its month>/g<number>`. The investigation
+  instant each world
   records is what the contract tests use; the fake counterparts keep their
   own dates.
 - **Amounts are the fake counterpart's**, in EUR, because SC-001 compares the

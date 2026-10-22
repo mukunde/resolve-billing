@@ -10,11 +10,18 @@ with worlds of the tests' own, and the real worlds by the maintainer's run
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import itertools
 from typing import Any
 
-from tests.unit.stripe_stub import StripeObject, missing
+from tests.unit.stripe_stub import StripeError, StripeObject, missing
+
+
+class IdempotencyError(StripeError):
+    """One idempotency key, sent again with other parameters: refused, as
+    Stripe refuses it."""
+
 
 #: The services the seed uses, and the prefix of the identifiers they make.
 SERVICES = {
@@ -61,8 +68,9 @@ class Account:
         self.calls: list[tuple[str, tuple, dict]] = []
         #: The options of each call, in the same order (idempotency keys).
         self.options: list[dict] = []
-        #: What each idempotency key made: the same key makes the object once.
-        self.idempotent: dict[str, dict] = {}
+        #: What each idempotency key was sent with, and what it answered: the
+        #: same key makes the object once, and returns that first answer.
+        self.idempotent: dict[str, tuple[tuple, dict]] = {}
         #: Lists that announce more and give nothing.
         self.truncated: set[str] = set()
         #: What a clock's status is once it has been advanced.
@@ -72,6 +80,13 @@ class Account:
         #: Meter summaries by (meter id, customer id).
         self.summaries: dict[tuple[str, str], list[dict]] = {}
         self._ids = itertools.count(1)
+
+    def forget_clock(self, clock_id: str) -> None:
+        """A clock deleted, as Stripe deletes it: with its customers."""
+        clocks = self.objects["v1.test_helpers.test_clocks"]
+        clocks[:] = [c for c in clocks if c["id"] != clock_id]
+        customers = self.objects["v1.customers"]
+        customers[:] = [c for c in customers if c.get("test_clock") != clock_id]
 
     def writes(self) -> list[tuple[str, tuple, dict]]:
         return [call for call in self.calls if call[0].endswith(WRITES)]
@@ -85,6 +100,7 @@ class Account:
         ]
 
     async def serve(self, path: str, *args: Any, params: dict | None = None, options=None):
+        await asyncio.sleep(0)  # a real request yields: two runs at once interleave
         params = copy.deepcopy(params or {})
         self.calls.append((path, args, params))
         self.options.append(dict(options or {}))
@@ -93,8 +109,12 @@ class Account:
         if path in self.truncated:
             return StripeObject({"object": "list", "data": [], "has_more": True})
         key = (options or {}).get("idempotency_key")
+        sent = (path, args, copy.deepcopy(params))
         if key is not None and key in self.idempotent:
-            return StripeObject(copy.deepcopy(self.idempotent[key]))
+            first, answer = self.idempotent[key]
+            if first != sent:
+                raise IdempotencyError("SENTINEL key reused", code="idempotency_key_in_use")
+            return StripeObject(copy.deepcopy(answer))
         service, method = path.rsplit(".", 1)
         if service == "v1.billing.meters.event_summaries":
             return StripeObject(
@@ -107,7 +127,7 @@ class Account:
             raise AssertionError(f"the seed called {path}, which this account does not serve")
         answer = handler(service, *args, params=params)
         if key is not None:
-            self.idempotent[key] = answer
+            self.idempotent[key] = (sent, copy.deepcopy(answer))
         return StripeObject(copy.deepcopy(answer))
 
     # -- the methods -----------------------------------------------------------

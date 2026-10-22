@@ -7,13 +7,17 @@ locally -- never by an agent -- with the secret test key in `STRIPE_SEED_KEY`:
 
 Anything but a secret test key is refused before the SDK is even loaded.
 Every world is built on the month that ended just before its first run, with
-the amounts of its fake counterpart, on its own test clock -- whose name
-keeps that month, so a later run resumes the same world on the same dates.
-A run completes what is missing and makes nothing twice: every object is
-tagged with the step that made it and looked for before it is made, and
-every creation carries an idempotency key. The seed touches only what it
-made: a clock holding a customer it did not make, or a shared object it
-would reuse but did not make, is a collision, reported and left alone.
+the amounts of its fake counterpart, on its own test clock. The seed keeps a
+manifest -- a customer of its own, without a clock -- naming each world's
+generation, month and clock: a later run resumes the same world on the same
+dates, and deleting a world's clock opens its next generation, with nothing
+of the old one reused. A run completes what is missing and makes nothing
+twice: every object is tagged with the step that made it and looked for
+before it is made, and every creation carries an idempotency key of its
+generation. The seed touches only what it made: a clock the manifest does not
+name is never used, and a clock holding a customer it did not make, or a
+shared object it would reuse but did not make or on other terms, is a
+collision, reported and left alone.
 
 A world is recorded -- the invoice a dispute targets and the instant to
 investigate it at, on its customer -- only once its facts, read back through
@@ -78,10 +82,22 @@ DECLINING_CARD = "pm_card_chargeCustomerFail"
 LAST4 = {CARD: "4242", DECLINING_CARD: "0341"}
 
 #: Metadata the seed sets: which step made an object, which card a customer
-#: was given, and where a world's one meter event stands.
+#: was given, where a world's one meter event stands, and which invoice a
+#: subscription's step took (`none` when Stripe made none).
 STEP = "rb_step"
 CARD_SET = "rb_card"
 USAGE_EVENT = "rb_usage_event"
+TAKEN = "rb_taken_"
+
+#: The seed's manifest: a customer of its own, without a clock, whose
+#: metadata names each world's generation (`g_<world>`) and clock
+#: (`c_<world>`). It has an address, so the impersonation check can list it.
+MANIFEST = "rb_seed_manifest"
+MANIFEST_EMAIL = f"seed-manifest@{worlds.DOMAIN}"
+
+#: Stripe's billing reasons for the invoices a world takes.
+CREATED = "subscription_create"
+CYCLE = "subscription_cycle"
 
 #: Shared by every world, found by fixed identifiers or lookup keys and
 #: tagged `shared/<kind>/<key>`; the meter, which has no metadata, by its
@@ -187,14 +203,27 @@ def _midnight(day: date) -> int:
     return int(datetime(day.year, day.month, day.day, tzinfo=UTC).timestamp())
 
 
-def clock_name(world: str, dates: Dates) -> str:
-    """`rb:<world>@<first day of its month>`: the name keeps the month, so a
-    run on another day resumes the world on its own dates."""
-    return f"rb:{world}@{dates.start_day.isoformat()}"
+@dataclass(frozen=True)
+class Generation:
+    """One build of a world: its number -- the next one when its clock is
+    deleted, so no key or object of the old build is reused -- and its month,
+    kept in the manifest so a run on another day resumes on the same dates."""
+
+    number: int
+    dates: Dates
+
+    def encode(self) -> str:
+        return f"{self.number}@{self.dates.start_day.isoformat()}"
+
+    @classmethod
+    def decode(cls, value: str) -> Generation:
+        number, day = value.split("@")
+        return cls(int(number), Dates.starting(date.fromisoformat(day)))
 
 
-def dates_of(name: str) -> Dates:
-    return Dates.starting(date.fromisoformat(name.rsplit("@", 1)[1]))
+def clock_name(world: str, generation: Generation) -> str:
+    """`rb:<world>@<first day of its month>/g<generation>`."""
+    return f"rb:{world}@{generation.dates.start_day.isoformat()}/g{generation.number}"
 
 
 def starts_at(name: str, dates: Dates) -> int:
@@ -322,6 +351,7 @@ class Seeder:
         self.prices: dict[str, str] = {}
         self.meter_id: str | None = None
         self.tax_rate_id: str | None = None
+        self.manifest: dict = {}
 
     async def run(self) -> list[Outcome]:
         try:
@@ -335,8 +365,9 @@ class Seeder:
 
     async def _world(self, spec: worlds.World) -> Outcome:
         try:
-            clock = await self._clock(spec)
-            world = World(self, spec, clock, await self._customer(spec, clock))
+            clock, generation = await self._clock(spec)
+            customer = await self._customer(spec, clock, generation)
+            world = World(self, spec, clock, customer, generation)
             recorded = world.customer.get("metadata") or {}
             if worlds.TARGET_INVOICE in recorded:
                 target = recorded[worlds.TARGET_INVOICE]
@@ -370,34 +401,93 @@ class Seeder:
                 raise  # a defect of the seed, not something Stripe said
             return Outcome(spec.name, "reported", detail=_refusal(error))
 
-    async def _clock(self, spec: worlds.World) -> dict:
-        """The world's clock -- found by its name, whatever its month -- or a
-        new one on this run's month. Only a clock all of whose customers are
-        this world's is ever used."""
-        prefix = f"rb:{spec.name}@"
-        clocks = await self.every(self.v1.test_helpers.test_clocks.list_async)
-        found = [c for c in clocks if (c.get("name") or "").startswith(prefix)]
-        if len(found) > 1:
-            raise Collision(f"{len(found)} clocks named {prefix}...: keep one, delete the others")
-        if found:
-            [clock] = found
-            for customer in await self.every(
-                self.v1.customers.list_async, params={"test_clock": clock["id"]}
-            ):
-                if (customer.get("metadata") or {}).get(worlds.WORLD) != spec.name:
-                    raise Collision(
-                        f"clock {clock['name']} holds a customer the seed did not make: "
-                        "rename or delete that clock"
-                    )
-            return clock
-        name = clock_name(spec.name, self.dates)
+    async def _manifest(self) -> dict:
+        """The seed's own record: what makes a clock the seed's."""
+        for customer in await self.every(self.v1.customers.list_async):
+            if (customer.get("metadata") or {}).get(MANIFEST) == "1":
+                return customer
         return await self.call(
-            self.v1.test_helpers.test_clocks.create_async,
-            params={"frozen_time": starts_at(spec.name, self.dates), "name": name},
-            key=f"{name}/clock",
+            self.v1.customers.create_async,
+            params={
+                "email": MANIFEST_EMAIL,
+                "name": "RB seed manifest",
+                "metadata": {MANIFEST: "1"},
+            },
+            key="manifest",
         )
 
-    async def _customer(self, spec: worlds.World, clock: dict) -> dict:
+    def _noted(self, key: str) -> str | None:
+        return (self.manifest.get("metadata") or {}).get(key) or None
+
+    async def _note(self, entries: dict[str, str]) -> None:
+        self.manifest = await self.call(
+            self.v1.customers.update_async, self.manifest["id"], params={"metadata": entries}
+        )
+
+    async def _clock(self, spec: worlds.World) -> tuple[dict, Generation]:
+        """The world's clock as the manifest names it, or a new one. A clock
+        the manifest does not name is never used, whatever it is called; one
+        it names that is gone opens the next generation, on this run's month."""
+        generation_key, clock_key = f"g_{spec.name}", f"c_{spec.name}"
+        noted = self._noted(generation_key)
+        generation = Generation.decode(noted) if noted else None
+        clock_id = self._noted(clock_key)
+        fresh = False
+        if clock_id is not None:
+            clock = await self._existing_clock(clock_id)
+            if clock is not None:
+                await self._own(clock, spec)
+                return clock, generation
+            number = (generation.number if generation else 0) + 1
+            generation, fresh = Generation(number, self.dates), True
+            await self._note({generation_key: generation.encode(), clock_key: ""})
+        elif generation is None:
+            generation, fresh = Generation(1, self.dates), True
+            await self._note({generation_key: generation.encode()})
+
+        # A generation noted by an earlier run that stopped before noting its
+        # clock may have made it: a clock bearing that generation's name is the
+        # seed's. A generation opened by this run has made nothing yet, so a
+        # clock already bearing its name is someone else's, and is ignored.
+        name = clock_name(spec.name, generation)
+        found = []
+        if not fresh:
+            clocks = await self.every(self.v1.test_helpers.test_clocks.list_async)
+            found = [c for c in clocks if c.get("name") == name]
+        if len(found) > 1:
+            raise Collision(f"{len(found)} clocks named {name}: keep one, delete the others")
+        if found:
+            [clock] = found
+        else:
+            clock = await self.call(
+                self.v1.test_helpers.test_clocks.create_async,
+                params={"frozen_time": starts_at(spec.name, generation.dates), "name": name},
+                key=f"{spec.name}/g{generation.number}/clock",
+            )
+        await self._own(clock, spec)
+        await self._note({clock_key: clock["id"]})
+        return clock, generation
+
+    async def _existing_clock(self, clock_id: str) -> dict | None:
+        try:
+            clock = await self.call(self.v1.test_helpers.test_clocks.retrieve_async, clock_id)
+        except Exception as error:
+            if not _missing(error):
+                raise
+            return None
+        return None if clock.get("deleted") else clock
+
+    async def _own(self, clock: dict, spec: worlds.World) -> None:
+        for customer in await self.every(
+            self.v1.customers.list_async, params={"test_clock": clock["id"]}
+        ):
+            if (customer.get("metadata") or {}).get(worlds.WORLD) != spec.name:
+                raise Collision(
+                    f"clock {clock['name']} holds a customer the seed did not make: "
+                    "rename or delete that clock"
+                )
+
+    async def _customer(self, spec: worlds.World, clock: dict, generation: Generation) -> dict:
         customers = await self.every(
             self.v1.customers.list_async, params={"test_clock": clock["id"]}
         )
@@ -414,10 +504,10 @@ class Seeder:
                     "test_clock": clock["id"],
                     "metadata": {worlds.WORLD: spec.name},
                 },
-                key=f"{clock['name']}/customer",
+                key=f"{spec.name}/g{generation.number}/customer",
             )
         if (customer.get("metadata") or {}).get(CARD_SET) is None:
-            customer = await self.card(customer, CARD, clock["name"])
+            customer = await self.card(customer, CARD, f"{spec.name}/g{generation.number}")
         return customer
 
     async def card(self, customer: dict, token: str, generation: str) -> dict:
@@ -448,6 +538,7 @@ class Seeder:
     # -- the shared objects ------------------------------------------------
 
     async def _shared(self) -> None:
+        self.manifest = await self._manifest()
         for product, name in PRODUCTS.items():
             tag = f"shared/product/{product}"
             try:
@@ -508,7 +599,8 @@ class Seeder:
                 self.v1.coupons.create_async, params={**COUPON, "metadata": {STEP: tag}}, key=tag
             )
         _own_shared(coupon, tag)
-        if coupon.get("percent_off") != COUPON["percent_off"]:
+        terms = (coupon.get("percent_off"), coupon.get("duration"), coupon.get("amount_off"))
+        if terms != (COUPON["percent_off"], COUPON["duration"], None):
             raise Collision(f"the coupon {COUPON['id']} exists with other terms")
 
         tag = "shared/tax_rate"
@@ -582,12 +674,19 @@ def _same_price(price: dict, spec: dict) -> bool:
     def recurring(terms: dict | None) -> tuple | None:
         if not terms:
             return None
-        return terms.get("interval"), terms.get("usage_type") or "licensed", terms.get("meter")
+        return (
+            terms.get("interval"),
+            terms.get("interval_count") or 1,
+            terms.get("usage_type") or "licensed",
+            terms.get("meter"),
+        )
 
     product = price.get("product")
     return (
         (product if isinstance(product, str) else product["id"]) == spec["product"]
         and price.get("currency") == CURRENCY
+        and (price.get("billing_scheme") or "per_unit") == "per_unit"
+        and price.get("transform_quantity") is None
         and amount(price) == amount(spec)
         and recurring(price.get("recurring")) == recurring(spec.get("recurring"))
     )
@@ -601,6 +700,7 @@ class World:
     spec: worlds.World
     clock: dict
     customer: dict
+    generation: Generation
 
     @property
     def name(self) -> str:
@@ -612,8 +712,12 @@ class World:
 
     @property
     def dates(self) -> Dates:
-        """The month in the clock's name: the one the world was begun on."""
-        return dates_of(self.clock["name"])
+        """The month of the world's generation: the one it was begun on."""
+        return self.generation.dates
+
+    def key(self, step: str) -> str:
+        """The idempotency key of a step: its world, generation and step."""
+        return f"{self.name}/g{self.generation.number}/{step}"
 
     @property
     def v1(self) -> Any:
@@ -635,38 +739,71 @@ class World:
             if (found.get("metadata") or {}).get(STEP) == tag:
                 return found
         metadata = {**params.get("metadata", {}), worlds.WORLD: self.name, STEP: tag}
-        return await self.call(
-            create, params={**params, "metadata": metadata}, key=f"{self.clock['name']}/{step}"
-        )
+        return await self.call(create, params={**params, "metadata": metadata}, key=self.key(step))
 
-    async def taken(self, step: str, subscription: dict, *, optional: bool = False) -> dict | None:
+    async def taken(
+        self,
+        step: str,
+        subscription: dict,
+        *,
+        reason: str | None = None,
+        optional: bool = False,
+    ) -> dict | None:
         """An invoice Stripe made itself -- a first invoice, a renewal, a final
-        or an arrears one -- taken as `step` once: tagged, so a later run finds
-        this one, not whatever is latest by then. An invoice already taken as
-        another step is never retaken."""
+        or an arrears one -- taken as `step` once, and kept.
+
+        The choice is kept on the subscription (`rb_taken_<step>`: the invoice,
+        or `none` when Stripe made none and `optional` allows it), and the
+        invoice is tagged: a later run never looks at whatever is latest by
+        then. The latest invoice is taken only if no step took it yet and, when
+        `reason` is given, Stripe made it for that reason.
+        """
+        mark = TAKEN + step
         tag = f"{self.name}/{step}"
+        current = await self.call(self.v1.subscriptions.retrieve_async, subscription["id"])
+        kept = (current.get("metadata") or {}).get(mark)
+        if kept == "none":
+            return None
+        if kept:
+            return await self.call(self.v1.invoices.retrieve_async, kept)
         invoices = await self.seeder.every(
             self.v1.invoices.list_async, params={"customer": self.customer_id}
         )
         for invoice in invoices:
             if (invoice.get("metadata") or {}).get(STEP) == tag:
+                await self._keep(subscription, mark, invoice["id"])
                 return invoice
-        current = await self.call(self.v1.subscriptions.retrieve_async, subscription["id"])
+
         latest = current.get("latest_invoice")
         if latest is None:
-            if optional:
-                return None
-            raise Unexpected(f"subscription {subscription['id']} has no invoice for {step}")
+            if not optional:
+                raise Unexpected(f"subscription {subscription['id']} has no invoice for {step}")
+            await self._keep(subscription, mark, "none")
+            return None
         invoice = await self.call(
             self.v1.invoices.retrieve_async, latest if isinstance(latest, str) else latest["id"]
         )
         taken_as = (invoice.get("metadata") or {}).get(STEP)
         if taken_as is not None:
             raise Unexpected(f"no new invoice for {step}: the latest is {taken_as}")
-        return await self.call(
+        if reason is not None and invoice.get("billing_reason") != reason:
+            raise Unexpected(
+                f"no new invoice for {step}: the latest was made for "
+                f"{invoice.get('billing_reason')}, not {reason}"
+            )
+        invoice = await self.call(
             self.v1.invoices.update_async,
             invoice["id"],
             params={"metadata": {worlds.WORLD: self.name, STEP: tag}},
+        )
+        await self._keep(subscription, mark, invoice["id"])
+        return invoice
+
+    async def _keep(self, subscription: dict, mark: str, value: str) -> None:
+        await self.call(
+            self.v1.subscriptions.update_async,
+            subscription["id"],
+            params={"metadata": {mark: value}},
         )
 
     # -- the clock -----------------------------------------------------------
@@ -695,7 +832,8 @@ class World:
     # -- the steps a world is made of -----------------------------------------
 
     async def card(self, token: str) -> None:
-        self.customer = await self.seeder.card(self.customer, token, self.clock["name"])
+        generation = f"{self.name}/g{self.generation.number}"
+        self.customer = await self.seeder.card(self.customer, token, generation)
 
     async def subscription(self, step: str, *prices: str, **extra: Any) -> dict:
         return await self.once(
@@ -830,7 +968,7 @@ class World:
                 self.v1.billing.meter_events.create_async,
                 params={
                     "event_name": METER_EVENT,
-                    "identifier": f"rb-{self.clock['name']}",
+                    "identifier": f"rb-{self.key('usage_event')}",
                     "timestamp": self.dates.event_day,
                     "payload": {"stripe_customer_id": self.customer_id, "value": str(value)},
                 },
@@ -855,7 +993,7 @@ class World:
 
 async def _duplicate(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_enterprise_monthly")
-    await w.paid(await w.taken("first_invoice", subscription))
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
     await w.advance(w.dates.start + DAY)
     await w.item(
         "item",
@@ -868,7 +1006,7 @@ async def _duplicate(w: World) -> str:
 
 async def _proration(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.taken("first_invoice", subscription))
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
     await w.advance(w.dates.middle)
     await w.repriced(subscription, "rb_enterprise_monthly")
     await w.item(
@@ -882,7 +1020,7 @@ async def _proration(w: World) -> str:
 
 async def _billed_after_cancellation(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.taken("first_invoice", subscription))
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
     await w.advance(w.dates.start - DAY)
     await w.item(
         "item", subscription=subscription, period=(w.dates.start, w.dates.end), price="rb_pro_once"
@@ -893,23 +1031,23 @@ async def _billed_after_cancellation(w: World) -> str:
 
 async def _failed_payment(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.taken("first_invoice", subscription))
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
     await w.advance(w.dates.start - DAY)
     await w.card(DECLINING_CARD)
     # The renewal is finalised an hour after it is made, then collected.
     await w.advance(w.dates.start + HOUR + MINUTE)
-    return (await w.taken("renewal", subscription))["id"]
+    return (await w.taken("renewal", subscription, reason=CYCLE))["id"]
 
 
 async def _usage(w: World) -> str:
     base = await w.subscription("base", "rb_pro_monthly")
-    await w.paid(await w.taken("base_first_invoice", base))
+    await w.paid(await w.taken("base_first_invoice", base, reason=CREATED))
     metered = await w.subscription("metered", "rb_blocks_metered")
-    await w.taken("metered_first_invoice", metered, optional=True)
+    await w.taken("metered_first_invoice", metered, reason=CREATED, optional=True)
     await w.advance(w.dates.event_day)
     await w.usage_reported(BLOCKS)
     await w.advance(w.dates.end + HOUR + MINUTE)
-    return (await w.taken("arrears", metered))["id"]
+    return (await w.taken("arrears", metered, reason=CYCLE))["id"]
 
 
 def _first_invoice_of(*prices: str, card: str | None = None, **extra: Any) -> Builder:
@@ -919,7 +1057,7 @@ def _first_invoice_of(*prices: str, card: str | None = None, **extra: Any) -> Bu
         if card is not None:
             await w.card(card)
         subscription = await w.subscription("subscription", *prices, **extra)
-        return (await w.taken("first_invoice", subscription))["id"]
+        return (await w.taken("first_invoice", subscription, reason=CREATED))["id"]
 
     return build
 
@@ -931,7 +1069,7 @@ async def _tax(w: World) -> str:
 
 async def _negative_line(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.taken("first_invoice", subscription))
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
     await w.advance(w.dates.start + DAY)
     period = (w.dates.start, w.dates.end)
     await w.item("item", subscription=subscription, period=period, price="rb_pro_once")
@@ -941,7 +1079,7 @@ async def _negative_line(w: World) -> str:
 
 async def _partial_refund(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    first = await w.paid(await w.taken("first_invoice", subscription))
+    first = await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
     [payment] = await w.seeder.provider.reader.invoice_payments(first["id"])
     intent = payment["payment"]["payment_intent"]["id"]
     await w.once(
@@ -956,7 +1094,7 @@ async def _partial_refund(w: World) -> str:
 
 async def _multi_invoice_payment(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.taken("first_invoice", subscription))
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
     await w.advance(w.dates.start + DAY)
     period = (w.dates.start, w.dates.end)
     invoices = []
@@ -991,14 +1129,14 @@ async def _multi_invoice_payment(w: World) -> str:
 async def _arrears(w: World) -> str:
     """A metered subscription's invoice for its first period, once it ended."""
     subscription = await w.subscription("subscription", "rb_blocks_metered")
-    await w.taken("first_invoice", subscription, optional=True)
+    await w.taken("first_invoice", subscription, reason=CREATED, optional=True)
     await w.advance(arrears_due(w.name, w.dates))
-    return (await w.taken("arrears", subscription))["id"]
+    return (await w.taken("arrears", subscription, reason=CYCLE))["id"]
 
 
 async def _invoice_credit(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_blocks_metered")
-    await w.taken("first_invoice", subscription, optional=True)
+    await w.taken("first_invoice", subscription, reason=CREATED, optional=True)
     await w.once(
         "credit",
         find=w.v1.billing.credit_grants.list_async,
@@ -1015,7 +1153,7 @@ async def _invoice_credit(w: World) -> str:
     await w.advance(w.dates.event_day)
     await w.usage_reported(BLOCKS)
     await w.advance(w.dates.end + HOUR + MINUTE)
-    return (await w.taken("arrears", subscription))["id"]
+    return (await w.taken("arrears", subscription, reason=CYCLE))["id"]
 
 
 BUILDERS: dict[str, Builder] = {

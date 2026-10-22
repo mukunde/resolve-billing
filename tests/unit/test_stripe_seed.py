@@ -207,9 +207,12 @@ async def simple(w: seed.World) -> str:
     return invoice["id"]
 
 
-async def stripe_invoices(w: seed.World, subscription: dict, step: str) -> None:
+async def stripe_invoices(
+    w: seed.World, subscription: dict, step: str, reason: str = seed.CYCLE
+) -> None:
     """What Stripe does on its own, done by hand: an invoice on the
-    subscription, untagged as Stripe's own are, made its latest -- once."""
+    subscription, made for `reason` and untagged as Stripe's own are, made its
+    latest -- once."""
     made = [
         i
         for i in await w.seeder.every(w.v1.invoices.list_async, params={"customer": w.customer_id})
@@ -222,6 +225,7 @@ async def stripe_invoices(w: seed.World, subscription: dict, step: str) -> None:
                 params={
                     "customer": w.customer_id,
                     "subscription": subscription["id"],
+                    "billing_reason": reason,
                     "metadata": {"made_by_stripe": step},
                 },
             )
@@ -246,12 +250,20 @@ async def a_subscription(w: seed.World) -> dict:
 async def renewing(w: seed.World) -> str:
     """A first invoice paid, then a renewal taken as the target."""
     subscription = await a_subscription(w)
-    if await w.taken("first_invoice", subscription, optional=True) is None:
-        await stripe_invoices(w, subscription, "first")
-    await w.paid(await w.taken("first_invoice", subscription))
+    await stripe_invoices(w, subscription, "first", seed.CREATED)
+    await w.paid(await w.taken("first_invoice", subscription, reason=seed.CREATED))
     await w.advance(w.dates.start + 3600)
-    await stripe_invoices(w, subscription, "renewal")
-    return (await w.taken("renewal", subscription))["id"]
+    await stripe_invoices(w, subscription, "renewal", seed.CYCLE)
+    return (await w.taken("renewal", subscription, reason=seed.CYCLE))["id"]
+
+
+async def metered(w: seed.World) -> str:
+    """No first invoice from Stripe, then the arrears taken as the target."""
+    subscription = await a_subscription(w)
+    await w.taken("first_invoice", subscription, reason=seed.CREATED, optional=True)
+    await w.advance(w.dates.end + 3600)
+    await stripe_invoices(w, subscription, "arrears", seed.CYCLE)
+    return (await w.taken("arrears", subscription, reason=seed.CYCLE))["id"]
 
 
 async def holds(w: seed.World, target: str) -> list[str]:
@@ -316,6 +328,10 @@ def clock_of(account, world):
     )
 
 
+def clock_of_customer(account, world):
+    return customer_of(account, world)["test_clock"]
+
+
 def calls_to(account, method, *args):
     return [c for c in account.calls if c[0].endswith(method) and (not args or c[1] == args)]
 
@@ -339,7 +355,7 @@ class TestOneClockPerWorld:
         account = stub.Account()
         await seeder(account).run()
         names = {c["name"] for c in account.objects["v1.test_helpers.test_clocks"]}
-        assert names == {f"rb:alpha@{GENERATION}", f"rb:beta@{GENERATION}"}
+        assert names == {f"rb:alpha@{GENERATION}/g1", f"rb:beta@{GENERATION}/g1"}
         for world in (ALPHA, BETA):
             customer = customer_of(account, world)
             assert customer["test_clock"] == clock_of(account, world)["id"]
@@ -432,12 +448,78 @@ class TestNothingTwice:
         assert alpha.target == renewal["id"] != first["id"]
         assert len(calls_to(account, "pay_async")) == 1  # the first invoice, once
 
+    async def test_a_deleted_clock_opens_a_new_generation_with_nothing_reused(self):
+        account = stub.Account()
+        await seeder(account).run()
+        first = clock_of(account, ALPHA)
+        account.forget_clock(first["id"])
+
+        [alpha, beta] = await seeder(account).run()  # the same day: same month
+        assert (alpha.state, beta.state) == ("built", "complete")
+        second = clock_of(account, ALPHA)
+        assert second["id"] != first["id"]
+        assert second["name"] == f"rb:alpha@{GENERATION}/g2"
+        [manifest] = [
+            c for c in account.objects["v1.customers"] if c["metadata"].get(seed.MANIFEST)
+        ]
+        assert manifest["metadata"]["g_alpha"] == f"2@{GENERATION}"
+        assert manifest["metadata"]["c_alpha"] == second["id"]
+        assert customer_of(account, ALPHA)["test_clock"] == second["id"]
+
+    async def test_an_invoice_stripe_did_not_make_is_kept_absent(self):
+        """A metered subscription with no first invoice: once noted, a later
+        run never takes the arrears for it."""
+        account = stub.Account()
+        failing_once(
+            account,
+            lambda path, params: (
+                path.endswith("customers.update_async")
+                and worlds.TARGET_INVOICE in params.get("metadata", {})
+            ),
+            InvalidRequestError("", code="rate_limit"),
+        )
+        [alpha] = await seeder(account, builders={"alpha": metered}, only=(ALPHA,)).run()
+        assert alpha.state == "reported"
+        [alpha] = await seeder(account, builders={"alpha": metered}, only=(ALPHA,)).run()
+        assert alpha.state == "built"
+        [arrears] = account.tagged("alpha/arrears")
+        assert alpha.target == arrears["id"]
+        assert not account.tagged("alpha/first_invoice")
+        [subscription] = account.tagged("alpha/subscription")
+        assert subscription["metadata"][seed.TAKEN + "first_invoice"] == "none"
+
+    async def test_an_interruption_before_the_arrears_are_tagged_still_takes_them(self):
+        account = stub.Account()
+        failing_once(
+            account,
+            lambda path, params: path.endswith("invoices.update_async"),
+            InvalidRequestError("", code="lock_timeout"),
+        )
+        [alpha] = await seeder(account, builders={"alpha": metered}, only=(ALPHA,)).run()
+        assert alpha.state == "reported"
+        [alpha] = await seeder(account, builders={"alpha": metered}, only=(ALPHA,)).run()
+        assert alpha.state == "built"
+        assert [a["id"] for a in account.tagged("alpha/arrears")] == [alpha.target]
+        assert not account.tagged("alpha/first_invoice")
+
+    async def test_an_invoice_made_for_another_reason_is_not_taken(self):
+        async def updated(w: seed.World) -> str:
+            subscription = await a_subscription(w)
+            await stripe_invoices(w, subscription, "update", "subscription_update")
+            return (await w.taken("renewal", subscription, reason=seed.CYCLE))["id"]
+
+        account = stub.Account()
+        [alpha] = await seeder(account, builders={"alpha": updated}, only=(ALPHA,)).run()
+        assert alpha.state == "reported"
+        assert "subscription_update, not subscription_cycle" in alpha.line()
+
     async def test_an_invoice_already_taken_is_never_taken_again(self):
         async def no_renewal(w: seed.World) -> str:
             subscription = await a_subscription(w)
-            await stripe_invoices(w, subscription, "first")
-            await w.taken("first_invoice", subscription)
-            return (await w.taken("renewal", subscription))["id"]  # Stripe made none
+            await stripe_invoices(w, subscription, "first", seed.CREATED)
+            await w.taken("first_invoice", subscription, reason=seed.CREATED)
+            # Stripe made no renewal: the latest is still the first invoice.
+            return (await w.taken("renewal", subscription, reason=seed.CYCLE))["id"]
 
         account = stub.Account()
         [alpha] = await seeder(account, builders={"alpha": no_renewal}, only=(ALPHA,)).run()
@@ -473,34 +555,42 @@ class TestNothingTwice:
         assert len(account.objects["v1.tax_rates"]) == 1
 
     async def test_two_runs_at_once_make_each_object_once(self):
+        """The account yields on every request, so the two runs interleave:
+        both look, find nothing, and create with the same keys."""
         account = stub.Account()
         await asyncio.gather(seeder(account).run(), seeder(account).run())
         assert len(account.objects["v1.test_helpers.test_clocks"]) == 2
-        assert len(account.objects["v1.customers"]) == 2
+        assert len(account.objects["v1.customers"]) == 3  # two worlds, one manifest
         for step in ("alpha/subscription", "alpha/invoice", "beta/subscription"):
             assert len(account.tagged(step)) == 1, step
 
 
 class TestOnlyWhatTheSeedMade:
-    async def test_a_clock_holding_someone_elses_customer_is_left_alone(self):
+    @pytest.mark.parametrize("name", [f"rb:alpha@{GENERATION}", f"rb:alpha@{GENERATION}/g1"])
+    async def test_a_clock_the_manifest_does_not_name_is_never_used(self, name):
         account = stub.Account()
         account.objects["v1.test_helpers.test_clocks"].append(
-            {
-                "id": "clock_foreign",
-                "name": f"rb:alpha@{GENERATION}",
-                "frozen_time": 0,
-                "status": "ready",
-                "metadata": {},
-            }
+            {"id": "clock_empty", "name": name, "frozen_time": 0, "status": "ready", "metadata": {}}
         )
+        [alpha, _] = await seeder(account).run()
+        assert alpha.state == "built"
+        assert clock_of_customer(account, ALPHA) != "clock_empty"
+        assert not calls_to(account, "advance_async", "clock_empty")
+
+    async def test_its_own_clock_holding_someone_elses_customer_is_left_alone(self):
+        account = stub.Account()
+        await seeder(account).run()
+        clock = clock_of(account, ALPHA)
+        customer_of(account, ALPHA)["metadata"].pop(worlds.TARGET_INVOICE)
         account.objects["v1.customers"].append(
-            {"id": "cus_theirs", "test_clock": "clock_foreign", "metadata": {}}
+            {"id": "cus_theirs", "test_clock": clock["id"], "metadata": {}}
         )
+        advanced = len(calls_to(account, "advance_async", clock["id"]))
         [alpha, beta] = await seeder(account).run()
         assert alpha.state == "reported"
         assert "did not make" in alpha.line()
-        assert not calls_to(account, "advance_async", "clock_foreign")
-        assert beta.state == "built"
+        assert len(calls_to(account, "advance_async", clock["id"])) == advanced
+        assert beta.state == "complete"
 
     async def test_a_shared_object_the_seed_did_not_make_stops_every_world(self):
         account = stub.Account()
@@ -518,9 +608,39 @@ class TestOnlyWhatTheSeedMade:
         outcomes = await seeder(account).run()
         assert all("rb_pro_monthly" in o.line() for o in outcomes)
 
+    @pytest.mark.parametrize(
+        ("change", "named"),
+        [
+            (
+                lambda a: _price(a, "rb_pro_monthly")["recurring"].update(interval_count=2),
+                "rb_pro_monthly",
+            ),
+            (
+                lambda a: _price(a, "rb_pro_monthly").update(transform_quantity={"divide_by": 2}),
+                "rb_pro_monthly",
+            ),
+            (lambda a: a.objects["v1.coupons"][0].update(duration="once"), "rb_ten_percent"),
+            (lambda a: a.objects["v1.tax_rates"][0].update(inclusive=True), "tax rate"),
+            (
+                lambda a: a.objects["v1.billing.meters"][0].update(
+                    default_aggregation={"formula": "count"}
+                ),
+                "rb_api_call_blocks",
+            ),
+        ],
+        ids=["interval_count", "transform_quantity", "coupon_duration", "tax_inclusive", "meter"],
+    )
+    async def test_a_shared_object_on_other_terms_stops_every_world(self, change, named):
+        account = stub.Account()
+        await seeder(account).run()
+        change(account)
+        outcomes = await seeder(account).run()
+        assert [o.state for o in outcomes] == ["reported", "reported"]
+        assert all(named in o.line() for o in outcomes)
+
     async def test_a_list_cut_short_is_never_read_as_complete(self):
         account = stub.Account()
-        account.truncated.add("v1.test_helpers.test_clocks.list_async")
+        account.truncated.add("v1.customers.list_async")
         outcomes = await seeder(account).run()
         assert [o.state for o in outcomes] == ["reported", "reported"]
         assert not account.objects["v1.test_helpers.test_clocks"]
@@ -641,3 +761,7 @@ class TestTheMeterEvent:
         assert alpha.state == "built"
         assert not account.objects["v1.billing.meter_events"]
         assert customer_of(account, ALPHA)["metadata"][seed.USAGE_EVENT] == "sent"
+
+
+def _price(account, lookup_key):
+    return next(p for p in account.objects["v1.prices"] if p["lookup_key"] == lookup_key)
