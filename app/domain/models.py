@@ -107,7 +107,7 @@ class InvoiceOwner(NamedTuple):
     """Whose an invoice is, and nothing else about it.
 
     What a check needs when the invoice may be another customer's: knowing
-    the owner is enough, and reading nothing more means nothing more of
+    the owner is enough, and extracting nothing more means nothing more of
     another account can surface (ADR-001, 2026-10-22).
     """
 

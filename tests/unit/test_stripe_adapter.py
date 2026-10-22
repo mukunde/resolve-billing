@@ -238,6 +238,17 @@ class TestInvoices:
     async def test_an_unknown_invoice_has_no_owner(self):
         assert await provider(account()).invoice_owner("in_1RbMissing0000001") is None
 
+    @pytest.mark.parametrize(
+        "customer",
+        [None, "", {"object": "customer"}, {"id": ""}],
+        ids=["null", "empty", "no_id", "empty_id"],
+    )
+    async def test_an_owner_stripe_does_not_name_is_never_an_absent_invoice(self, customer):
+        held = account()
+        held.invoices = [stripe.invoice(customer=customer)]
+        with pytest.raises(ProviderUnsupported, match="missing_field"):
+            await provider(held).invoice_owner(stripe.INVOICE)
+
     @pytest.mark.parametrize("read", ["get_invoice", "find_invoice"])
     async def test_a_price_stripe_cannot_find_never_makes_the_invoice_absent(self, read):
         held = account()
@@ -409,11 +420,20 @@ class TestTheSdkSaysNothing:
 
         return Canned()
 
+    def sdk_as_shipped(self, monkeypatch):
+        """The SDK with its logging as a fresh process has it: an earlier
+        `connect` in this run must not be what keeps this test quiet."""
+        sdk = pytest.importorskip("stripe")
+        monkeypatch.delenv("STRIPE_LOG", raising=False)
+        monkeypatch.setattr(sdk, "log", None)
+        monkeypatch.setattr(sdk._util, "STRIPE_LOG", None)
+        monkeypatch.setattr(logging.getLogger("stripe"), "disabled", False)
+        return sdk
+
     async def test_an_error_stripe_answered_is_in_no_log_and_not_on_stderr(
         self, caplog, capsys, monkeypatch
     ):
-        sdk = pytest.importorskip("stripe")
-        monkeypatch.delenv("STRIPE_LOG", raising=False)
+        sdk = self.sdk_as_shipped(monkeypatch)
         caplog.set_level(logging.DEBUG)
         body = {
             "error": {
@@ -429,16 +449,22 @@ class TestTheSdkSaysNothing:
         assert SENTINEL not in capsys.readouterr().err
 
     def test_console_logging_from_the_environment_is_refused(self, monkeypatch):
-        pytest.importorskip("stripe")
+        self.sdk_as_shipped(monkeypatch)
         monkeypatch.setenv("STRIPE_LOG", "debug")
         with pytest.raises(ProviderConfigurationError) as raised:
             connect("rk_test_51RbAbc")
         assert raised.value.category == "sdk_logging"
 
     def test_console_logging_set_on_the_sdk_is_refused(self, monkeypatch):
-        sdk = pytest.importorskip("stripe")
-        monkeypatch.delenv("STRIPE_LOG", raising=False)
+        sdk = self.sdk_as_shipped(monkeypatch)
         monkeypatch.setattr(sdk, "log", "info")
+        with pytest.raises(ProviderConfigurationError):
+            connect("rk_test_51RbAbc")
+
+    def test_console_logging_the_sdk_read_at_import_is_refused(self, monkeypatch):
+        """`STRIPE_LOG` set when the SDK was imported, and gone since."""
+        sdk = self.sdk_as_shipped(monkeypatch)
+        monkeypatch.setattr(sdk._util, "STRIPE_LOG", "debug")
         with pytest.raises(ProviderConfigurationError):
             connect("rk_test_51RbAbc")
 

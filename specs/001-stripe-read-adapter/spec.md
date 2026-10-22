@@ -175,8 +175,11 @@ account, on the closed list of properties below.
   that cannot; nothing is sent and no reconciliation is attempted.
 - **FR-004** *(added 2026-10-22, review r118)*: The port MUST name
   `invoice_owner(invoice_id)`: the customer an invoice belongs to, or `None`
-  when there is no such invoice. It reads nothing else of the invoice and
-  never refuses on its content. The investigation uses it wherever only
+  when there is no such invoice. Only the owner is extracted: nothing of the
+  invoice's content is mapped and nothing further is read, so what it bills
+  never makes it refuse; an owner the platform cannot name is
+  `ProviderUnsupported("missing_field")`, never an absence -- the owner's
+  identity is the one thing it needs. The investigation uses it wherever only
   ownership matters -- a reference outside the customer's window, a reference
   cited by an unknown sender -- and the impersonation check takes the owner,
   never the invoice.

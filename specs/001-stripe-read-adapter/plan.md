@@ -80,8 +80,11 @@ No violation; no complexity to justify.
   `missing_field`, and `invoice_credit` (added 2026-10-22, review r118). Its
   message is the category, never the platform's data.
 - **`invoice_owner(invoice_id) -> str | None`** (added 2026-10-22, review
-  r118): whose an invoice is, reading nothing else of it, so it never refuses
-  on content. The investigation uses it for a reference outside the window
+  r118): whose an invoice is. Only the owner is extracted -- the content is
+  never mapped, the lines never completed -- so what the invoice bills never
+  makes it refuse; `None` means no such invoice, and an owner Stripe does not
+  name (`customer` null or empty) is `missing_field`, never an absence. The
+  investigation uses it for a reference outside the window
   and for one an unknown sender cites; `suspected_impersonation` takes an
   `InvoiceOwner` (invoice id, customer id) instead of the invoice.
 - **`can_write: bool`** on the protocol: the fake `True`, Stripe `False`.
@@ -258,7 +261,8 @@ full (test-clock customers included) and keeps those issued at or after
 - Unsupported worlds: **one per `ProviderUnsupported` reason the seed can
   produce in test mode** (mixed item periods, multiple prices, an
   unsupported status, tax, discount, negative line, fractional unit price,
-  partial refund, a payment across invoices where the API allows it); a
+  partial refund, a payment across invoices where the API allows it, a
+  credit balance applied before tax, a period off whole minutes); a
   reason the seed cannot produce is covered by mapping tests only, and listed.
 - Waits, within a bound, for each clock to be `ready`, the target invoices
   finalised and the meter summaries present; never writes a zero in place of

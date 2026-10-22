@@ -79,8 +79,11 @@ one adapter's own errors:
   category -- never the platform's data.
 - **`can_write`**: whether the platform can make the two writes. One that
   cannot is never asked (ADR-008, same date).
-- **`invoice_owner`**: the customer an invoice belongs to, or `None`, reading
-  nothing else of it. Where only ownership matters -- a reference outside the
+- **`invoice_owner`**: the customer an invoice belongs to, or `None` when there
+  is no such invoice. Only the owner is extracted: nothing of the content is
+  mapped and nothing further is read (the platform may still send the whole
+  invoice), and an owner it cannot name is `missing_field`, never an absence.
+  Where only ownership matters -- a reference outside the
   customer's window, one an unknown sender cites -- the investigation asks
   this and nothing more, so a property of another account's invoice cannot
   surface, not even as a refusal on its content; the impersonation check

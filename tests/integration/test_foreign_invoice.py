@@ -1,8 +1,8 @@
 """An invoice the dispute cites but the customer's window does not hold.
 
-Only whose it is gets read (ADR-001, 2026-10-22). So another customer's
+Only whose it is gets extracted (ADR-001, 2026-10-22). So another customer's
 invoice that the platform cannot represent -- taxed, say -- answers exactly as
-one it can: unknown to this customer. Nothing of its content is read, so
+one it can: unknown to this customer. Nothing of its content is mapped, so
 nothing of it can surface, not even as a refusal.
 """
 
@@ -21,7 +21,7 @@ NOW = datetime(2026, 10, 15, tzinfo=UTC)
 
 class Taxed(FakeBillingProvider):
     """Holds inv_010 (Transports Nord's) and inv_299 (Sirius', old) with data
-    the domain cannot represent; records every full read of an invoice."""
+    the domain cannot represent; records every read that maps an invoice."""
 
     def __init__(self) -> None:
         super().__init__()

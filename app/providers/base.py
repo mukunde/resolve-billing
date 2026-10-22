@@ -157,9 +157,12 @@ class BillingProvider(Protocol):
 
     async def invoice_owner(self, invoice_id: str) -> str | None:
         """The customer an invoice belongs to, or None when there is no such
-        invoice. Reads nothing else of it, so it never refuses on content:
-        the check on an invoice that may be another customer's learns whose
-        it is, and nothing more (ADR-001, 2026-10-22)."""
+        invoice. Only the owner is extracted -- nothing of the content is
+        mapped and nothing further is read -- so what the invoice bills never
+        makes it refuse: the check on an invoice that may be another
+        customer's learns whose it is, and nothing more. An owner the
+        platform cannot name is `ProviderUnsupported("missing_field")`
+        (ADR-001, 2026-10-22)."""
         ...
 
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]: ...

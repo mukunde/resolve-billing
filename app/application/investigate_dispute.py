@@ -380,8 +380,8 @@ class DisputeInvestigator:
 
         target = next((i for i in invoices if i.id == dispute.invoice_id), None)
         # Not found in the window is not "does not exist" (taxonomy S7): ask
-        # whose the reference is, and nothing else -- nothing about another
-        # account's invoice is read, so nothing of it can surface.
+        # whose the reference is, and nothing else -- nothing of another
+        # account's invoice is mapped, so nothing of it can surface.
         outside_window = False
         if dispute.invoice_id and target is None:
             owner = await self._provider.invoice_owner(dispute.invoice_id)
