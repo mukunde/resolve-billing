@@ -29,16 +29,18 @@ policy, where the audit row and the human approval are.
 
 from __future__ import annotations
 
+import functools
 import os
 from datetime import UTC, datetime
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from app.application.investigate_dispute import DisputeInvestigator
 from app.domain.models import Dispute
-from app.providers.base import BillingProvider
+from app.providers.base import BillingProvider, ProviderUnsupported
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 
@@ -52,6 +54,22 @@ server = MCPServer(
         "opinion of your own -- their silence is an answer, not an omission."
     ),
 )
+
+
+def _said(tool):
+    """Data the platform holds but the domain cannot represent is an
+    anticipated failure: the client reads its category, never the data
+    (specs/001-stripe-read-adapter, FR-002). Any other error stays a crash,
+    whose text the SDK withholds."""
+
+    @functools.wraps(tool)
+    async def run(*args, **kwargs):
+        try:
+            return await tool(*args, **kwargs)
+        except ProviderUnsupported as error:
+            raise ToolError(f"platform data not supported: {error.reason}") from None
+
+    return run
 
 
 def _provider() -> BillingProvider:
@@ -80,6 +98,7 @@ def _investigator() -> DisputeInvestigator:
     ),
     annotations=READ_ONLY,
 )
+@_said
 async def find_customer(email: str) -> dict[str, Any] | None:
     customer = await _provider().find_customer_by_email(email)
     return customer.model_dump(mode="json") if customer else None
@@ -89,6 +108,7 @@ async def find_customer(email: str) -> dict[str, Any] | None:
     description="Fetch one invoice, with its lines, by identifier.",
     annotations=READ_ONLY,
 )
+@_said
 async def get_invoice(invoice_id: str) -> dict[str, Any]:
     invoice = await _provider().get_invoice(invoice_id)
     return invoice.model_dump(mode="json")
@@ -103,9 +123,8 @@ async def get_invoice(invoice_id: str) -> dict[str, Any]:
     ),
     annotations=READ_ONLY,
 )
-async def get_billing_context(
-    customer_email: str, invoice_id: str | None = None
-) -> dict[str, Any]:
+@_said
+async def get_billing_context(customer_email: str, invoice_id: str | None = None) -> dict[str, Any]:
     dispute = Dispute(
         id="mcp_read",
         customer_message="",
@@ -127,6 +146,7 @@ async def get_billing_context(
     ),
     annotations=READ_ONLY,
 )
+@_said
 async def run_deterministic_checks(
     customer_email: str,
     customer_message: str = "",

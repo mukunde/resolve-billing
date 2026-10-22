@@ -27,7 +27,12 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import ActionState
-from app.infrastructure.actions import IllegalTransition, PendingAction, SqliteActionStore
+from app.infrastructure.actions import (
+    IllegalTransition,
+    PendingAction,
+    SqliteActionStore,
+    WritesNotSupported,
+)
 from app.providers.base import BillingProvider, ProviderRejected
 
 #: How long a claim on the write may go without a recorded result before it
@@ -67,9 +72,7 @@ class ApprovalService:
         encoded = json.dumps(material, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(encoded.encode()).hexdigest()[:32]
 
-    async def approve(
-        self, action_id: str, approved_by: str, presented: str
-    ) -> PendingAction:
+    async def approve(self, action_id: str, approved_by: str, presented: str) -> PendingAction:
         """Record who said yes, to what. Approving does not execute.
 
         Two steps rather than one so that the audit answers "who authorised
@@ -109,9 +112,7 @@ class ApprovalService:
 
     def reject(self, action_id: str, rejected_by: str) -> PendingAction:
         self.expire_if_overdue(action_id)
-        return self._actions.transition(
-            action_id, ActionState.REJECTED, approved_by=rejected_by
-        )
+        return self._actions.transition(action_id, ActionState.REJECTED, approved_by=rejected_by)
 
     def expire_if_overdue(self, action_id: str) -> PendingAction:
         """Expire a request nobody decided in time; return the action.
@@ -126,8 +127,7 @@ class ApprovalService:
                 action_id,
                 ActionState.EXPIRED,
                 resolution=(
-                    f"no decision before the deadline, "
-                    f"{action.expires_at:%Y-%m-%d %H:%M} UTC"
+                    f"no decision before the deadline, {action.expires_at:%Y-%m-%d %H:%M} UTC"
                 ),
             )
         return action
@@ -141,6 +141,11 @@ class ApprovalService:
         # that lost the first response.
         if action.state is ActionState.EXECUTED:
             return action
+
+        # A platform that cannot write is never asked: refused here, before
+        # any read, reconciliation or claim, so nothing has happened.
+        if not self._provider.can_write:
+            raise WritesNotSupported(action_id, action.state)
 
         # The last attempt got no answer, or a claim was abandoned by a
         # process that died mid-write. Find out what happened before anything
@@ -173,8 +178,7 @@ class ApprovalService:
                 action_id,
                 ActionState.EXPIRED,
                 resolution=(
-                    "the invoice changed after approval; nothing written, "
-                    "to be investigated again"
+                    "the invoice changed after approval; nothing written, to be investigated again"
                 ),
             )
             raise IllegalTransition(
@@ -215,8 +219,7 @@ class ApprovalService:
                 action.state,
                 ActionState.EXECUTED,
                 why=(
-                    f"({action.amount} exceeds invoice {invoice.id}, "
-                    f"which totals {invoice.total})"
+                    f"({action.amount} exceeds invoice {invoice.id}, which totals {invoice.total})"
                 ),
             )
 
@@ -238,9 +241,7 @@ class ApprovalService:
             )
         except ProviderRejected as error:
             # The platform answered no: nothing was created.
-            self._actions.transition(
-                action_id, ActionState.FAILED, failure_reason=str(error)
-            )
+            self._actions.transition(action_id, ActionState.FAILED, failure_reason=str(error))
             raise
         except Exception as error:  # noqa: BLE001 - recorded, then re-raised
             # No answer, or one we cannot read: the write may have landed.
@@ -270,6 +271,8 @@ class ApprovalService:
         platform's reference; if not, it is FAILED, which ``execute`` retries.
         Anything else is returned unchanged.
         """
+        if not self._provider.can_write:
+            raise WritesNotSupported(action_id, self._actions.get(action_id).state)
         action = self._actions.get(action_id)
         stale_after = self._stale_after if stale_after is None else stale_after
         abandoned = (

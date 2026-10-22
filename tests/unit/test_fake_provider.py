@@ -125,12 +125,8 @@ class TestThePlatformCapsCorrections:
         assert len(provider.executed_actions) == 1
 
     async def test_a_replay_still_returns_the_original_at_the_cap(self, provider):
-        first = await provider.create_credit_note(
-            "inv_002", 9900, "EUR", "x", idempotency_key="a"
-        )
-        again = await provider.create_credit_note(
-            "inv_002", 9900, "EUR", "x", idempotency_key="a"
-        )
+        first = await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
+        again = await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
 
         assert again == first
 
@@ -138,20 +134,34 @@ class TestThePlatformCapsCorrections:
         """The platform answered, and nothing was created: a refusal, not an
         unknown outcome. See ADR-008."""
         with pytest.raises(ProviderRejected):
-            await provider.create_credit_note(
-                "inv_nope", 100, "EUR", "x", idempotency_key="c"
-            )
+            await provider.create_credit_note("inv_nope", 100, "EUR", "x", idempotency_key="c")
         assert await provider.find_action("c") is None
 
     async def test_find_action_returns_what_a_key_produced(self, provider):
-        action = await provider.create_credit_note(
-            "inv_001", 100, "EUR", "x", idempotency_key="e"
-        )
+        action = await provider.create_credit_note("inv_001", 100, "EUR", "x", idempotency_key="e")
         assert await provider.find_action("e") == action
         assert await provider.find_action("never-used") is None
 
     async def test_created_at_is_timezone_aware(self, provider):
-        action = await provider.create_credit_note(
-            "inv_001", 100, "EUR", "x", idempotency_key="d"
-        )
+        action = await provider.create_credit_note("inv_001", 100, "EUR", "x", idempotency_key="d")
         assert action.created_at.tzinfo is UTC
+
+
+class TestThePortsOwnErrors:
+    """The port names the error for an unknown identifier and says whether a
+    platform can write (specs/001-stripe-read-adapter, FR-001 and FR-003)."""
+
+    async def test_an_unknown_identifier_raises_the_ports_not_found(self, provider):
+        from app.providers.base import NotFound as PortNotFound
+
+        for read in (provider.get_customer, provider.get_subscription, provider.get_invoice):
+            with pytest.raises(PortNotFound):
+                await read("nope")
+
+    def test_the_old_import_path_still_works(self):
+        from app.providers.base import NotFound as PortNotFound
+
+        assert NotFound is PortNotFound
+
+    def test_the_fake_can_write(self, provider):
+        assert provider.can_write is True

@@ -24,7 +24,7 @@ from app.infrastructure.actions import (
     UnknownAction,
 )
 from app.infrastructure.audit import SqliteAuditRepository
-from app.providers.base import ProviderRejected
+from app.providers.base import ProviderRejected, ProviderUnsupported
 
 router = APIRouter(prefix="/api/v1", tags=["approvals"])
 
@@ -102,9 +102,7 @@ async def approve(
     if body is None:
         raise HTTPException(422, "an approval names the proposal it approves")
     return ActionOut.of(
-        await _guard(
-            lambda: approvals.approve(action_id, approver.identity, body.proposal)
-        )
+        await _guard(lambda: approvals.approve(action_id, approver.identity, body.proposal))
     )
 
 
@@ -114,9 +112,7 @@ async def reject(
     approver: Approver,
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
 ) -> ActionOut:
-    return ActionOut.of(
-        await _guard(lambda: approvals.reject(action_id, approver.identity))
-    )
+    return ActionOut.of(await _guard(lambda: approvals.reject(action_id, approver.identity)))
 
 
 @router.post("/actions/{action_id}/execute", response_model=ActionOut)
@@ -132,6 +128,11 @@ async def execute(
         raise HTTPException(404, str(error)) from error
     except IllegalTransition as error:
         raise HTTPException(409, str(error)) from error
+    except ProviderUnsupported:
+        # A read before the claim found data the domain cannot represent:
+        # nothing was claimed, the state is unchanged, and the handler answers
+        # 422 -- this is not an unknown outcome.
+        raise
     except ProviderRejected as error:
         # The platform answered no: the action is FAILED, nothing was written.
         raise HTTPException(502, f"the billing platform refused the write: {error}") from error

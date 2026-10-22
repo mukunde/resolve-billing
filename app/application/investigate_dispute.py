@@ -57,7 +57,7 @@ from app.observability import tracing
 from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
 from app.policies.correction import correction_for
 from app.policies.reply import AutomaticReply, automatic_reply
-from app.providers.base import BillingProvider, ProviderUnavailable
+from app.providers.base import BillingProvider, ProviderUnavailable, ProviderUnsupported
 
 log = logging.getLogger(__name__)
 
@@ -166,6 +166,16 @@ class DisputeInvestigator:
                     type(error).__name__,
                 )
                 tracing.set_attributes(current, **{"error.type": "provider_unavailable"})
+                raise
+            except ProviderUnsupported as error:
+                # Data the domain cannot represent: nothing is decided, no run
+                # is recorded, and the category -- never the data -- is said.
+                log.warning(
+                    "billing platform data not supported: dispute=%s reason=%s",
+                    dispute.id,
+                    error.reason,
+                )
+                tracing.set_attributes(current, **{"error.type": "provider_unsupported"})
                 raise
             tracing.set_attributes(
                 current,

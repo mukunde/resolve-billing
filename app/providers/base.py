@@ -20,6 +20,61 @@ from app.domain.exceptions import BillingDomainError
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
 
 
+class NotFound(BillingDomainError):
+    """The platform holds no object under this identifier.
+
+    What `get_customer`, `get_subscription` and `get_invoice` raise for an
+    unknown identifier, on every platform; `find_*` answer `None` instead.
+    """
+
+
+#: Why a platform's data cannot be represented in the domain. Closed: a new
+#: reason is a decision, and its tests come with it.
+UNSUPPORTED_REASONS = frozenset(
+    {
+        "mixed_item_periods",
+        "multiple_prices",
+        "subscription_status",
+        "cancellation_without_end",
+        "invoice_tax",
+        "invoice_discount",
+        "negative_line",
+        "fractional_unit_price",
+        "partial_refund",
+        "multi_invoice_payment",
+        "unplaced_payment",
+        "unrepresentable_period",
+        "missing_field",
+    }
+)
+
+
+class ProviderUnsupported(Exception):  # noqa: N818 -- a state, not a programming error
+    """The platform answered, with data the domain cannot represent.
+
+    Not `ProviderUnavailable` -- trying later changes nothing -- and not a
+    configuration error. Nothing is decided on it: no investigation result,
+    no proposal, no run row; the caller is told the data is not supported,
+    by category. The message is the category alone, never the platform's
+    data. See specs/001-stripe-read-adapter, FR-002.
+    """
+
+    def __init__(self, reason: str) -> None:
+        if reason not in UNSUPPORTED_REASONS:
+            raise ValueError(f"unknown unsupported-data reason {reason!r}")
+        super().__init__(reason)
+        self.reason = reason
+
+
+class PlatformCannotWrite(Exception):  # noqa: N818 -- a state, not a programming error
+    """A platform that cannot write was asked to write, or to reconcile.
+
+    The execution service never asks -- it checks `can_write` first and
+    refuses before reading or claiming anything -- so this is a guard against
+    a caller that skipped that check, raised before any call to the platform.
+    """
+
+
 class ProviderRejected(BillingDomainError):
     """The platform answered, and refused the write: nothing was created.
 
@@ -69,6 +124,10 @@ class BillingProvider(Protocol):
     """
 
     name: str
+    #: Whether the platform can make the two writes below. A platform that
+    #: cannot (a read-only slice) is never asked: execution is refused before
+    #: anything is read or claimed (ADR-008).
+    can_write: bool
     # Optionally, `invoice_references(text) -> set[str]`: the invoice ids cited
     # in a text, normalised to this platform's own form (taxonomy S6). Only
     # the platform knows how its references are written. Not part of the

@@ -16,20 +16,18 @@ import re
 from datetime import UTC, datetime
 
 from app.domain.enums import PaymentStatus
-from app.domain.exceptions import BillingDomainError
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
-from app.providers.base import ProviderAction, ProviderRejected
+from app.providers.base import NotFound, ProviderAction, ProviderRejected
 from app.providers.fake.fixtures import load_all
 
-
-class NotFound(BillingDomainError):
-    """The platform holds no such object."""
+__all__ = ["FakeBillingProvider", "NotFound"]
 
 
 class FakeBillingProvider:
     """In-memory billing platform backed by ``fixtures/``."""
 
     name = "fake"
+    can_write = True
 
     #: How this platform writes an invoice reference in free text: `inv_002`,
     #: `INV-002`, `inv002` -- digits after the prefix, so a word that happens
