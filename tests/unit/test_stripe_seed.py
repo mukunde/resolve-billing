@@ -462,7 +462,7 @@ class TestNothingTwice:
         [manifest] = [
             c for c in account.objects["v1.customers"] if c["metadata"].get(seed.MANIFEST)
         ]
-        assert manifest["metadata"]["g_alpha"] == f"2@{GENERATION}"
+        assert manifest["metadata"]["g_alpha"] == f"2@{GENERATION}@{int(RUN.timestamp())}"
         assert manifest["metadata"]["c_alpha"] == second["id"]
         assert customer_of(account, ALPHA)["test_clock"] == second["id"]
 
@@ -563,6 +563,129 @@ class TestNothingTwice:
         assert len(account.objects["v1.customers"]) == 3  # two worlds, one manifest
         for step in ("alpha/subscription", "alpha/invoice", "beta/subscription"):
             assert len(account.tagged(step)) == 1, step
+
+
+def manifest_of(account):
+    return next(c for c in account.objects["v1.customers"] if c["metadata"].get(seed.MANIFEST))
+
+
+def noting_the_clock_fails(account):
+    failing_once(
+        account,
+        lambda path, params: (
+            path.endswith("customers.update_async") and "c_alpha" in params.get("metadata", {})
+        ),
+        InvalidRequestError("", code="lock_timeout"),
+    )
+
+
+class TestTheManifest:
+    async def test_two_manifests_stop_every_world_before_anything_is_made(self):
+        account = stub.Account()
+        for n in (1, 2):
+            account.objects["v1.customers"].append(
+                {"id": f"cus_manifest{n}", "metadata": {seed.MANIFEST: "1"}}
+            )
+        outcomes = await seeder(account).run()
+        assert [o.state for o in outcomes] == ["reported", "reported"]
+        assert all("2 seed manifests" in o.line() for o in outcomes)
+        assert not account.writes()
+
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            {"c_alpha": "clock_x"},
+            {"g_alpha": "one@2026-09-22@0"},
+            {"g_alpha": "0@2026-09-22@0"},
+            {"g_alpha": "1@2026-09-30@0"},
+        ],
+        ids=["clock_without_generation", "unreadable", "number_zero", "day_past_28"],
+    )
+    async def test_a_manifest_the_seed_cannot_read_is_not_used(self, metadata):
+        account = stub.Account()
+        account.objects["v1.customers"].append(
+            {"id": "cus_manifest", "metadata": {seed.MANIFEST: "1", **metadata}}
+        )
+        outcomes = await seeder(account).run()
+        assert [o.state for o in outcomes] == ["reported", "reported"]
+        assert not account.writes()
+
+    async def test_a_clock_whose_name_is_not_its_generations_is_not_used(self):
+        account = stub.Account()
+        await seeder(account).run()
+        clock_of(account, ALPHA)["name"] = f"rb:alpha@{GENERATION}/g7"
+        [alpha, beta] = await seeder(account).run()
+        assert alpha.state == "reported"
+        assert "is named" in alpha.line()
+        assert beta.state == "complete"
+
+    def test_its_keys_fit_stripes_metadata_limits(self):
+        keys = [seed.MANIFEST] + [f"{k}_{w.name}" for w in worlds.WORLDS for k in ("g", "c")]
+        assert len(keys) <= 50
+        assert max(len(k) for k in keys) <= 40
+        steps = [seed.TAKEN + step for step in ("metered_first_invoice", "base_first_invoice")]
+        assert max(len(k) for k in steps) <= 40
+
+
+class TestAClockAStoppedRunMayHaveMade:
+    async def test_within_stripes_memory_the_key_returns_the_clock_it_made(self):
+        account = stub.Account()
+        noting_the_clock_fails(account)
+        [alpha, _] = await seeder(account).run()
+        assert alpha.state == "reported"
+        [alpha, _] = await seeder(account, run_at=RUN + timedelta(hours=2)).run()
+        assert alpha.state == "built"
+        names = [c["name"] for c in account.objects["v1.test_helpers.test_clocks"]]
+        assert names.count(f"rb:alpha@{GENERATION}/g1") == 1
+
+    async def test_past_stripes_memory_a_clock_of_that_name_is_for_the_maintainer(self):
+        account = stub.Account()
+        noting_the_clock_fails(account)
+        await seeder(account).run()
+        [alpha, _] = await seeder(account, run_at=RUN + timedelta(days=2)).run()
+        assert alpha.state == "reported"
+        assert "may have made the clock" in alpha.line()
+        assert len(account.objects["v1.test_helpers.test_clocks"]) == 2  # alpha's, beta's
+
+    async def test_a_homonymous_clock_is_never_adopted_even_after_a_stop(self):
+        account = stub.Account()
+        account.objects["v1.test_helpers.test_clocks"].append(
+            {
+                "id": "clock_theirs",
+                "name": f"rb:alpha@{GENERATION}/g1",
+                "frozen_time": 0,
+                "status": "ready",
+                "metadata": {},
+            }
+        )
+        account.fail_once["v1.test_helpers.test_clocks.create_async"] = InvalidRequestError(
+            "", code="rate_limit"
+        )
+        [alpha, _] = await seeder(account).run()
+        assert alpha.state == "reported"
+        [alpha, _] = await seeder(account, run_at=RUN + timedelta(hours=2)).run()
+        assert alpha.state == "built"
+        assert clock_of_customer(account, ALPHA) != "clock_theirs"
+        assert manifest_of(account)["metadata"]["c_alpha"] != "clock_theirs"
+        assert not calls_to(account, "advance_async", "clock_theirs")
+
+
+class TestOneRunAtATime:
+    def test_a_second_run_is_refused_while_one_holds_the_lock(self, tmp_path, monkeypatch, capsys):
+        lock = tmp_path / "seed.lock"
+        monkeypatch.setattr(seed, "LOCK", str(lock))
+        monkeypatch.setenv("STRIPE_SEED_KEY", "sk_test_51RbAbc")
+        monkeypatch.setitem(sys.modules, "stripe", None)  # the run must not get that far
+        with seed.only_run(str(lock)):
+            assert seed.main() == 2
+        assert "another seed run is in progress" in capsys.readouterr().err
+
+    def test_the_lock_is_free_again_once_a_run_ends(self, tmp_path):
+        lock = str(tmp_path / "seed.lock")
+        with seed.only_run(lock):
+            pass
+        with seed.only_run(lock):
+            pass
 
 
 class TestOnlyWhatTheSeedMade:

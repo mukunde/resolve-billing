@@ -29,8 +29,10 @@ never dropped: removing a world from the contract needs the maintainer.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
+import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -98,6 +100,15 @@ MANIFEST_EMAIL = f"seed-manifest@{worlds.DOMAIN}"
 #: Stripe's billing reasons for the invoices a world takes.
 CREATED = "subscription_create"
 CYCLE = "subscription_cycle"
+
+#: How long Stripe returns the first answer to an idempotency key: at least a
+#: day. A creation the seed may have sent is re-sent with its key within it;
+#: past it, the seed cannot tell, and asks the maintainer.
+KEYS_REMEMBERED = 23 * 3600
+
+#: One seed run at a time on this machine: two would each read the manifest
+#: and could open one generation twice, on different months.
+LOCK = os.path.join(tempfile.gettempdir(), "rb-stripe-seed.lock")
 
 #: Shared by every world, found by fixed identifiers or lookup keys and
 #: tagged `shared/<kind>/<key>`; the meter, which has no metadata, by its
@@ -206,19 +217,29 @@ def _midnight(day: date) -> int:
 @dataclass(frozen=True)
 class Generation:
     """One build of a world: its number -- the next one when its clock is
-    deleted, so no key or object of the old build is reused -- and its month,
-    kept in the manifest so a run on another day resumes on the same dates."""
+    deleted, so no key or object of the old build is reused -- its month,
+    kept in the manifest so a run on another day resumes on the same dates,
+    and when it was opened, to know whether Stripe still remembers its keys."""
 
     number: int
     dates: Dates
+    opened: int
 
     def encode(self) -> str:
-        return f"{self.number}@{self.dates.start_day.isoformat()}"
+        return f"{self.number}@{self.dates.start_day.isoformat()}@{self.opened}"
 
     @classmethod
     def decode(cls, value: str) -> Generation:
-        number, day = value.split("@")
-        return cls(int(number), Dates.starting(date.fromisoformat(day)))
+        """What the manifest holds, or a Collision: a manifest the seed cannot
+        read is not used."""
+        try:
+            number, day, opened = value.split("@")
+            generation = cls(int(number), Dates.starting(date.fromisoformat(day)), int(opened))
+        except ValueError:
+            raise Collision(f"the manifest holds an unreadable generation: {value!r}") from None
+        if generation.number < 1 or generation.dates.start_day.day > 28:
+            raise Collision(f"the manifest holds an impossible generation: {value!r}")
+        return generation
 
 
 def clock_name(world: str, generation: Generation) -> str:
@@ -338,6 +359,7 @@ class Seeder:
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self.v1 = sdk.v1
+        self.run_at = int(run_at.timestamp())
         #: The month a world gets when its first run is this one.
         self.dates = Dates.before(run_at)
         self.provider = StripeBillingProvider(StripeReader(sdk))
@@ -402,10 +424,26 @@ class Seeder:
             return Outcome(spec.name, "reported", detail=_refusal(error))
 
     async def _manifest(self) -> dict:
-        """The seed's own record: what makes a clock the seed's."""
-        for customer in await self.every(self.v1.customers.list_async):
-            if (customer.get("metadata") or {}).get(MANIFEST) == "1":
-                return customer
+        """The seed's own record: what makes a clock the seed's. Exactly one:
+        two would each count generations, so neither can be trusted."""
+        found = [
+            customer
+            for customer in await self.every(self.v1.customers.list_async)
+            if (customer.get("metadata") or {}).get(MANIFEST) == "1"
+        ]
+        if len(found) > 1:
+            raise Collision(f"{len(found)} seed manifests: keep one, delete the others")
+        if found:
+            [manifest] = found
+            for spec in self.worlds:
+                if self._noted_in(manifest, f"c_{spec.name}") and not self._noted_in(
+                    manifest, f"g_{spec.name}"
+                ):
+                    raise Collision(f"the manifest names a clock for {spec.name} and no generation")
+                noted = self._noted_in(manifest, f"g_{spec.name}")
+                if noted:
+                    Generation.decode(noted)
+            return manifest
         return await self.call(
             self.v1.customers.create_async,
             params={
@@ -416,8 +454,12 @@ class Seeder:
             key="manifest",
         )
 
+    @staticmethod
+    def _noted_in(manifest: dict, key: str) -> str | None:
+        return (manifest.get("metadata") or {}).get(key) or None
+
     def _noted(self, key: str) -> str | None:
-        return (self.manifest.get("metadata") or {}).get(key) or None
+        return self._noted_in(self.manifest, key)
 
     async def _note(self, entries: dict[str, str]) -> None:
         self.manifest = await self.call(
@@ -427,43 +469,50 @@ class Seeder:
     async def _clock(self, spec: worlds.World) -> tuple[dict, Generation]:
         """The world's clock as the manifest names it, or a new one. A clock
         the manifest does not name is never used, whatever it is called; one
-        it names that is gone opens the next generation, on this run's month."""
+        it names that is gone opens the next generation, on this run's month.
+        """
         generation_key, clock_key = f"g_{spec.name}", f"c_{spec.name}"
         noted = self._noted(generation_key)
         generation = Generation.decode(noted) if noted else None
         clock_id = self._noted(clock_key)
-        fresh = False
         if clock_id is not None:
             clock = await self._existing_clock(clock_id)
             if clock is not None:
+                if clock.get("name") != clock_name(spec.name, generation):
+                    raise Collision(
+                        f"the manifest's clock for {spec.name} is named {clock.get('name')!r}, "
+                        f"not {clock_name(spec.name, generation)!r}"
+                    )
                 await self._own(clock, spec)
                 return clock, generation
-            number = (generation.number if generation else 0) + 1
-            generation, fresh = Generation(number, self.dates), True
+            generation = Generation(generation.number + 1, self.dates, self.run_at)
             await self._note({generation_key: generation.encode(), clock_key: ""})
         elif generation is None:
-            generation, fresh = Generation(1, self.dates), True
+            generation = Generation(1, self.dates, self.run_at)
             await self._note({generation_key: generation.encode()})
-
-        # A generation noted by an earlier run that stopped before noting its
-        # clock may have made it: a clock bearing that generation's name is the
-        # seed's. A generation opened by this run has made nothing yet, so a
-        # clock already bearing its name is someone else's, and is ignored.
-        name = clock_name(spec.name, generation)
-        found = []
-        if not fresh:
+        elif self.run_at - generation.opened >= KEYS_REMEMBERED:
+            # Opened by a run that stopped before noting its clock, too long ago
+            # for Stripe to answer the creation's key with what it made then. A
+            # clock bearing its name may be that one, or someone else's: the
+            # name proves nothing, so the maintainer decides.
+            name = clock_name(spec.name, generation)
             clocks = await self.every(self.v1.test_helpers.test_clocks.list_async)
-            found = [c for c in clocks if c.get("name") == name]
-        if len(found) > 1:
-            raise Collision(f"{len(found)} clocks named {name}: keep one, delete the others")
-        if found:
-            [clock] = found
-        else:
-            clock = await self.call(
-                self.v1.test_helpers.test_clocks.create_async,
-                params={"frozen_time": starts_at(spec.name, generation.dates), "name": name},
-                key=f"{spec.name}/g{generation.number}/clock",
-            )
+            if any(c.get("name") == name for c in clocks):
+                raise Uncertain(
+                    f"generation {generation.number} of {spec.name} may have made the clock "
+                    f"{name}: delete it, or note its id as {clock_key} in the seed manifest"
+                )
+
+        # Within Stripe's memory of the key, this returns the clock an earlier
+        # run made, if it made one; otherwise it makes it.
+        clock = await self.call(
+            self.v1.test_helpers.test_clocks.create_async,
+            params={
+                "frozen_time": starts_at(spec.name, generation.dates),
+                "name": clock_name(spec.name, generation),
+            },
+            key=f"{spec.name}/g{generation.number}/clock",
+        )
         await self._own(clock, spec)
         await self._note({clock_key: clock["id"]})
         return clock, generation
@@ -1339,10 +1388,50 @@ CHECKS: dict[str, Check] = {
 # -- running it ----------------------------------------------------------------
 
 
+class Busy(Exception):  # noqa: N818 -- a state, not a programming error
+    """Another seed run holds the lock."""
+
+
+@contextlib.contextmanager
+def only_run(path: str | None = None):
+    """The machine's one seed run: an exclusive lock on `path` (`LOCK` by
+    default), held for the run and freed by the system if the process dies."""
+    handle = open(path or LOCK, "a+b")  # noqa: SIM115 -- held for the whole run
+    try:
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise Busy(path or LOCK) from None
+        yield
+    finally:
+        handle.close()
+
+
 def main() -> int:
     key = os.environ.get("STRIPE_SEED_KEY")
     try:
         check_seed_key(key)
+    except ProviderConfigurationError as error:
+        print(f"stripe_seed: refused ({error.category})", file=sys.stderr)
+        return 2
+    try:
+        with only_run():
+            return _run(key)
+    except Busy:
+        print("stripe_seed: refused (another seed run is in progress)", file=sys.stderr)
+        return 2
+
+
+def _run(key: str) -> int:
+    try:
         import stripe
 
         silence(stripe)

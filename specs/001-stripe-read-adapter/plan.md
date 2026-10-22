@@ -228,7 +228,9 @@ full (test-clock customers included) and keeps those issued at or after
   step (so two runs at once, or a retried request, make it once, and a new
   generation reuses no key). An invoice Stripe makes itself -- a first
   invoice, a renewal, a final or an arrears one -- is taken as its step only
-  if Stripe made it for that step's billing reason and no step took it yet;
+  if no step took it yet and, except the final invoice of a cancellation
+  (whose billing reason is not checked), Stripe made it for that step's
+  billing reason;
   the choice is kept on the subscription (`rb_taken_<step>`, or `none` when
   Stripe made none) and on the invoice, so a later run never looks at
   whatever is latest by then.
@@ -238,12 +240,19 @@ full (test-clock customers included) and keeps those issued at or after
   found by its event name and checked for its configuration. A run lists
   what exists and completes what is missing, a half-created world included;
   nothing is made twice.
+- **One run at a time**: an exclusive lock on the machine, held for the run
+  and freed if the process dies; a second run is refused.
 - **A manifest makes a clock the seed's**: a customer of its own, without a
   clock, whose metadata names each world's generation (`g_<world>`: its
-  number and month) and clock (`c_<world>`). A clock the manifest does not
-  name is never used, whatever it is called -- except, for a generation an
-  earlier run opened and stopped before noting its clock, the clock bearing
-  that generation's exact name.
+  number, month and opening time) and clock (`c_<world>`). Exactly one
+  manifest, readable and consistent -- a clock named with no generation, a
+  generation that cannot be read, a clock whose name is not its generation's
+  -- or every world is reported before anything is made. A clock the
+  manifest does not name is never used, whatever it is called. A generation
+  an earlier run opened and stopped before noting its clock re-sends the
+  clock's creation with its key: within the day Stripe remembers keys, that
+  returns the clock it made, if it made one; past it, a clock bearing that
+  generation's name is reported for the maintainer to settle, never adopted.
 - **Only what the seed made is touched.** A clock holding a customer the
   seed did not make, or a shared object that exists untagged or on other
   terms (a price's amount, interval and count, usage type, meter, scheme or
