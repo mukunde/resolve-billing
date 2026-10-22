@@ -142,9 +142,14 @@ account, on the closed list of properties below.
 - **FR-001**: The port MUST name `NotFound` for an unknown identifier on
   `get_customer`, `get_subscription`, `get_invoice`; the fake raises it too.
 - **FR-002**: The port MUST name `ProviderUnsupported`: the platform answered,
-  but with data the domain cannot represent. The investigation decides nothing
-  and the caller is told the data is not supported -- distinct from
-  `ProviderUnavailable` (try later) and from a configuration error.
+  but with data the domain cannot represent. It is distinct from
+  `ProviderUnavailable` (try later) and from a configuration error. The
+  investigation lets it through: no decision, no proposal, nothing queued for
+  approval, no run row (the constitution's VI asks one of completed
+  investigations, and none is invented). The API answers **422** with the
+  stable category `provider_unsupported` and a short reason category (for
+  instance `mixed_item_periods`, `partial_refund`), never the platform's data;
+  the failure is logged by category; nothing retries it.
 - **FR-003**: A platform MUST declare whether it can write. The execution
   service MUST refuse, before claiming the action, to execute on a platform
   that cannot; nothing is sent and no reconciliation is attempted.
@@ -152,31 +157,43 @@ account, on the closed list of properties below.
 **Reading** (selected by configuration; the fake stays the default)
 
 - **FR-010**: Customers: identifier, address, currency (upper-case), name.
-- **FR-011**: The address lookup MUST scan every customer page by page in a
-  fixed order (creation, then identifier), comparing trimmed, lower-cased
-  addresses, and return the first match; it MUST NOT rely on Stripe's exact
-  filter or its search.
-- **FR-012**: Subscriptions: the period from the items when they all share one;
-  otherwise `ProviderUnsupported`. Status: active, trialing, past_due, paused
-  map to themselves; canceled maps to cancelled with the date it **ended**; a
-  cancellation scheduled for later is still active with no cancellation date;
-  incomplete, incomplete_expired and unpaid are `ProviderUnsupported`. The
-  plan is the price's lookup key, else its identifier.
+- **FR-011**: The address lookup MUST scan every customer page by page --
+  including customers attached to test clocks, which Stripe's list leaves out
+  unless asked, each customer counted once -- in a fixed order (creation, then
+  identifier), comparing trimmed, lower-cased addresses, and return the first
+  match; it MUST NOT rely on Stripe's exact filter or its search. Every list
+  the adapter reads includes test-clock objects the same way.
+- **FR-012**: Subscriptions: supported with exactly one recurring price item,
+  or several items sharing one period and one price; otherwise
+  `ProviderUnsupported`. The period comes from the items. Status: active,
+  trialing, past_due, paused map to themselves; canceled maps to cancelled
+  with the date it **ended** (`ended_at`, never the date the cancellation was
+  requested), and a canceled subscription without an end date is
+  `ProviderUnsupported`; a cancellation scheduled for later keeps the current
+  status and no cancellation date; incomplete, incomplete_expired and unpaid
+  are `ProviderUnsupported`. The plan is the price's lookup key, else its
+  identifier.
 - **FR-013**: Invoices: identifier `in_…`; status draft, open, paid, void,
   uncollectible map to themselves; issued when finalised (a draft: when
   created); total and lines in integer minor units with their periods.
-  Invoices with tax, discounts, negative lines or a fractional unit price are
-  `ProviderUnsupported` in this slice.
+  An invoice carrying tax (exclusive or inclusive), a discount (on a line or
+  on the invoice), a negative line or a fractional unit price is
+  `ProviderUnsupported` in this slice; each marker is detected from Stripe's
+  structured fields and tested.
 - **FR-014**: `list_invoices(customer, since)` returns invoices issued at or
   after `since`; `find_invoice` finds one whatever its age.
-- **FR-015**: Payments: one per invoice payment; amount collected; succeeded
+- **FR-015**: Payments: one per invoice payment attached to one invoice. A
+  succeeded payment carries the amount actually collected (`amount_paid`),
+  never the amount requested; a pending or failed one carries the amount
+  requested, with its state, and is never read as money received. Succeeded
   only when the underlying collection succeeded, failed when it failed,
-  pending while it is in progress, refunded only when fully refunded; a
-  partial refund or a payment the domain cannot place is `ProviderUnsupported`.
+  pending while it is in progress, refunded only when fully refunded. A
+  partial refund, a payment allocated across invoices, or a payment the
+  domain cannot place is `ProviderUnsupported`.
 - **FR-016**: Usage: for a subscription with exactly one metered item whose
   meter no other item of the customer uses, the meter's summary over that
   item's current period; no summary, or a shared meter, is `None`
-  (unavailable), never zero.
+  (unavailable), never zero. A summary that exists and says zero is zero.
 - **FR-017**: References: `invoice_references` and `invoice_reference_spans`
   recognise Stripe invoice identifiers (`in_…`) only.
 - **FR-018**: Every list MUST be read to its end, nested lists included, within
@@ -189,13 +206,20 @@ account, on the closed list of properties below.
   `ProviderUnavailable` once the SDK's bounded retries are spent; an
   authentication or permission error MUST fail visibly as a configuration
   error, with a category, never the provider's text (as for engines).
-- **FR-021**: The adapter MUST be given a restricted read-only key and refuse a
-  live key or a key that can write, before any call; the seed script MUST use
-  the secret test key and refuse a live one.
+- **FR-021**: The adapter MUST be given a restricted test key (`rk_test_…`) and
+  refuse, before any call, a live key or a standard secret key. A key's
+  permissions cannot be read from the key itself: the maintainer creates it
+  with read permissions only, and the adapter contains no call to a mutating
+  endpoint, whatever the key allows. No write is ever attempted to probe
+  permissions. The seed script MUST use the secret test key (`sk_test_…`) and
+  refuse a live one.
 - **FR-022**: The Stripe API version MUST be pinned in the adapter.
 - **FR-023**: Stripe is named only in the adapter package, the wiring
-  (`deps`), the seed script and Stripe-specific tests; the domain, the
-  application and the policies do not change. The SDK is an optional extra.
+  (`deps`), the seed script and Stripe-specific tests. The domain, the
+  application and the policies stay independent of Stripe; the changes they
+  get are the three port additions (FR-001 to FR-003), the investigation and
+  API handling of `ProviderUnsupported`, and the execution service's refusal.
+  The SDK is an optional extra.
 - **FR-024**: Keys come from the environment and are never logged, printed,
   traced or written to the audit.
 
@@ -206,7 +230,15 @@ account, on the closed list of properties below.
   `ProviderUnsupported` case above.
 - **FR-031**: Contract tests run the same assertions against the fake and,
   locally with the read-only key, against the seeded account, at the seed's
-  investigation date.
+  investigation date. They start only once every test clock is ready, every
+  seeded invoice is finalised, and every expected meter summary is available,
+  within a bounded wait; fixing the investigation's date does not move
+  Stripe's clocks.
+- **FR-032**: The seed script creates only worlds inside this slice's scope
+  (no tax, discount, negative line, fractional price, partial refund, mixed
+  periods), plus one world per `ProviderUnsupported` case for the contract
+  tests; it waits, within a bound, for clocks to be ready and usage to be
+  aggregated, and never replaces a delay by a zero.
 
 ### Contract properties checked (closed list)
 
