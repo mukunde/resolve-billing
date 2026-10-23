@@ -28,27 +28,36 @@ the maintainer's: they need the key or the test account.
 
 ## Phase 2: Foundational -- the port and the store (blocks every story)
 
-- [ ] T010 Test first, `tests/unit/test_fake_provider.py`: the writes take
-  `action_id`; `find_action(key, invoice_id)` answers a list -- empty for an
-  unused key or another invoice, one after a write; a `ProviderAction`
-  carries the invoice, the amount and currency, `test_mode`, the allocation
-  (`reduce_due` on an open invoice, `customer_balance` on a paid one,
-  `refund`), the action identifier and when it was observed; the fake
-  declares `idempotency_window` of 23 hours.
-- [ ] T011 `app/providers/base.py` (the signatures, the `ProviderAction`
-  fields, `idempotency_window`, `ProviderOutcomeUnknown`) and
+- [ ] T010 Test first, `tests/unit/test_fake_provider.py`: `plan_write`
+  answers `reduce_due` for a credit note on an open invoice,
+  `customer_balance` on a paid one, `refund` for a refund on a paid one, and
+  refuses a refund on an open one; the writes take `action_id`, the
+  allocation and `send_by`, refuse an allocation the invoice no longer allows
+  and send nothing past `send_by` (`NotSent`); `find_action(key,
+  invoice_id)` answers a list -- empty for an unused key or another invoice,
+  one after a write; a `ProviderAction` carries the invoice, the amount and
+  currency, `test_mode`, the allocation, the action identifier and when it
+  was observed; the fake declares `idempotency_window` of 23 hours.
+- [ ] T011 `app/providers/base.py` (`plan_write`, the signatures, the
+  `ProviderAction` fields, `idempotency_window`, `NotSent`,
+  `ProviderOutcomeUnknown`) and
   `app/providers/fake/adapter.py`; the fake's test helpers: a lost answer, a
   second write under one key, a write unlike the action, a status that
   changes.
-- [ ] T012 Callers follow: `app/application/execute_action.py` passes the
-  action's identifier and invoice; the read-only Stripe adapter's
-  signatures; `tests/contract/test_billing_platform.py` (property 10);
-  `tests/unit/test_execute_action.py` doubles. Behaviour unchanged, every
+- [ ] T012 Test first, then callers follow, in meaning and not only in
+  signature: `reconcile()` reads the list -- empty → `FAILED` as today, one →
+  `EXECUTED` as today, several → stays unknown (new; tested here);
+  `execute()` passes the action's identifier and invoice; the read-only
+  Stripe adapter's signatures; `tests/contract/test_billing_platform.py`
+  (property 10); `tests/unit/test_execute_action.py` doubles. Every
   existing test green.
 - [ ] T013 Test first, `tests/unit/test_execute_action.py` (store): the new
-  columns, added to a database file made before them; `first_attempt_at` set
-  by the first claim only, never by a later one; `uncertain_since` set once;
-  `annotate` changes no state and refuses when the state moved.
+  columns, added to a database file made before them; on that old file,
+  actions in `EXECUTING`, `UNKNOWN_OUTCOME` or `FAILED` marked
+  `window_unknown`, `APPROVED` and earlier untouched; `first_attempt_at` set
+  by the first claim only, never by a later one; the allocation stored once;
+  `uncertain_since` set once; `annotate` changes no state and refuses when
+  the state moved.
 - [ ] T014 `app/infrastructure/actions.py`: the columns, the migration,
   `annotate`, `NeedsAPerson`; `PendingAction` carries the new fields.
 
@@ -64,12 +73,16 @@ the maintainer's: they need the key or the test account.
   never written again; an answer unlike the action (each field: invoice,
   type, amount, currency, test mode, allocation) or with a field missing →
   `UNKNOWN_OUTCOME`, annotated, `NeedsAPerson`, and the next `execute()`
-  writes nothing; two sends of one action make the same request; nothing
+  writes nothing; the allocation fixed by `plan_write` after the first claim
+  and reused: two sends of one action make the same request, across a
+  restart, and an invoice paid between the plan and a retry is refused,
+  never written with another allocation; a `plan_write` refusal → `FAILED`,
+  nothing sent; a failed read there → unknown; nothing
   sent for an action not approved, expired, changed since approval, above
   the invoice or in another currency (kept from today, extended to Stripe's
   refusal path).
-- [ ] T021 `app/application/execute_action.py`: the check (`_unlike`), the
-  outcomes of a send, the clock.
+- [ ] T021 `app/application/execute_action.py`: the check (`_unlike`),
+  `plan_write` and the stored allocation, the outcomes of a send, the clock.
 
 ### The Stripe adapter, writing
 
@@ -77,11 +90,14 @@ the maintainer's: they need the key or the test account.
   a credit note on an open invoice with nothing paid (`amount` only) and on
   a paid one (`credit_amount`); a refund on a paid one (`refund_amount`);
   the metadata exactly the key, the action identifier and the type;
-  `email_type` `none`; no `memo`, no `reason`; Stripe's idempotency key the
-  action's; `max_network_retries` 0 on the write and reads unchanged; the
-  state check refusing a partly paid, draft, void or uncollectible invoice,
-  and a refund on an open one, before any write, and a failed read there an
-  unknown outcome; every error class to its outcome (the closed list of
+  `email_type` `none`; no `memo`, no `reason`; `expand` exactly
+  `["refunds.refund"]`; Stripe's idempotency key the action's;
+  `max_network_retries` 0 on the write and reads unchanged; `plan_write`
+  refusing a partly paid, draft, void or uncollectible invoice, and a
+  refund on an open one; the write refusing an allocation the invoice no
+  longer allows, before any write, and a failed read there an unknown
+  outcome; `send_by` passed during the invoice read → nothing sent; an
+  answer whose refund is not expanded → unreadable; every error class to its outcome (the closed list of
   refusals; an idempotency error, a 409, a rate limit, a connection error, a
   5xx and the time budget to `ProviderOutcomeUnknown`); no Stripe text in
   any message or log; no mutating call but `credit_notes.create`.
@@ -91,9 +107,9 @@ the maintainer's: they need the key or the test account.
   FR-015 (issued, void; a refund pending, requiring action, succeeded,
   failed, cancelled), `livemode`, a field missing → unreadable.
 - [ ] T024 `app/providers/stripe/client.py` (`StripeWriter`,
-  `_write_outcome`), `mapping.py` (`credit_note_params`, `provider_action`),
-  `adapter.py` (the state check, the writes, `can_write`,
-  `idempotency_window`).
+  `_write_outcome`), `mapping.py` (`allocation`, `allows`,
+  `credit_note_params`, `provider_action`), `adapter.py` (`plan_write`, the
+  writes, `can_write`, `idempotency_window`).
 - [ ] T025 Test first, `tests/unit/test_provider_wiring.py`: `can_write` only
   with `STRIPE_WRITES=enabled` exactly (absent, `true`, `Enabled`, empty →
   read-only); the variable read in `deps` only; `stripe` still imported only
@@ -105,8 +121,9 @@ the maintainer's: they need the key or the test account.
   carries the status, its instant, `attention` and `first_attempt_at`;
   `NeedsAPerson` answers 409 with its category, never 504; `POST
   /actions/{id}/status` by an approver records a new observation and sends
-  nothing, refused (409) unless `EXECUTED` and (401/403) without an
-  approver; the 504 message. Then `app/api/approvals.py` and
+  nothing, with writes switched off too; on an `UNKNOWN_OUTCOME` with an
+  incident it settles only on exactly one write alike; refused (409) for
+  any other state and (401/403) without an approver; the 504 message. Then `app/api/approvals.py` and
   `ApprovalService.refresh_status`.
 
 **Checkpoint**: US1 on the stub; the mock baseline matched.
@@ -115,10 +132,14 @@ the maintainer's: they need the key or the test account.
 
 - [ ] T030 Test first, `tests/unit/test_execute_action.py`, with a clock:
   reconciliation finding one write alike → `EXECUTED` with its status;
-  unlike, or two → stays unknown, annotated, nothing written; none within
-  the window → `FAILED`, retried under the same key; none past it → stays
-  unknown, `window_passed`; no send at or past the window, from `FAILED` or
-  `UNKNOWN_OUTCOME`, and after a restart (a new store on the same file);
+  unlike, or two → stays unknown, annotated, nothing written; an incident
+  then a reconciliation finding nothing → stays unknown, never `FAILED`,
+  never sent again; none within the window → `FAILED`, retried under the
+  same key; none past it → stays unknown, `window_passed`; no send at or
+  past the window, from `FAILED` or `UNKNOWN_OUTCOME`, and after a restart
+  (a new store on the same file); a read that starts before the limit and
+  ends after it sends nothing (`NotSent`), and the action is never sent
+  again; an action marked `window_unknown` by the migration is never sent;
   a first answer lost then an idempotency conflict → unknown, never
   `FAILED`; a first write landed, its answer lost, then the retry refused
   (403) → reconciled, `EXECUTED`; refused after an unknown outcome with
@@ -129,10 +150,13 @@ the maintainer's: they need the key or the test account.
   `uncertain_since`, refusals after an unknown outcome (FR-006), the
   reconciliation table.
 - [ ] T032 Test first, `tests/unit/test_stripe_writes.py`: `find_action`
-  lists the invoice's credit notes over several pages with `refunds.refund`
-  expanded, keeps those with the key in their metadata, answers two when
-  there are two, raises `ProviderUnavailable` on a page cut short, never
-  calls search. Then `app/providers/stripe/adapter.py`.
+  lists the invoice's credit notes over several pages with `expand` exactly
+  `["data.refunds.refund"]`, keeps those with the key in their metadata,
+  answers two when there are two, maps a refund left unexpanded as
+  unreadable, raises `ProviderUnavailable` on a page cut short, never calls
+  search, and works on an adapter built without a writer (read-only); the
+  contract's property 10 then reads that it answers rather than raising.
+  Then `app/providers/stripe/adapter.py`.
 
 **Checkpoint**: US2 on the stub and the fake.
 
@@ -148,15 +172,19 @@ the maintainer's: they need the key or the test account.
 ## Phase 6: Write worlds and the contract
 
 - [ ] T050 Test first, `tests/unit/test_stripe_seed.py` (stub): `--write-run`
-  opens a new generation each time, noted in the manifest; one invoice per
+  opens a new generation each time; the manifest keeps one bounded entry,
+  `w_last`, however many generations (sixty in the test); each generation
+  found by its own objects' metadata; one invoice per
   purpose, paid in full or open with nothing paid, tagged; a fresh duplicate
   world under the generation's own name and keys; keys per step; the lock;
   refusals reported; nothing reused from an earlier generation.
 - [ ] T051 `scripts/stripe_seed.py`, `scripts/stripe_worlds.py`.
 - [ ] T052 Test first, then `tests/contract/test_billing_platform_writes.py`:
   the seven write properties, on the fake in CI and on Stripe when the key
-  and `STRIPE_WRITES=enabled` are set; a skip, asking for a new write run,
-  on an invoice that already has a credit note.
+  and `STRIPE_WRITES=enabled` are set; each scenario checks at its start
+  that its invoices carry no credit note and stops, asking for a new write
+  run, if one does -- its own later writes (property 1's second call,
+  property 5's write beyond the cap) are intended.
 - [ ] T053 `tests/contract/test_stripe_execution.py` (SC-002): the fresh
   duplicate world investigated, its proposal approved as shown, executed
   twice -- one credit note for the approved amount; a refund executed through
@@ -166,8 +194,10 @@ the maintainer's: they need the key or the test account.
   from credit notes; the permissions found recorded in `docs/operations.md`
   and `.env.example`.
 - [ ] T055 **[maintainer]** Run the seed with `--write-run`, then the
-  contract tests with the writing key. Each difference from the fake is
-  listed in the contract and approved (SC-001), or fixed.
+  contract tests with the writing key (`-rs`, so every skip is listed with
+  its reason). SC-001 holds only with all seven properties run and passed
+  on Stripe: a skip is not demonstrated. Each difference from the fake is
+  listed in the contract and approved, or fixed.
 
 **Checkpoint**: SC-001 and SC-002 on the test account.
 
