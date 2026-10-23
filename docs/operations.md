@@ -109,8 +109,17 @@ python -m dotenv run -- python -m pytest tests/contract -rs -q
 ```
 
 Without `STRIPE_API_KEY` the Stripe half is skipped, with the reason; CI runs
-the fake half only. A run takes minutes: every test first checks that the
-account has settled, within a bound.
+the fake half only. The account's preconditions -- every world present, its
+clock ready, its target invoice finalised, the usage world's meter summary
+available -- are checked once, at the start of the session, within a bound;
+every later test starts from what that check found, and builds its own
+connection to read Stripe for its property. They are not promised to stay
+true afterwards: during a session, do not run the seed, nor change the
+worlds in use. An account not ready fails the first Stripe test after the
+wait, and every later one at once with the same reason; a platform error
+is not kept, and the next test checks again
+(specs/003-contract-readiness-once). With pytest-xdist, the check is made
+once per worker.
 
 **The write contract on Stripe.** A write is permanent, so the write
 properties run on invoices made for them, fresh each time. First a write
@@ -129,8 +138,11 @@ permissions):
 STRIPE_WRITES=enabled python -m dotenv run -- python -m pytest tests/contract -rs -q
 ```
 
-Each scenario first checks that its invoice carries no credit note, and
-stops, asking for a new write run, if one does. A write property skipped on
+The latest write generation is found once per session and pinned: a write
+run opened during the session is used by the next one. Each scenario still
+checks that its invoice carries no credit note, and stops, asking for a new
+write run, if one does. Run the write contract sequentially, and never two
+sessions on one write generation at once. A write property skipped on
 Stripe is not demonstrated: all seven must run and pass. Only the write
 tests can be run, without waiting for the clocked worlds:
 `tests/contract/test_billing_platform_writes.py` and

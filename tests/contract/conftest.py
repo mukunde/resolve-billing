@@ -2,14 +2,18 @@
 
 The fake, always. Stripe only with the restricted read-only test key in
 `STRIPE_API_KEY`, against an account the seed script built; skipped otherwise,
-with the reason. Before any Stripe test the account must be ready, within a
-bound: every test clock ready, every target invoice finalised, the usage
-world's meter summary available. A world missing from the account is a
-failure, not a skip: dropping one from the contract needs the maintainer.
+with the reason. The account must be ready, within a bound: every test clock
+ready, every target invoice finalised, the usage world's meter summary
+available. A world missing from the account is a failure, not a skip:
+dropping one from the contract needs the maintainer. That is checked once
+per process, by the first Stripe test (`READINESS`), and not promised to
+stay true afterwards: nobody runs the seed or changes the worlds during a
+session. Every test builds its own provider (specs/003-contract-readiness-once).
 
 The write contract (specs/002-stripe-writes) runs on the fake, always, and on
 Stripe only with `STRIPE_WRITES=enabled` beside the key, on the latest write
-generation the seed built (`--write-run`).
+generation the seed built (`--write-run`), found once per process and pinned
+(`WRITE_GENERATION`); each scenario still checks its invoice is fresh.
 """
 
 from __future__ import annotations

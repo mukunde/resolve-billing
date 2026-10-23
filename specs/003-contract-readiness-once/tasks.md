@@ -46,7 +46,7 @@ and the coverage check pass; committed locally.
 
 ## Phase 4: Documents, run, review, delivery
 
-- [ ] T030 `docs/operations.md` and the conftest docstring (plan section 4).
+- [x] T030 `docs/operations.md` and the conftest docstring (plan section 4).
 - [ ] T031 **[maintainer]** A full contract run on the seeded account, with
   writes on a fresh write run; its duration reported beside the nine minutes
   of 2026-10-23 (SC-001), and recorded in `docs/operations.md`.
