@@ -47,6 +47,59 @@ Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY`, and install the
 `claude` extra, to use the real engine.
 The default is the mock, so tests and demos cost nothing.
 
+### On a Stripe test account
+
+The fake is the default. To investigate on a Stripe test account instead --
+read-only: nothing is ever written to Stripe, and execution there is refused
+(specs/001-stripe-read-adapter, [contract](contract/billing-platform.md)):
+
+```bash
+pip install -e ".[stripe]"   # the SDK pinned to its API version, and httpx
+```
+
+Two keys, created by you in the account's test mode (Developers -> API keys),
+kept in `.env` and never anywhere else:
+
+- `STRIPE_API_KEY`: a **restricted** key (`rk_test_...`) with **Read** only on
+  Customers, Subscriptions, Invoices, Payment Intents, Charges, Prices,
+  Products, Billing Meters, Billing Meter Events and Test Clocks, and nothing
+  else. The service refuses any other kind of key before calling Stripe, and
+  refuses to start the SDK with console logging on (`STRIPE_LOG`), which
+  would print what Stripe answered.
+- `STRIPE_SEED_KEY`: the **secret** test key (`sk_test_...`), read only by
+  the seed script below. Never give it to the service.
+
+Then `BILLING_PROVIDER=stripe` selects Stripe for the API and the MCP server.
+
+**The test worlds.** `scripts/stripe_seed.py` builds, on the account, the
+worlds of `scripts/stripe_worlds.py` -- each a customer on its own test clock,
+on the month that ended before the run, with the amounts of its fake
+counterpart -- and records on each customer the invoice to investigate and
+when:
+
+```bash
+python -m dotenv run -- python -m scripts.stripe_seed
+```
+
+It prints one line per world: `built`, `complete` (an earlier run built it,
+and it still holds), or `REPORTED` with why -- a Stripe refusal by its type,
+code, parameter and request id (find the request in the Dashboard's logs),
+never its message. Run it again to complete what is missing; it makes
+nothing twice. Run it from one environment only (Windows *or* WSL): its lock
+holds within one. Stripe deletes a test clock 30 days after its creation;
+deleting a world's clock, or that deletion, makes the next run build the
+world again on that run's month.
+
+**The contract on Stripe.** With the seeded account and the read-only key:
+
+```bash
+python -m dotenv run -- python -m pytest tests/contract -rs -q
+```
+
+Without `STRIPE_API_KEY` the Stripe half is skipped, with the reason; CI runs
+the fake half only. A run takes minutes: every test first checks that the
+account has settled, within a bound.
+
 ### What CI actually enforces
 
 The interesting assertion is not that the tests pass.
