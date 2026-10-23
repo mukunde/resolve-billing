@@ -927,7 +927,9 @@ class World:
         )
 
     async def invoice(self, step: str, subscription: dict) -> dict:
-        """An invoice on the subscription, taking its pending items."""
+        """An invoice on the subscription, taking its pending items: Stripe
+        refuses `pending_invoice_items_behavior` beside `subscription`, which
+        already takes that subscription's pending items (first run, T032)."""
         return await self.once(
             step,
             find=self.v1.invoices.list_async,
@@ -936,7 +938,6 @@ class World:
             params={
                 "customer": self.customer_id,
                 "subscription": subscription["id"],
-                "pending_invoice_items_behavior": "include",
                 "auto_advance": False,
             },
         )
