@@ -64,11 +64,12 @@ each in its own git-ignored file, and never anywhere else:
 - `STRIPE_API_KEY`, in `.env`: a **restricted** key (`rk_test_...`) with
   **Read** on Customers, Subscriptions, Invoices, Payment Intents, Charges and
   Refunds, Prices, Products, Billing Meters, Billing Meter Events and Test
-  Clocks, and nothing else -- reading credit notes, for a write's status,
-  needed nothing more on the test account. To write, it needs **Write** on
-  Credit Notes, and only that: a refund is a credit note that refunds, and
-  the first write run without it was refused (403, nothing made)
-  (2026-10-23). The service refuses any other kind of key before calling Stripe, and
+  Clocks, and **Credit Notes** -- Read at least, so that a person can read a
+  write's status with writes switched off; existing credit notes were read
+  on the test account with Write granted, which allows reading. To write, it
+  needs **Write** on Credit Notes, and only that: a refund is a credit note
+  that refunds, and the first write run without it was refused (403, nothing
+  made) (2026-10-23). The service refuses any other kind of key before calling Stripe, and
   refuses to start the SDK with console logging on (`STRIPE_LOG`), which
   would print what Stripe answered.
 - `STRIPE_SEED_KEY`, in `.env.seed` and nowhere else: the **secret** test

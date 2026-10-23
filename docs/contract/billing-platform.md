@@ -208,8 +208,10 @@ them. End to end, the duplicate dispute investigated, approved and executed
 twice made one credit note for the approved amount, and a refund executed
 through the service one refunding credit note (SC-002). The one write
 permission the restricted key needed was **Credit Notes: Write**: its first
-run, without it, was refused with 403 (`permission`) and nothing was made;
-reading credit notes needed no permission beyond the reads listed above.
+run, without it, was refused with 403 (`permission`) and nothing was made.
+With the reads alone, listing an invoice's credit notes answered when it had
+none; credit notes that exist were read with Credit Notes: Write granted,
+which allows reading them. Reading existing ones without it is not shown.
 No difference from the fake needed approving.
 
 ## Not guaranteed today
