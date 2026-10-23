@@ -196,14 +196,29 @@ had its period aligned by Stripe) and `multi_invoice_payment` (both
 attachments tried were refused). `cancellation_without_end`,
 `unplaced_payment` and `missing_field` are mapping tests only too.
 
+**Writing** (specs/002-stripe-writes, 2026-10-23, the maintainer's run on a
+fresh write generation, same versions): the seven write properties held --
+a key sent twice made one credit note; it was found again by listing the
+invoice's credit notes; a credit note credited the balance on a paid
+invoice and lowered what was due on an open one; a refunding credit note
+refunded the payment; a refund beyond what a fully credited invoice could
+give back was refused, nothing written; a refund on an invoice with nothing
+paid was refused before sending; and the platform without writes refused
+them. End to end, the duplicate dispute investigated, approved and executed
+twice made one credit note for the approved amount, and a refund executed
+through the service one refunding credit note (SC-002). The one write
+permission the restricted key needed was **Credit Notes: Write**: its first
+run, without it, was refused with 403 (`permission`) and nothing was made;
+reading credit notes needed no permission beyond the reads listed above.
+No difference from the fake needed approving.
+
 ## Not guaranteed today
 
-- That Stripe enforces the caps the fake models (ADR-008, "to verify, not
-  assume"), and the other write properties: to be measured by the write
-  contract on a fresh write run, by the maintainer (T055).
 - That Stripe keeps idempotency keys for at least a day: its documentation
   says so; the contract run measures a key answered twice within the run,
   not a day later.
+- A refund's later fate: the contract saw it succeeded or pending right
+  after the write; a person reads it again for what came after.
 - Authentication of the sender: an address is a lookup, not proof (L10).
 - Freshness: the fake is static; Stripe's meter summaries are eventually
   consistent, and a usage record read right after an event may lag it.

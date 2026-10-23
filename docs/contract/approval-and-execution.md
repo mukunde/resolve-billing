@@ -157,9 +157,6 @@ An action says why in `attention`, from a closed set:
 
 ## Not guaranteed today
 
-- That Stripe enforces the caps the fake models: measured by the write
-  contract on a seeded test account, run by the maintainer (T055); until
-  then, a property of the fake, stated as such.
 - That Stripe keeps idempotency keys for at least a day: taken from its
   documentation, not measured. The 23-hour window rests on it.
 - Clearing an incident, other than by a person's status read that finds the
@@ -169,6 +166,10 @@ An action says why in `attention`, from a closed set:
   correction: two legitimate disputes on one invoice for the same amount
   collide (ADR-008, D6).
 - There is no scheduler: an abandoned claim waits for the next `execute()`.
+
+Stripe's cap on what an invoice's credit notes and refunds give back held
+on its test account (2026-10-23, write property 5); an approved correction
+was made there once, end to end (SC-002).
 
 ## Covered by
 

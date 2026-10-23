@@ -241,10 +241,11 @@ a write it made can fail later. What changes:
   the platform's reference. Actions older than the columns are marked
   `window_unknown`: when they were first sent cannot be shown.
 
-Stripe's caps -- "to verify, not assume" above -- are to be measured by the
-write contract on a seeded test account (specs/002-stripe-writes, property
-5), run by the maintainer (T055); until that run, they are a property of the
-fake, stated as such.
+Stripe's caps -- "to verify, not assume" above -- were measured by the
+write contract on a seeded test account on 2026-10-23 (specs/002-stripe-writes,
+property 5, the maintainer's run): a refund beyond what a fully credited
+invoice could still give back was refused, and nothing was written. What
+Stripe enforces holds there; it is no longer a property of the fake alone.
 
 **Re-evaluation condition:** a platform whose keys outlive any retry, or a
 scheduler sweeping unknown outcomes (above), changes how the window is set,

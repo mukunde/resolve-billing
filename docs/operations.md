@@ -62,12 +62,13 @@ Two keys, created by you in the account's test mode (Developers -> API keys),
 each in its own git-ignored file, and never anywhere else:
 
 - `STRIPE_API_KEY`, in `.env`: a **restricted** key (`rk_test_...`) with
-  **Read** on Customers, Subscriptions, Invoices, Payment Intents, Charges, Prices,
-  Products, Billing Meters, Billing Meter Events, Test Clocks and Credit
-  Notes (a person reads a write's status through them), and nothing else.
-  To write, it needs **Write** on Credit Notes too, and whatever a refunding
-  credit note needs besides, established on the test account and listed
-  here. The service refuses any other kind of key before calling Stripe, and
+  **Read** on Customers, Subscriptions, Invoices, Payment Intents, Charges and
+  Refunds, Prices, Products, Billing Meters, Billing Meter Events and Test
+  Clocks, and nothing else -- reading credit notes, for a write's status,
+  needed nothing more on the test account. To write, it needs **Write** on
+  Credit Notes, and only that: a refund is a credit note that refunds, and
+  the first write run without it was refused (403, nothing made)
+  (2026-10-23). The service refuses any other kind of key before calling Stripe, and
   refuses to start the SDK with console logging on (`STRIPE_LOG`), which
   would print what Stripe answered.
 - `STRIPE_SEED_KEY`, in `.env.seed` and nowhere else: the **secret** test
@@ -129,7 +130,12 @@ STRIPE_WRITES=enabled python -m dotenv run -- python -m pytest tests/contract -r
 
 Each scenario first checks that its invoice carries no credit note, and
 stops, asking for a new write run, if one does. A write property skipped on
-Stripe is not demonstrated: all seven must run and pass.
+Stripe is not demonstrated: all seven must run and pass. Only the write
+tests can be run, without waiting for the clocked worlds:
+`tests/contract/test_billing_platform_writes.py` and
+`tests/contract/test_stripe_execution.py`. A refusal reads as its category
+alone (`permission`, say): Stripe's message, naming a missing permission, is
+in the Dashboard's logs (Developers -> Logs).
 
 ### What CI actually enforces
 

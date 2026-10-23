@@ -9,9 +9,12 @@ description: "Tasks for Stripe as a billing platform, writing"
 **Tests**: required. Every test is written before the code it covers and
 shown to fail on it.
 
-**State (2026-10-23)**: Phases 1 to 6 done but T054 and T055, the
-maintainer's on the test account; the documents written (T060-T062), to be
-completed with T055's results; the final review and delivery to come.
+**State (2026-10-23)**: every task done but T065 -- the maintainer's
+approval of the final diff by its commit, then the push and the pull
+request. T054 and T055 were the maintainer's: the key needed Credit Notes
+Write alone (a first run without it was refused, nothing made); on a fresh
+write generation the seven write properties and SC-002 held. Codex reviewed
+the implementation in r137-r139, and the final diff after T055.
 
 **Organisation**: by phase, then by user story. `[P]` means parallelisable
 (different files, no dependency). Each task names its files. A checkpoint ends
@@ -202,11 +205,11 @@ the maintainer's: they need the key or the test account.
   duplicate world investigated, its proposal approved as shown, executed
   twice -- one credit note for the approved amount; a refund executed through
   the service on a paid write invoice.
-- [ ] T054 **[maintainer]** On the test account: give the restricted key the
+- [x] T054 **[maintainer]** On the test account: give the restricted key the
   write permissions a credit note and a refunding credit note need, starting
   from credit notes; the permissions found recorded in `docs/operations.md`
   and `.env.example`.
-- [ ] T055 **[maintainer]** Run the seed with `--write-run`, then the
+- [x] T055 **[maintainer]** Run the seed with `--write-run`, then the
   contract tests with the writing key (`-rs`, so every skip is listed with
   its reason). SC-001 holds only with all seven properties run and passed
   on Stripe: a skip is not demonstrated. Each difference from the fake is
@@ -226,9 +229,9 @@ the maintainer's: they need the key or the test account.
 - [x] T062 [P] `docs/operations.md` (switching writes on, the key's
   permissions, reading a status again, what an action needing a person
   means), `.env.example`, `README.md`.
-- [ ] T063 Gates: `ruff check`, `pytest`, the mock baseline and the coverage
+- [x] T063 Gates: `ruff check`, `pytest`, the mock baseline and the coverage
   check; `scripts/make_architecture_svg.py` if the diagram changes.
-- [ ] T064 Codex reviews the final diff on a read-only checkout; findings
+- [x] T064 Codex reviews the final diff on a read-only checkout; findings
   fixed, reviewed again until nothing is left.
 - [ ] T065 **[maintainer]** Approval of the final diff by its commit; then
   the push and the pull request, with "Behaviour changed": *Billing

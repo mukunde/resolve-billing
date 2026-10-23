@@ -126,7 +126,7 @@ agent. Autonomy thresholds exist in the code and are off.
 | Money | amount computed by code for whole-invoice errors; refused money shown as none; refund only against a settled payment; corrections capped at the invoice | partial amounts, specified with real billing data |
 | Approval and execution | authenticated approvers, proposal fingerprint, 72 h expiry, idempotent execution, uncertain outcomes reconciled with the platform within its idempotency window, the platform's answer checked before a write is recorded, incidents left to a person ([contract](docs/contract/approval-and-execution.md)) | identity provider (OIDC) instead of a configured list |
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
-| Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, its read contract held on a seeded account, its writes (a credit note; a refund as a refunding credit note) behind `STRIPE_WRITES=enabled` ([contract](docs/contract/billing-platform.md)) | the write contract on a seeded Stripe account, then Pennylane; Qonto for payment evidence |
+| Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, reading and writing (a credit note; a refund as a refunding credit note, behind `STRIPE_WRITES=enabled`), its contract held on a seeded account ([contract](docs/contract/billing-platform.md)) | Pennylane; Qonto for payment evidence |
 | Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox; the message masked before the model | authentication results from a trusted gateway |
 | Evaluation | 34 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
@@ -316,8 +316,8 @@ On the way, in order:
    version; the outgoing-text check comes with the reply drafter.
 2. **The new blind holdout**, generated in an isolated environment and
    adjudicated, then a reference run.
-3. **Real integrations**: Stripe in test mode -- reading done, writing
-   built and its contract to run on a seeded account -- then Pennylane as a
+3. **Real integrations**: Stripe in test mode -- reading and writing
+   done, their contract held on a seeded account -- then Pennylane as a
    second billing platform, and Qonto as evidence that a payment arrived.
 4. **A demonstration company**: identity provider (OIDC), support tool,
    monitoring and alerting, secrets management, signed images, tested
