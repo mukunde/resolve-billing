@@ -2,23 +2,29 @@
 
 The fake, always. Stripe only with the restricted read-only test key in
 `STRIPE_API_KEY`, against an account the seed script built; skipped otherwise,
-with the reason. Before any Stripe test the account must be ready, within a
-bound: every test clock ready, every target invoice finalised, the usage
-world's meter summary available. A world missing from the account is a
-failure, not a skip: dropping one from the contract needs the maintainer.
+with the reason. The account must be ready, within a bound: every test clock
+ready, every target invoice finalised, the usage world's meter summary
+available. A world missing from the account is a failure, not a skip:
+dropping one from the contract needs the maintainer. That is checked once
+per process, by the first Stripe test (`READINESS`), and not promised to
+stay true afterwards: nobody runs the seed or changes the worlds during a
+session. Every test builds its own provider (specs/003-contract-readiness-once).
 
 The write contract (specs/002-stripe-writes) runs on the fake, always, and on
 Stripe only with `STRIPE_WRITES=enabled` beside the key, on the latest write
-generation the seed built (`--write-run`).
+generation the seed built (`--write-run`), found once per process and pinned
+(`WRITE_GENERATION`); each scenario still checks its invoice is fresh.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import MappingProxyType
+from typing import Any
 
 import pytest
 
@@ -38,12 +44,66 @@ UNREACHABLE = "http://127.0.0.1:9"
 
 
 @dataclass(frozen=True)
+class Diagnosis:
+    """Why a check failed, in the contract's own words: never Stripe's."""
+
+    reason: str
+
+
+class Once:
+    """A check made at most once per pytest process, and what it found.
+
+    The first call runs the check. A value it returns is kept and returned
+    to every later call. A `pytest.fail` -- the contract's own diagnosis: an
+    account not ready within the bound, a world missing, a generation
+    incomplete -- is kept as its message alone, and every later call fails
+    at once with it. Anything else -- a skip, a platform error, an
+    interruption -- settles nothing: it propagates, and the next call checks
+    again (specs/003-contract-readiness-once, FR-001, FR-003). What a check
+    returns is immutable data, never a provider or a client bound to a test's
+    event loop (FR-002).
+    """
+
+    def __init__(self) -> None:
+        self.kept: Any = None
+
+    async def __call__(self, check: Callable[[], Awaitable[Any]]) -> Any:
+        if isinstance(self.kept, Diagnosis):
+            pytest.fail(self.kept.reason)
+        if self.kept is not None:
+            return self.kept
+        try:
+            found = await check()
+        except pytest.fail.Exception as failure:
+            self.kept = Diagnosis(str(failure.msg))
+            raise
+        self.kept = found
+        return found
+
+
+#: What this process found about the seeded account, and about the write
+#: generation: two checks, kept apart.
+READINESS = Once()
+WRITE_GENERATION = Once()
+
+
+@dataclass(frozen=True)
 class Seeded:
     """A world as the seed recorded it on its customer."""
 
     customer_id: str
     target_invoice: str
     investigate_at: datetime
+
+
+@dataclass(frozen=True)
+class Readiness:
+    """What the readiness check found: the seeded worlds, and the
+    subscription and period the usage world's record covers. Data only, and
+    read-only: every test that shares it builds its own provider."""
+
+    seeded: Mapping[str, Seeded]
+    usage: tuple[str, tuple[datetime, datetime]]
 
 
 @dataclass
@@ -59,8 +119,8 @@ class Platform:
     #: The same platform behind an address that never answers, or None when
     #: the platform cannot be made to fail (the fake).
     unreachable: Callable[[], object] | None = None
-    #: Seeded worlds by name (Stripe only).
-    seeded: dict[str, Seeded] = field(default_factory=dict)
+    #: Seeded worlds by name (Stripe only), read-only.
+    seeded: Mapping[str, Seeded] = field(default_factory=dict)
 
 
 def fake_platform() -> Platform:
@@ -85,19 +145,31 @@ async def stripe_platform() -> Platform:
     from app.providers.stripe.adapter import StripeBillingProvider
     from app.providers.stripe.client import connect
 
+    # This test's own provider, on this test's event loop; what the account's
+    # readiness check found is shared by the process (specs/003, FR-001).
     provider = StripeBillingProvider(connect(key))
-    seeded = await _ready(provider)
-    usage_world = seeded["usage"]
-    target = await provider.get_invoice(usage_world.target_invoice)
-    metered = next(line for line in target.lines if line.metric)
+    ready = await READINESS(lambda: _readiness(provider))
+    seeded = ready.seeded
     return Platform(
         name="stripe",
         provider=provider,
         customers=[seeded[w.name].customer_id for w in worlds.SUPPORTED],
         customer_id=seeded["duplicate"].customer_id,
-        usage=(target.subscription_id, (metered.period_start, metered.period_end)),
+        usage=ready.usage,
         unreachable=lambda: StripeBillingProvider(connect(key, api_base=UNREACHABLE, retries=0)),
         seeded=seeded,
+    )
+
+
+async def _readiness(provider) -> Readiness:
+    """The account's preconditions, once it has settled, as data: the
+    seeded worlds and the usage world's period."""
+    seeded = await _ready(provider)
+    target = await provider.get_invoice(seeded["usage"].target_invoice)
+    metered = next(line for line in target.lines if line.metric)
+    return Readiness(
+        seeded=MappingProxyType(dict(seeded)),
+        usage=(target.subscription_id, (metered.period_start, metered.period_end)),
     )
 
 
@@ -184,20 +256,41 @@ FAKE_WRITE_INVOICES = {
 }
 
 
+@dataclass(frozen=True)
+class Duplicate:
+    """The write run's duplicate dispute: who sends it, about which invoice,
+    and when to investigate it."""
+
+    email: str
+    target_invoice: str
+    investigate_at: datetime
+
+
+@dataclass(frozen=True)
+class WriteGeneration:
+    """The latest write generation, as found at the start of the session and
+    pinned for it: a write run opened later is not seen until the next one."""
+
+    number: str
+    #: The invoice each scenario writes on, by purpose; read-only.
+    invoices: Mapping[str, str]
+    duplicate: Duplicate
+
+
 @dataclass
 class Writing:
     name: str
     provider: object
     #: The invoice each scenario writes on, by purpose.
-    invoices: dict[str, str]
+    invoices: Mapping[str, str]
     #: Whether an invoice carries no credit note yet.
     untouched: Callable[[str], Awaitable[bool]]
     #: Every credit note of an invoice, as the platform holds it (Stripe).
     credit_notes: Callable[[str], Awaitable[list[dict]]] | None = None
     #: The same platform, unable to write (Stripe).
     read_only: object | None = None
-    #: The write run's duplicate dispute: its customer (Stripe).
-    duplicate: dict | None = None
+    #: The write run's duplicate dispute (Stripe).
+    duplicate: Duplicate | None = None
 
 
 def fake_writing() -> Writing:
@@ -222,10 +315,33 @@ async def stripe_writing() -> Writing:
     pytest.importorskip("stripe", reason="the Stripe SDK is the optional extra `stripe`")
     from app.providers.stripe.adapter import StripeBillingProvider
     from app.providers.stripe.client import connect, connect_writer
-    from scripts.stripe_seed import MANIFEST, WRITE_LAST
 
+    # This test's own providers; the generation is found once per process
+    # and pinned (specs/003, FR-004). Whether an invoice is still fresh is
+    # read by each scenario, on this test's reader.
     provider = StripeBillingProvider(connect(key), writer=connect_writer(key))
     reader = provider.reader
+    generation = await WRITE_GENERATION(lambda: _generation(reader))
+
+    async def untouched(invoice_id: str) -> bool:
+        return not await reader.credit_notes(invoice_id)
+
+    return Writing(
+        name="stripe",
+        provider=provider,
+        invoices=generation.invoices,
+        untouched=untouched,
+        credit_notes=reader.credit_notes,
+        read_only=StripeBillingProvider(connect(key)),
+        duplicate=generation.duplicate,
+    )
+
+
+async def _generation(reader) -> WriteGeneration:
+    """The latest write generation the seed opened, as data. No write run is
+    a skip; a generation incomplete is the contract's diagnosis."""
+    from scripts.stripe_seed import MANIFEST, WRITE_LAST
+
     customers = await reader.customers()
     manifests = [c for c in customers if (c.get("metadata") or {}).get(MANIFEST) == "1"]
     number = manifests[0]["metadata"].get(WRITE_LAST) if len(manifests) == 1 else None
@@ -246,18 +362,15 @@ async def stripe_writing() -> Writing:
     missing = sorted(set(worlds.WRITE_PURPOSES) - invoices.keys())
     if missing:
         pytest.fail(f"write generation {number} lacks invoices for {missing}")
-
-    async def untouched(invoice_id: str) -> bool:
-        return not await reader.credit_notes(invoice_id)
-
-    return Writing(
-        name="stripe",
-        provider=provider,
-        invoices=invoices,
-        untouched=untouched,
-        credit_notes=reader.credit_notes,
-        read_only=StripeBillingProvider(connect(key)),
-        duplicate=ours[worlds.WRITE_DUPLICATE],
+    duplicate = ours[worlds.WRITE_DUPLICATE]
+    return WriteGeneration(
+        number=number,
+        invoices=MappingProxyType(invoices),
+        duplicate=Duplicate(
+            email=duplicate["email"],
+            target_invoice=duplicate["metadata"][worlds.TARGET_INVOICE],
+            investigate_at=datetime.fromisoformat(duplicate["metadata"][worlds.INVESTIGATE_AT]),
+        ),
     )
 
 

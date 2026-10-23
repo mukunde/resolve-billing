@@ -10,7 +10,6 @@ locally, with the writing key (see conftest).
 from __future__ import annotations
 
 import json
-from datetime import datetime
 
 import pytest
 
@@ -41,8 +40,8 @@ async def approved_and_executed_twice(provider, store, action_id):
 async def test_a_dispute_investigated_approved_and_executed_makes_one_credit_note(
     stripe_writer,
 ):
-    customer = stripe_writer.duplicate
-    target = customer["metadata"][worlds.TARGET_INVOICE]
+    duplicate = stripe_writer.duplicate
+    target = duplicate.target_invoice
     if not await stripe_writer.untouched(target):
         pytest.skip(f"invoice {target} already carries a credit note: run --write-run")
     case = CASES["duplicate_fr"]
@@ -54,11 +53,11 @@ async def test_a_dispute_investigated_approved_and_executed_makes_one_credit_not
         Dispute(
             id="sc002_duplicate",
             customer_message=case["message"],
-            customer_email=customer["email"],
+            customer_email=duplicate.email,
             invoice_id=target,
             headers=header_pairs(case.get("headers")),
         ),
-        now=datetime.fromisoformat(customer["metadata"][worlds.INVESTIGATE_AT]),
+        now=duplicate.investigate_at,
     )
     assert result.action_id is not None, "the duplicate should queue a correction"
 
