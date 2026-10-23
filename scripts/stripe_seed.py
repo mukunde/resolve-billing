@@ -894,17 +894,19 @@ class World:
         self,
         step: str,
         *,
-        subscription: dict,
+        subscription: dict | None,
         period: tuple[int, int],
         price: str | None = None,
         amount: int | None = None,
     ) -> dict:
-        """An invoice item on the subscription, for an explicit period."""
+        """An invoice item for an explicit period, on the subscription when
+        one is given, else a one-off."""
         params: dict[str, Any] = {
             "customer": self.customer_id,
-            "subscription": subscription["id"],
             "period": {"start": period[0], "end": period[1]},
         }
+        if subscription is not None:
+            params["subscription"] = subscription["id"]
         if price is not None:
             params["pricing"] = {"price": self.price(price)}
         else:
@@ -917,20 +919,22 @@ class World:
             params=params,
         )
 
-    async def invoice(self, step: str, subscription: dict) -> dict:
-        """An invoice on the subscription, taking its pending items: Stripe
-        refuses `pending_invoice_items_behavior` beside `subscription`, which
-        already takes that subscription's pending items (first run, T032)."""
+    async def invoice(self, step: str, subscription: dict | None, **extra: Any) -> dict:
+        """An invoice taking the pending items: the subscription's, when one is
+        given -- Stripe refuses `pending_invoice_items_behavior` beside
+        `subscription`, which takes them already (first run, T032) -- else the
+        customer's one-off items."""
+        params: dict[str, Any] = {"customer": self.customer_id, "auto_advance": False, **extra}
+        if subscription is not None:
+            params["subscription"] = subscription["id"]
+        else:
+            params["pending_invoice_items_behavior"] = "include"
         return await self.once(
             step,
             find=self.v1.invoices.list_async,
             where={"customer": self.customer_id},
             create=self.v1.invoices.create_async,
-            params={
-                "customer": self.customer_id,
-                "subscription": subscription["id"],
-                "auto_advance": False,
-            },
+            params=params,
         )
 
     async def finalized(self, invoice: dict) -> dict:
@@ -1136,16 +1140,19 @@ async def _partial_refund(w: World) -> str:
 
 
 async def _multi_invoice_payment(w: World) -> str:
-    subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
-    await w.advance(w.dates.start + DAY)
+    """Two one-off invoices sent to the customer, and one payment attached to
+    both. Stripe refuses it on subscription invoices charged automatically,
+    where a payment must match the invoice's total (first run, T032)."""
     period = (w.dates.start, w.dates.end)
     invoices = []
     for n in (1, 2):
-        await w.item(f"item_{n}", subscription=subscription, period=period, price="rb_pro_once")
-        invoices.append(await w.finalized(await w.invoice(f"invoice_{n}", subscription)))
+        await w.item(f"one_off_item_{n}", subscription=None, period=period, price="rb_pro_once")
+        invoice = await w.invoice(
+            f"one_off_invoice_{n}", None, collection_method="send_invoice", days_until_due=30
+        )
+        invoices.append(await w.finalized(invoice))
     intent = await w.once(
-        "payment",
+        "one_off_payment",
         find=w.v1.payment_intents.list_async,
         where={"customer": w.customer_id},
         create=w.v1.payment_intents.create_async,
