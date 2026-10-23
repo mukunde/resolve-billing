@@ -57,7 +57,8 @@ the maintainer's: they need the key or the test account.
   `window_unknown`, `APPROVED` and earlier untouched; `first_attempt_at` set
   by the first claim only, never by a later one; the allocation stored once;
   `uncertain_since` set once; `annotate` changes no state and refuses when
-  the state moved.
+  the state moved; `FAILED → EXECUTED` refused without the platform's
+  reference, like every `EXECUTED`.
 - [ ] T014 `app/infrastructure/actions.py`: the columns, the migration,
   `annotate`, `NeedsAPerson`; `PendingAction` carries the new fields.
 
@@ -71,7 +72,9 @@ the maintainer's: they need the key or the test account.
   alike → `EXECUTED` with its reference, status and instant; a status but
   success → `EXECUTED`, annotated `not_successful`, said in `resolution`,
   never written again; an answer unlike the action (each field: invoice,
-  type, amount, currency, test mode, allocation) or with a field missing →
+  type, amount, currency, test mode, an allocation other than the one
+  stored -- `reduce_due` planned, `customer_balance` found) or with a field
+  missing →
   `UNKNOWN_OUTCOME`, annotated, `NeedsAPerson`, and the next `execute()`
   writes nothing; the allocation fixed by `plan_write` after the first claim
   and reused: two sends of one action make the same request, across a
@@ -121,9 +124,13 @@ the maintainer's: they need the key or the test account.
   carries the status, its instant, `attention` and `first_attempt_at`;
   `NeedsAPerson` answers 409 with its category, never 504; `POST
   /actions/{id}/status` by an approver records a new observation and sends
-  nothing, with writes switched off too; on an `UNKNOWN_OUTCOME` with an
-  incident it settles only on exactly one write alike; refused (409) for
-  any other state and (401/403) without an approver; the 504 message. Then `app/api/approvals.py` and
+  nothing, with writes switched off too; on an action with an incident --
+  `UNKNOWN_OUTCOME`, and `EXECUTING` or `FAILED` marked `window_unknown` by
+  the migration, each tested -- exactly one write alike makes it `EXECUTED`
+  (with no allocation stored: one the type allows), and nothing found,
+  several or unlike leave its state, annotated, with no new write ever
+  permitted; refused (409) for any other state and (401/403) without an
+  approver; the 504 message. Then `app/api/approvals.py` and
   `ApprovalService.refresh_status`.
 
 **Checkpoint**: US1 on the stub; the mock baseline matched.
@@ -140,6 +147,8 @@ the maintainer's: they need the key or the test account.
   (a new store on the same file); a read that starts before the limit and
   ends after it sends nothing (`NotSent`), and the action is never sent
   again; an action marked `window_unknown` by the migration is never sent;
+  a write found for an action with no allocation stored is never settled
+  automatically;
   a first answer lost then an idempotency conflict → unknown, never
   `FAILED`; a first write landed, its answer lost, then the retry refused
   (403) → reconciled, `EXECUTED`; refused after an unknown outcome with

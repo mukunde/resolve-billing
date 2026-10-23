@@ -210,27 +210,38 @@ minutes, which first becomes `UNKNOWN_OUTCOME` with `uncertain_since` set):
 Reconciliation never writes. A read that fails leaves the state as it was.
 
 **The check** (`_unlike(action, found) -> str | None`, pure): the invoice,
-the type, the amount, the currency, `test_mode` true, an allocation the type
-allows (a refund: `refund`; a credit note: `reduce_due` or
-`customer_balance`), and, where the platform holds them, the key and the
-action identifier. A missing field is `unreadable_answer`.
+the type, the amount, the currency, `test_mode` true, **the allocation equal
+to the one stored** -- a credit note planned `reduce_due` and found
+`customer_balance` is unlike -- and, where the platform holds them, the key
+and the action identifier. A missing field is `unreadable_answer`. With no
+allocation stored -- an action older than the column, or one whose plan
+never completed -- the found write's allocation must be one the type allows
+(a refund: `refund`; a credit note: `reduce_due` or `customer_balance`), and
+only a person's status read can settle it: automatic reconciliation
+annotates it `window_unknown` and goes no further.
 
 **Reading the status again** (FR-003): `ApprovalService.refresh_status(id)`.
 For an `EXECUTED` action: `find_action`, the write with the recorded
 reference, its status and the instant observed recorded; `not_successful` set
 or cleared by what is observed; its write gone or unlike: annotated,
-reported. For an `UNKNOWN_OUTCOME` action with an incident: the
-reconciliation read, which settles it only on exactly one write alike.
-Nothing is ever sent, and it needs no writing: it works with
-`STRIPE_WRITES` off, so a person can follow up after switching writes off.
+reported. For an action with an incident -- `UNKNOWN_OUTCOME`, or, marked
+`window_unknown` by the migration, `EXECUTING` or `FAILED` too -- the
+reconciliation read: exactly one write alike makes it `EXECUTED` with that
+reference and its status; nothing found, several, or unlike leaves its state
+as it is, annotated, and never permits a new write. `EXECUTING` and
+`UNKNOWN_OUTCOME` reach `EXECUTED` by transitions that exist; `FAILED →
+EXECUTED` is added to the table for this read alone, still under the store's
+guard that `EXECUTED` takes the platform's reference (ADR-008) -- so a write
+can be recorded only when the platform shows it. Nothing is ever sent, and
+the read needs no writing: it works with `STRIPE_WRITES` off, so a person
+can follow up after switching writes off.
 
 ### 4. The API (`app/api/approvals.py`)
 
 - `ActionOut` gains `provider_status`, `provider_status_at`, `attention` and
   `first_attempt_at`.
 - `POST /api/v1/actions/{id}/status`: reads the status again; an approver's
-  call (a person), 409 unless `EXECUTED` or an `UNKNOWN_OUTCOME` with an
-  incident.
+  call (a person), 409 unless `EXECUTED` or an action with an incident.
 - `NeedsAPerson` answers 409 with the category, ahead of the catch-all;
   the 504 message no longer promises that the next call settles everything:
   "reconciled on the next execute, or put to a person".
