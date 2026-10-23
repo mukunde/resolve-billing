@@ -2,7 +2,7 @@
 
 **Feature Branch**: `002-stripe-writes`
 
-**Created**: 2026-10-23 · **Revised**: 2026-10-23, after review r131
+**Created**: 2026-10-23 · **Revised**: 2026-10-23, after reviews r131 and r132
 
 **Status**: Draft -- for the maintainer's approval
 
@@ -67,10 +67,19 @@ request needs the maintainer's explicit approval of the final diff.
   still answers the key with what it made; past that window it leaves the
   outcome unknown, for a person. (3) A write found under the key but unlike
   the one approved -- another invoice, type, amount or currency, or two of
-  them -- is an incident for a person, never "the first one found". (4) No
+  them -- is an incident for a person, never "the first one found"; the
+  platform's own answer to a write is checked the same way before the action
+  is `EXECUTED`. (4) No
   mail to the customer from Stripe: replies go through the system's reply
   policy (ADR-011). (5) Only an invoice in a state the slice handles is
   written on; anything else is refused before sending.
+- Q: (review r132) How is a retry kept safe? → A: The instant of the first
+  attempt is recorded before it is sent, and never reset. Every send -- the
+  first, a retry, a retry after a restart -- happens only within 23 hours of
+  it; past that, nothing is sent automatically for that action. A refusal of
+  a later attempt never settles an earlier one whose outcome was unknown: the
+  action stays to reconcile. The status recorded after a write is an
+  observation, dated; a person can have it read again, which writes nothing.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -177,27 +186,41 @@ by category, nothing written.
 
 - **FR-001**: `find_action(idempotency_key, invoice_id)` MUST take the
   invoice the action was made on and answer every write made under that key
-  on that invoice: none, one, or more. The fake follows; the action store
-  already holds the invoice.
+  on that invoice: none, one, or more. The two writes MUST take the action's
+  identifier too. A write and `find_action` MUST return what the checks of
+  FR-004 read -- the invoice, the type, the amount and currency, test mode,
+  the allocation, the platform's status and when it was observed. The fake
+  follows; the action store already holds the invoice.
 - **FR-002**: Stripe's `can_write` MUST be false unless the configuration
   says `STRIPE_WRITES=enabled`, read in the wiring only. With it false,
   everything behaves as in the read-only slice.
-- **FR-003**: A write the platform made MUST make the action `EXECUTED` with
-  its reference, whatever its status: the platform's status is recorded, and
-  any status but success (a refund pending, failed, cancelled or awaiting
-  action; a credit note voided) is said in the action's resolution and its
-  API answer, for a person to follow up. It is never treated as an absence,
-  and nothing is written again for it.
-- **FR-004**: Reconciliation MUST check a write found under the key against
-  the action -- invoice, type, amount, currency, test mode, and how it was
-  allocated -- and treat two writes, or one unlike the action, as an incident:
-  the outcome stays unknown and the action says it needs a person.
-- **FR-005**: An absence MUST settle an unknown outcome as `FAILED` only while
-  the platform still answers the key with what it made -- for Stripe, within
-  23 hours of the first attempt, a margin under the day Stripe keeps keys.
-  Past that window, an absence leaves the outcome unknown and the action says
-  it needs a person. A retry is always sent under the action's key and with
-  exactly the same parameters.
+- **FR-003**: A write the platform made -- answered directly or found by
+  reconciliation, and checked as FR-004 says -- MUST make the action
+  `EXECUTED` with its reference, whatever its status: the platform's status
+  is recorded as an observation, with the instant it was made, and any status
+  but success (a refund pending, failed, cancelled or awaiting action; a
+  credit note voided) is said in the action's resolution and its API answer,
+  for a person to follow up. It is never treated as an absence, and nothing
+  is written again for it. A person can have the status read again: a read,
+  which writes nothing and records a new dated observation.
+- **FR-004**: A write -- the platform's direct answer, or one found under
+  the key -- MUST be checked against the action -- invoice, type, amount,
+  currency, test mode, and how it was allocated -- before the action is
+  `EXECUTED`. Two writes, one unlike the action, or an answer incomplete or
+  unreadable, are an incident: the outcome stays unknown, nothing is written
+  again, and the action says it needs a person.
+- **FR-005**: The instant of an action's first attempt MUST be recorded
+  before it is sent, and never reset. Every send -- the first, a retry, one
+  after a restart -- MUST happen within 23 hours of it (a margin under the
+  day Stripe keeps keys), under the action's key and with exactly the same
+  parameters; past it, nothing is sent automatically for that action. An
+  absence settles an unknown outcome as `FAILED` only within that window;
+  past it, the outcome stays unknown and the action says it needs a person.
+- **FR-006**: A refusal MUST settle an action as `FAILED` only when no earlier
+  attempt of it had an unknown outcome. Otherwise -- a retry refused after a
+  first answer was lost, a precondition no longer true -- the earlier attempt
+  may have landed: the action is reconciled, and stays unknown if
+  reconciliation cannot conclude.
 
 **The writes on Stripe**
 
@@ -229,7 +252,8 @@ by category, nothing written.
   identifier, the action's type, the key, and a status: `succeeded` when the
   credit note is issued and, for a refund, its refund succeeded; `pending`
   while the refund is in progress or awaits action; `failed` when the refund
-  failed or was cancelled, or the credit note is void.
+  failed or was cancelled, or the credit note is void -- each an observation
+  with its instant, not the current state.
 - **FR-016**: The adapter MUST make no other write: no standalone refund, no
   invoice change, no void, no customer change.
 
@@ -259,11 +283,13 @@ by category, nothing written.
   parameters of each write (amounts, allocation, `email_type`, metadata, no
   `memo`), the idempotency key; the closed list of refusals against every
   other error; `find_action` over several pages, a page cut short, two
-  matches and a mismatch; each platform status after a write; reconciliation
-  inside and past the window; a first answer lost then an idempotency
-  conflict; no write for an action not approved, expired, changed, or for
-  more than the invoice or another currency; `can_write` and its
-  configuration; no other mutating call.
+  matches and a mismatch; a direct answer incomplete or unlike the action;
+  each platform status after a write, and a status read again; reconciliation
+  inside and past the window; no send past the window, a restart included; a
+  first answer lost then an idempotency conflict; a first write landed, its
+  answer lost, then a retry refused; no write for an action not approved,
+  expired, changed, or for more than the invoice or another currency;
+  `can_write` and its configuration; no other mutating call.
 - **FR-031**: Contract tests, locally with the writing key, on fresh seeded
   worlds: the write properties below, and one end-to-end execution per write
   type through the execution service.
@@ -303,16 +329,20 @@ by category, nothing written.
   baseline is matched.
 - **SC-004**: With `STRIPE_WRITES` not set to `enabled`, nothing is ever
   written to Stripe.
-- **SC-005**: No reconciliation ever writes, and none marks `FAILED` on an
-  absence the platform can no longer vouch for.
+- **SC-005**: No reconciliation ever writes; nothing is sent past the
+  window; no `FAILED` rests on an absence the platform can no longer vouch
+  for, nor on a refusal that follows an unknown outcome.
 
 ## Assumptions
 
-- Stripe's credit notes API at version `2026-07-29.dahlia` (SDK 15.4.0) takes
-  `amount`, `credit_amount` and `refund_amount`; a refunding credit note
-  creates the refund itself (`refunds` only links refunds that exist); Stripe
-  caps what an invoice's credit notes and refunds can give back; Stripe keeps
-  idempotency keys for at least a day. The contract run confirms each.
+- Measured by the contract run on the pinned version (`2026-07-29.dahlia`,
+  SDK 15.4.0): the credit notes API takes `amount`, `credit_amount` and
+  `refund_amount`; a refunding credit note creates the refund itself
+  (`refunds` only links refunds that exist); Stripe caps what an invoice's
+  credit notes and refunds can give back; a key answered again within a run
+  returns the first write.
+- Taken from Stripe's documentation, not measured: that it keeps idempotency
+  keys for at least a day. The 23-hour window rests on it.
 - The maintainer gives the restricted key its writes; no agent sees a key.
 - Out of scope, each for its own slice: partial amounts; other currencies;
   partly paid invoices; voiding a credit note; payments out of band; live
