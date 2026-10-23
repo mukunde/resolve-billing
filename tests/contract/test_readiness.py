@@ -307,3 +307,123 @@ def test_two_tests_on_their_own_loops_share_one_check_and_own_their_providers(
     assert loop_1 != loop_2
     assert provider_1 != provider_2
     assert checks_1 == checks_2 == 1
+
+
+# -- the write generation, once (US2) -------------------------------------------
+
+
+class Account:
+    """A write generation as the seed leaves it, read through a reader."""
+
+    def __init__(self, number: str | None = "1", duplicate: bool = True) -> None:
+        self.number = number
+        self.duplicate = duplicate
+        self.discoveries = 0
+        self.notes: dict[str, list[dict]] = {}
+        self.note_reads = 0
+
+    async def customers(self, test_clock=None):
+        self.discoveries += 1
+        manifest = {"id": "cus_manifest", "metadata": {"rb_seed_manifest": "1"}}
+        if self.number:
+            manifest["metadata"]["w_last"] = self.number
+        found = [
+            manifest,
+            {
+                "id": f"cus_write{self.number}",
+                "metadata": {worlds.WORLD: "write", worlds.WRITE_GENERATION: self.number},
+            },
+        ]
+        if self.duplicate:
+            found.append(
+                {
+                    "id": f"cus_dup{self.number}",
+                    "email": f"write-duplicate-w{self.number}@{worlds.DOMAIN}",
+                    "metadata": {
+                        worlds.WORLD: worlds.WRITE_DUPLICATE,
+                        worlds.WRITE_GENERATION: self.number,
+                        worlds.TARGET_INVOICE: f"in_dup{self.number}",
+                        worlds.INVESTIGATE_AT: "2026-10-23T17:43:47+00:00",
+                    },
+                }
+            )
+        return found
+
+    async def invoices(self, customer_id):
+        return [
+            {"id": f"in_{purpose}{self.number}", "metadata": {worlds.PURPOSE: purpose}}
+            for purpose in worlds.WRITE_PURPOSES
+        ]
+
+    async def credit_notes(self, invoice_id):
+        self.note_reads += 1
+        return list(self.notes.get(invoice_id, []))
+
+
+async def test_the_generation_is_found_once_and_pinned(fresh):
+    account = Account("1")
+
+    first = await conftest.WRITE_GENERATION(lambda: conftest._generation(account))
+    account.number = "2"  # a write run opened during the session
+    again = await conftest.WRITE_GENERATION(lambda: conftest._generation(account))
+
+    assert again is first
+    assert first.number == "1"
+    assert first.invoices["replay"] == "in_replay1"
+    assert first.duplicate.target_invoice == "in_dup1"
+    assert account.discoveries == 1
+    with pytest.raises(TypeError):
+        first.invoices["replay"] = "in_other"
+
+
+async def test_no_write_run_is_skipped_and_not_kept(fresh):
+    account = Account(number=None)
+
+    for _ in range(2):
+        with pytest.raises(pytest.skip.Exception, match="no write run"):
+            await conftest.WRITE_GENERATION(lambda: conftest._generation(account))
+
+    assert account.discoveries == 2
+
+
+async def test_an_incomplete_generation_is_kept_as_its_diagnosis(fresh):
+    account = Account(duplicate=False)
+
+    for _ in range(2):
+        with pytest.raises(pytest.fail.Exception, match="incomplete"):
+            await conftest.WRITE_GENERATION(lambda: conftest._generation(account))
+
+    assert account.discoveries == 1
+
+
+async def test_the_two_caches_are_apart(fresh):
+    await conftest.WRITE_GENERATION(lambda: conftest._generation(Account()))
+
+    assert conftest.READINESS.kept is None
+
+
+async def test_freshness_is_still_read_per_scenario(fresh, monkeypatch):
+    import sys
+    import types
+
+    import app.providers.stripe.client as client
+
+    account = Account()
+    monkeypatch.setenv("STRIPE_API_KEY", "rk_test_51RbAbc")
+    monkeypatch.setenv("STRIPE_WRITES", "enabled")
+    monkeypatch.setitem(
+        sys.modules, "stripe", sys.modules.get("stripe") or types.ModuleType("stripe")
+    )
+    monkeypatch.setattr(client, "connect", lambda key, **kw: account)
+    monkeypatch.setattr(client, "connect_writer", lambda key, **kw: object())
+
+    first = await conftest.stripe_writing()
+    invoice = first.invoices["replay"]
+    assert await first.untouched(invoice)
+    account.notes[invoice] = [{"id": "cn_made"}]
+    second = await conftest.stripe_writing()
+
+    assert not await second.untouched(invoice)
+    assert account.discoveries == 1
+    assert account.note_reads == 2
+    assert second.provider is not first.provider

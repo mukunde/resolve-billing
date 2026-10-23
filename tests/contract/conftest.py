@@ -252,20 +252,41 @@ FAKE_WRITE_INVOICES = {
 }
 
 
+@dataclass(frozen=True)
+class Duplicate:
+    """The write run's duplicate dispute: who sends it, about which invoice,
+    and when to investigate it."""
+
+    email: str
+    target_invoice: str
+    investigate_at: datetime
+
+
+@dataclass(frozen=True)
+class WriteGeneration:
+    """The latest write generation, as found at the start of the session and
+    pinned for it: a write run opened later is not seen until the next one."""
+
+    number: str
+    #: The invoice each scenario writes on, by purpose; read-only.
+    invoices: Mapping[str, str]
+    duplicate: Duplicate
+
+
 @dataclass
 class Writing:
     name: str
     provider: object
     #: The invoice each scenario writes on, by purpose.
-    invoices: dict[str, str]
+    invoices: Mapping[str, str]
     #: Whether an invoice carries no credit note yet.
     untouched: Callable[[str], Awaitable[bool]]
     #: Every credit note of an invoice, as the platform holds it (Stripe).
     credit_notes: Callable[[str], Awaitable[list[dict]]] | None = None
     #: The same platform, unable to write (Stripe).
     read_only: object | None = None
-    #: The write run's duplicate dispute: its customer (Stripe).
-    duplicate: dict | None = None
+    #: The write run's duplicate dispute (Stripe).
+    duplicate: Duplicate | None = None
 
 
 def fake_writing() -> Writing:
@@ -290,10 +311,33 @@ async def stripe_writing() -> Writing:
     pytest.importorskip("stripe", reason="the Stripe SDK is the optional extra `stripe`")
     from app.providers.stripe.adapter import StripeBillingProvider
     from app.providers.stripe.client import connect, connect_writer
-    from scripts.stripe_seed import MANIFEST, WRITE_LAST
 
+    # This test's own providers; the generation is found once per process
+    # and pinned (specs/003, FR-004). Whether an invoice is still fresh is
+    # read by each scenario, on this test's reader.
     provider = StripeBillingProvider(connect(key), writer=connect_writer(key))
     reader = provider.reader
+    generation = await WRITE_GENERATION(lambda: _generation(reader))
+
+    async def untouched(invoice_id: str) -> bool:
+        return not await reader.credit_notes(invoice_id)
+
+    return Writing(
+        name="stripe",
+        provider=provider,
+        invoices=generation.invoices,
+        untouched=untouched,
+        credit_notes=reader.credit_notes,
+        read_only=StripeBillingProvider(connect(key)),
+        duplicate=generation.duplicate,
+    )
+
+
+async def _generation(reader) -> WriteGeneration:
+    """The latest write generation the seed opened, as data. No write run is
+    a skip; a generation incomplete is the contract's diagnosis."""
+    from scripts.stripe_seed import MANIFEST, WRITE_LAST
+
     customers = await reader.customers()
     manifests = [c for c in customers if (c.get("metadata") or {}).get(MANIFEST) == "1"]
     number = manifests[0]["metadata"].get(WRITE_LAST) if len(manifests) == 1 else None
@@ -314,18 +358,15 @@ async def stripe_writing() -> Writing:
     missing = sorted(set(worlds.WRITE_PURPOSES) - invoices.keys())
     if missing:
         pytest.fail(f"write generation {number} lacks invoices for {missing}")
-
-    async def untouched(invoice_id: str) -> bool:
-        return not await reader.credit_notes(invoice_id)
-
-    return Writing(
-        name="stripe",
-        provider=provider,
-        invoices=invoices,
-        untouched=untouched,
-        credit_notes=reader.credit_notes,
-        read_only=StripeBillingProvider(connect(key)),
-        duplicate=ours[worlds.WRITE_DUPLICATE],
+    duplicate = ours[worlds.WRITE_DUPLICATE]
+    return WriteGeneration(
+        number=number,
+        invoices=MappingProxyType(invoices),
+        duplicate=Duplicate(
+            email=duplicate["email"],
+            target_invoice=duplicate["metadata"][worlds.TARGET_INVOICE],
+            investigate_at=datetime.fromisoformat(duplicate["metadata"][worlds.INVESTIGATE_AT]),
+        ),
     )
 
 

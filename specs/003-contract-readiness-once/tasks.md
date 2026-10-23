@@ -34,13 +34,13 @@ and the coverage check pass; committed locally.
 
 ## Phase 3: The write generation once (US2)
 
-- [ ] T020 Test first, `tests/contract/test_readiness.py`: the generation
+- [x] T020 Test first, `tests/contract/test_readiness.py`: the generation
   found once and pinned; no write run skipped and not kept; an incomplete
   generation kept as its diagnosis; the two caches apart; the freshness check
   still made per scenario: two `stripe_writing()` calls, one discovery, each
   `untouched` a real read, and a credit note added in between turns the
   second False.
-- [ ] T021 `tests/contract/conftest.py`: `WriteGeneration`, `Duplicate`,
+- [x] T021 `tests/contract/conftest.py`: `WriteGeneration`, `Duplicate`,
   `_generation`, `stripe_writing()` on `WRITE_GENERATION`;
   `tests/contract/test_stripe_execution.py` on `Duplicate`.
 
