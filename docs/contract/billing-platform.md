@@ -4,13 +4,15 @@ What any billing platform behind the `BillingProvider` port must do, and what
 the rest of the system may rely on. Written on 2026-10-22 from the existing
 records; the first real adapter -- Stripe, in test mode, read-only
 (specs/001-stripe-read-adapter) -- folded in on 2026-10-23, after its contract
-held on a seeded Stripe test account. Reasons are in ADR-001 (the port),
-ADR-007 (unknown senders), ADR-008 (writes, idempotency, the platform as the
-authority on amounts) and taxonomy S6, S7.
+held on a seeded Stripe test account; its writes (specs/002-stripe-writes)
+the same day. Reasons are in ADR-001 (the port), ADR-007 (unknown senders),
+ADR-008 (writes, idempotency, the platform as the authority on amounts) and
+taxonomy S6, S7.
 
 Two implementations exist: the **fake**, on fixtures, the default and what
-CI, the demo and the evaluation run on; and **Stripe**, read-only, selected
-with `BILLING_PROVIDER=stripe` and a restricted read-only test key.
+CI, the demo and the evaluation run on; and **Stripe**, selected with
+`BILLING_PROVIDER=stripe` and a restricted test key, which reads only unless
+`STRIPE_WRITES=enabled`.
 
 ## What the system relies on
 
@@ -100,16 +102,43 @@ The closed set of reasons, each refused rather than approximated:
 ## Writes
 
 - **A platform says whether it can write** (`can_write`). One that cannot --
-  Stripe, in this slice -- is never asked: execution is refused with 409
-  before anything is read, reconciled or claimed, and the action keeps its
-  state (ADR-008). Its writes and `find_action` raise `PlatformCannotWrite`
-  without any call.
-- **Two writes, both keyed.** `create_credit_note` and `create_refund` take an
-  idempotency key derived from what the action is (ADR-008).
+  Stripe without `STRIPE_WRITES=enabled` -- is never asked: execution is
+  refused with 409 before anything is read, reconciled or claimed, and the
+  action keeps its state (ADR-008). Its `plan_write` and writes raise
+  `PlatformCannotWrite` without any call.
+- **A write is planned, then sent.** `plan_write(invoice_id, action_type)`
+  reads the invoice and answers how a write of that type lands on it: what
+  is due lowered (`reduce_due`, an open invoice with nothing paid, a credit
+  note only), the customer's balance credited (`customer_balance`, a paid
+  invoice) or money paid back (`refund`, a paid invoice). Any other state --
+  partly paid, paid out of band, draft, void, uncollectible -- is
+  `ProviderRejected("invoice_state")`. The execution service keeps the
+  answer and passes it to every send.
+- **Two writes, both keyed, each checkable.** `create_credit_note` and
+  `create_refund` take the amount, the currency, an idempotency key derived
+  from what the action is, the action's identifier, the allocation planned
+  and a deadline (`send_by`). The adapter checks that the invoice still takes
+  that allocation -- refusing (`invoice_state`) rather than writing another
+  -- then, at the point of sending, that the deadline has not passed
+  (`NotSent`, nothing sent). A write returns a `ProviderAction`: the
+  platform's reference, the invoice, the type, the amount and currency, test
+  mode, the allocation, the key and action identifier it holds, and the
+  platform's status (`succeeded`, `pending`, `failed`) observed at an
+  instant. What the answer does not say -- the allocation, the status -- is
+  `None`, never a guess.
 - **A refusal is the platform's answer, nothing else.** `ProviderRejected` is
-  raised only when the platform said no and nothing was created; any other
-  failure leaves the outcome unknown, and `find_action(key)` is how it is
-  resolved -- never a blind retry.
+  raised only when the platform's answer proves nothing was created; any
+  other failure after the request left -- no answer, an answer that cannot
+  be read, an idempotency conflict, a time budget spent -- is
+  `ProviderOutcomeUnknown`, never `ProviderUnavailable`.
+- **Every write under a key, found again.** `find_action(key, invoice_id)`
+  answers every write the platform holds under the key on the invoice:
+  none, one or more. A list cut short is `ProviderUnavailable`, never an
+  absence. It is a read, answered whether or not the platform can write.
+- **A window, declared by the platform.** `idempotency_window` is how long
+  after a first attempt the platform still answers a key with what it made:
+  every send, and every absence taken as proof, falls within it (Stripe and
+  the fake: 23 hours).
 - **The platform decides amounts and limits.** What an invoice can still give
   back is the platform's to enforce, and the system keeps no ledger. Before
   any write, the system applies its own guards: the correction is computed
@@ -118,6 +147,36 @@ The closed set of reasons, each refused rather than approximated:
   execution (ADR-008).
 - **A refund draws on a settled payment.** An invoice with nothing collected
   to refund is a refusal, never a credit note instead.
+
+## Stripe, writing
+
+With `STRIPE_WRITES=enabled` (that exact value, read in the wiring alone) and
+the restricted test key given the write permissions it needs:
+
+- **One kind of write: a credit note.** A credit note on an open invoice with
+  nothing paid lowers what is due (`amount` only); on a paid invoice it
+  credits the customer's balance (`credit_amount`). A refund is a credit note
+  whose whole amount is refunded to the invoice's payment (`refund_amount`):
+  never a standalone refund, so one cap -- Stripe's on what an invoice's
+  credit notes and refunds give back -- and one place to find a write.
+- **Nothing of the case reaches Stripe.** The metadata holds the key, the
+  action's identifier and its type, nothing else; `email_type` is `none`, so
+  Stripe mails nobody; no `memo`, no `reason`.
+- **One attempt, one request.** A write is sent with the action's key as
+  Stripe's idempotency key and none of the SDK's own retries: the SDK would
+  retry a 409 or a 5xx by itself, and a refusal of a later request would hide
+  an earlier one that landed.
+- **A closed list of refusals.** An invalid request other than an
+  idempotency error (400, 404), an authentication or permission refusal
+  (401, 403), and the adapter's own refusals before sending. Everything
+  else is an unknown outcome. Categories only, never Stripe's text.
+- **Found again by listing.** `find_action` lists the invoice's credit notes
+  to the end, their refunds expanded, and keeps those whose metadata holds
+  the key; never Stripe's search. It needs no writer.
+- **Statuses.** `succeeded` when the credit note is issued and, for a refund,
+  its refund succeeded; `pending` while the refund is in progress or awaits
+  action; `failed` when it failed or was cancelled, or the credit note is
+  void. A refund Stripe did not expand cannot be read.
 
 ## Stripe, as measured
 
@@ -139,8 +198,12 @@ attachments tried were refused). `cancellation_without_end`,
 
 ## Not guaranteed today
 
-- That a real platform enforces the caps the fake models (ADR-008, "to verify,
-  not assume"): the Stripe slice is read-only.
+- That Stripe enforces the caps the fake models (ADR-008, "to verify, not
+  assume"), and the other write properties: to be measured by the write
+  contract on a fresh write run, by the maintainer (T055).
+- That Stripe keeps idempotency keys for at least a day: its documentation
+  says so; the contract run measures a key answered twice within the run,
+  not a day later.
 - Authentication of the sender: an address is a lookup, not proof (L10).
 - Freshness: the fake is static; Stripe's meter summaries are eventually
   consistent, and a usage record read right after an event may lag it.
@@ -156,6 +219,8 @@ The fake: `tests/unit/test_fake_provider.py`, `tests/unit/test_extra_fixtures.py
 `tests/integration/test_unsupported_platform_data.py`,
 `tests/integration/test_foreign_invoice.py`. Stripe, without network:
 `tests/unit/test_stripe_mapping.py`, `tests/unit/test_stripe_adapter.py`,
-`tests/unit/test_provider_wiring.py`. Both, against the contract:
-`tests/contract/` -- the fake in CI, Stripe locally with the read-only key
-on a seeded account.
+`tests/unit/test_stripe_writes.py`, `tests/unit/test_provider_wiring.py`.
+Both, against the contract: `tests/contract/` -- the fake in CI, Stripe
+locally on a seeded account, with the read-only key, and with
+`STRIPE_WRITES=enabled` on a fresh write run for the write properties
+(`test_billing_platform_writes.py`).

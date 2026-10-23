@@ -9,6 +9,10 @@ description: "Tasks for Stripe as a billing platform, writing"
 **Tests**: required. Every test is written before the code it covers and
 shown to fail on it.
 
+**State (2026-10-23)**: Phases 1 to 6 done but T054 and T055, the
+maintainer's on the test account; the documents written (T060-T062), to be
+completed with T055's results; the final review and delivery to come.
+
 **Organisation**: by phase, then by user story. `[P]` means parallelisable
 (different files, no dependency). Each task names its files. A checkpoint ends
 each phase: `ruff check`, `pytest`, the mock baseline and the coverage check
@@ -212,14 +216,14 @@ the maintainer's: they need the key or the test account.
 
 ## Phase 7: Documents, review, delivery
 
-- [ ] T060 [P] `docs/contract/approval-and-execution.md`: the change folded
+- [x] T060 [P] `docs/contract/approval-and-execution.md`: the change folded
   in; `docs/contract/billing-platform.md`: the port changes, Stripe writing,
   the write properties as measured.
-- [ ] T061 [P] `docs/adr/008-execution-state-machine.md`: a dated amendment
+- [x] T061 [P] `docs/adr/008-execution-state-machine.md`: a dated amendment
   (`find_action` by invoice, the window, refusals after an unknown outcome,
   the answer checked, attention, the status read, Stripe's caps measured);
   `docs/adr/001-provider-agnostic-billing.md`: the port changes.
-- [ ] T062 [P] `docs/operations.md` (switching writes on, the key's
+- [x] T062 [P] `docs/operations.md` (switching writes on, the key's
   permissions, reading a status again, what an action needing a person
   means), `.env.example`, `README.md`.
 - [ ] T063 Gates: `ruff check`, `pytest`, the mock baseline and the coverage

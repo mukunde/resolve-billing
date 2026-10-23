@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-23 · **Revised**: 2026-10-23, after reviews r131 and r132
 
-**Status**: Draft -- for the maintainer's approval
+**Status**: Approved by the maintainer at commit `c51e175`
 
 **Input**: The maintainer's decisions of 2026-10-23 (seven framing choices,
 recorded below), after the read-only slice (specs/001-stripe-read-adapter)

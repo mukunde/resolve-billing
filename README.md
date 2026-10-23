@@ -124,9 +124,9 @@ agent. Autonomy thresholds exist in the code and are off.
 |---|---|---|
 | Investigation | rules, closed classification, Claude engine and a free mock behind one port, versioned prompt (v3) | second engine (Vertex), reply drafter |
 | Money | amount computed by code for whole-invoice errors; refused money shown as none; refund only against a settled payment; corrections capped at the invoice | partial amounts, specified with real billing data |
-| Approval and execution | authenticated approvers, proposal fingerprint, 72 h expiry, idempotent execution, uncertain outcomes reconciled with the platform | identity provider (OIDC) instead of a configured list |
+| Approval and execution | authenticated approvers, proposal fingerprint, 72 h expiry, idempotent execution, uncertain outcomes reconciled with the platform within its idempotency window, the platform's answer checked before a write is recorded, incidents left to a person ([contract](docs/contract/approval-and-execution.md)) | identity provider (OIDC) instead of a configured list |
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
-| Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, read-only, its contract held on a seeded account ([contract](docs/contract/billing-platform.md)) | Stripe writes (credit notes, refunds), then Pennylane; Qonto for payment evidence |
+| Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, its read contract held on a seeded account, its writes (a credit note; a refund as a refunding credit note) behind `STRIPE_WRITES=enabled` ([contract](docs/contract/billing-platform.md)) | the write contract on a seeded Stripe account, then Pennylane; Qonto for payment evidence |
 | Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox; the message masked before the model | authentication results from a trusted gateway |
 | Evaluation | 34 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
@@ -139,7 +139,7 @@ cases ([evaluation](#evaluation)).
 
 ## Architecture
 
-![Architecture: a dispute arrives through n8n, the application loads the billing context, runs deterministic rules, asks a decision engine only when needed, prices a correction in code when it can, and the action policy decides whether a person must approve. Ports for billing, decisions and usage exist, the billing one with the fake and Stripe (test mode, read-only); the support tool and bank ports, and every adapter not built, are dashed as planned.](docs/architecture.svg)
+![Architecture: a dispute arrives through n8n, the application loads the billing context, runs deterministic rules, asks a decision engine only when needed, prices a correction in code when it can, and the action policy decides whether a person must approve. Ports for billing, decisions and usage exist, the billing one with the fake and Stripe (test mode); the support tool and bank ports, and every adapter not built, are dashed as planned.](docs/architecture.svg)
 
 <sub>What does not exist is drawn as not existing: every dashed port and
 adapter is planned, not built.</sub>
@@ -182,12 +182,14 @@ the [engineering notes](docs/engineering-notes.md#techniques-this-does-not-use-a
 
 What the system does not do yet, said plainly.
 
-- **Stripe is read-only, in test mode; no support tool or deployment.** A
-  dispute can be investigated on a Stripe test account's data, and nothing is
-  ever written to it: execution on Stripe is refused before anything is
-  claimed. Data the domain cannot represent yet -- tax, discounts, credits,
-  partial refunds, mixed periods -- is refused with its reason, never
-  approximated. The demo, CI and the evaluation still run on fake data.
+- **Stripe in test mode only; no support tool or deployment.** A dispute
+  can be investigated on a Stripe test account's data; an approved
+  correction is written there only with `STRIPE_WRITES=enabled`, as one
+  credit note for the whole amount, on an invoice open with nothing paid or
+  paid in full. Data the domain cannot represent yet -- tax, discounts,
+  credits, partial refunds, mixed periods -- is refused with its reason,
+  never approximated. The demo, CI and the evaluation still run on fake
+  data.
 - **Masking is not anonymisation.** Before the model, identifiers, the
   customer's address and name, bank, card and phone numbers are masked in
   the message; other people's names and free text pass
@@ -315,8 +317,8 @@ On the way, in order:
 2. **The new blind holdout**, generated in an isolated environment and
    adjudicated, then a reference run.
 3. **Real integrations**: Stripe in test mode -- reading done, writing
-   next -- then Pennylane as a second billing platform, and Qonto as evidence
-   that a payment arrived.
+   built and its contract to run on a seeded account -- then Pennylane as a
+   second billing platform, and Qonto as evidence that a payment arrived.
 4. **A demonstration company**: identity provider (OIDC), support tool,
    monitoring and alerting, secrets management, signed images, tested
    backups, on free infrastructure, each behind a port so a real company can
