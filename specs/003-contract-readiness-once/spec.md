@@ -2,7 +2,7 @@
 
 **Feature Branch**: `003-contract-readiness-once`
 
-**Created**: 2026-10-23
+**Created**: 2026-10-23 · **Revised**: 2026-10-23, after review r143
 
 **Status**: Draft -- for the maintainer's approval
 
@@ -28,8 +28,9 @@ About thirty-four Stripe contract tests each call `stripe_platform()`,
 whose `_ready()` reads every test clock, its customers, each of the
 fourteen worlds' target invoice and the usage world's meter summary --
 some thirty-five requests -- before the test itself. The maintainer's last
-full run took nine minutes, mostly that. An account ready for the first
-test is ready for the last, unless someone changes it in between.
+full run took nine minutes, mostly that. The preconditions found at the
+start are reused for the rest of the session, with no promise that they stay
+true: someone, or Stripe itself, may change the account in between.
 
 ## Clarifications
 
@@ -123,10 +124,13 @@ independent copies.
   the start of a session; no seed and no change to the worlds in use during
   one; the write contract run sequentially, one session per generation;
   with pytest-xdist, once per worker.
-- **FR-007**: Tests in CI, with a fresh cache in each: a success shared, a
-  failure shared, a skip not kept, the fake independent of both caches, a
-  copy changed by one test unseen by the next, the write generation pinned
-  and independent of readiness.
+- **FR-007**: Tests in CI, with a fresh cache in each: a success shared;
+  a failure (not ready within the bound) shared; a world missing shared as
+  its diagnosis; a skip not kept; an interruption propagated, nothing kept,
+  and the next check made again; the fake independent of both caches; a
+  copy changed by one test unseen by the next; two tests on distinct event
+  loops sharing the data with distinct providers; the write generation
+  pinned and independent of readiness.
 
 ## Success Criteria *(mandatory)*
 
