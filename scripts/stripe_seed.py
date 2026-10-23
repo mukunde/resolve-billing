@@ -1135,40 +1135,6 @@ async def _partial_refund(w: World) -> str:
     return first["id"]
 
 
-async def _multi_invoice_payment(w: World) -> str:
-    subscription = await w.subscription("subscription", "rb_pro_monthly")
-    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
-    await w.advance(w.dates.start + DAY)
-    period = (w.dates.start, w.dates.end)
-    invoices = []
-    for n in (1, 2):
-        await w.item(f"item_{n}", subscription=subscription, period=period, price="rb_pro_once")
-        invoices.append(await w.finalized(await w.invoice(f"invoice_{n}", subscription)))
-    intent = await w.once(
-        "payment",
-        find=w.v1.payment_intents.list_async,
-        where={"customer": w.customer_id},
-        create=w.v1.payment_intents.create_async,
-        params={
-            "customer": w.customer_id,
-            "amount": 2 * 4900,
-            "currency": CURRENCY,
-            "payment_method": w.customer["invoice_settings"]["default_payment_method"],
-            "confirm": True,
-            "off_session": True,
-        },
-    )
-    for invoice in invoices:
-        attached = await w.seeder.provider.reader.invoice_payments(invoice["id"])
-        if not any(p["payment"]["payment_intent"]["id"] == intent["id"] for p in attached):
-            await w.call(
-                w.v1.invoices.attach_payment_async,
-                invoice["id"],
-                params={"payment_intent": intent["id"]},
-            )
-    return invoices[0]["id"]
-
-
 async def _invoice_credit(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_blocks_metered")
     await w.taken("first_invoice", subscription, reason=CREATED, optional=True)
@@ -1211,7 +1177,6 @@ BUILDERS: dict[str, Builder] = {
     "unsupported_negative_line": _negative_line,
     "unsupported_fractional_unit_price": _first_invoice_of("rb_pro_fractional"),
     "unsupported_partial_refund": _partial_refund,
-    "unsupported_multi_invoice_payment": _multi_invoice_payment,
     "unsupported_invoice_credit": _invoice_credit,
 }
 

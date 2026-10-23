@@ -53,7 +53,6 @@ UNSUPPORTED = tuple(
         "negative_line",
         "fractional_unit_price",
         "partial_refund",
-        "multi_invoice_payment",
         "invoice_credit",
     )
 )
@@ -67,6 +66,12 @@ NOT_SEEDED = {
     # clock 30 seconds past midnight billed its arrears line from 00:00:00 to
     # 00:00:00 -- Stripe aligned the period, so no world can produce one.
     "unrepresentable_period": "Stripe aligns subscription periods on whole minutes.",
+    # Seen on the first runs (2026-10-23, T032): attaching one payment to a
+    # subscription invoice charged automatically is refused unless it matches
+    # the invoice's total; to a one-off invoice sent to the customer, a payment
+    # larger than the invoice is refused (amount_too_large). One payment cannot
+    # be placed on two invoices this way.
+    "multi_invoice_payment": "Stripe attaches no payment larger than its invoice.",
 }
 
 WORLDS = SUPPORTED + UNSUPPORTED
