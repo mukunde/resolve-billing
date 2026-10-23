@@ -373,11 +373,16 @@ full (test-clock customers included) and keeps those issued at or after
   SC-001 reported it for `billed_after_cancellation` and `usage`. The rule now
   measures only lines inside the current period. A line outside covers whole
   periods, and is no proration, only when both its bounds fall on the
-  subscription's schedule: its original anchor stepped by its cadence, months
-  clamped to their last day. The subscription carries both (`billing_interval`,
+  subscription's schedule -- its billing anchor stepped by its cadence, months
+  clamped to their last day -- and the anchor was set no later than the line
+  starts (a reset anchor proves nothing about older lines). A current period
+  that is not exactly one step of the schedule (a first period started before
+  its anchor) is measured against nothing: its lines are said not evaluable. The subscription carries both (`billing_interval`,
   `billing_interval_count`, `billing_anchor`), read on Stripe from the price's
-  recurrence and the subscription's `billing_cycle_anchor`, and in the fake's
-  fixtures. Any other line outside -- or any line outside when the cadence is
+  recurrence and the subscription's `billing_cycle_anchor` (a configured
+  anchor leaves the cadence unknown), and in the fake's fixtures, where every
+  subscription is monthly from its period's start -- a convention of the
+  scenarios, not recovered history. Any other line outside -- or any line outside when the cadence is
   unknown -- is said not evaluable (taxonomy B11). A first version (option B)
   took the anchor's day and hour alone for proof, and review r125 showed it
   wrong for a yearly subscription and an anchor on the 31st.

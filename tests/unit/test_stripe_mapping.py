@@ -90,6 +90,18 @@ class TestSubscription:
         subscription = mapping.subscription(payload)
         assert (subscription.billing_interval, subscription.billing_interval_count) == ("year", 2)
 
+    def test_a_configured_anchor_leaves_the_cadence_unknown(self):
+        """`billing_cycle_anchor_config` (a day of the month, say the 31st)
+        steps periods by a day the timestamp alone may not show: not
+        represented, so said unknown rather than guessed."""
+        payload = stripe.subscription(
+            billing_cycle_anchor=SEP_1,
+            billing_cycle_anchor_config={"day_of_month": 31, "hour": 0, "minute": 0, "second": 0},
+        )
+        subscription = mapping.subscription(payload)
+        assert subscription.billing_interval is None
+        assert subscription.billing_interval_count is None
+
     def test_no_anchor_and_no_cadence_are_unknown_never_guessed(self):
         price = stripe.price(recurring=None)
         payload = stripe.subscription([stripe.item(price)], billing_cycle_anchor=None)

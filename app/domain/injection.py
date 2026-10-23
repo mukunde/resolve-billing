@@ -169,7 +169,8 @@ def suspected_prompt_injection(message: str) -> RuleFinding | None:
             "categories": categories,
             "offset": normalised.find(matches[0]),
             "note": (
-                "Offsets et extraits portent sur le message normalisé (minuscules, sans accents)."
+                "Offsets et extraits portent sur le message normalisé "
+                "(minuscules, sans accents)."
             ),
         },
     )

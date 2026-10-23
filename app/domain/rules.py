@@ -244,12 +244,19 @@ def checks_not_evaluable(
             gaps.append({"check": "proration", "reason": "subscription_period_unknown"})
         elif any(line.period_seconds is None or line.period_seconds <= 0 for line in target.lines):
             gaps.append({"check": "proration", "reason": "line_without_valid_period"})
-        elif any(
-            not _in_current_period(line, subscription) and not _whole_periods(line, subscription)
-            for line in target.lines
-        ):
-            # A part of another period: whose length is not known here.
-            gaps.append({"check": "proration", "reason": "line_outside_current_period"})
+        else:
+            inside = [line for line in target.lines if _in_current_period(line, subscription)]
+            if inside and _one_cycle(subscription) is False:
+                # A first period started before its anchor: itself a part of
+                # a cycle, so nothing inside it can be measured against it.
+                gaps.append({"check": "proration", "reason": "current_period_not_one_cycle"})
+            if any(
+                not _in_current_period(line, subscription)
+                and not _whole_periods(line, subscription)
+                for line in target.lines
+            ):
+                # A part of another period: whose length is not known here.
+                gaps.append({"check": "proration", "reason": "line_outside_current_period"})
 
     if not gaps:
         return None
@@ -271,15 +278,54 @@ def _in_current_period(line, sub: Subscription) -> bool:
 
 
 def _whole_periods(line, sub: Subscription) -> bool:
-    """Both bounds on the subscription's schedule: the line covers whole
-    periods (arrears billed after a renewal, a period after a cancellation),
-    and there is nothing to prorate. Without a known cadence and anchor
+    """Both bounds on the subscription's schedule, from an anchor set no later
+    than the line starts: the line covers whole periods (arrears billed after
+    a renewal, a period after a cancellation), and there is nothing to
+    prorate. An anchor set later -- reset by a trial or a new interval --
+    proves nothing about an older line; without a known cadence and anchor
     nothing is taken for whole periods."""
     return (
         line.period_end > line.period_start
+        and sub.billing_anchor is not None
+        and sub.billing_anchor <= line.period_start
         and _on_schedule(line.period_start, sub)
         and _on_schedule(line.period_end, sub)
     )
+
+
+def _one_cycle(sub: Subscription) -> bool | None:
+    """Whether the current period is exactly one step of the schedule; None
+    when the cadence is unknown, and the period is taken as it comes."""
+    if not _cadence_known(sub):
+        return None
+    start, end = sub.current_period_start, sub.current_period_end
+    return (
+        sub.billing_anchor <= start
+        and _on_schedule(start, sub)
+        and _on_schedule(end, sub)
+        and end.astimezone(UTC) == _next_step(start, sub)
+    )
+
+
+def _cadence_known(sub: Subscription) -> bool:
+    count = sub.billing_interval_count
+    return (
+        sub.billing_anchor is not None
+        and sub.billing_interval in ("day", "week", "month", "year")
+        and count is not None
+        and count >= 1
+    )
+
+
+def _next_step(moment: datetime, sub: Subscription) -> datetime:
+    """The schedule's step after `moment`, which is on it."""
+    anchor, unit, count = sub.billing_anchor, sub.billing_interval, sub.billing_interval_count
+    moment, anchor = moment.astimezone(UTC), anchor.astimezone(UTC)
+    if unit in ("day", "week"):
+        return moment + timedelta(days=count * (7 if unit == "week" else 1))
+    months = count * (12 if unit == "year" else 1)
+    elapsed = (moment.year - anchor.year) * 12 + moment.month - anchor.month
+    return _months_after(anchor, elapsed + months)
 
 
 def _on_schedule(moment: datetime, sub: Subscription) -> bool:
@@ -287,9 +333,9 @@ def _on_schedule(moment: datetime, sub: Subscription) -> bool:
     days and weeks exactly, months and years on the anchor's own day, clamped
     to a short month's last day -- the 31st steps to February 28, and
     January 28 is no step of it."""
-    anchor, unit, count = sub.billing_anchor, sub.billing_interval, sub.billing_interval_count
-    if anchor is None or unit is None or not count or count < 1:
+    if not _cadence_known(sub):
         return False
+    anchor, unit, count = sub.billing_anchor, sub.billing_interval, sub.billing_interval_count
     moment, anchor = moment.astimezone(UTC), anchor.astimezone(UTC)
     if unit in ("day", "week"):
         step = timedelta(days=count * (7 if unit == "week" else 1))
@@ -457,6 +503,8 @@ def proration_mismatch(
         for line in invoice.lines
     ):
         return None  # not comparable; `currency_mismatch` says so
+    if _one_cycle(sub) is False:
+        return None  # a partial current period: `checks_not_evaluable` says so
     for index, line in enumerate(invoice.lines):
         line_seconds = line.period_seconds
         if line_seconds is None or line_seconds <= 0 or line_seconds >= sub.period_seconds:

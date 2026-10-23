@@ -207,8 +207,10 @@ account, on the closed list of properties below.
   status and no cancellation date; incomplete, incomplete_expired and unpaid
   are `ProviderUnsupported`. The plan is the price's lookup key, else its
   identifier. *(Added 2026-10-23, option B+)* The subscription also carries
-  its cadence -- the price's interval and interval count -- and its original
-  billing anchor, each `None` when Stripe does not give it, never guessed.
+  its cadence -- the price's interval and interval count -- and its billing
+  anchor as Stripe holds it now (a trial or a new interval may have reset
+  it), each `None` when Stripe does not give it, never guessed; a configured
+  anchor (`billing_cycle_anchor_config`) leaves the cadence unknown.
 - **FR-013**: Invoices: identifier `in_…`; status draft, open, paid, void,
   uncollectible map to themselves; issued when finalised (a draft: when
   created); total and lines in integer minor units with their periods.

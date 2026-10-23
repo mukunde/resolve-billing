@@ -133,7 +133,9 @@ def subscription(payload: Payload) -> Subscription:
     price = items[0]["price"]
     recurring = price.get("recurring") or {}
     interval = recurring.get("interval")
-    if interval not in _INTERVALS:
+    if interval not in _INTERVALS or payload.get("billing_cycle_anchor_config"):
+        # A configured anchor (a day of the month, say the 31st) steps periods
+        # by a day the timestamp alone may not show: not represented here.
         interval = None
     anchor = payload.get("billing_cycle_anchor")
     return Subscription(

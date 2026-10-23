@@ -852,3 +852,34 @@ class TestLinesOutsideTheCurrentPeriod:
         mismatch, said = self.judged([half], current)
         assert mismatch is not None and mismatch.code is RuleCode.PRORATION_MISMATCH
         assert not said
+
+    def gaps(self, lines, sub):
+        target = invoice(
+            "inv_071", total_minor=sum(x.amount.amount_minor for x in lines), lines=lines
+        )
+        found = checks_not_evaluable(target, sub, [])
+        return [g["reason"] for g in found.evidence["checks"]] if found is not None else []
+
+    def test_a_first_partial_period_is_never_taken_for_a_cycle(self):
+        """Started before its anchor: the current period is itself a part of a
+        cycle, and a line covering it in full cannot be judged against it."""
+        first = subscription(start=utc(2026, 7, 15), end=utc(2026, 8, 1), anchor=utc(2026, 8, 1))
+        full_price = line(9900, start=utc(2026, 7, 15), end=utc(2026, 8, 1))
+        partial = line(9900, start=utc(2026, 7, 20), end=utc(2026, 8, 1))
+        for lines in ([full_price], [partial]):
+            target = invoice("inv_072", lines=lines)
+            assert proration_mismatch(target, first) is None
+            assert self.gaps(lines, first) == ["current_period_not_one_cycle"]
+
+    def test_a_line_older_than_the_anchor_is_not_proved_by_it(self):
+        """The anchor may have been reset (a trial, a new interval): a line
+        from before it was set is not on a schedule anyone can prove."""
+        reset = subscription(start=utc(2026, 7, 1), end=utc(2026, 8, 1), anchor=utc(2026, 7, 1))
+        older = line(9900, start=utc(2026, 6, 1), end=utc(2026, 7, 1))
+        assert self.judged([older], reset) == (None, True)
+
+    def test_a_current_period_of_exactly_one_cycle_is_measured_as_before(self):
+        current = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
+        assert (
+            self.gaps([line(9900, start=utc(2026, 10, 22), end=utc(2026, 11, 22))], current) == []
+        )
