@@ -24,8 +24,10 @@ and the coverage check pass; committed locally.
 
 - [ ] T010 Test first, `tests/contract/test_readiness.py`: a failure on
   `Hung` shared without a second wait; a world missing shared; the kept data
-  immutable; two async tests in sequence calling `stripe_platform()` (key
-  set, `connect` and `_ready` stubbed): one check, two providers; the fake
+  immutable; a platform error not kept, checked again; a `pytester`
+  sub-run of two async tests (`loop_scope="function"`) sharing that
+  sub-run's cache and calling `stripe_platform()` (key set, `connect` and
+  `_ready` stubbed): two loops, two providers, one check; the fake
   untouched.
 - [ ] T011 `tests/contract/conftest.py`: `Readiness`, `_readiness`,
   `stripe_platform()` on `READINESS`.
@@ -35,7 +37,9 @@ and the coverage check pass; committed locally.
 - [ ] T020 Test first, `tests/contract/test_readiness.py`: the generation
   found once and pinned; no write run skipped and not kept; an incomplete
   generation kept as its diagnosis; the two caches apart; the freshness check
-  still made per scenario (a `Writing` built twice reads credit notes twice).
+  still made per scenario: two `stripe_writing()` calls, one discovery, each
+  `untouched` a real read, and a credit note added in between turns the
+  second False.
 - [ ] T021 `tests/contract/conftest.py`: `WriteGeneration`, `Duplicate`,
   `_generation`, `stripe_writing()` on `WRITE_GENERATION`;
   `tests/contract/test_stripe_execution.py` on `Duplicate`.
