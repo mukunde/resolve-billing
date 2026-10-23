@@ -137,7 +137,7 @@ the maintainer's: they need the key or the test account.
 
 ## Phase 4: User Story 2 -- a lost answer is settled by asking (P2)
 
-- [ ] T030 Test first, `tests/unit/test_execute_action.py`, with a clock:
+- [x] T030 Test first, `tests/unit/test_execute_action.py`, with a clock:
   reconciliation finding one write alike → `EXECUTED` with its status;
   unlike, or two → stays unknown, annotated, nothing written; an incident
   then a reconciliation finding nothing → stays unknown, never `FAILED`,
@@ -155,10 +155,10 @@ the maintainer's: they need the key or the test account.
   nothing found within the window → `FAILED`; an abandoned claim, within
   and past the window; a failed read leaves the state as it was;
   reconciliation never calls a write.
-- [ ] T031 `app/application/execute_action.py`: the window check,
+- [x] T031 `app/application/execute_action.py`: the window check,
   `uncertain_since`, refusals after an unknown outcome (FR-006), the
   reconciliation table.
-- [ ] T032 Test first, `tests/unit/test_stripe_writes.py`: `find_action`
+- [x] T032 Test first, `tests/unit/test_stripe_writes.py`: `find_action`
   lists the invoice's credit notes over several pages with `expand` exactly
   `["data.refunds.refund"]`, keeps those with the key in their metadata,
   answers two when there are two, maps a refund left unexpanded as

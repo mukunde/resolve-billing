@@ -274,6 +274,7 @@ class TestATimeoutIsNotAFailure:
         store.transition(
             action.action_id, ActionState.EXECUTING, first_attempt_at=datetime.now(UTC)
         )
+        store.annotate(action.action_id, ActionState.EXECUTING, allocation="customer_balance")
         await written_behind(provider, action)
 
         service = ApprovalService(provider, store)
@@ -292,6 +293,7 @@ class TestATimeoutIsNotAFailure:
         store.transition(
             action.action_id, ActionState.EXECUTING, first_attempt_at=datetime.now(UTC)
         )
+        store.annotate(action.action_id, ActionState.EXECUTING, allocation="customer_balance")
         await written_behind(provider, action)
 
         fresh = ApprovalService(provider, store)
@@ -903,3 +905,325 @@ class TestAPersonReadsTheStatus:
 
         with pytest.raises(IllegalTransition):
             await ApprovalService(FakeBillingProvider(), store).refresh_status(action.action_id)
+
+
+T0 = datetime(2026, 10, 23, 9, 0, tzinfo=UTC)
+
+
+class Clock:
+    """The time the service and the fake both read; a test moves it."""
+
+    def __init__(self, at: datetime = T0) -> None:
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+    def advance(self, **delta) -> None:
+        self.at += timedelta(**delta)
+
+
+class Scripted(FakeBillingProvider):
+    """A platform whose sends follow a script: each entry says what one
+    send does -- "lost" (no write, no answer), "landed-lost" (written, no
+    answer), "refused", "conflict" (an idempotency error), or "ok"."""
+
+    def __init__(self, *script: str, clock: Clock | None = None) -> None:
+        super().__init__()
+        self.script = list(script)
+        self.sends = 0
+        self.hidden = 0
+        if clock is not None:
+            self.now = clock
+
+    async def create_credit_note(self, *args, **kwargs):
+        self.sends += 1
+        step = self.script.pop(0) if self.script else "ok"
+        if step == "lost":
+            raise TimeoutError("connection dropped before the write")
+        if step == "refused":
+            raise ProviderRejected("permission")
+        if step == "conflict":
+            raise ProviderOutcomeUnknown("idempotency_error")
+        made = await super().create_credit_note(*args, **kwargs)
+        if step == "landed-lost":
+            raise TimeoutError("no response from the billing platform")
+        return made
+
+    async def find_action(self, idempotency_key, invoice_id):
+        if self.hidden:
+            self.hidden -= 1
+            return []
+        return await super().find_action(idempotency_key, invoice_id)
+
+
+def service_at(provider, store, clock):
+    return ApprovalService(provider, store, now=clock)
+
+
+class TestReconciliation:
+    """specs/002-stripe-writes, FR-004 and FR-005: what reconciliation may
+    conclude from what the platform holds, and when."""
+
+    async def test_one_write_alike_is_executed_with_its_status(self, store):
+        clock = Clock()
+        provider = Scripted("landed-lost", clock=clock)
+        action = approved(store)
+        with pytest.raises(TimeoutError):
+            await service_at(provider, store, clock).execute(action.action_id)
+
+        held = await service_at(provider, store, clock).reconcile(action.action_id)
+
+        assert held.state is ActionState.EXECUTED
+        assert held.provider_status == "succeeded"
+        assert held.provider_status_at == T0
+        assert "reconciled" in held.resolution
+        assert provider.sends == 1
+
+    async def test_one_write_unlike_the_action_stays_with_a_person(self, store):
+        clock = Clock()
+        provider = Scripted("lost", clock=clock)
+        action = approved(store)
+        with pytest.raises(TimeoutError):
+            await service_at(provider, store, clock).execute(action.action_id)
+        await written_behind(provider, action)
+        (made,) = provider.executed_actions
+        provider._actions.clear()
+        provider.plant_action(made.model_copy(update={"amount_minor": 100}))
+
+        held = await service_at(provider, store, clock).reconcile(action.action_id)
+
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "unlike_the_action")
+
+    async def test_an_incident_then_nothing_found_never_fails_nor_sends(self, store):
+        clock = Clock()
+        provider = Scripted("lost", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        store.annotate(action.action_id, ActionState.UNKNOWN_OUTCOME, attention="unlike_the_action")
+
+        held = await service.reconcile(action.action_id)
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "unlike_the_action")
+        assert provider.sends == 1
+
+    async def test_nothing_found_within_the_window_fails_and_is_retried_under_the_key(self, store):
+        clock = Clock()
+        provider = Scripted("lost", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        clock.advance(hours=22, minutes=59)
+
+        done = await service.execute(action.action_id)
+
+        assert done.state is ActionState.EXECUTED
+        assert provider.sends == 2
+        assert done.first_attempt_at == T0
+
+    async def test_nothing_found_past_the_window_proves_nothing(self, store):
+        clock = Clock()
+        provider = Scripted("lost", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        clock.advance(hours=23)
+
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "window_passed")
+        assert provider.sends == 1
+
+    async def test_a_write_found_with_no_allocation_planned_is_never_settled_alone(self, store):
+        provider = FakeBillingProvider()
+        action = approved(store)
+        store.transition(
+            action.action_id, ActionState.EXECUTING, first_attempt_at=datetime.now(UTC)
+        )
+        await written_behind(provider, action)
+        store.transition(action.action_id, ActionState.UNKNOWN_OUTCOME)
+
+        held = await ApprovalService(provider, store).reconcile(action.action_id)
+
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "window_unknown")
+
+    async def test_an_abandoned_claim_within_the_window_fails(self, store):
+        clock = Clock()
+        provider = Scripted(clock=clock)
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+
+        held = await ApprovalService(
+            provider, store, stale_after=timedelta(0), now=clock
+        ).reconcile(action.action_id)
+
+        assert held.state is ActionState.FAILED
+        assert held.uncertain_since == T0
+
+    async def test_an_abandoned_claim_past_the_window_proves_nothing(self, store):
+        clock = Clock()
+        provider = Scripted(clock=clock)
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+        clock.advance(hours=30)
+
+        held = await ApprovalService(
+            provider, store, stale_after=timedelta(0), now=clock
+        ).reconcile(action.action_id)
+
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "window_passed")
+
+    async def test_a_read_that_fails_leaves_the_state_as_it_was(self, store):
+        class Unreachable(Scripted):
+            async def find_action(self, idempotency_key, invoice_id):
+                raise ProviderUnavailable("no answer")
+
+        clock = Clock()
+        provider = Unreachable("lost", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+
+        with pytest.raises(ProviderUnavailable):
+            await service.reconcile(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.UNKNOWN_OUTCOME
+
+    async def test_reconciliation_never_writes(self, store):
+        class NoWrite(Scripted):
+            async def create_credit_note(self, *args, **kwargs):
+                raise AssertionError("reconciliation wrote")
+
+        clock = Clock()
+        provider = NoWrite(clock=clock)
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+        store.transition(action.action_id, ActionState.UNKNOWN_OUTCOME, uncertain_since=T0)
+
+        held = await service_at(provider, store, clock).reconcile(action.action_id)
+
+        assert held.state is ActionState.FAILED
+
+
+class TestTheWindowBoundsEverySend:
+    """specs/002-stripe-writes, FR-005: every send within 23 hours of the
+    first attempt, a retry and a restart included."""
+
+    async def test_no_retry_past_the_window(self, store):
+        clock = Clock()
+        provider = Scripted("refused", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(ProviderRejected):
+            await service.execute(action.action_id)
+        clock.advance(hours=23)
+
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.FAILED, "window_passed")
+        assert provider.sends == 1
+
+    async def test_no_retry_past_the_window_after_a_restart(self, tmp_path):
+        clock = Clock()
+        provider = Scripted("refused", clock=clock)
+        database = tmp_path / "actions.db"
+        before = SqliteActionStore(database)
+        action = approved(before)
+        with pytest.raises(ProviderRejected):
+            await service_at(provider, before, clock).execute(action.action_id)
+        before.close()
+        clock.advance(hours=24)
+
+        after = SqliteActionStore(database)
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, after, clock).execute(action.action_id)
+        after.close()
+
+        assert provider.sends == 1
+
+    async def test_a_send_whose_deadline_passes_during_its_reads_goes_nowhere(self, store):
+        clock = Clock()
+        provider = Scripted(clock=Clock(T0 + timedelta(hours=24)))
+        action = approved(store)
+        service = service_at(provider, store, clock)
+
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.attention == "window_passed"
+        assert held.state is ActionState.FAILED
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+        assert provider.executed_actions == []
+
+    async def test_an_action_older_than_the_columns_is_never_sent(self, store):
+        provider = Scripted()
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING)
+        store.transition(action.action_id, ActionState.FAILED)
+        store.annotate(action.action_id, ActionState.FAILED, attention="window_unknown")
+
+        with pytest.raises(NeedsAPerson):
+            await ApprovalService(provider, store).execute(action.action_id)
+
+        assert provider.sends == 0
+
+
+class TestARefusalAfterAnUnknownOutcome:
+    """specs/002-stripe-writes, FR-006: a refusal settles nothing when an
+    earlier attempt's outcome was unknown."""
+
+    async def test_an_idempotency_conflict_after_a_lost_answer_is_unknown(self, store):
+        clock = Clock()
+        provider = Scripted("lost", "conflict", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+
+        with pytest.raises(ProviderOutcomeUnknown):
+            await service.execute(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.UNKNOWN_OUTCOME
+
+    async def test_landed_lost_then_refused_is_reconciled_as_executed(self, store):
+        clock = Clock()
+        provider = Scripted("landed-lost", "refused", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        provider.hidden = 1  # the first look misses it
+
+        done = await service.execute(action.action_id)
+
+        assert done.state is ActionState.EXECUTED
+        assert len(provider.executed_actions) == 1
+        assert provider.sends == 2
+
+    async def test_refused_after_a_lost_answer_with_nothing_found_fails(self, store):
+        clock = Clock()
+        provider = Scripted("lost", "refused", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+
+        with pytest.raises(ProviderRejected):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.state is ActionState.FAILED
+        assert "permission" in held.failure_reason

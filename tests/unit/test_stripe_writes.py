@@ -16,6 +16,7 @@ from app.providers.base import (
     NotSent,
     ProviderOutcomeUnknown,
     ProviderRejected,
+    ProviderUnavailable,
 )
 from app.providers.stripe.adapter import StripeBillingProvider
 from app.providers.stripe.client import StripeReader, StripeWriter
@@ -307,6 +308,83 @@ class TestRefusalsAndUnknownOutcomes:
 
         with pytest.raises(ProviderOutcomeUnknown, match="time_budget"):
             await send(writer(held, budget=0.08), "credit_note", "customer_balance")
+
+
+LIST = "v1.credit_notes.list_async"
+
+
+def ours(n: int, key: str = stripe.KEY, invoice: str = stripe.INVOICE, **changes) -> dict:
+    return stripe.credit_note(
+        id=f"cn_RbOurs{n:010d}",
+        invoice=invoice,
+        metadata={
+            "rb_idempotency_key": key,
+            "rb_action_id": stripe.ACTION,
+            "rb_action_type": "credit_note",
+        },
+        **changes,
+    )
+
+
+class TestFindingAWriteAgain:
+    """FR-001 and FR-014: every credit note of the invoice, read to the
+    end, those carrying the key kept -- never Stripe's search."""
+
+    async def test_every_page_is_read_and_only_the_keys_writes_kept(self):
+        held = account(page_size=2)
+        held.credit_notes = [
+            ours(1, key="another"),
+            ours(2),
+            ours(3, key="yet-another"),
+            ours(4, invoice="in_1RbOther0000001"),
+        ]
+
+        found = await writer(held).find_action(stripe.KEY, stripe.INVOICE)
+
+        assert [made.provider_action_id for made in found] == ["cn_RbOurs0000000002"]
+        pages = held.calls_to(LIST)
+        assert len(pages) == 2
+        assert all(params["expand"] == ["data.refunds.refund"] for _, params in pages)
+        assert all(params["invoice"] == stripe.INVOICE for _, params in pages)
+
+    async def test_two_writes_under_the_key_are_both_answered(self):
+        held = account()
+        held.credit_notes = [ours(1), ours(2)]
+
+        found = await writer(held).find_action(stripe.KEY, stripe.INVOICE)
+
+        assert len(found) == 2
+
+    async def test_none_is_an_empty_answer(self):
+        assert await writer(account()).find_action(stripe.KEY, stripe.INVOICE) == []
+
+    async def test_a_refund_left_unexpanded_cannot_be_read(self):
+        held = account()
+        held.answers[LIST] = stripe.page(
+            [ours(1, refunds=[stripe.credit_note_refund(stripe.REFUND)])]
+        )
+
+        (made,) = await writer(held).find_action(stripe.KEY, stripe.INVOICE)
+
+        assert made.status is None
+
+    async def test_a_list_cut_short_is_never_an_absence(self):
+        held = account()
+        held.answers[LIST] = stripe.page([], has_more=True)
+
+        with pytest.raises(ProviderUnavailable):
+            await writer(held).find_action(stripe.KEY, stripe.INVOICE)
+
+    async def test_it_is_a_read_and_needs_no_writer(self):
+        held = stub.Account()
+        held.invoices = [stripe.invoice()]
+        held.credit_notes = [ours(1)]
+        adapter = StripeBillingProvider(StripeReader(stub.StubSdk(held)))
+
+        (made,) = await adapter.find_action(stripe.KEY, stripe.INVOICE)
+
+        assert made.provider_action_id == "cn_RbOurs0000000001"
+        assert {method for method, _, _ in held.calls} <= set(stub.READS)
 
 
 class TestAgainstTheRealSdk:

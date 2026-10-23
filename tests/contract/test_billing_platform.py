@@ -166,7 +166,15 @@ class TestTenWrites:
             lambda: provider.plan_write("in_x", "credit_note"),
             lambda: provider.create_credit_note("in_x", 100, "EUR", "test", "key", **SENT),
             lambda: provider.create_refund("in_x", 100, "EUR", "test", "key", **SENT),
-            lambda: provider.find_action("key", "in_x"),
         ):
             with pytest.raises(PlatformCannotWrite):
                 await write()
+
+    async def test_one_that_cannot_still_reads_what_was_written(self, platform):
+        """find_action is a read: a person can have a status read with
+        writes switched off (specs/002-stripe-writes, plan section 2)."""
+        provider = platform.provider
+        if provider.can_write:
+            pytest.skip(f"the {platform.name} platform writes: see test_fake_provider")
+        invoice = platform.seeded["duplicate"].target_invoice
+        assert await provider.find_action("rb-key-never-used", invoice) == []

@@ -307,7 +307,17 @@ class StripeBillingProvider:
             raise PlatformCannotWrite("stripe: writes are not switched on")
 
     async def find_action(self, idempotency_key: str, invoice_id: str) -> list[ProviderAction]:
-        raise PlatformCannotWrite("stripe: this platform is read-only")
+        """Every credit note of the invoice that carries the key, read to the
+        end, never through Stripe's search (FR-014). A read: it needs no
+        writer, so a person can have a status read with writes off."""
+        async with self._bounded():
+            notes = await self.reader.credit_notes(invoice_id)
+        observed = self._now()
+        return [
+            mapping.provider_action(note, observed_at=observed)
+            for note in notes
+            if (note.get("metadata") or {}).get(mapping.KEY_FIELD) == idempotency_key
+        ]
 
     # -- the time budget ---------------------------------------------------
 
