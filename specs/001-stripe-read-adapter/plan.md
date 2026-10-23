@@ -350,7 +350,7 @@ full (test-clock customers included) and keeps those issued at or after
   cannot produce is covered by mapping tests only, and listed
   (`scripts/stripe_worlds.py`). A period off whole minutes was planned too,
   on a clock started 30 seconds past a minute; the first run (2026-10-23)
-  showed Stripe aligning the period to the minute, and the maintainer
+  showed Stripe aligning that construction's period, and the maintainer
   approved moving that reason to the list the seed does not produce. So
   for a payment across invoices: Stripe attached one payment to a
   subscription invoice charged automatically only for the invoice's exact

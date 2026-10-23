@@ -62,16 +62,17 @@ NOT_SEEDED = {
     "cancellation_without_end": "a subscription the seed cancels is expected to carry `ended_at`.",
     "unplaced_payment": "an invoice payment without a payment intent is not built here.",
     "missing_field": "the seed fills every field the mapping needs; absences are mapping tests.",
-    # Seen on the first run (2026-10-23, T032): a metered subscription made on a
-    # clock 30 seconds past midnight billed its arrears line from 00:00:00 to
-    # 00:00:00 -- Stripe aligned the period, so no world can produce one.
-    "unrepresentable_period": "Stripe aligns subscription periods on whole minutes.",
-    # Seen on the first runs (2026-10-23, T032): attaching one payment to a
-    # subscription invoice charged automatically is refused unless it matches
-    # the invoice's total; to a one-off invoice sent to the customer, a payment
-    # larger than the invoice is refused (amount_too_large). One payment cannot
-    # be placed on two invoices this way.
-    "multi_invoice_payment": "Stripe attaches no payment larger than its invoice.",
+    # Not produced by the constructions tried on the maintainer's test account
+    # (API version 2026-07-29.dahlia, 2026-10-23, T032); their exclusion from
+    # the catalogue was approved by the maintainer. What was seen:
+    # - a metered subscription made on a clock 30 seconds past midnight billed
+    #   its arrears line from 00:00:00 to 00:00:00: the period was aligned;
+    "unrepresentable_period": "the construction tried had its period aligned by Stripe.",
+    # - one payment attached to a subscription invoice charged automatically
+    #   was refused unless it matched the invoice's total; attached to a
+    #   one-off invoice sent to the customer, a payment larger than the
+    #   invoice was refused (amount_too_large).
+    "multi_invoice_payment": "both attachments tried were refused by Stripe.",
 }
 
 WORLDS = SUPPORTED + UNSUPPORTED
