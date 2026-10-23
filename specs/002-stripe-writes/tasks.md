@@ -171,7 +171,7 @@ the maintainer's: they need the key or the test account.
 
 ## Phase 5: User Story 3 -- Stripe refuses what an invoice cannot give back (P3)
 
-- [ ] T040 Test first, `tests/unit/test_execute_action.py`: Stripe's refusal
+- [x] T040 Test first, `tests/unit/test_execute_action.py`: Stripe's refusal
   of a write beyond the invoice (`invalid_request`) → `FAILED` with its
   category; an invoice in a state the slice does not handle → refused before
   sending, `FAILED`, nothing sent. Then whatever the earlier phases left.

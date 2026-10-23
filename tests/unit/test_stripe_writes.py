@@ -31,7 +31,9 @@ CREATE = "v1.credit_notes.create_async"
 def account(invoice: dict | None = None, **kwargs) -> stub.Account:
     held = stub.Account(writable=True, **kwargs)
     held.customers = [stripe.customer()]
+    held.subscriptions = [stripe.subscription()]
     held.invoices = [invoice if invoice is not None else stripe.invoice()]
+    held.prices = {stripe.PRICE: stripe.price()}
     return held
 
 
@@ -415,3 +417,56 @@ class TestAgainstTheRealSdk:
             with pytest.raises((ProviderRejected, ProviderOutcomeUnknown)) as raised:
                 await send(writer(held), "credit_note", "customer_balance")
             assert str(raised.value) == expected
+
+
+class TestThroughTheExecutionService:
+    """US3 end to end on the stub: what Stripe refuses, and what the adapter
+    refuses before sending, leave the action FAILED with the category."""
+
+    @staticmethod
+    def approved(store, action_type="credit_note"):
+        from app.domain.enums import ActionState
+        from app.domain.money import Money
+
+        action = store.create(
+            run_id="run_test",
+            action_type=action_type,
+            invoice_id=stripe.INVOICE,
+            amount=Money(amount_minor=4900, currency="EUR"),
+            reason="x",
+            provider="stripe",
+        )
+        return store.transition(action.action_id, ActionState.APPROVED, approved_by="approver")
+
+    async def test_a_write_beyond_what_the_invoice_can_give_back_fails(self):
+        from app.application.execute_action import ApprovalService
+        from app.domain.enums import ActionState
+        from app.infrastructure.actions import SqliteActionStore
+
+        held = account()
+        held.failures[CREATE] = stub.InvalidRequestError(SENTINEL)
+        store = SqliteActionStore(":memory:")
+        action = self.approved(store, "refund")
+
+        with pytest.raises(ProviderRejected):
+            await ApprovalService(writer(held), store).execute(action.action_id)
+
+        failed = store.get(action.action_id)
+        assert failed.state is ActionState.FAILED
+        assert failed.failure_reason == "invalid_request"
+        assert SENTINEL not in failed.failure_reason
+
+    async def test_an_invoice_the_slice_does_not_write_on_is_refused_unsent(self):
+        from app.application.execute_action import ApprovalService
+        from app.domain.enums import ActionState
+        from app.infrastructure.actions import SqliteActionStore
+
+        held = account(open_invoice(status="uncollectible"))
+        store = SqliteActionStore(":memory:")
+        action = self.approved(store)
+
+        with pytest.raises(ProviderRejected, match="invoice_state"):
+            await ApprovalService(writer(held), store).execute(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.FAILED
+        assert sent(held) == []
