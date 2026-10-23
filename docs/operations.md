@@ -58,16 +58,18 @@ pip install -e ".[stripe]"   # the SDK pinned to its API version, and httpx
 ```
 
 Two keys, created by you in the account's test mode (Developers -> API keys),
-kept in `.env` and never anywhere else:
+each in its own git-ignored file, and never anywhere else:
 
-- `STRIPE_API_KEY`: a **restricted** key (`rk_test_...`) with **Read** only on
-  Customers, Subscriptions, Invoices, Payment Intents, Charges, Prices,
+- `STRIPE_API_KEY`, in `.env`: a **restricted** key (`rk_test_...`) with
+  **Read** only on Customers, Subscriptions, Invoices, Payment Intents, Charges, Prices,
   Products, Billing Meters, Billing Meter Events and Test Clocks, and nothing
   else. The service refuses any other kind of key before calling Stripe, and
   refuses to start the SDK with console logging on (`STRIPE_LOG`), which
   would print what Stripe answered.
-- `STRIPE_SEED_KEY`: the **secret** test key (`sk_test_...`), read only by
-  the seed script below. Never give it to the service.
+- `STRIPE_SEED_KEY`, in `.env.seed` and nowhere else: the **secret** test
+  key (`sk_test_...`), read only by the seed script below. It never goes in
+  `.env`, which `dotenv run` loads into the service; nor in the shell the
+  service starts from.
 
 Then `BILLING_PROVIDER=stripe` selects Stripe for the API and the MCP server.
 
@@ -78,7 +80,7 @@ counterpart -- and records on each customer the invoice to investigate and
 when:
 
 ```bash
-python -m dotenv run -- python -m scripts.stripe_seed
+python -m dotenv -f .env.seed run -- python -m scripts.stripe_seed
 ```
 
 It prints one line per world: `built`, `complete` (an earlier run built it,

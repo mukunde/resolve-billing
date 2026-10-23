@@ -139,7 +139,7 @@ cases ([evaluation](#evaluation)).
 
 ## Architecture
 
-![Architecture: a dispute arrives through n8n, the application loads the billing context, runs deterministic rules, asks a decision engine only when needed, prices a correction in code when it can, and the action policy decides whether a person must approve. Ports for billing, decisions and usage exist; the support tool and bank ports, and every adapter not built, are dashed as planned.](docs/architecture.svg)
+![Architecture: a dispute arrives through n8n, the application loads the billing context, runs deterministic rules, asks a decision engine only when needed, prices a correction in code when it can, and the action policy decides whether a person must approve. Ports for billing, decisions and usage exist, the billing one with the fake and Stripe (test mode, read-only); the support tool and bank ports, and every adapter not built, are dashed as planned.](docs/architecture.svg)
 
 <sub>What does not exist is drawn as not existing: every dashed port and
 adapter is planned, not built.</sub>

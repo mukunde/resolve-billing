@@ -35,7 +35,8 @@ with `BILLING_PROVIDER=stripe` and a restricted read-only test key.
     `ProviderUnsupported`, with a reason from a closed set. Nothing is decided
     on it: no investigation result, no proposal, no run row; every API surface
     that reads the platform answers 422 with
-    `{"category": "provider_unsupported", "reason": ...}`, and the MCP tools a
+    `{"detail": {"category": "provider_unsupported", "reason": ...}}`, and the
+    MCP tools a
     tool error with the reason -- never the platform's data.
   - A configuration or permission error -- a wrong or refused key, the SDK's
     console logging turned on -- fails visibly, by category, and is never
@@ -49,10 +50,11 @@ with `BILLING_PROVIDER=stripe` and a restricted read-only test key.
   customer's window and for one an unknown sender cites.
 - **The sender is found by address.** `find_customer_by_email` trims and
   lower-cases the address it is given and compares it with each customer's
-  address trimmed and lower-cased, returning the first match in a fixed
-  order (D9). On Stripe the order is creation then identifier, over every
-  customer, test-clock customers included; Stripe's exact filter and its
-  search are never used to prove an absence. A customer without an address
+  address lower-cased, returning the first match in a fixed order (D9). The
+  fake compares the stored address untrimmed, in the fixtures' order; Stripe
+  trims it too, in the order of creation then identifier, over every
+  customer, test-clock customers included, and never uses its exact filter
+  or its search to prove an absence. A customer without an address
   never matches. `list_customers` returns every customer, for the
   impersonation check (ADR-007); a customer without an address cannot be
   represented, so that list refuses (`missing_field`).

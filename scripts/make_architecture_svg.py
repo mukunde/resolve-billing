@@ -5,8 +5,9 @@
 Four things this draws that an earlier version of the same picture did not,
 each of them a claim the repository has to be able to keep:
 
-**Adapters that do not exist are drawn as not existing.** Stripe, Pennylane,
-Qonto, Zendesk, Zammad and Vertex are dashed and labelled `planned`. The README has a section naming
+**Adapters that do not exist are drawn as not existing.** Pennylane, Qonto,
+Zendesk, Zammad and Vertex are dashed and labelled `planned`; Stripe, built in
+test mode and read-only, says so on its chip. The README has a section naming
 them as absent; a diagram that lists them beside the working ones says the
 opposite, and a picture is believed faster than a paragraph.
 
@@ -206,7 +207,7 @@ add(
 )
 
 ports = [
-    ("BillingProvider", ["Fake"], ["Stripe", "Pennylane"]),
+    ("BillingProvider", ["Fake", "Stripe (read)"], ["Pennylane"]),
     ("DecisionEngine", ["Mock", "Claude"], ["Vertex"]),
     ("SupportTool", [], ["Zendesk", "Zammad"]),
     ("BankProvider", [], ["Qonto"]),
