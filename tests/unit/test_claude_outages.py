@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.decision.base import EngineUnavailable
+from app.decision.base import EngineRejected, EngineUnavailable
 from app.decision.claude import ClaudeDecisionEngine
 from app.domain.models import BillingContext, Customer, Dispute
 
@@ -59,13 +59,19 @@ class TestOutages:
             await engine.decide(DISPUTE, CONTEXT, [])
 
     @pytest.mark.parametrize(
-        "error",
-        [status_error(400), status_error(401), ValueError("a bug"), APIConnectionError()],
-        ids=["bad-request", "unauthorised", "programming-error", "lookalike"],
+        "error", [status_error(400), status_error(401)], ids=["bad-request", "unauthorised"]
+    )
+    async def test_a_refusal_is_not_an_outage(self, error):
+        """A bad request or a rejected key fails visibly, as a refusal."""
+        engine = ClaudeDecisionEngine(client=Raising(error), model="claude-opus-5")
+        with pytest.raises(EngineRejected):
+            await engine.decide(DISPUTE, CONTEXT, [])
+
+    @pytest.mark.parametrize(
+        "error", [ValueError("a bug"), APIConnectionError()], ids=["programming-error", "lookalike"]
     )
     async def test_an_error_stays_an_error(self, error):
-        """A bad request, a missing key, a bug or a stranger's exception is not
-        an outage: it fails visibly."""
+        """A bug or a stranger's exception is neither an outage nor a refusal."""
         engine = ClaudeDecisionEngine(client=Raising(error), model="claude-opus-5")
         with pytest.raises(type(error)):
             await engine.decide(DISPUTE, CONTEXT, [])

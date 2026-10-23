@@ -191,11 +191,7 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
         # information, and holding the case set to an exact finding list would
         # make every new rule a test failure.
         findings_ok=expected_findings <= got_findings,
-        skip_ok=(
-            (result.decision_engine == "none")
-            if case.get("expect_engine_skipped")
-            else True
-        ),
+        skip_ok=((result.decision_engine == "none") if case.get("expect_engine_skipped") else True),
         # A case that does not say is about a known sender: every case
         # written before the check existed was.
         sender_ok=result.sender.value == case.get("expect_sender", "known"),
@@ -332,10 +328,7 @@ def report(
         print(f"mean cost per engine call     : ${statistics.mean(costs) / 1e6:.5f}")
         print(f"cost of the whole set         : ${sum(costs) / 1e6:.4f}")
         print(f"mean cost per dispute         : ${sum(costs) / 1e6 / total:.5f}")
-        print(
-            f"cost per call, low to high    : "
-            f"${min(costs) / 1e6:.5f} - ${max(costs) / 1e6:.5f}"
-        )
+        print(f"cost per call, low to high    : ${min(costs) / 1e6:.5f} - ${max(costs) / 1e6:.5f}")
     if latencies:
         print(f"median latency, engine calls  : {int(statistics.median(latencies))} ms")
 
@@ -374,10 +367,7 @@ def report(
     if min_fully_correct is not None:
         fully = sum(o.ok for o in outcomes)
         if fully < min_fully_correct:
-            print(
-                f"\nREGRESSION: {fully}/{total} fully correct, "
-                f"floor is {min_fully_correct}"
-            )
+            print(f"\nREGRESSION: {fully}/{total} fully correct, floor is {min_fully_correct}")
             return 1
         print(f"\nfloor of {min_fully_correct}/{total} fully correct: held")
 
@@ -408,9 +398,7 @@ def _write_json(
 
 def baseline_of(outcomes: list[CaseOutcome]) -> dict[str, dict[str, bool]]:
     """Every check of every case, as the baseline records it."""
-    return {
-        o.case_id: {name: getattr(o, f"{name}_ok") for name in CHECK_NAMES} for o in outcomes
-    }
+    return {o.case_id: {name: getattr(o, f"{name}_ok") for name in CHECK_NAMES} for o in outcomes}
 
 
 def compare_to_baseline(
@@ -464,8 +452,7 @@ def check_baseline(path: Path, engine_name: str, outcomes: list[CaseOutcome]) ->
     stored = json.loads(path.read_text(encoding="utf-8"))
     if stored["engine"] != engine_name:
         print(
-            f"\nBASELINE: {path} was recorded with engine {stored['engine']!r}, "
-            f"not {engine_name!r}"
+            f"\nBASELINE: {path} was recorded with engine {stored['engine']!r}, not {engine_name!r}"
         )
         return 1
 
@@ -531,10 +518,25 @@ def main() -> int:
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
 
+    from app.decision.base import EngineRejected
+
     runs: list[dict] = []
     for index in range(args.runs):
         ran_at = datetime.now(UTC).isoformat()
-        outcomes, engine_version = asyncio.run(run(args.engine, args.cases))
+        try:
+            outcomes, engine_version = asyncio.run(run(args.engine, args.cases))
+        except EngineRejected as refusal:
+            # A configuration or account problem, not a result: the series
+            # stops whole and nothing is written -- earlier complete runs
+            # included, since a partial series is not the one asked for.
+            where = f" in run {index + 1}/{args.runs}" if args.runs > 1 else ""
+            kept = f" ({args.json} left as it was)" if args.json and args.json.exists() else ""
+            print(
+                f"the engine refused the request{where}: {refusal}\n"
+                f"The series stopped; no result was written{kept}.",
+                file=sys.stderr,
+            )
+            return 2
         runs.append({"ran_at": ran_at, "outcomes": [vars(o) for o in outcomes]})
         if args.runs > 1:
             print(f"run {index + 1}/{args.runs} done", file=sys.stderr)

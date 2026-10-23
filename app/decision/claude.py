@@ -33,6 +33,7 @@ from app.decision.anonymise import anonymise
 from app.decision.base import (
     Classification,
     Decision,
+    EngineRejected,
     EngineTelemetry,
     EngineUnavailable,
     RecommendedAction,
@@ -62,8 +63,8 @@ PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v3.md"
 #: HTTP statuses that mean "try later", not "your request is wrong":
 #: a timeout, a conflict, rate limiting, and the 5xx range of a failing or
 #: overloaded service. They are an outage (taxonomy S8). Any other status --
-#: a bad request, a missing key -- is a configuration error and fails the
-#: run visibly.
+#: a bad request, a rejected key, an account out of credit -- is a refusal
+#: (`EngineRejected`) and fails the run visibly.
 _TRANSIENT = frozenset({408, 409, 429}) | frozenset(range(500, 600))
 
 try:  # the SDK is an optional dependency (the `claude` extra)
@@ -71,6 +72,30 @@ try:  # the SDK is an optional dependency (the `claude` extra)
     from anthropic import APIStatusError as _Status
 except ImportError:  # pragma: no cover -- without the SDK there is no client
     _Transport = _Status = None
+
+
+#: Categories of refusal, by status. The provider's own text is never
+#: repeated: it can quote the request, a URL or a credential.
+_REFUSALS = {
+    400: "request refused",
+    401: "authentication refused",
+    403: "permission refused",
+    404: "model or endpoint not found",
+    413: "request too large",
+    422: "request refused",
+}
+
+
+def _refusal(error: Exception) -> str:
+    """A status and a category, recognised from the SDK's structured fields
+    only; the free text decides nothing but the one known account case."""
+    code = error.status_code
+    body = getattr(error, "body", None)
+    detail = body.get("error", {}) if isinstance(body, dict) else {}
+    message = detail.get("message", "") if isinstance(detail, dict) else ""
+    if code == 400 and isinstance(message, str) and "credit balance" in message.lower():
+        return f"HTTP {code}: account out of credit"
+    return f"HTTP {code}: {_REFUSALS.get(code, 'request refused')}"
 
 
 def _outage(error: Exception) -> str | None:
@@ -82,6 +107,8 @@ def _outage(error: Exception) -> str | None:
     if is_status and error.status_code in _TRANSIENT:
         return f"HTTP {error.status_code}"
     return None
+
+
 PROMPT_VERSION = "decision_v3"
 
 DEFAULT_MODEL = "claude-opus-5"
@@ -336,9 +363,11 @@ class ClaudeDecisionEngine:
             return await create(**request)
         except Exception as error:
             reason = _outage(error)
-            if reason is None:
-                raise
-            raise EngineUnavailable(reason) from error
+            if reason is not None:
+                raise EngineUnavailable(reason) from error
+            if _Status is not None and isinstance(error, _Status):
+                raise EngineRejected(_refusal(error)) from error
+            raise
 
     def _parse(self, response) -> _ModelVerdict | None:
         """Validate the response, or return None to send the run to a human.
@@ -401,9 +430,7 @@ def pricing_date(model: str) -> str:
     return PRICED_ON.get(model, PRICING_AS_OF)
 
 
-def estimate_cost_micros(
-    model: str, input_tokens: int, output_tokens: int
-) -> int | None:
+def estimate_cost_micros(model: str, input_tokens: int, output_tokens: int) -> int | None:
     """Estimated cost of one call, in millionths of a dollar.
 
     *Estimated*, and the word is load-bearing: this applies the list prices of
@@ -427,7 +454,7 @@ def estimate_cost_micros(
         return 0  # self-hosted or flat-rate: no per-call price, and we know it
 
     input_price, output_price = prices
-    micros = (input_tokens * input_price + output_tokens * output_price)  # $/Mtok * tokens
+    micros = input_tokens * input_price + output_tokens * output_price  # $/Mtok * tokens
     return round(micros)
 
 
