@@ -20,6 +20,62 @@ from app.domain.exceptions import BillingDomainError
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
 
 
+class NotFound(BillingDomainError):
+    """The platform holds no object under this identifier.
+
+    What `get_customer`, `get_subscription` and `get_invoice` raise for an
+    unknown identifier, on every platform; `find_*` answer `None` instead.
+    """
+
+
+#: Why a platform's data cannot be represented in the domain. Closed: a new
+#: reason is a decision, and its tests come with it.
+UNSUPPORTED_REASONS = frozenset(
+    {
+        "mixed_item_periods",
+        "multiple_prices",
+        "subscription_status",
+        "cancellation_without_end",
+        "invoice_tax",
+        "invoice_discount",
+        "negative_line",
+        "fractional_unit_price",
+        "partial_refund",
+        "multi_invoice_payment",
+        "unplaced_payment",
+        "unrepresentable_period",
+        "missing_field",
+        "invoice_credit",
+    }
+)
+
+
+class ProviderUnsupported(Exception):  # noqa: N818 -- a state, not a programming error
+    """The platform answered, with data the domain cannot represent.
+
+    Not `ProviderUnavailable` -- trying later changes nothing -- and not a
+    configuration error. Nothing is decided on it: no investigation result,
+    no proposal, no run row; the caller is told the data is not supported,
+    by category. The message is the category alone, never the platform's
+    data. See specs/001-stripe-read-adapter, FR-002.
+    """
+
+    def __init__(self, reason: str) -> None:
+        if reason not in UNSUPPORTED_REASONS:
+            raise ValueError(f"unknown unsupported-data reason {reason!r}")
+        super().__init__(reason)
+        self.reason = reason
+
+
+class PlatformCannotWrite(Exception):  # noqa: N818 -- a state, not a programming error
+    """A platform that cannot write was asked to write, or to reconcile.
+
+    The execution service never asks -- it checks `can_write` first and
+    refuses before reading or claiming anything -- so this is a guard against
+    a caller that skipped that check, raised before any call to the platform.
+    """
+
+
 class ProviderRejected(BillingDomainError):
     """The platform answered, and refused the write: nothing was created.
 
@@ -69,6 +125,10 @@ class BillingProvider(Protocol):
     """
 
     name: str
+    #: Whether the platform can make the two writes below. A platform that
+    #: cannot (a read-only slice) is never asked: execution is refused before
+    #: anything is read or claimed (ADR-008).
+    can_write: bool
     # Optionally, `invoice_references(text) -> set[str]`: the invoice ids cited
     # in a text, normalised to this platform's own form (taxonomy S6). Only
     # the platform knows how its references are written. Not part of the
@@ -95,9 +155,29 @@ class BillingProvider(Protocol):
 
     async def find_invoice(self, invoice_id: str) -> Invoice | None: ...
 
+    async def invoice_owner(self, invoice_id: str) -> str | None:
+        """The customer an invoice belongs to, or None when there is no such
+        invoice. Only the owner is extracted -- nothing of the content is
+        mapped and nothing further is read -- so what the invoice bills never
+        makes it refuse: the check on an invoice that may be another
+        customer's learns whose it is, and nothing more. An owner the
+        platform cannot name is `ProviderUnsupported("missing_field")`
+        (ADR-001, 2026-10-22)."""
+        ...
+
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]: ...
 
-    async def get_usage(self, subscription_id: str) -> Usage | None: ...
+    async def get_usage(
+        self, subscription_id: str, period: tuple[datetime, datetime]
+    ) -> Usage | None:
+        """The subscription's metered usage over `period` (start, end), or None.
+
+        The period is the one the invoice's metered lines cover: on a platform
+        that bills usage in arrears, not the subscription's current one
+        (ADR-001, 2026-10-22). None when the platform holds nothing for
+        exactly that period -- unavailable, never zero.
+        """
+        ...
 
     async def list_payments(self, customer_id: str) -> list[Payment]: ...
 

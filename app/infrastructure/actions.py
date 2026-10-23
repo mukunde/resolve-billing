@@ -109,6 +109,20 @@ class IllegalTransition(BillingDomainError):
         self.wanted = wanted
 
 
+class WritesNotSupported(IllegalTransition):
+    """The billing platform cannot write: an approved action stays as it is.
+
+    Raised before anything is read, reconciled or claimed, so nothing has
+    happened and nothing is unknown. An `IllegalTransition`, so the API
+    answers 409 like any other action that cannot become executed now.
+    """
+
+    def __init__(self, action_id: str, current: ActionState) -> None:
+        super().__init__(
+            action_id, current, ActionState.EXECUTED, why="(this billing platform cannot write)"
+        )
+
+
 class UnknownAction(BillingDomainError):
     pass
 
@@ -144,9 +158,7 @@ def approval_ttl() -> timedelta:
     return timedelta(hours=float(os.getenv("RESOLVE_APPROVAL_TTL_HOURS", "72")))
 
 
-def idempotency_key(
-    provider: str, invoice_id: str, action_type: str, amount: Money
-) -> str:
+def idempotency_key(provider: str, invoice_id: str, action_type: str, amount: Money) -> str:
     """Derived from what the action *is*, never from when it was asked for.
 
     Includes the amount and currency: a 99,00 EUR credit note and a 49,00 EUR
@@ -178,9 +190,7 @@ class SqliteActionStore:
             ("approved_fingerprint", "TEXT"),
         ):
             if column not in held:
-                self._connection.execute(
-                    f"ALTER TABLE pending_actions ADD COLUMN {column} {ddl}"
-                )
+                self._connection.execute(f"ALTER TABLE pending_actions ADD COLUMN {column} {ddl}")
 
     def create(
         self,
@@ -343,8 +353,6 @@ def _to_action(row: sqlite3.Row) -> PendingAction:
         failure_reason=row["failure_reason"],
         resolution=row["resolution"],
         updated_at=datetime.fromisoformat(row["updated_at"]),
-        expires_at=(
-            datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None
-        ),
+        expires_at=(datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None),
         approved_fingerprint=row["approved_fingerprint"],
     )

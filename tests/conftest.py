@@ -12,6 +12,9 @@ import os
 
 # Set before anything imports app.api.deps, whose sinks read it once.
 os.environ.setdefault("AUDIT_DB", ":memory:")
+# The suite runs on the fake whatever the environment says: Stripe is reached
+# only by the contract tests, which build it themselves, with its own key.
+os.environ["BILLING_PROVIDER"] = "fake"
 
 import pytest  # noqa: E402
 

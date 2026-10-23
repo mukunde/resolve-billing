@@ -62,3 +62,41 @@ partial read -- an empty answer would read as "this customer has no
 invoices" -- and the API answers 503; the caller can send the request again
 as it is. A reference not found in the loaded window is looked up directly,
 and only whether it is the customer's is kept (taxonomy S7).
+
+## Amendment, 2026-10-22 -- what every platform says the same way
+
+With the first real platform (Stripe, read-only; specs/001-stripe-read-adapter)
+the port names four things every adapter needs, so that no caller depends on
+one adapter's own errors:
+
+- **`NotFound`**: an unknown identifier on `get_customer`, `get_subscription`,
+  `get_invoice` (it was the fake's own class).
+- **`ProviderUnsupported`**, with a reason from a closed set: the platform
+  answered, with data the domain cannot represent (a subscription whose items
+  run on different periods, an invoice with tax in this slice, a partial
+  refund...). Not an outage and not a configuration error: nothing is decided
+  on it, no run is recorded, and every API surface answers 422 with the
+  category -- never the platform's data.
+- **`can_write`**: whether the platform can make the two writes. One that
+  cannot is never asked (ADR-008, same date).
+- **`invoice_owner`**: the customer an invoice belongs to, or `None` when there
+  is no such invoice. Only the owner is extracted: nothing of the content is
+  mapped and nothing further is read (the platform may still send the whole
+  invoice), and an owner it cannot name is `missing_field`, never an absence.
+  Where only ownership matters -- a reference outside the
+  customer's window, one an unknown sender cites -- the investigation asks
+  this and nothing more, so a property of another account's invoice cannot
+  surface, not even as a refusal on its content; the impersonation check
+  takes the owner, not the invoice. Added at implementation review, and
+  approved by the maintainer, the same day.
+
+Usage is read for a period, `get_usage(subscription_id, period)`: Stripe bills
+metered usage in arrears, so the period the invoice covers is not the item's
+current one. The investigation asks for the period the target invoice's
+metered lines share; the fake answers its record only when it covers that
+period exactly. Lines on distinct periods, on no real period, or no metered
+line at all ask for nothing. So an invoice without metered lines no longer
+brings a usage record into the engine's context: no rule compared it. On the
+development set this changes the engine context of four cases (`duplicate_fr`,
+`duplicate_en`, `known_customer_bulk_dispute`, `proration`) and no finding;
+the maintainer accepted it on 2026-10-22.

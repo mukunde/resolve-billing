@@ -112,6 +112,23 @@ not assumed.
 - **There is no scheduler.** An abandoned claim is recovered at the next
   `execute()` call, not on a timer.
 
+## A platform that cannot write
+
+Added 2026-10-22, with the first read-only platform (Stripe;
+specs/001-stripe-read-adapter). A platform declares `can_write`. When it is
+false, `execute()` and `reconcile()` refuse **before anything else** -- before
+reading the invoice, before reconciling, before claiming -- with
+`WritesNotSupported`, an `IllegalTransition`: the action keeps its state, the
+API answers 409, and nothing is unknown, because nothing happened.
+`find_action` is never asked to report an absence it did not look for. The
+adapter's own writes raise `PlatformCannotWrite` without calling the platform,
+a guard for a caller that would skip the check.
+
+A read that fails before the claim -- the proposal's fingerprint, the cap
+guard -- leaves the action as it was: unsupported data answers 422, a
+platform outage 503. Only what happens after the claim can make an outcome
+unknown.
+
 ## The platform is authoritative on amounts and limits
 
 Added with D6, 2026-10-08.

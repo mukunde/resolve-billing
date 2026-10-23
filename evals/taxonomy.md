@@ -170,7 +170,8 @@ invoice, and no blocking finding.
   it cannot conclude (`NOT_EVALUABLE`), no correction is proposed, and "the
   invoice is correct" goes to a person (`duplicate_check_not_evaluable`).
   The same holds for cancellation and proration when the subscription is
-  missing, and for proration when a line has no period; a one-off invoice,
+  missing, for proration when a line has no period, and for proration when a
+  line is part of a period other than the current one (B11); a one-off invoice,
   with no subscription, is outside these checks rather than a gap.
 - Tests: CP, BV, MU.
 
@@ -208,6 +209,17 @@ invoice, and no blocking finding.
 - Dev: A `proration_not_duplicate`; B `proration`.
 - Gaps: a gap of exactly 1 vs 2 minor units. A single net line cannot be
   checked and stays flagged by design (S9).
+- Only a line inside the subscription's current period is measured against
+  it. A line outside covering whole periods -- both bounds on the
+  subscription's schedule, its anchor stepped by its cadence, as arrears
+  billed after a renewal -- is no proration; any other line outside, or any
+  when the cadence is unknown, is said not evaluable
+  (`line_outside_current_period`). And a line inside is measured only when
+  the current period is proved one whole cycle: a first period started
+  before its anchor, or an unknown cadence, is said instead
+  (`current_period_not_one_cycle`, `billing_cycle_unknown`).
+  Found on Stripe's data, where a 30-day month was read against a 31-day
+  one (contract run, 2026-10-23); unit tests only, no case.
 - Tests: BV, CP.
 
 **B12 — Usage within vs beyond tolerance** · case

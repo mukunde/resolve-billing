@@ -5,8 +5,9 @@
 Four things this draws that an earlier version of the same picture did not,
 each of them a claim the repository has to be able to keep:
 
-**Adapters that do not exist are drawn as not existing.** Stripe, Pennylane,
-Qonto, Zendesk, Zammad and Vertex are dashed and labelled `planned`. The README has a section naming
+**Adapters that do not exist are drawn as not existing.** Pennylane, Qonto,
+Zendesk, Zammad and Vertex are dashed and labelled `planned`; Stripe, built in
+test mode and read-only, says so on its chip. The README has a section naming
 them as absent; a diagram that lists them beside the working ones says the
 opposite, and a picture is believed faster than a paragraph.
 
@@ -105,7 +106,7 @@ add(
 )
 add(
     f'<text class="lane l" x="{IX + 16}" y="{Y1 - 9}" fill="{TEAL_D}" '
-    '>DISPUTEINVESTIGATOR &#183; THE APPLICATION LAYER</text>'
+    ">DISPUTEINVESTIGATOR &#183; THE APPLICATION LAYER</text>"
 )
 
 inner = [
@@ -118,8 +119,17 @@ iw, gap = 112, 11
 for i, (t, s) in enumerate(inner):
     x = IX + 16 + i * (iw + gap)
     accent = CRIMSON if i == 2 else TEAL_D
-    box(x, Y1 + 4, iw, BH - 8, t, s, accent=DIM if i == 2 else TEAL_D,
-        ink=MUTED if i == 2 else INK, dash=(i == 2))
+    box(
+        x,
+        Y1 + 4,
+        iw,
+        BH - 8,
+        t,
+        s,
+        accent=DIM if i == 2 else TEAL_D,
+        ink=MUTED if i == 2 else INK,
+        dash=(i == 2),
+    )
     if i:
         arrow(x - gap - 1, Y1 + BH / 2, x - 2, Y1 + BH / 2, TEAL_D)
 
@@ -173,10 +183,7 @@ add(
     f'<rect x="42" y="{Y4}" width="{W - 84}" height="52" rx="9" fill="#ffffff" '
     f'stroke="{DIM}" stroke-width="1.5"/>'
 )
-add(
-    f'<text class="bt l" x="72" y="{Y4 + 31}" fill="{INK}">'
-    "Audit + state</text>"
-)
+add(f'<text class="bt l" x="72" y="{Y4 + 31}" fill="{INK}">Audit + state</text>')
 add(
     f'<text class="bs l" x="212" y="{Y4 + 31}" fill="{MUTED}">'
     "runs &#183; events &#183; pending actions &#183; SQLite "
@@ -200,7 +207,7 @@ add(
 )
 
 ports = [
-    ("BillingProvider", ["Fake"], ["Stripe", "Pennylane"]),
+    ("BillingProvider", ["Fake", "Stripe (read)"], ["Pennylane"]),
     ("DecisionEngine", ["Mock", "Claude"], ["Vertex"]),
     ("SupportTool", [], ["Zendesk", "Zammad"]),
     ("BankProvider", [], ["Qonto"]),
@@ -236,10 +243,7 @@ for i, (name, built, planned) in enumerate(ports):
         )
         cx += w + 7
     # correction 1: what does not exist is drawn as not existing
-    add(
-        f'<text class="tiny l" x="{x + 14}" y="{Y5 + 94}" fill="{LANE}">'
-        'planned</text>'
-    )
+    add(f'<text class="tiny l" x="{x + 14}" y="{Y5 + 94}" fill="{LANE}">planned</text>')
     cx = x + 14
     for label in planned:
         w = 11 + len(label) * 6.6

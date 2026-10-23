@@ -230,6 +230,7 @@ class TestATimeoutIsNotAFailure:
     async def test_reconciliation_retries_when_nothing_was_written(self, store):
         """No answer, and the platform holds nothing under the key: the
         write never landed, so it is made again -- once."""
+
         class NeverArrives(FlakyProvider):
             async def create_credit_note(self, **kwargs):
                 self.calls += 1
@@ -370,9 +371,7 @@ class TestNeverMoreThanTheInvoice:
     ResolveBilling keeps one minimal guard of its own, so a bug in a proposal
     does not rely on the platform alone to stop it."""
 
-    async def test_an_amount_above_the_invoice_total_is_refused_before_the_claim(
-        self, store
-    ):
+    async def test_an_amount_above_the_invoice_total_is_refused_before_the_claim(self, store):
         provider = FakeBillingProvider()
         action = store.create(
             run_id="run_test",
@@ -417,8 +416,12 @@ class TestAnApprovalHoldsForWhatWasShownAndNotForever:
     async def test_an_approval_of_what_was_shown_goes_through(self, store):
         service = ApprovalService(FakeBillingProvider(), store)
         action = store.create(
-            run_id="run_test", action_type="credit_note", invoice_id="inv_002",
-            amount=NINETY_NINE, reason="x", provider="fake",
+            run_id="run_test",
+            action_type="credit_note",
+            invoice_id="inv_002",
+            amount=NINETY_NINE,
+            reason="x",
+            provider="fake",
         )
 
         shown = await self.shown(service, action)
@@ -430,8 +433,13 @@ class TestAnApprovalHoldsForWhatWasShownAndNotForever:
     async def test_a_request_past_its_deadline_cannot_be_decided(self, store):
         service = ApprovalService(FakeBillingProvider(), store)
         action = store.create(
-            run_id="run_test", action_type="credit_note", invoice_id="inv_002",
-            amount=NINETY_NINE, reason="x", provider="fake", ttl=timedelta(seconds=-1),
+            run_id="run_test",
+            action_type="credit_note",
+            invoice_id="inv_002",
+            amount=NINETY_NINE,
+            reason="x",
+            provider="fake",
+            ttl=timedelta(seconds=-1),
         )
 
         with pytest.raises(IllegalTransition):
@@ -439,14 +447,16 @@ class TestAnApprovalHoldsForWhatWasShownAndNotForever:
 
         assert store.get(action.action_id).state is ActionState.EXPIRED
 
-    async def test_an_approval_of_a_proposal_that_changed_since_it_was_shown_falls(
-        self, store
-    ):
+    async def test_an_approval_of_a_proposal_that_changed_since_it_was_shown_falls(self, store):
         provider = FakeBillingProvider()
         service = ApprovalService(provider, store)
         action = store.create(
-            run_id="run_test", action_type="credit_note", invoice_id="inv_002",
-            amount=NINETY_NINE, reason="x", provider="fake",
+            run_id="run_test",
+            action_type="credit_note",
+            invoice_id="inv_002",
+            amount=NINETY_NINE,
+            reason="x",
+            provider="fake",
         )
         shown = await self.shown(service, action)
         provider.change_invoice("inv_002", total_minor=4900)
@@ -462,8 +472,12 @@ class TestAnApprovalHoldsForWhatWasShownAndNotForever:
         provider = FakeBillingProvider()
         service = ApprovalService(provider, store)
         action = store.create(
-            run_id="run_test", action_type="credit_note", invoice_id="inv_002",
-            amount=NINETY_NINE, reason="x", provider="fake",
+            run_id="run_test",
+            action_type="credit_note",
+            invoice_id="inv_002",
+            amount=NINETY_NINE,
+            reason="x",
+            provider="fake",
         )
         await service.approve(action.action_id, "approver", await self.shown(service, action))
         provider.change_invoice("inv_002", total_minor=4900)
@@ -473,3 +487,65 @@ class TestAnApprovalHoldsForWhatWasShownAndNotForever:
 
         assert store.get(action.action_id).state is ActionState.EXPIRED
         assert provider.executed_actions == []
+
+
+class ReadOnlyProvider(FakeBillingProvider):
+    """A platform that cannot write: every call is recorded, and any read,
+    write or reconciliation fails the test (specs/001-stripe-read-adapter,
+    FR-003)."""
+
+    can_write = False
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.touched: list[str] = []
+
+    async def get_invoice(self, invoice_id):
+        self.touched.append("get_invoice")
+        raise AssertionError("no read before refusing")
+
+    async def create_credit_note(self, **kwargs):
+        self.touched.append("create_credit_note")
+        raise AssertionError("no write on a read-only platform")
+
+    async def find_action(self, idempotency_key):
+        self.touched.append("find_action")
+        raise AssertionError("no reconciliation on a read-only platform")
+
+
+class TestAReadOnlyPlatformIsNeverWritten:
+    async def test_execute_is_refused_before_anything(self, store):
+        from app.infrastructure.actions import WritesNotSupported
+
+        provider = ReadOnlyProvider()
+        action = approved(store)
+
+        with pytest.raises(WritesNotSupported):
+            await ApprovalService(provider, store).execute(action.action_id)
+
+        assert provider.touched == []
+        assert store.get(action.action_id).state is ActionState.APPROVED
+
+    async def test_it_is_a_transition_refusal_so_the_api_answers_409(self):
+        from app.infrastructure.actions import WritesNotSupported
+
+        assert issubclass(WritesNotSupported, IllegalTransition)
+
+    async def test_reconcile_never_asks_the_platform(self, store):
+        from app.infrastructure.actions import WritesNotSupported
+
+        provider = ReadOnlyProvider()
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING)
+        store.transition(action.action_id, ActionState.UNKNOWN_OUTCOME)
+
+        with pytest.raises(WritesNotSupported):
+            await ApprovalService(provider, store).reconcile(action.action_id)
+        assert provider.touched == []
+        assert store.get(action.action_id).state is ActionState.UNKNOWN_OUTCOME
+
+    async def test_a_platform_that_cannot_write_says_so_without_a_call(self):
+        from app.providers.base import PlatformCannotWrite
+
+        assert issubclass(PlatformCannotWrite, Exception)
+        assert not issubclass(PlatformCannotWrite, ProviderRejected)

@@ -98,13 +98,17 @@ class TestTheClaimDoesNotHold:
                 reads.append(("list_payments", customer_id))
                 return await super().list_payments(customer_id)
 
-            async def get_usage(self, subscription_id):
+            async def get_usage(self, subscription_id, period):
                 reads.append(("get_usage", subscription_id))
-                return await super().get_usage(subscription_id)
+                return await super().get_usage(subscription_id, period)
 
             async def find_invoice(self, invoice_id):
                 reads.append(("find_invoice", invoice_id))
                 return await super().find_invoice(invoice_id)
+
+            async def invoice_owner(self, invoice_id):
+                reads.append(("invoice_owner", invoice_id))
+                return await super().invoice_owner(invoice_id)
 
             async def get_invoice(self, invoice_id):
                 reads.append(("get_invoice", invoice_id))

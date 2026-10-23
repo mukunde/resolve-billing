@@ -16,20 +16,18 @@ import re
 from datetime import UTC, datetime
 
 from app.domain.enums import PaymentStatus
-from app.domain.exceptions import BillingDomainError
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
-from app.providers.base import ProviderAction, ProviderRejected
+from app.providers.base import NotFound, ProviderAction, ProviderRejected
 from app.providers.fake.fixtures import load_all
 
-
-class NotFound(BillingDomainError):
-    """The platform holds no such object."""
+__all__ = ["FakeBillingProvider", "NotFound"]
 
 
 class FakeBillingProvider:
     """In-memory billing platform backed by ``fixtures/``."""
 
     name = "fake"
+    can_write = True
 
     #: How this platform writes an invoice reference in free text: `inv_002`,
     #: `INV-002`, `inv002` -- digits after the prefix, so a word that happens
@@ -99,13 +97,29 @@ class FakeBillingProvider:
     async def find_invoice(self, invoice_id: str) -> Invoice | None:
         return next((i for i in self._invoices if i.id == invoice_id), None)
 
+    async def invoice_owner(self, invoice_id: str) -> str | None:
+        # Read on its own, not through `find_invoice`: whose it is, nothing else.
+        return next((i.customer_id for i in self._invoices if i.id == invoice_id), None)
+
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]:
         return [
             i for i in self._invoices if i.customer_id == customer_id and i.issued_at >= since
         ]
 
-    async def get_usage(self, subscription_id: str) -> Usage | None:
-        return next((u for u in self._usage if u.subscription_id == subscription_id), None)
+    async def get_usage(
+        self, subscription_id: str, period: tuple[datetime, datetime]
+    ) -> Usage | None:
+        # Exactly that period: a record that only contains it, or sits next
+        # to it, says nothing about it.
+        return next(
+            (
+                u
+                for u in self._usage
+                if u.subscription_id == subscription_id
+                and (u.period_start, u.period_end) == period
+            ),
+            None,
+        )
 
     async def list_payments(self, customer_id: str) -> list[Payment]:
         invoice_ids = {i.id for i in self._invoices if i.customer_id == customer_id}

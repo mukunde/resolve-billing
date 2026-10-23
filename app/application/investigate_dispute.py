@@ -36,7 +36,14 @@ from app.decision.base import (
 )
 from app.domain.automated import automated_message
 from app.domain.enums import RuleCode, SenderStatus, Severity
-from app.domain.models import BillingContext, Customer, Dispute, RuleFinding
+from app.domain.models import (
+    BillingContext,
+    Customer,
+    Dispute,
+    Invoice,
+    InvoiceOwner,
+    RuleFinding,
+)
 from app.domain.money import Money
 from app.domain.rules import (
     checks_not_evaluable,
@@ -57,7 +64,7 @@ from app.observability import tracing
 from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
 from app.policies.correction import correction_for
 from app.policies.reply import AutomaticReply, automatic_reply
-from app.providers.base import BillingProvider, ProviderUnavailable
+from app.providers.base import BillingProvider, ProviderUnavailable, ProviderUnsupported
 
 log = logging.getLogger(__name__)
 
@@ -166,6 +173,16 @@ class DisputeInvestigator:
                     type(error).__name__,
                 )
                 tracing.set_attributes(current, **{"error.type": "provider_unavailable"})
+                raise
+            except ProviderUnsupported as error:
+                # Data the domain cannot represent: nothing is decided, no run
+                # is recorded, and the category -- never the data -- is said.
+                log.warning(
+                    "billing platform data not supported: dispute=%s reason=%s",
+                    dispute.id,
+                    error.reason,
+                )
+                tracing.set_attributes(current, **{"error.type": "provider_unsupported"})
                 raise
             tracing.set_attributes(
                 current,
@@ -362,16 +379,17 @@ class DisputeInvestigator:
         payments = await self._provider.list_payments(customer.id)
 
         target = next((i for i in invoices if i.id == dispute.invoice_id), None)
-        # Not found in the window is not "does not exist" (taxonomy S7): look
-        # the reference up directly, and keep only whether it is this
-        # customer's -- nothing about another account's invoice is kept.
+        # Not found in the window is not "does not exist" (taxonomy S7): ask
+        # whose the reference is, and nothing else -- nothing of another
+        # account's invoice is mapped, so nothing of it can surface.
         outside_window = False
         if dispute.invoice_id and target is None:
-            found = await self._provider.find_invoice(dispute.invoice_id)
-            outside_window = found is not None and found.customer_id == customer.id
+            owner = await self._provider.invoice_owner(dispute.invoice_id)
+            outside_window = owner == customer.id
         usage = None
-        if target is not None and target.subscription_id:
-            usage = await self._provider.get_usage(target.subscription_id)
+        period = _metered_period(target) if target is not None else None
+        if period is not None and target.subscription_id:
+            usage = await self._provider.get_usage(target.subscription_id, period)
 
         return BillingContext(
             customer=customer,
@@ -508,13 +526,15 @@ class DisputeInvestigator:
         if automated is not None:
             findings.append(automated)
 
-        invoice = (
-            await self._provider.find_invoice(dispute.invoice_id) if dispute.invoice_id else None
+        # Whose the cited invoice is, and nothing else of it: the sender is
+        # nobody we know.
+        owner = (
+            await self._provider.invoice_owner(dispute.invoice_id) if dispute.invoice_id else None
         )
         impersonation = suspected_impersonation(
             dispute.customer_email,
             dispute.customer_message,
-            invoice,
+            InvoiceOwner(dispute.invoice_id, owner) if owner is not None else None,
             await self._provider.list_customers(),
         )
         if impersonation is not None:
@@ -782,6 +802,21 @@ def _outside_window(invoice_id: str) -> RuleFinding:
         ),
         evidence={"invoice_id": invoice_id, "window_days": LOOKBACK.days},
     )
+
+
+def _metered_period(invoice: Invoice) -> tuple[datetime, datetime] | None:
+    """The one real period every metered line of `invoice` covers, or None.
+
+    Usage is read for it (FR-016 as amended, option (a)). Lines on distinct
+    periods, or on no real one, ask for nothing: no line is picked, and the
+    usage rules say them unchecked. An invoice without metered lines asks for
+    nothing either -- no rule has a line to compare a record with.
+    """
+    metered = [line for line in invoice.lines if line.metric]
+    periods = {(line.period_start, line.period_end) for line in metered}
+    if len(periods) != 1 or not (metered[0].period_seconds or 0) > 0:
+        return None
+    return periods.pop()
 
 
 def _usage_unavailable(invoice_id: str, metrics: list[str]) -> RuleFinding:

@@ -43,6 +43,28 @@ class TestMapping:
         invoice = await provider.get_invoice("inv_011")
         assert invoice.lines[0].metric == "api_call_blocks_100"
 
+    async def test_a_subscription_says_its_cadence_and_anchor(self, provider):
+        subscription = await provider.get_subscription("sub_77")
+        assert (subscription.billing_interval, subscription.billing_interval_count) == ("month", 1)
+        assert subscription.billing_anchor == datetime(2026, 9, 1, tzinfo=UTC)
+
+    def test_a_subscription_saying_no_cadence_is_monthly_from_its_period_start(self):
+        """The fake's convention, for fixture sets written before subscriptions
+        said their cadence: monthly, anchored on the period's start."""
+        from app.providers.fake.fixtures import _subscription
+
+        raw = {
+            "id": "sub_x",
+            "customer_id": "cus_x",
+            "state": "active",
+            "plan": "pro_monthly",
+            "period_start": "2026-09-01T00:00:00",
+            "period_end": "2026-10-01T00:00:00",
+        }
+        subscription = _subscription(raw)
+        assert (subscription.billing_interval, subscription.billing_interval_count) == ("month", 1)
+        assert subscription.billing_anchor == subscription.current_period_start
+
     async def test_cancellation_date_is_parsed(self, provider):
         sub = await provider.get_subscription("sub_55")
         assert sub.status is SubscriptionStatus.CANCELLED
@@ -66,6 +88,12 @@ class TestReads:
     async def test_find_invoice_returns_none_on_an_unknown_reference(self, provider):
         assert await provider.find_invoice("inv_nope") is None
 
+    async def test_the_owner_of_an_invoice_is_its_customer(self, provider):
+        assert await provider.invoice_owner("inv_002") == "cus_acme"
+
+    async def test_an_unknown_invoice_has_no_owner(self, provider):
+        assert await provider.invoice_owner("inv_nope") is None
+
     async def test_lists_every_customer_with_its_display_name(self, provider):
         customers = {c.id: c for c in await provider.list_customers()}
         assert customers["cus_acme"].display_name == "ACME SAS"
@@ -78,6 +106,28 @@ class TestReads:
     async def test_payments_are_scoped_to_the_customer(self, provider):
         payments = await provider.list_payments("cus_nord")
         assert {p.id for p in payments} == {"pay_010", "pay_011"}
+
+
+class TestUsageForAPeriod:
+    """FR-016 as amended (option (a)): a record answers only for its own
+    period, exactly -- not one it contains, not one next to it."""
+
+    SEPTEMBER = (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC))
+
+    async def test_the_record_for_exactly_that_period(self, provider):
+        usage = await provider.get_usage("sub_88", self.SEPTEMBER)
+        assert (usage.metric, usage.quantity) == ("api_call_blocks_100", Decimal("47"))
+
+    async def test_nothing_for_another_period(self, provider):
+        august = (datetime(2026, 8, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC))
+        assert await provider.get_usage("sub_88", august) is None
+
+    async def test_nothing_for_a_period_that_only_contains_the_record(self, provider):
+        wider = (self.SEPTEMBER[0], datetime(2026, 11, 1, tzinfo=UTC))
+        assert await provider.get_usage("sub_88", wider) is None
+
+    async def test_nothing_for_another_subscription(self, provider):
+        assert await provider.get_usage("sub_nope", self.SEPTEMBER) is None
 
 
 class TestIdempotentWrite:
@@ -125,12 +175,8 @@ class TestThePlatformCapsCorrections:
         assert len(provider.executed_actions) == 1
 
     async def test_a_replay_still_returns_the_original_at_the_cap(self, provider):
-        first = await provider.create_credit_note(
-            "inv_002", 9900, "EUR", "x", idempotency_key="a"
-        )
-        again = await provider.create_credit_note(
-            "inv_002", 9900, "EUR", "x", idempotency_key="a"
-        )
+        first = await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
+        again = await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
 
         assert again == first
 
@@ -138,20 +184,34 @@ class TestThePlatformCapsCorrections:
         """The platform answered, and nothing was created: a refusal, not an
         unknown outcome. See ADR-008."""
         with pytest.raises(ProviderRejected):
-            await provider.create_credit_note(
-                "inv_nope", 100, "EUR", "x", idempotency_key="c"
-            )
+            await provider.create_credit_note("inv_nope", 100, "EUR", "x", idempotency_key="c")
         assert await provider.find_action("c") is None
 
     async def test_find_action_returns_what_a_key_produced(self, provider):
-        action = await provider.create_credit_note(
-            "inv_001", 100, "EUR", "x", idempotency_key="e"
-        )
+        action = await provider.create_credit_note("inv_001", 100, "EUR", "x", idempotency_key="e")
         assert await provider.find_action("e") == action
         assert await provider.find_action("never-used") is None
 
     async def test_created_at_is_timezone_aware(self, provider):
-        action = await provider.create_credit_note(
-            "inv_001", 100, "EUR", "x", idempotency_key="d"
-        )
+        action = await provider.create_credit_note("inv_001", 100, "EUR", "x", idempotency_key="d")
         assert action.created_at.tzinfo is UTC
+
+
+class TestThePortsOwnErrors:
+    """The port names the error for an unknown identifier and says whether a
+    platform can write (specs/001-stripe-read-adapter, FR-001 and FR-003)."""
+
+    async def test_an_unknown_identifier_raises_the_ports_not_found(self, provider):
+        from app.providers.base import NotFound as PortNotFound
+
+        for read in (provider.get_customer, provider.get_subscription, provider.get_invoice):
+            with pytest.raises(PortNotFound):
+                await read("nope")
+
+    def test_the_old_import_path_still_works(self):
+        from app.providers.base import NotFound as PortNotFound
+
+        assert NotFound is PortNotFound
+
+    def test_the_fake_can_write(self, provider):
+        assert provider.can_write is True

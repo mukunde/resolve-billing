@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api import approvals, disputes, health, review, run_view
 from app.observability import tracing
+from app.providers.base import ProviderUnsupported
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(
     title="ResolveBilling",
@@ -59,6 +64,22 @@ async def _validation_error(request: Request, error: RequestValidationError) -> 
             location.append(part)
         detail.append({"loc": location, "type": problem.get("type")})
     return JSONResponse(status_code=422, content={"detail": detail})
+
+
+@app.exception_handler(ProviderUnsupported)
+async def _unsupported_data(request: Request, error: ProviderUnsupported) -> JSONResponse:
+    """The platform answered with data the domain cannot represent.
+
+    Nothing was decided and nothing changed state. The caller gets a stable
+    category and the reason's category -- never the platform's data -- on
+    every surface that reads the platform: the investigation, the approval
+    endpoints, the review page. specs/001-stripe-read-adapter, FR-002.
+    """
+    log.warning("platform data not supported: reason=%s path=%s", error.reason, request.url.path)
+    return JSONResponse(
+        status_code=422,
+        content={"detail": {"category": "provider_unsupported", "reason": error.reason}},
+    )
 
 
 # No endpoint configured means no exporter, no provider, and a code path
