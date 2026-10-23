@@ -1286,3 +1286,53 @@ class TestR137:
         assert read.state is ActionState.EXECUTED
         assert read.attention == "several_writes"
         assert read.provider_action_id == done.provider_action_id
+
+
+class TestR138:
+    """Review r138: an incident recorded elsewhere while reconciliation reads
+    is never cleared by it."""
+
+    @staticmethod
+    async def incident_during_the_read(tmp_path, script):
+        database = tmp_path / "actions.db"
+        here, there = SqliteActionStore(database), SqliteActionStore(database)
+        clock = Clock()
+        provider = Scripted(script, clock=clock)
+        action = approved(here)
+        with pytest.raises(TimeoutError):
+            await service_at(provider, here, clock).execute(action.action_id)
+        reads = provider.find_action
+
+        async def find_action(idempotency_key, invoice_id):
+            found = await reads(idempotency_key, invoice_id)
+            there.annotate(
+                action.action_id, ActionState.UNKNOWN_OUTCOME, attention="several_writes"
+            )
+            return found
+
+        provider.find_action = find_action
+        return here, there, clock, provider, action
+
+    async def test_a_write_alike_found_does_not_clear_it(self, tmp_path):
+        here, there, clock, provider, action = await self.incident_during_the_read(
+            tmp_path, "landed-lost"
+        )
+
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, here, clock).reconcile(action.action_id)
+
+        held = there.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "several_writes")
+        here.close()
+        there.close()
+
+    async def test_nothing_found_does_not_make_it_failed(self, tmp_path):
+        here, there, clock, provider, action = await self.incident_during_the_read(tmp_path, "lost")
+
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, here, clock).reconcile(action.action_id)
+
+        held = there.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "several_writes")
+        here.close()
+        there.close()

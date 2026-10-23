@@ -373,20 +373,24 @@ class SqliteActionStore:
         provider_status: str | None = None,
         provider_status_at: datetime | None = None,
         attention: str | None | object = _KEEP,
+        unless_incident: bool = False,
     ) -> PendingAction:
         """Move the action to `to`, from the state it is read in.
 
         `first_attempt_at` and `uncertain_since` are kept once set: the
         first value wins. The others replace what was there when given; the
         attention is kept as the row holds it -- not as it was read -- unless
-        given, and None clears it. A claim (`EXECUTING`) is refused, in the
-        `UPDATE` itself, while the action has an incident: one another
-        process recorded after this one read the action stops it too.
+        given, and None clears it. A claim (`EXECUTING`), and any transition
+        made `unless_incident` -- what the system settles on its own -- is
+        refused, in the `UPDATE` itself, while the action has an incident:
+        one another process recorded after this one read the action stops it
+        too. Only a person's status read settles an incident.
         """
         current = self.get(action_id)
         keep = attention is _KEEP
         _check_attention(None if keep else attention)
-        if to is ActionState.EXECUTING and current.attention in INCIDENTS:
+        guarded = to is ActionState.EXECUTING or unless_incident
+        if guarded and current.attention in INCIDENTS:
             raise NeedsAPerson(action_id, current.state, current.attention)
         if to not in ALLOWED[current.state]:
             raise IllegalTransition(action_id, current.state, to)
@@ -436,13 +440,13 @@ class SqliteActionStore:
                     None if keep else attention,
                     action_id,
                     current.state.value,
-                    to is ActionState.EXECUTING,
+                    guarded,
                     *sorted(INCIDENTS),
                 ),
             ).rowcount
         if updated != 1:
             held = self._attention_now(action_id)
-            if to is ActionState.EXECUTING and held in INCIDENTS:
+            if guarded and held in INCIDENTS:
                 raise NeedsAPerson(action_id, current.state, held)
             raise IllegalTransition(
                 action_id, current.state, to, why="(its state changed concurrently)"

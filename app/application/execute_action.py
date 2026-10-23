@@ -286,14 +286,32 @@ class ApprovalService:
                 allocation=allocation,
                 send_by=send_by,
             )
-        except NotSent as error:
-            # The deadline passed before the adapter could send: nothing left,
-            # and nothing will. A refusal otherwise, under the rule below.
-            self._actions.annotate(action_id, ActionState.EXECUTING, attention="window_passed")
-            try:
-                return await self._refused(action, error)
-            except ProviderRejected:
-                raise NeedsAPerson(action_id, ActionState.FAILED, "window_passed") from None
+        except NotSent:
+            # The deadline passed before the adapter could send: nothing left
+            # by this attempt, and nothing will be sent again. After an
+            # earlier unknown outcome it proves nothing about that one: the
+            # outcome stays unknown, for a person's status read.
+            settled = (
+                ActionState.FAILED
+                if action.uncertain_since is None
+                else ActionState.UNKNOWN_OUTCOME
+            )
+            self._actions.transition(
+                action_id,
+                settled,
+                failure_reason="not sent: the platform's window had passed",
+                unless_incident=True,
+            )
+            self._actions.annotate(
+                action_id,
+                settled,
+                attention="window_passed",
+                resolution=(
+                    "not sent: the platform may no longer answer this idempotency key; "
+                    "left to a person"
+                ),
+            )
+            raise NeedsAPerson(action_id, settled, "window_passed") from None
         except ProviderRejected as error:
             return await self._refused(action, error)
         except Exception as error:  # noqa: BLE001 - recorded, then re-raised
@@ -334,7 +352,10 @@ class ApprovalService:
         """
         if action.uncertain_since is None:
             self._actions.transition(
-                action.action_id, ActionState.FAILED, failure_reason=str(error)
+                action.action_id,
+                ActionState.FAILED,
+                failure_reason=str(error),
+                unless_incident=True,
             )
             raise error
         self._actions.transition(
@@ -357,10 +378,14 @@ class ApprovalService:
             and self._now() - action.first_attempt_at < self._provider.idempotency_window
         )
 
-    def _record(self, action_id: str, made: ProviderAction, how: str) -> PendingAction:
+    def _record(
+        self, action_id: str, made: ProviderAction, how: str, by_person: bool = False
+    ) -> PendingAction:
         """The action EXECUTED with the platform's reference, and what the
         platform said of the write, dated. A status but success is put to a
-        person; the write is never made again for it."""
+        person; the write is never made again for it. Settled by the system,
+        it is refused if an incident was recorded meanwhile; only a person's
+        status read (`by_person`) settles one."""
         followed = made.status != "succeeded"
         made_how = how.format(ref=made.provider_action_id)
         resolution = (
@@ -377,6 +402,7 @@ class ApprovalService:
             provider_status=made.status,
             provider_status_at=made.observed_at,
             attention="not_successful" if followed else None,
+            unless_incident=not by_person,
         )
 
     async def refresh_status(self, action_id: str) -> PendingAction:
@@ -461,7 +487,10 @@ class ApprovalService:
             problem = _unlike(action, action.allocation, made)
             if problem is None:
                 return self._record(
-                    action.action_id, made, how="found by a person's status read: {ref}"
+                    action.action_id,
+                    made,
+                    how="found by a person's status read: {ref}",
+                    by_person=True,
                 )
             return self._actions.annotate(
                 action.action_id,
@@ -595,6 +624,7 @@ class ApprovalService:
                 if refusal
                 else "no write found on the platform after an unknown outcome"
             ),
+            unless_incident=True,
             resolution="reconciled: nothing held under this idempotency key; safe to retry",
         )
 
