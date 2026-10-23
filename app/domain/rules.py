@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Iterable
+from datetime import UTC
 from decimal import Decimal
 
 from app.domain.enums import (
@@ -132,8 +133,7 @@ def detect_duplicate_invoice(target: Invoice, recent: list[Invoice]) -> RuleFind
             code=RuleCode.DUPLICATE_INVOICE,
             severity=Severity.HIGH,
             description=(
-                "Deux factures couvrent la même période d'abonnement "
-                "pour un montant identique."
+                "Deux factures couvrent la même période d'abonnement pour un montant identique."
             ),
             evidence={
                 "invoice_1": other.id,
@@ -243,6 +243,12 @@ def checks_not_evaluable(
             gaps.append({"check": "proration", "reason": "subscription_period_unknown"})
         elif any(line.period_seconds is None or line.period_seconds <= 0 for line in target.lines):
             gaps.append({"check": "proration", "reason": "line_without_valid_period"})
+        elif any(
+            not _in_current_period(line, subscription) and not _whole_periods(line, subscription)
+            for line in target.lines
+        ):
+            # A part of another period: whose length is not known here.
+            gaps.append({"check": "proration", "reason": "line_outside_current_period"})
 
     if not gaps:
         return None
@@ -255,6 +261,28 @@ def checks_not_evaluable(
         ),
         evidence={"invoice_id": target.id, "checks": gaps},
     )
+
+
+def _in_current_period(line, sub: Subscription) -> bool:
+    return (
+        sub.current_period_start <= line.period_start and line.period_end <= sub.current_period_end
+    )
+
+
+def _whole_periods(line, sub: Subscription) -> bool:
+    """Both bounds on the subscription's billing anchor -- the day of the
+    month and the time its current period starts at: the line covers whole
+    periods (arrears billed after a renewal, a period after a cancellation),
+    and there is nothing to prorate. An anchor a short month clamps (the
+    31st on February 28) is not recognised: such a line is said unchecked,
+    never passed as whole."""
+    anchor = sub.current_period_start.astimezone(UTC)
+
+    def on_anchor(moment) -> bool:
+        moment = moment.astimezone(UTC)
+        return (moment.day, moment.timetz()) == (anchor.day, anchor.timetz())
+
+    return on_anchor(line.period_start) and on_anchor(line.period_end)
 
 
 def _has_period(invoice: Invoice) -> bool:
@@ -294,9 +322,7 @@ def duplicate_payment(target: Invoice, payments: list[Payment]) -> RuleFinding |
     )
 
 
-def cited_invoice_conflict(
-    cited: Iterable[str], designated: str | None
-) -> RuleFinding | None:
+def cited_invoice_conflict(cited: Iterable[str], designated: str | None) -> RuleFinding | None:
     """The message cites invoice references, none of them the designated one
     (taxonomy S6).
 
@@ -412,6 +438,11 @@ def proration_mismatch(
         line_seconds = line.period_seconds
         if line_seconds is None or line_seconds <= 0 or line_seconds >= sub.period_seconds:
             continue
+        # Only a line inside the current period is measured against it. One
+        # outside covers whole periods (nothing to prorate) or part of another
+        # period whose length is not known here: `checks_not_evaluable` says so.
+        if not _in_current_period(line, sub):
+            continue
 
         ratio = Decimal(line_seconds) / Decimal(sub.period_seconds)
         expected = abs(line.unit_amount.multiply(line.quantity).multiply(ratio))
@@ -479,8 +510,7 @@ def identity_conflict(
         code=RuleCode.IDENTITY_CONFLICT,
         severity=Severity.HIGH,
         description=(
-            "L'adresse de l'expéditeur ne correspond pas au compte indiqué : "
-            "une personne vérifie."
+            "L'adresse de l'expéditeur ne correspond pas au compte indiqué : une personne vérifie."
         ),
         evidence={
             "claimed_customer_id": claimed_customer_id,

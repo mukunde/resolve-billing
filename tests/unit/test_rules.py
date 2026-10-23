@@ -96,16 +96,28 @@ def subscription(
     *,
     status: SubscriptionStatus = SubscriptionStatus.ACTIVE,
     cancelled_at: datetime | None = None,
+    start: datetime = SEPT,
+    end: datetime = OCT,
 ) -> Subscription:
     return Subscription(
         id="sub_77",
         customer_id="cus_acme",
         status=status,
         plan_code="enterprise_monthly",
-        current_period_start=SEPT,
-        current_period_end=OCT,
+        current_period_start=start,
+        current_period_end=end,
         cancelled_at=cancelled_at,
     )
+
+
+#: A subscription billed on the 22nd at midnight, and its months around it:
+#: September 22 to October 22 has 30 days, October 22 to November 22 has 31.
+ANCHORED = {
+    "aug": datetime(2026, 8, 22, tzinfo=UTC),
+    "sep": datetime(2026, 9, 22, tzinfo=UTC),
+    "oct": datetime(2026, 10, 22, tzinfo=UTC),
+    "nov": datetime(2026, 11, 22, tzinfo=UTC),
+}
 
 
 class TestDuplicateInvoice:
@@ -248,6 +260,35 @@ class TestProrationMismatch:
         """Full-period lines are not prorated; a different rule's business."""
         assert proration_mismatch(invoice("inv_063"), subscription()) is None
 
+    # A line outside the subscription's current period -- arrears billed once
+    # the subscription renewed, a cancelled subscription's last period -- was
+    # compared with the current period's length: a 30-day month against a
+    # 31-day one read as a proration (Stripe contract run, 2026-10-23).
+
+    def test_a_whole_earlier_period_billed_in_arrears_is_not_a_proration(self):
+        renewed = subscription(start=ANCHORED["oct"], end=ANCHORED["nov"])
+        arrears = line(2350, unit_minor=2350, start=ANCHORED["sep"], end=ANCHORED["oct"])
+        assert proration_mismatch(invoice("inv_064", lines=[arrears]), renewed) is None
+
+    def test_a_whole_period_after_a_cancellation_is_not_a_proration(self):
+        ended = subscription(
+            status=SubscriptionStatus.CANCELLED,
+            cancelled_at=datetime(2026, 9, 21, tzinfo=UTC),
+            start=ANCHORED["aug"],
+            end=ANCHORED["sep"],
+        )
+        after = line(4900, unit_minor=4900, start=ANCHORED["sep"], end=ANCHORED["oct"])
+        assert proration_mismatch(invoice("inv_065", lines=[after]), ended) is None
+
+    def test_a_partial_line_outside_the_current_period_is_not_judged_against_it(self):
+        """Its own period's length is not known here: `checks_not_evaluable`
+        says it could not be checked."""
+        renewed = subscription(start=ANCHORED["oct"], end=ANCHORED["nov"])
+        partial = line(
+            9900, unit_minor=9900, start=datetime(2026, 10, 7, tzinfo=UTC), end=ANCHORED["oct"]
+        )
+        assert proration_mismatch(invoice("inv_066", lines=[partial]), renewed) is None
+
     # A plan change mid-period, the way Stripe bills it: two lines, each at the
     # full price of its own plan, the unused time on the old plan credited with
     # a negative amount. Stripe docs, "Prorations", checked 2026-10-03.
@@ -342,7 +383,6 @@ class TestUnknownInvoice:
 
     def test_silent_on_a_known_reference(self):
         assert unknown_invoice("inv_001", [invoice("inv_001")]) is None
-
 
 
 CUSTOMERS = [
@@ -550,17 +590,22 @@ class TestCurrencyMismatch:
 
     def test_another_period_in_another_currency_is_fine(self):
         other = self.usd().model_copy(
-            update={"lines": [line(9900, start=datetime(2026, 7, 1, tzinfo=UTC),
-                                    end=datetime(2026, 8, 1, tzinfo=UTC))]}
+            update={
+                "lines": [
+                    line(
+                        9900,
+                        start=datetime(2026, 7, 1, tzinfo=UTC),
+                        end=datetime(2026, 8, 1, tzinfo=UTC),
+                    )
+                ]
+            }
         )
         assert currency_mismatch(invoice("inv_001"), [other], []) is None
 
 
 class TestDuplicatePayment:
     def paid(self, payment_id, minor=9900, status=PaymentStatus.SUCCEEDED):
-        return Payment(
-            id=payment_id, invoice_id="inv_001", amount=eur(minor), status=status
-        )
+        return Payment(id=payment_id, invoice_id="inv_001", amount=eur(minor), status=status)
 
     def test_two_distinct_full_payments(self):
         finding = duplicate_payment(invoice("inv_001"), [self.paid("p1"), self.paid("p2")])
@@ -689,6 +734,30 @@ class TestChecksNotEvaluable:
         gaps = self.gaps(invoice("inv_001"), sub=None)
         assert {"check": "billing_after_cancellation", "reason": "subscription_not_found"} in gaps
         assert {"check": "proration", "reason": "subscription_not_found"} in gaps
+
+    def test_a_whole_earlier_period_is_no_gap(self):
+        renewed = subscription(start=ANCHORED["oct"], end=ANCHORED["nov"])
+        arrears = line(2350, start=ANCHORED["sep"], end=ANCHORED["oct"])
+        assert self.gaps(invoice("inv_001", total_minor=2350, lines=[arrears]), sub=renewed) is None
+
+    @pytest.mark.parametrize(
+        ("start", "end"),
+        [
+            (datetime(2026, 10, 7, tzinfo=UTC), ANCHORED["oct"]),
+            (ANCHORED["sep"], datetime(2026, 10, 22, 12, tzinfo=UTC)),
+            (ANCHORED["aug"], datetime(2026, 9, 21, tzinfo=UTC)),
+        ],
+        ids=["starts_off_the_anchor", "ends_at_another_hour", "ends_off_the_anchor"],
+    )
+    def test_a_partial_line_outside_the_current_period_is_said(self, start, end):
+        renewed = subscription(start=ANCHORED["oct"], end=ANCHORED["nov"])
+        partial = invoice("inv_001", lines=[line(9900, start=start, end=end)])
+        gaps = self.gaps(partial, sub=renewed)
+        assert gaps == [{"check": "proration", "reason": "line_outside_current_period"}]
+
+    def test_a_line_inside_the_current_period_is_no_gap_whatever_its_bounds(self):
+        mid = line(4950, unit_minor=9900, start=datetime(2026, 9, 16, tzinfo=UTC), end=OCT)
+        assert self.gaps(invoice("inv_001", total_minor=4950, lines=[mid])) is None
 
     def test_a_line_without_period_for_proration(self):
         lines = [line(9900), line(500, start=None, end=None)]

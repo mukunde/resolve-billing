@@ -361,14 +361,17 @@ full (test-clock customers included) and keeps those issued at or after
   finalised and the meter summaries present; never writes a zero in place of
   a delay. The bound holds for the whole wait, reads included, and a wait
   past it reports the world.
-- **Expected finding for Phase 5**: the proration check compares a line with
-  the subscription's *current* period. Where a world's target lies in another
+- **Found in Phase 5, as expected, and fixed (2026-10-23, the maintainer's
+  option B)**: the proration check compared a line with the subscription's
+  *current* period. Where a world's target lies in another
   period of a different length -- the arrears invoice once the subscription
   has renewed, the cancelled subscription's last period -- it can see a
   mismatch the fake never shows when that line's period is shorter than the
   current one and the gap passes the tolerance, depending on the run's month.
-  SC-001 would then report it; the fix belongs to the rule, not to the seed's
-  dates, and goes to the maintainer separately.
+  SC-001 reported it for `billed_after_cancellation` and `usage`. The rule now
+  measures only lines inside the current period; a line outside whose bounds
+  fall on the billing anchor covers whole periods and is no proration; any
+  other line outside is said not evaluable (taxonomy B11).
 
 ### 7. Tests
 
