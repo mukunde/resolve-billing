@@ -246,10 +246,14 @@ def checks_not_evaluable(
             gaps.append({"check": "proration", "reason": "line_without_valid_period"})
         else:
             inside = [line for line in target.lines if _in_current_period(line, subscription)]
-            if inside and _one_cycle(subscription) is False:
+            cycle = _one_cycle(subscription)
+            if inside and cycle is False:
                 # A first period started before its anchor: itself a part of
                 # a cycle, so nothing inside it can be measured against it.
                 gaps.append({"check": "proration", "reason": "current_period_not_one_cycle"})
+            elif inside and cycle is None:
+                # Without the cadence the current period may be such a part.
+                gaps.append({"check": "proration", "reason": "billing_cycle_unknown"})
             if any(
                 not _in_current_period(line, subscription)
                 and not _whole_periods(line, subscription)
@@ -294,11 +298,14 @@ def _whole_periods(line, sub: Subscription) -> bool:
 
 
 def _one_cycle(sub: Subscription) -> bool | None:
-    """Whether the current period is exactly one step of the schedule; None
-    when the cadence is unknown, and the period is taken as it comes."""
+    """Whether the current period is exactly one step of the schedule. An
+    anchor after its start proves it partial on its own; otherwise None when
+    the cadence is unknown -- and nothing is measured against it."""
+    start, end = sub.current_period_start, sub.current_period_end
+    if sub.billing_anchor is not None and sub.billing_anchor > start:
+        return False
     if not _cadence_known(sub):
         return None
-    start, end = sub.current_period_start, sub.current_period_end
     return (
         sub.billing_anchor <= start
         and _on_schedule(start, sub)
@@ -503,8 +510,10 @@ def proration_mismatch(
         for line in invoice.lines
     ):
         return None  # not comparable; `currency_mismatch` says so
-    if _one_cycle(sub) is False:
-        return None  # a partial current period: `checks_not_evaluable` says so
+    if _one_cycle(sub) is not True:
+        # A partial or unknown cycle: measuring against it would guess, and
+        # `checks_not_evaluable` says so.
+        return None
     for index, line in enumerate(invoice.lines):
         line_seconds = line.period_seconds
         if line_seconds is None or line_seconds <= 0 or line_seconds >= sub.period_seconds:

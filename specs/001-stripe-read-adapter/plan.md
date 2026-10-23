@@ -376,8 +376,10 @@ full (test-clock customers included) and keeps those issued at or after
   subscription's schedule -- its billing anchor stepped by its cadence, months
   clamped to their last day -- and the anchor was set no later than the line
   starts (a reset anchor proves nothing about older lines). A current period
-  that is not exactly one step of the schedule (a first period started before
-  its anchor) is measured against nothing: its lines are said not evaluable. The subscription carries both (`billing_interval`,
+  that is not proved exactly one step of the schedule -- a first period
+  started before its anchor, or an unknown cadence -- is measured against
+  nothing: its lines are said not evaluable. The fake's subscriptions that say
+  no cadence are monthly from their period's start, its convention. The subscription carries both (`billing_interval`,
   `billing_interval_count`, `billing_anchor`), read on Stripe from the price's
   recurrence and the subscription's `billing_cycle_anchor` (a configured
   anchor leaves the cadence unknown), and in the fake's fixtures, where every

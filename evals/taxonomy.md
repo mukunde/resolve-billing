@@ -214,7 +214,10 @@ invoice, and no blocking finding.
   subscription's schedule, its anchor stepped by its cadence, as arrears
   billed after a renewal -- is no proration; any other line outside, or any
   when the cadence is unknown, is said not evaluable
-  (`line_outside_current_period`).
+  (`line_outside_current_period`). And a line inside is measured only when
+  the current period is proved one whole cycle: a first period started
+  before its anchor, or an unknown cadence, is said instead
+  (`current_period_not_one_cycle`, `billing_cycle_unknown`).
   Found on Stripe's data, where a 30-day month was read against a 31-day
   one (contract run, 2026-10-23); unit tests only, no case.
 - Tests: BV, CP.

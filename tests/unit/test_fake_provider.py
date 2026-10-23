@@ -48,6 +48,23 @@ class TestMapping:
         assert (subscription.billing_interval, subscription.billing_interval_count) == ("month", 1)
         assert subscription.billing_anchor == datetime(2026, 9, 1, tzinfo=UTC)
 
+    def test_a_subscription_saying_no_cadence_is_monthly_from_its_period_start(self):
+        """The fake's convention, for fixture sets written before subscriptions
+        said their cadence: monthly, anchored on the period's start."""
+        from app.providers.fake.fixtures import _subscription
+
+        raw = {
+            "id": "sub_x",
+            "customer_id": "cus_x",
+            "state": "active",
+            "plan": "pro_monthly",
+            "period_start": "2026-09-01T00:00:00",
+            "period_end": "2026-10-01T00:00:00",
+        }
+        subscription = _subscription(raw)
+        assert (subscription.billing_interval, subscription.billing_interval_count) == ("month", 1)
+        assert subscription.billing_anchor == subscription.current_period_start
+
     async def test_cancellation_date_is_parsed(self, provider):
         sub = await provider.get_subscription("sub_55")
         assert sub.status is SubscriptionStatus.CANCELLED

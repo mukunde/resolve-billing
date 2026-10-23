@@ -763,8 +763,9 @@ class TestLinesOutsideTheCurrentPeriod:
         assert self.judged([after], ended) == (None, False)
 
     def test_one_month_of_a_yearly_subscription_is_not_a_whole_period(self):
+        # Anchored before the line: only the yearly schedule can refuse it.
         yearly = subscription(
-            start=utc(2026, 1, 22), end=utc(2027, 1, 22), interval="year", anchor=utc(2026, 1, 22)
+            start=utc(2026, 1, 22), end=utc(2027, 1, 22), interval="year", anchor=utc(2025, 1, 22)
         )
         month = line(9900, start=utc(2025, 9, 22), end=utc(2025, 10, 22))
         assert self.judged([month], yearly) == (None, True)
@@ -778,8 +779,9 @@ class TestLinesOutsideTheCurrentPeriod:
 
     def test_an_anchor_on_the_31st_is_not_mistaken_for_the_28th(self):
         """February clamps the 31st to the 28th; January's 28th is no step."""
+        # Anchored before both lines: only the clamping can tell them apart.
         end_of_month = subscription(
-            start=utc(2026, 2, 28), end=utc(2026, 3, 31), anchor=utc(2026, 1, 31)
+            start=utc(2026, 2, 28), end=utc(2026, 3, 31), anchor=utc(2025, 12, 31)
         )
         wrong = line(9900, start=utc(2026, 1, 28), end=utc(2026, 2, 28))
         right = line(9900, start=utc(2026, 1, 31), end=utc(2026, 2, 28))
@@ -818,6 +820,32 @@ class TestLinesOutsideTheCurrentPeriod:
         renewed = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
         late = line(2350, start=utc(2026, 9, 22), end=utc(2026, 10, 22, 12))
         assert self.judged([late], renewed) == (None, True)
+
+    def test_without_a_known_cadence_nothing_inside_is_measured(self):
+        """The current period may be a partial first one: an uncertainty
+        blocks the measure, and is said."""
+        unknown = subscription(
+            start=utc(2026, 10, 22),
+            end=utc(2026, 11, 22),
+            interval=None,
+            interval_count=None,
+            anchor=None,
+        )
+        half = line(9900, unit_minor=9900, start=utc(2026, 11, 7), end=utc(2026, 11, 22))
+        assert proration_mismatch(invoice("inv_073", lines=[half]), unknown) is None
+        assert self.gaps([half], unknown) == ["billing_cycle_unknown"]
+
+    def test_an_anchor_after_the_current_start_proves_a_partial_period_alone(self):
+        first = subscription(
+            start=utc(2026, 7, 15),
+            end=utc(2026, 8, 1),
+            interval=None,
+            interval_count=None,
+            anchor=utc(2026, 8, 1),
+        )
+        partial = line(9900, start=utc(2026, 7, 20), end=utc(2026, 8, 1))
+        assert proration_mismatch(invoice("inv_074", lines=[partial]), first) is None
+        assert self.gaps([partial], first) == ["current_period_not_one_cycle"]
 
     def test_without_a_known_cadence_a_line_outside_is_said(self):
         unknown = subscription(

@@ -141,9 +141,12 @@ def _subscription(raw: dict[str, Any]) -> Subscription:
         current_period_start=_at(raw["period_start"]),
         current_period_end=_at(raw["period_end"]),
         cancelled_at=_at(raw.get("cancelled_at")),
-        billing_interval=raw.get("interval"),
-        billing_interval_count=raw.get("interval_count"),
-        billing_anchor=_at(raw.get("anchor")),
+        # The fake's convention: a subscription that says no cadence -- as
+        # fixture sets written before they could -- is monthly, anchored on
+        # its period's start.
+        billing_interval=raw.get("interval", "month"),
+        billing_interval_count=raw.get("interval_count", 1),
+        billing_anchor=_at(raw.get("anchor", raw["period_start"])),
     )
 
 
