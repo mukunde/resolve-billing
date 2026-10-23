@@ -11,7 +11,7 @@ idempotency key.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
@@ -86,6 +86,25 @@ class ProviderRejected(BillingDomainError):
     """
 
 
+class NotSent(ProviderRejected):
+    """Nothing was sent: the deadline for sending had passed by the time the
+    adapter was ready to send (specs/002-stripe-writes, FR-005)."""
+
+
+class ProviderOutcomeUnknown(Exception):  # noqa: N818 -- a state, not a programming error
+    """A write was, or may have been, sent, and what became of it is unknown.
+
+    What an adapter raises for anything after the request left that is not a
+    refusal: no answer, an answer it cannot read, an idempotency conflict, a
+    time budget spent. Never `ProviderUnavailable`, which is for reads. The
+    message is the category alone (specs/002-stripe-writes, FR-020).
+    """
+
+    def __init__(self, category: str) -> None:
+        super().__init__(category)
+        self.category = category
+
+
 class ProviderUnavailable(Exception):  # noqa: N818 -- a state, not a programming error
     """A read could not be completed: the platform timed out, failed or is
     down (taxonomy S7).
@@ -97,12 +116,28 @@ class ProviderUnavailable(Exception):  # noqa: N818 -- a state, not a programmin
     """
 
 
+#: How a write lands on the invoice: what is due lowered, the customer's
+#: balance credited, or money paid back.
+Allocation = Literal["reduce_due", "customer_balance", "refund"]
+
+#: The allocations each type of write may take.
+ALLOCATIONS: dict[str, frozenset[str]] = {
+    "credit_note": frozenset({"reduce_due", "customer_balance"}),
+    "refund": frozenset({"refund"}),
+}
+
+
 class ProviderAction(BaseModel):
-    """The outcome of a write on the billing platform.
+    """A write on the billing platform, as the platform holds it.
 
     ``provider_action_id`` is what makes a retry safe: it is recorded next to
     the idempotency key, so a timeout can be resolved by looking up what
-    actually happened rather than by firing the write again.
+    actually happened rather than by firing the write again. The rest is
+    what the execution service checks the write against before recording it
+    (specs/002-stripe-writes, FR-001 and FR-004). `allocation` and `status`
+    are None when the platform's answer does not say them: an answer that
+    cannot be read, never a guess. `status` is an observation, made at
+    `observed_at`, not the current state.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -111,8 +146,15 @@ class ProviderAction(BaseModel):
     provider_action_id: str
     action_type: Literal["credit_note", "refund"]
     idempotency_key: str
-    status: Literal["succeeded", "pending", "failed"]
+    status: Literal["succeeded", "pending", "failed"] | None
     created_at: datetime
+    invoice_id: str
+    amount_minor: int
+    currency: str
+    test_mode: bool
+    allocation: Allocation | None
+    action_id: str | None
+    observed_at: datetime
 
 
 @runtime_checkable
@@ -129,6 +171,10 @@ class BillingProvider(Protocol):
     #: cannot (a read-only slice) is never asked: execution is refused before
     #: anything is read or claimed (ADR-008).
     can_write: bool
+    #: How long after a first attempt the platform still answers a key with
+    #: what it made: every send, and every absence taken as proof, falls
+    #: within it (specs/002-stripe-writes, FR-005).
+    idempotency_window: timedelta
     # Optionally, `invoice_references(text) -> set[str]`: the invoice ids cited
     # in a text, normalised to this platform's own form (taxonomy S6). Only
     # the platform knows how its references are written. Not part of the
@@ -181,6 +227,17 @@ class BillingProvider(Protocol):
 
     async def list_payments(self, customer_id: str) -> list[Payment]: ...
 
+    async def plan_write(self, invoice_id: str, action_type: str) -> Allocation:
+        """How a write of this type would land on the invoice as it stands.
+
+        Read once, before an action's first send; the execution service keeps
+        the answer and passes it to every send, so a retry never rebuilds it.
+        An invoice in a state the platform does not write on is
+        ``ProviderRejected("invoice_state")`` (specs/002-stripe-writes,
+        FR-012).
+        """
+        ...
+
     async def create_credit_note(
         self,
         invoice_id: str,
@@ -188,8 +245,19 @@ class BillingProvider(Protocol):
         currency: str,
         reason: str,
         idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
     ) -> ProviderAction:
-        """Raise :class:`ProviderRejected` when the platform says no."""
+        """Raise :class:`ProviderRejected` when the platform says no.
+
+        The write takes the allocation planned, and refuses
+        (``"invoice_state"``) an invoice that no longer allows it, never
+        writing another. Past `send_by`, nothing is sent: :class:`NotSent`.
+        Anything after the request left that is not a refusal is
+        :class:`ProviderOutcomeUnknown`.
+        """
         ...
 
     async def create_refund(
@@ -199,21 +267,27 @@ class BillingProvider(Protocol):
         currency: str,
         reason: str,
         idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
     ) -> ProviderAction:
         """Return money already collected on the invoice.
 
         Not a credit note: a credit note corrects what is owed, a refund
         moves cash back. An invoice with no settled payment to draw on is a
         refusal (:class:`ProviderRejected`), never a credit note instead.
+        Otherwise as `create_credit_note`.
         """
         ...
 
-    async def find_action(self, idempotency_key: str) -> ProviderAction | None:
-        """What the platform holds under this key, if anything.
+    async def find_action(self, idempotency_key: str, invoice_id: str) -> list[ProviderAction]:
+        """Every write the platform holds under this key on this invoice.
 
         The read that resolves an unknown outcome: after a timeout, ask
         whether the write landed instead of guessing, and record its
-        reference if it did. A real adapter looks the key up, or lists the
-        invoice's credit notes and matches on it. See ADR-008.
+        reference if it did. None, one or more: two is an incident, never
+        "the first one found". A list cut short is `ProviderUnavailable`,
+        never an absence. See ADR-008.
         """
         ...

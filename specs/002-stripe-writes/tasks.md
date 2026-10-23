@@ -17,18 +17,18 @@ the maintainer's: they need the key or the test account.
 
 ## Phase 1: The contract as it stands
 
-- [ ] T001 `docs/contract/approval-and-execution.md`: the capability as it is
+- [x] T001 `docs/contract/approval-and-execution.md`: the capability as it is
   today, from ADR-004 and ADR-008 -- states and transitions, the claim, the
   three outcomes, reconciliation, the guards, expiry and the fingerprint, a
   platform that cannot write, what is not guaranteed, and the tests that
   cover it. No new behaviour.
-- [ ] T002 `docs/contract/README.md`: the capability listed as covered.
+- [x] T002 `docs/contract/README.md`: the capability listed as covered.
 
 **Checkpoint**: documents only; committed on its own, before any change.
 
 ## Phase 2: Foundational -- the port and the store (blocks every story)
 
-- [ ] T010 Test first, `tests/unit/test_fake_provider.py`: `plan_write`
+- [x] T010 Test first, `tests/unit/test_fake_provider.py`: `plan_write`
   answers `reduce_due` for a credit note on an open invoice,
   `customer_balance` on a paid one, `refund` for a refund on a paid one, and
   refuses a refund on an open one; the writes take `action_id`, the
@@ -38,20 +38,20 @@ the maintainer's: they need the key or the test account.
   one after a write; a `ProviderAction` carries the invoice, the amount and
   currency, `test_mode`, the allocation, the action identifier and when it
   was observed; the fake declares `idempotency_window` of 23 hours.
-- [ ] T011 `app/providers/base.py` (`plan_write`, the signatures, the
+- [x] T011 `app/providers/base.py` (`plan_write`, the signatures, the
   `ProviderAction` fields, `idempotency_window`, `NotSent`,
   `ProviderOutcomeUnknown`) and
   `app/providers/fake/adapter.py`; the fake's test helpers: a lost answer, a
   second write under one key, a write unlike the action, a status that
   changes.
-- [ ] T012 Test first, then callers follow, in meaning and not only in
+- [x] T012 Test first, then callers follow, in meaning and not only in
   signature: `reconcile()` reads the list -- empty → `FAILED` as today, one →
   `EXECUTED` as today, several → stays unknown (new; tested here);
   `execute()` passes the action's identifier and invoice; the read-only
   Stripe adapter's signatures; `tests/contract/test_billing_platform.py`
   (property 10); `tests/unit/test_execute_action.py` doubles. Every
   existing test green.
-- [ ] T013 Test first, `tests/unit/test_execute_action.py` (store): the new
+- [x] T013 Test first, `tests/unit/test_execute_action.py` (store): the new
   columns, added to a database file made before them; on that old file,
   actions in `EXECUTING`, `UNKNOWN_OUTCOME` or `FAILED` marked
   `window_unknown`, `APPROVED` and earlier untouched; `first_attempt_at` set
@@ -59,7 +59,7 @@ the maintainer's: they need the key or the test account.
   `uncertain_since` set once; `annotate` changes no state and refuses when
   the state moved; `FAILED → EXECUTED` refused without the platform's
   reference, like every `EXECUTED`.
-- [ ] T014 `app/infrastructure/actions.py`: the columns, the migration,
+- [x] T014 `app/infrastructure/actions.py`: the columns, the migration,
   `annotate`, `NeedsAPerson`; `PendingAction` carries the new fields.
 
 **Checkpoint**: the mock baseline matched; nothing behaves differently.

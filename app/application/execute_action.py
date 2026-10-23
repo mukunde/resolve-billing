@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import ActionState
@@ -49,10 +50,12 @@ class ApprovalService:
         provider: BillingProvider,
         actions: SqliteActionStore,
         stale_after: timedelta = STALE_CLAIM,
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         self._provider = provider
         self._actions = actions
         self._stale_after = stale_after
+        self._now = now or (lambda: datetime.now(UTC))
 
     async def proposal_fingerprint(self, action: PendingAction) -> str:
         """What an approver is asked to approve, reduced to a comparable value.
@@ -229,15 +232,29 @@ class ApprovalService:
         # conditional UPDATE: transition() re-reads the state and only moves
         # it from the one it found, so whichever caller claims second fails,
         # in this process or another.
-        self._actions.transition(action_id, ActionState.EXECUTING)
+        # The first claim records when the write was first attempted, before
+        # anything is sent; a later claim keeps it.
+        action = self._actions.transition(
+            action_id, ActionState.EXECUTING, first_attempt_at=self._now()
+        )
+        send_by = action.first_attempt_at + self._provider.idempotency_window
 
         try:
+            # How the write lands on the invoice is planned once, before the
+            # first send, and every retry sends exactly that.
+            allocation = action.allocation
+            if allocation is None:
+                allocation = await self._provider.plan_write(action.invoice_id, action.action_type)
+                self._actions.annotate(action_id, ActionState.EXECUTING, allocation=allocation)
             result = await write(
                 invoice_id=action.invoice_id,
                 amount_minor=action.amount.amount_minor,
                 currency=action.amount.currency,
                 reason=action.reason,
                 idempotency_key=action.idempotency_key,
+                action_id=action.action_id,
+                allocation=allocation,
+                send_by=send_by,
             )
         except ProviderRejected as error:
             # The platform answered no: nothing was created.
@@ -283,14 +300,31 @@ class ApprovalService:
         if action.state is not ActionState.UNKNOWN_OUTCOME and not abandoned:
             return action
 
-        found = await self._provider.find_action(action.idempotency_key)
-        if found is not None:
+        found = await self._provider.find_action(action.idempotency_key, action.invoice_id)
+        if len(found) > 1:
+            # Two writes under one key: an incident for a person, never "the
+            # first one found". Nothing is written, and nothing settled.
+            if action.state is ActionState.EXECUTING:
+                self._actions.transition(
+                    action_id, ActionState.UNKNOWN_OUTCOME, uncertain_since=self._now()
+                )
+            return self._actions.annotate(
+                action_id,
+                ActionState.UNKNOWN_OUTCOME,
+                attention="several_writes",
+                resolution=(
+                    f"reconciled: the platform holds {len(found)} writes under this "
+                    f"idempotency key; left to a person"
+                ),
+            )
+        if found:
+            (made,) = found
             return self._actions.transition(
                 action_id,
                 ActionState.EXECUTED,
-                provider_action_id=found.provider_action_id,
+                provider_action_id=made.provider_action_id,
                 resolution=(
-                    f"reconciled: the platform already held {found.provider_action_id} "
+                    f"reconciled: the platform already held {made.provider_action_id} "
                     f"under this idempotency key; no second write"
                 ),
             )

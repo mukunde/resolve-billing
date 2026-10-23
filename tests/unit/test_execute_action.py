@@ -1,7 +1,7 @@
 """The one path by which money moves: what may and may not become EXECUTED."""
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -35,6 +35,21 @@ def store():
     actions = SqliteActionStore(":memory:")
     yield actions
     actions.close()
+
+
+async def written_behind(provider: FakeBillingProvider, action) -> None:
+    """The write landed on the platform, as a process that died before
+    recording it would have left it."""
+    await provider.create_credit_note(
+        invoice_id=action.invoice_id,
+        amount_minor=action.amount.amount_minor,
+        currency=action.amount.currency,
+        reason=action.reason,
+        idempotency_key=action.idempotency_key,
+        action_id=action.action_id,
+        allocation=await provider.plan_write(action.invoice_id, action.action_type),
+        send_by=datetime.now(UTC) + timedelta(hours=1),
+    )
 
 
 def approved(store: SqliteActionStore):
@@ -256,14 +271,10 @@ class TestATimeoutIsNotAFailure:
         outcome and resolved against the platform."""
         provider = FakeBillingProvider()
         action = approved(store)
-        store.transition(action.action_id, ActionState.EXECUTING)
-        await provider.create_credit_note(
-            invoice_id=action.invoice_id,
-            amount_minor=action.amount.amount_minor,
-            currency=action.amount.currency,
-            reason=action.reason,
-            idempotency_key=action.idempotency_key,
+        store.transition(
+            action.action_id, ActionState.EXECUTING, first_attempt_at=datetime.now(UTC)
         )
+        await written_behind(provider, action)
 
         service = ApprovalService(provider, store)
         assert (await service.reconcile(action.action_id)).state is ActionState.EXECUTING
@@ -278,14 +289,10 @@ class TestATimeoutIsNotAFailure:
         abandoned, asks the platform, and records what it holds."""
         provider = FakeBillingProvider()
         action = approved(store)
-        store.transition(action.action_id, ActionState.EXECUTING)
-        await provider.create_credit_note(
-            invoice_id=action.invoice_id,
-            amount_minor=action.amount.amount_minor,
-            currency=action.amount.currency,
-            reason=action.reason,
-            idempotency_key=action.idempotency_key,
+        store.transition(
+            action.action_id, ActionState.EXECUTING, first_attempt_at=datetime.now(UTC)
         )
+        await written_behind(provider, action)
 
         fresh = ApprovalService(provider, store)
         with pytest.raises(IllegalTransition):
@@ -296,6 +303,24 @@ class TestATimeoutIsNotAFailure:
 
         assert done.state is ActionState.EXECUTED
         assert len(provider.executed_actions) == 1
+
+    async def test_two_writes_under_the_key_leave_the_outcome_unknown(self, store):
+        """find_action answers every write under the key: two is an incident
+        for a person, never "the first one found" (specs/002-stripe-writes,
+        FR-001, FR-004)."""
+        provider = LostResponseProvider()
+        action = approved(store)
+        with pytest.raises(TimeoutError):
+            await ApprovalService(provider, store).execute(action.action_id)
+        (made,) = provider.executed_actions
+        provider.plant_action(made.model_copy(update={"provider_action_id": "cn_other"}))
+        provider.lose_responses = False
+
+        held = await ApprovalService(provider, store).reconcile(action.action_id)
+
+        assert held.state is ActionState.UNKNOWN_OUTCOME
+        assert held.attention == "several_writes"
+        assert provider.writes == 1
 
 
 def approved_refund(store: SqliteActionStore):
@@ -508,7 +533,7 @@ class ReadOnlyProvider(FakeBillingProvider):
         self.touched.append("create_credit_note")
         raise AssertionError("no write on a read-only platform")
 
-    async def find_action(self, idempotency_key):
+    async def find_action(self, idempotency_key, invoice_id):
         self.touched.append("find_action")
         raise AssertionError("no reconciliation on a read-only platform")
 

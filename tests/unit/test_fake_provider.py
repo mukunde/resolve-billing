@@ -130,23 +130,51 @@ class TestUsageForAPeriod:
         assert await provider.get_usage("sub_nope", self.SEPTEMBER) is None
 
 
+LATER = datetime(2100, 1, 1, tzinfo=UTC)
+
+
+async def credit(provider, invoice_id, amount_minor, key, *, allocation=None, send_by=LATER):
+    """A credit note as the execution service makes one: planned, then sent."""
+    if allocation is None:
+        allocation = await provider.plan_write(invoice_id, "credit_note")
+    return await provider.create_credit_note(
+        invoice_id,
+        amount_minor,
+        "EUR",
+        "x",
+        idempotency_key=key,
+        action_id=f"act_{key}",
+        allocation=allocation,
+        send_by=send_by,
+    )
+
+
+async def refund(provider, invoice_id, amount_minor, key, *, allocation="refund", send_by=LATER):
+    return await provider.create_refund(
+        invoice_id,
+        amount_minor,
+        "EUR",
+        "x",
+        idempotency_key=key,
+        action_id=f"act_{key}",
+        allocation=allocation,
+        send_by=send_by,
+    )
+
+
 class TestIdempotentWrite:
     """The behaviour a real adapter must have, proven on the fake."""
 
     async def test_same_key_returns_the_original_action(self, provider):
-        first = await provider.create_credit_note(
-            "inv_002", 9900, "EUR", "doublon", idempotency_key="key-1"
-        )
-        second = await provider.create_credit_note(
-            "inv_002", 9900, "EUR", "doublon", idempotency_key="key-1"
-        )
+        first = await credit(provider, "inv_002", 9900, "key-1")
+        second = await credit(provider, "inv_002", 9900, "key-1")
 
         assert second.provider_action_id == first.provider_action_id
         assert len(provider.executed_actions) == 1
 
     async def test_different_keys_create_distinct_actions(self, provider):
-        await provider.create_credit_note("inv_001", 100, "EUR", "x", idempotency_key="a")
-        await provider.create_credit_note("inv_001", 100, "EUR", "x", idempotency_key="b")
+        await credit(provider, "inv_001", 100, "a")
+        await credit(provider, "inv_001", 100, "b")
 
         assert len(provider.executed_actions) == 2
 
@@ -158,25 +186,25 @@ class TestThePlatformCapsCorrections:
     is established against its sandbox (S7), not assumed. ADR-008."""
 
     async def test_credit_notes_cannot_exceed_the_invoice(self, provider):
-        await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
+        await credit(provider, "inv_002", 9900, "a")
 
         with pytest.raises(ProviderRejected):
-            await provider.create_credit_note("inv_002", 1, "EUR", "x", idempotency_key="b")
+            await credit(provider, "inv_002", 1, "b")
 
     async def test_a_refund_after_a_full_credit_note_is_refused(self, provider):
         """99 EUR credited, then 99 EUR refunded, on a 99 EUR invoice: the
         customer would get 198 EUR back. Different keys, different types --
         only a cap on the invoice stops it."""
-        await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
+        await credit(provider, "inv_002", 9900, "a")
 
         with pytest.raises(ProviderRejected):
-            await provider.create_refund("inv_002", 9900, "EUR", "x", idempotency_key="b")
+            await refund(provider, "inv_002", 9900, "b")
 
         assert len(provider.executed_actions) == 1
 
     async def test_a_replay_still_returns_the_original_at_the_cap(self, provider):
-        first = await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
-        again = await provider.create_credit_note("inv_002", 9900, "EUR", "x", idempotency_key="a")
+        first = await credit(provider, "inv_002", 9900, "a")
+        again = await credit(provider, "inv_002", 9900, "a")
 
         assert again == first
 
@@ -184,17 +212,96 @@ class TestThePlatformCapsCorrections:
         """The platform answered, and nothing was created: a refusal, not an
         unknown outcome. See ADR-008."""
         with pytest.raises(ProviderRejected):
-            await provider.create_credit_note("inv_nope", 100, "EUR", "x", idempotency_key="c")
-        assert await provider.find_action("c") is None
-
-    async def test_find_action_returns_what_a_key_produced(self, provider):
-        action = await provider.create_credit_note("inv_001", 100, "EUR", "x", idempotency_key="e")
-        assert await provider.find_action("e") == action
-        assert await provider.find_action("never-used") is None
+            await credit(provider, "inv_nope", 100, "c", allocation="reduce_due")
+        assert await provider.find_action("c", "inv_nope") == []
 
     async def test_created_at_is_timezone_aware(self, provider):
-        action = await provider.create_credit_note("inv_001", 100, "EUR", "x", idempotency_key="d")
+        action = await credit(provider, "inv_001", 100, "d")
         assert action.created_at.tzinfo is UTC
+
+
+class TestAWriteIsPlannedOnce:
+    """specs/002-stripe-writes, FR-010 to FR-012: how a write is allocated
+    depends on the invoice's state, is decided once before the first send,
+    and is never rebuilt by a retry."""
+
+    async def test_a_credit_note_on_an_open_invoice_lowers_what_is_due(self, provider):
+        assert await provider.plan_write("inv_020", "credit_note") == "reduce_due"
+
+    async def test_a_credit_note_on_a_paid_invoice_credits_the_balance(self, provider):
+        assert await provider.plan_write("inv_002", "credit_note") == "customer_balance"
+
+    async def test_a_refund_on_a_paid_invoice_is_a_refund(self, provider):
+        assert await provider.plan_write("inv_002", "refund") == "refund"
+
+    async def test_a_refund_on_an_invoice_with_nothing_paid_is_refused(self, provider):
+        with pytest.raises(ProviderRejected, match="invoice_state"):
+            await provider.plan_write("inv_020", "refund")
+
+    async def test_an_unknown_invoice_is_refused(self, provider):
+        with pytest.raises(ProviderRejected):
+            await provider.plan_write("inv_nope", "credit_note")
+
+    async def test_a_write_the_invoice_no_longer_allows_is_refused(self, provider):
+        """Planned on a paid invoice, sent once it is open again: refused,
+        never written with another allocation."""
+        with pytest.raises(ProviderRejected, match="invoice_state"):
+            await credit(provider, "inv_020", 100, "k", allocation="customer_balance")
+        assert provider.executed_actions == []
+
+    async def test_nothing_is_sent_past_the_deadline(self, provider):
+        from app.providers.base import NotSent
+
+        past = datetime(2000, 1, 1, tzinfo=UTC)
+        with pytest.raises(NotSent):
+            await credit(provider, "inv_002", 100, "k", send_by=past)
+        assert provider.executed_actions == []
+
+    def test_the_platform_says_how_long_it_answers_a_key(self, provider):
+        from datetime import timedelta
+
+        assert provider.idempotency_window == timedelta(hours=23)
+
+
+class TestWhatAWriteCarries:
+    """FR-001 and FR-004: what the execution service checks a write against."""
+
+    async def test_a_write_says_what_it_is(self, provider):
+        made = await credit(provider, "inv_002", 9900, "k")
+
+        assert made.invoice_id == "inv_002"
+        assert (made.amount_minor, made.currency) == (9900, "EUR")
+        assert made.action_type == "credit_note"
+        assert made.allocation == "customer_balance"
+        assert made.action_id == "act_k"
+        assert made.idempotency_key == "k"
+        assert made.test_mode is True
+        assert made.status == "succeeded"
+        assert made.observed_at.tzinfo is UTC
+
+    async def test_find_action_answers_every_write_under_the_key_on_the_invoice(self, provider):
+        made = await credit(provider, "inv_001", 100, "e")
+
+        (found,) = await provider.find_action("e", "inv_001")
+        assert found.provider_action_id == made.provider_action_id
+        assert await provider.find_action("e", "inv_002") == []
+        assert await provider.find_action("never-used", "inv_001") == []
+
+    async def test_a_second_write_under_one_key_is_found_too(self, provider):
+        made = await credit(provider, "inv_001", 100, "e")
+        other = made.model_copy(update={"provider_action_id": "cn_planted"})
+        provider.plant_action(other)
+
+        found = await provider.find_action("e", "inv_001")
+        assert [a.provider_action_id for a in found] == [made.provider_action_id, "cn_planted"]
+
+    async def test_a_status_observed_later_is_the_platforms(self, provider):
+        made = await refund(provider, "inv_002", 9900, "r")
+        provider.set_status(made.provider_action_id, "failed")
+
+        (seen,) = await provider.find_action("r", "inv_002")
+        assert seen.status == "failed"
+        assert seen.observed_at >= made.observed_at
 
 
 class TestThePortsOwnErrors:

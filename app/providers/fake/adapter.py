@@ -13,11 +13,18 @@ so the fake is the place to prove the application layer relies on it.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from app.domain.enums import PaymentStatus
+from app.domain.enums import InvoiceStatus, PaymentStatus
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
-from app.providers.base import NotFound, ProviderAction, ProviderRejected
+from app.providers.base import (
+    ALLOCATIONS,
+    Allocation,
+    NotFound,
+    NotSent,
+    ProviderAction,
+    ProviderRejected,
+)
 from app.providers.fake.fixtures import load_all
 
 __all__ = ["FakeBillingProvider", "NotFound"]
@@ -28,6 +35,9 @@ class FakeBillingProvider:
 
     name = "fake"
     can_write = True
+    #: The fake keeps keys for as long as it runs; it declares the window a
+    #: real platform has, so the execution service is held to it here too.
+    idempotency_window = timedelta(hours=23)
 
     #: How this platform writes an invoice reference in free text: `inv_002`,
     #: `INV-002`, `inv002` -- digits after the prefix, so a word that happens
@@ -59,6 +69,11 @@ class FakeBillingProvider:
         self._payments = list(data.payments)
         self._usage = list(data.usage)
         self._actions: dict[str, ProviderAction] = {}
+        # Writes put there by a test, beside those the keys produced: a second
+        # write under one key, one unlike the action.
+        self._planted: list[ProviderAction] = []
+        #: The fake's clock, for `send_by` and observations; a test may set it.
+        self.now = lambda: datetime.now(UTC)
         # What each invoice has already given back, in minor units: the
         # platform's own ledger of corrections, which caps the next one.
         self._credited: dict[str, int] = {}
@@ -102,9 +117,7 @@ class FakeBillingProvider:
         return next((i.customer_id for i in self._invoices if i.id == invoice_id), None)
 
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]:
-        return [
-            i for i in self._invoices if i.customer_id == customer_id and i.issued_at >= since
-        ]
+        return [i for i in self._invoices if i.customer_id == customer_id and i.issued_at >= since]
 
     async def get_usage(
         self, subscription_id: str, period: tuple[datetime, datetime]
@@ -115,8 +128,7 @@ class FakeBillingProvider:
             (
                 u
                 for u in self._usage
-                if u.subscription_id == subscription_id
-                and (u.period_start, u.period_end) == period
+                if u.subscription_id == subscription_id and (u.period_start, u.period_end) == period
             ),
             None,
         )
@@ -127,6 +139,32 @@ class FakeBillingProvider:
 
     # -- the two writes ----------------------------------------------------
 
+    async def plan_write(self, invoice_id: str, action_type: str) -> Allocation:
+        try:
+            invoice = await self.get_invoice(invoice_id)
+        except NotFound as error:
+            raise ProviderRejected(str(error)) from error
+        allowed = self._allocations(invoice) & ALLOCATIONS.get(action_type, frozenset())
+        if not allowed:
+            raise ProviderRejected("invoice_state")
+        (allocation,) = allowed
+        return allocation
+
+    def _allocations(self, invoice: Invoice) -> frozenset[str]:
+        """What the invoice's state lets a write do: lower what is due on an
+        open invoice nothing was paid on; credit the balance or refund on a
+        paid one. Anything else -- partly paid, draft, void, uncollectible --
+        takes no write (specs/002-stripe-writes, FR-012)."""
+        settled = any(
+            p.invoice_id == invoice.id and p.status is PaymentStatus.SUCCEEDED
+            for p in self._payments
+        )
+        if invoice.status is InvoiceStatus.OPEN and not settled:
+            return frozenset({"reduce_due"})
+        if invoice.status is InvoiceStatus.PAID:
+            return frozenset({"customer_balance", "refund"})
+        return frozenset()
+
     async def create_credit_note(
         self,
         invoice_id: str,
@@ -134,6 +172,10 @@ class FakeBillingProvider:
         currency: str,
         reason: str,
         idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
     ) -> ProviderAction:
         """Issue a credit note, at most once per idempotency key.
 
@@ -144,23 +186,19 @@ class FakeBillingProvider:
         if replayed is not None:
             return replayed
 
-        # A bad reference is a refusal: the platform answered, and nothing
-        # was created.
-        try:
-            invoice = await self.get_invoice(invoice_id)
-        except NotFound as error:
-            raise ProviderRejected(str(error)) from error
+        invoice = await self._writable(invoice_id, allocation, send_by)
         self._refuse_beyond_the_invoice(invoice, amount_minor, currency)
 
-        action = ProviderAction(
-            provider=self.name,
-            provider_action_id=f"cn_{len(self._actions) + 1:03d}",
-            action_type="credit_note",
-            idempotency_key=idempotency_key,
-            status="succeeded",
-            created_at=datetime.now(UTC),
+        action = self._made(
+            "cn",
+            "credit_note",
+            invoice,
+            amount_minor,
+            currency,
+            idempotency_key,
+            action_id,
+            allocation,
         )
-        self._actions[idempotency_key] = action
         self._credited[invoice_id] = self._credited.get(invoice_id, 0) + amount_minor
         return action
 
@@ -171,6 +209,10 @@ class FakeBillingProvider:
         currency: str,
         reason: str,
         idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
     ) -> ProviderAction:
         """Refund money collected on the invoice, at most once per key.
 
@@ -181,10 +223,7 @@ class FakeBillingProvider:
         if replayed is not None:
             return replayed
 
-        try:
-            invoice = await self.get_invoice(invoice_id)
-        except NotFound as error:
-            raise ProviderRejected(str(error)) from error
+        invoice = await self._writable(invoice_id, allocation, send_by)
         self._refuse_beyond_the_invoice(invoice, amount_minor, currency)
 
         collected = sum(
@@ -201,16 +240,61 @@ class FakeBillingProvider:
                 f"on invoice {invoice_id}, asked {amount_minor}"
             )
 
+        action = self._made(
+            "re",
+            "refund",
+            invoice,
+            amount_minor,
+            currency,
+            idempotency_key,
+            action_id,
+            allocation,
+        )
+        self._refunded[invoice_id] = self._refunded.get(invoice_id, 0) + amount_minor
+        return action
+
+    async def _writable(self, invoice_id: str, allocation: str, send_by: datetime) -> Invoice:
+        """The invoice, once it is shown to take the planned allocation, and
+        only before the deadline. A bad reference is a refusal: the platform
+        answered, and nothing was created."""
+        try:
+            invoice = await self.get_invoice(invoice_id)
+        except NotFound as error:
+            raise ProviderRejected(str(error)) from error
+        if allocation not in self._allocations(invoice):
+            raise ProviderRejected("invoice_state")
+        if self.now() >= send_by:
+            raise NotSent("window_passed")
+        return invoice
+
+    def _made(
+        self,
+        prefix: str,
+        action_type: str,
+        invoice: Invoice,
+        amount_minor: int,
+        currency: str,
+        idempotency_key: str,
+        action_id: str,
+        allocation: str,
+    ) -> ProviderAction:
+        now = self.now()
         action = ProviderAction(
             provider=self.name,
-            provider_action_id=f"re_{len(self._actions) + 1:03d}",
-            action_type="refund",
+            provider_action_id=f"{prefix}_{len(self._actions) + 1:03d}",
+            action_type=action_type,
             idempotency_key=idempotency_key,
             status="succeeded",
-            created_at=datetime.now(UTC),
+            created_at=now,
+            invoice_id=invoice.id,
+            amount_minor=amount_minor,
+            currency=currency,
+            test_mode=True,
+            allocation=allocation,
+            action_id=action_id,
+            observed_at=now,
         )
         self._actions[idempotency_key] = action
-        self._refunded[invoice_id] = self._refunded.get(invoice_id, 0) + amount_minor
         return action
 
     def _refuse_beyond_the_invoice(
@@ -235,14 +319,31 @@ class FakeBillingProvider:
                 f"asked {amount_minor}"
             )
 
-    async def find_action(self, idempotency_key: str) -> ProviderAction | None:
-        return self._actions.get(idempotency_key)
+    async def find_action(self, idempotency_key: str, invoice_id: str) -> list[ProviderAction]:
+        held = [self._actions[idempotency_key]] if idempotency_key in self._actions else []
+        return [
+            action.model_copy(update={"observed_at": self.now()})
+            for action in held + self._planted
+            if action.idempotency_key == idempotency_key and action.invoice_id == invoice_id
+        ]
 
     # -- test and demo helpers --------------------------------------------
 
     @property
     def executed_actions(self) -> list[ProviderAction]:
         return list(self._actions.values())
+
+    def plant_action(self, action: ProviderAction) -> None:
+        """Hold a write the keys did not produce: a second one under a key, or
+        one unlike the action, as a platform's console could."""
+        self._planted.append(action)
+
+    def set_status(self, provider_action_id: str, status: str) -> None:
+        """Change what became of a write after it was made: a refund failing
+        days later, a credit note voided in the console."""
+        for key, action in self._actions.items():
+            if action.provider_action_id == provider_action_id:
+                self._actions[key] = action.model_copy(update={"status": status})
 
     def change_invoice(self, invoice_id: str, *, total_minor: int) -> Invoice:
         """Change an invoice behind the application's back, as someone

@@ -13,10 +13,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
 from app.providers.base import (
+    Allocation,
     NotFound,
     PlatformCannotWrite,
     ProviderAction,
@@ -33,6 +34,9 @@ TIME_BUDGET = 30.0
 class StripeBillingProvider:
     name = "stripe"
     can_write = False
+    #: A margin under the day Stripe keeps idempotency keys, by its
+    #: documentation (specs/002-stripe-writes, FR-005).
+    idempotency_window = timedelta(hours=23)
 
     def __init__(self, reader: StripeReader, *, budget: float = TIME_BUDGET) -> None:
         self.reader = reader
@@ -165,17 +169,38 @@ class StripeBillingProvider:
 
     # -- the writes this slice does not make -------------------------------
 
+    async def plan_write(self, invoice_id: str, action_type: str) -> Allocation:
+        raise PlatformCannotWrite("stripe: this platform is read-only")
+
     async def create_credit_note(
-        self, invoice_id: str, amount_minor: int, currency: str, reason: str, idempotency_key: str
+        self,
+        invoice_id: str,
+        amount_minor: int,
+        currency: str,
+        reason: str,
+        idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
     ) -> ProviderAction:
         raise PlatformCannotWrite("stripe: this platform is read-only")
 
     async def create_refund(
-        self, invoice_id: str, amount_minor: int, currency: str, reason: str, idempotency_key: str
+        self,
+        invoice_id: str,
+        amount_minor: int,
+        currency: str,
+        reason: str,
+        idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
     ) -> ProviderAction:
         raise PlatformCannotWrite("stripe: this platform is read-only")
 
-    async def find_action(self, idempotency_key: str) -> ProviderAction | None:
+    async def find_action(self, idempotency_key: str, invoice_id: str) -> list[ProviderAction]:
         raise PlatformCannotWrite("stripe: this platform is read-only")
 
     # -- the time budget ---------------------------------------------------
