@@ -19,6 +19,7 @@ import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -35,6 +36,50 @@ LOOK_EVERY = 5
 
 #: Nothing listens there: a read sent to it cannot complete.
 UNREACHABLE = "http://127.0.0.1:9"
+
+
+@dataclass(frozen=True)
+class Diagnosis:
+    """Why a check failed, in the contract's own words: never Stripe's."""
+
+    reason: str
+
+
+class Once:
+    """A check made at most once per pytest process, and what it found.
+
+    The first call runs the check. A value it returns is kept and returned
+    to every later call. A `pytest.fail` -- the contract's own diagnosis: an
+    account not ready within the bound, a world missing, a generation
+    incomplete -- is kept as its message alone, and every later call fails
+    at once with it. Anything else -- a skip, a platform error, an
+    interruption -- settles nothing: it propagates, and the next call checks
+    again (specs/003-contract-readiness-once, FR-001, FR-003). What a check
+    returns is immutable data, never a provider or a client bound to a test's
+    event loop (FR-002).
+    """
+
+    def __init__(self) -> None:
+        self.kept: Any = None
+
+    async def __call__(self, check: Callable[[], Awaitable[Any]]) -> Any:
+        if isinstance(self.kept, Diagnosis):
+            pytest.fail(self.kept.reason)
+        if self.kept is not None:
+            return self.kept
+        try:
+            found = await check()
+        except pytest.fail.Exception as failure:
+            self.kept = Diagnosis(str(failure.msg))
+            raise
+        self.kept = found
+        return found
+
+
+#: What this process found about the seeded account, and about the write
+#: generation: two checks, kept apart.
+READINESS = Once()
+WRITE_GENERATION = Once()
 
 
 @dataclass(frozen=True)

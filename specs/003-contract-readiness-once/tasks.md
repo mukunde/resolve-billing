@@ -13,11 +13,11 @@ and the coverage check pass; committed locally.
 
 ## Phase 1: `Once`
 
-- [ ] T001 Test first, `tests/contract/test_readiness.py`: a success shared;
+- [x] T001 Test first, `tests/contract/test_readiness.py`: a success shared;
   a `pytest.fail` kept as its reason and repeated at once; a skip, a platform
   error and `KeyboardInterrupt` not kept and checked again; no Stripe text
   kept.
-- [ ] T002 `tests/contract/conftest.py`: `Diagnosis`, `Once`, the two
+- [x] T002 `tests/contract/conftest.py`: `Diagnosis`, `Once`, the two
   instances.
 
 ## Phase 2: Readiness once (US1)

@@ -74,3 +74,74 @@ async def test_a_clock_outside_the_worlds_is_not_waited_for(monkeypatch):
     monkeypatch.setattr(conftest, "READY_WITHIN", 1)
     seeded = await conftest._ready(Provider(Settled()))
     assert set(seeded) == {w.name for w in worlds.WORLDS}
+
+
+# -- a check made once per process (specs/003-contract-readiness-once) ---------
+
+SENTINEL = "SENTINEL-platform-text"
+
+
+class Counting:
+    """A check that counts its runs and does what it is told."""
+
+    def __init__(self, outcome=None) -> None:
+        self.runs = 0
+        self.outcome = outcome
+
+    async def __call__(self):
+        self.runs += 1
+        if isinstance(self.outcome, BaseException):
+            raise self.outcome
+        if callable(self.outcome):
+            self.outcome()
+        return ("kept", self.runs)
+
+
+async def test_a_success_is_kept_and_shared():
+    once, check = conftest.Once(), Counting()
+
+    first = await once(check)
+    second = await once(check)
+
+    assert first == second == ("kept", 1)
+    assert check.runs == 1
+
+
+async def test_a_diagnosis_is_kept_and_repeated_at_once():
+    once = conftest.Once()
+    check = Counting(lambda: pytest.fail("the seeded account is not ready after 180s: [x]"))
+
+    for _ in range(2):
+        with pytest.raises(pytest.fail.Exception, match="not ready after 180s"):
+            await once(check)
+
+    assert check.runs == 1
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        lambda: pytest.skip("STRIPE_API_KEY is not set"),
+        RuntimeError(SENTINEL),
+        KeyboardInterrupt(),
+    ],
+    ids=["skip", "platform-error", "interruption"],
+)
+async def test_anything_else_settles_nothing_and_is_checked_again(outcome):
+    once = conftest.Once()
+    check = Counting(outcome)
+
+    for _ in range(2):
+        with pytest.raises(BaseException):  # noqa: B017 -- each kind, propagated as it is
+            await once(check)
+
+    assert check.runs == 2
+
+
+async def test_what_is_kept_of_a_diagnosis_is_its_message_alone():
+    once = conftest.Once()
+    await_fail = Counting(lambda: pytest.fail("worlds missing from the seeded account: ['x']"))
+    with pytest.raises(pytest.fail.Exception):
+        await once(await_fail)
+
+    assert once.kept == conftest.Diagnosis("worlds missing from the seeded account: ['x']")
