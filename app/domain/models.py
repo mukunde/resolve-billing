@@ -42,6 +42,14 @@ class Subscription(BaseModel):
     current_period_start: AwareDatetime
     current_period_end: AwareDatetime
     cancelled_at: AwareDatetime | None = None
+    billing_interval: str | None = None
+    """How the platform steps the periods: every `billing_interval_count`
+    `billing_interval`s (day, week, month, year) from `billing_anchor`, the
+    anchor's own day kept, months clamped to their last day. None when the
+    platform does not say: no line outside the current period is then taken
+    for whole periods."""
+    billing_interval_count: int | None = None
+    billing_anchor: AwareDatetime | None = None
 
     @property
     def period_seconds(self) -> int:

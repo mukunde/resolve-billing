@@ -18,8 +18,7 @@ class CurrencyMismatch(BillingDomainError):
 
     def __init__(self, left: str, right: str) -> None:
         super().__init__(
-            f"cannot combine amounts in {left} and {right}: "
-            "currency conversion must be explicit"
+            f"cannot combine amounts in {left} and {right}: currency conversion must be explicit"
         )
         self.left = left
         self.right = right

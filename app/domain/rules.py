@@ -10,10 +10,11 @@ shows its evidence; it never recommends an action.
 
 from __future__ import annotations
 
+import calendar
 import re
 import unicodedata
 from collections.abc import Iterable
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.domain.enums import (
@@ -270,19 +271,41 @@ def _in_current_period(line, sub: Subscription) -> bool:
 
 
 def _whole_periods(line, sub: Subscription) -> bool:
-    """Both bounds on the subscription's billing anchor -- the day of the
-    month and the time its current period starts at: the line covers whole
+    """Both bounds on the subscription's schedule: the line covers whole
     periods (arrears billed after a renewal, a period after a cancellation),
-    and there is nothing to prorate. An anchor a short month clamps (the
-    31st on February 28) is not recognised: such a line is said unchecked,
-    never passed as whole."""
-    anchor = sub.current_period_start.astimezone(UTC)
+    and there is nothing to prorate. Without a known cadence and anchor
+    nothing is taken for whole periods."""
+    return (
+        line.period_end > line.period_start
+        and _on_schedule(line.period_start, sub)
+        and _on_schedule(line.period_end, sub)
+    )
 
-    def on_anchor(moment) -> bool:
-        moment = moment.astimezone(UTC)
-        return (moment.day, moment.timetz()) == (anchor.day, anchor.timetz())
 
-    return on_anchor(line.period_start) and on_anchor(line.period_end)
+def _on_schedule(moment: datetime, sub: Subscription) -> bool:
+    """`moment` is the anchor stepped a whole number of times by the cadence:
+    days and weeks exactly, months and years on the anchor's own day, clamped
+    to a short month's last day -- the 31st steps to February 28, and
+    January 28 is no step of it."""
+    anchor, unit, count = sub.billing_anchor, sub.billing_interval, sub.billing_interval_count
+    if anchor is None or unit is None or not count or count < 1:
+        return False
+    moment, anchor = moment.astimezone(UTC), anchor.astimezone(UTC)
+    if unit in ("day", "week"):
+        step = timedelta(days=count * (7 if unit == "week" else 1))
+        return (moment - anchor) % step == timedelta(0)
+    if unit in ("month", "year"):
+        months = count * (12 if unit == "year" else 1)
+        elapsed = (moment.year - anchor.year) * 12 + moment.month - anchor.month
+        return elapsed % months == 0 and moment == _months_after(anchor, elapsed)
+    return False
+
+
+def _months_after(anchor: datetime, count: int) -> datetime:
+    months = anchor.year * 12 + anchor.month - 1 + count
+    year, month = divmod(months, 12)
+    day = min(anchor.day, calendar.monthrange(year, month + 1)[1])
+    return anchor.replace(year=year, month=month + 1, day=day)
 
 
 def _has_period(invoice: Invoice) -> bool:

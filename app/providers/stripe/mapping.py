@@ -33,6 +33,9 @@ _SUBSCRIPTION_STATUSES = {
     "paused": SubscriptionStatus.PAUSED,
 }
 
+#: The cadences a recurring price has (FR-012).
+_INTERVALS = {"day", "week", "month", "year"}
+
 #: Payment intents whose collection is over without money: failed.
 _ENDED_WITHOUT_MONEY = {"canceled"}
 
@@ -128,6 +131,11 @@ def subscription(payload: Payload) -> Subscription:
         raise ProviderUnsupported("subscription_status")
 
     price = items[0]["price"]
+    recurring = price.get("recurring") or {}
+    interval = recurring.get("interval")
+    if interval not in _INTERVALS:
+        interval = None
+    anchor = payload.get("billing_cycle_anchor")
     return Subscription(
         id=payload["id"],
         customer_id=identifier(payload["customer"]),
@@ -136,6 +144,11 @@ def subscription(payload: Payload) -> Subscription:
         current_period_start=start,
         current_period_end=end,
         cancelled_at=cancelled_at,
+        # Unknown is said as None, never guessed: the proration check then
+        # takes no line outside the current period for whole periods.
+        billing_interval=interval,
+        billing_interval_count=recurring.get("interval_count") if interval else None,
+        billing_anchor=_at(anchor) if anchor is not None else None,
     )
 
 

@@ -210,9 +210,11 @@ invoice, and no blocking finding.
 - Gaps: a gap of exactly 1 vs 2 minor units. A single net line cannot be
   checked and stays flagged by design (S9).
 - Only a line inside the subscription's current period is measured against
-  it. A line outside covering whole periods -- its bounds on the billing
-  anchor, as arrears billed after a renewal -- is no proration; a part of
-  another period is said not evaluable (`line_outside_current_period`).
+  it. A line outside covering whole periods -- both bounds on the
+  subscription's schedule, its anchor stepped by its cadence, as arrears
+  billed after a renewal -- is no proration; any other line outside, or any
+  when the cadence is unknown, is said not evaluable
+  (`line_outside_current_period`).
   Found on Stripe's data, where a 30-day month was read against a 31-day
   one (contract run, 2026-10-23); unit tests only, no case.
 - Tests: BV, CP.

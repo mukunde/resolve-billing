@@ -167,7 +167,9 @@ the engine, never by a rule -- with a test on both.
 - *Subscription*: items read in full. Supported: one recurring price, or
   several items sharing one price and one period; else `multiple_prices` or
   `mixed_item_periods`. Period from the items' `current_period_start` and
-  `current_period_end`. Status table per spec FR-012; `canceled` uses
+  `current_period_end`; cadence from the price's `recurring.interval` and
+  `interval_count`, anchor from `billing_cycle_anchor` (each `None` when
+  absent). Status table per spec FR-012; `canceled` uses
   `ended_at` (missing → `cancellation_without_end`); a scheduled cancellation
   keeps the status, no date. Plan: the price's `lookup_key`, else its id.
 - *Invoice*: `id`; status 1:1; issued at `status_transitions.finalized_at`, a
@@ -362,16 +364,23 @@ full (test-clock customers included) and keeps those issued at or after
   a delay. The bound holds for the whole wait, reads included, and a wait
   past it reports the world.
 - **Found in Phase 5, as expected, and fixed (2026-10-23, the maintainer's
-  option B)**: the proration check compared a line with the subscription's
+  option B+)**: the proration check compared a line with the subscription's
   *current* period. Where a world's target lies in another
   period of a different length -- the arrears invoice once the subscription
   has renewed, the cancelled subscription's last period -- it can see a
   mismatch the fake never shows when that line's period is shorter than the
   current one and the gap passes the tolerance, depending on the run's month.
   SC-001 reported it for `billed_after_cancellation` and `usage`. The rule now
-  measures only lines inside the current period; a line outside whose bounds
-  fall on the billing anchor covers whole periods and is no proration; any
-  other line outside is said not evaluable (taxonomy B11).
+  measures only lines inside the current period. A line outside covers whole
+  periods, and is no proration, only when both its bounds fall on the
+  subscription's schedule: its original anchor stepped by its cadence, months
+  clamped to their last day. The subscription carries both (`billing_interval`,
+  `billing_interval_count`, `billing_anchor`), read on Stripe from the price's
+  recurrence and the subscription's `billing_cycle_anchor`, and in the fake's
+  fixtures. Any other line outside -- or any line outside when the cadence is
+  unknown -- is said not evaluable (taxonomy B11). A first version (option B)
+  took the anchor's day and hour alone for proof, and review r125 showed it
+  wrong for a yearly subscription and an anchor on the 31st.
 
 ### 7. Tests
 

@@ -5,7 +5,7 @@ worse than no agent at all -- it refunds by reflex. Scenario B of the demo
 exists for exactly this reason.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -98,6 +98,9 @@ def subscription(
     cancelled_at: datetime | None = None,
     start: datetime = SEPT,
     end: datetime = OCT,
+    interval: str | None = "month",
+    interval_count: int | None = 1,
+    anchor: datetime | None = "start",
 ) -> Subscription:
     return Subscription(
         id="sub_77",
@@ -107,17 +110,10 @@ def subscription(
         current_period_start=start,
         current_period_end=end,
         cancelled_at=cancelled_at,
+        billing_interval=interval,
+        billing_interval_count=interval_count,
+        billing_anchor=start if anchor == "start" else anchor,
     )
-
-
-#: A subscription billed on the 22nd at midnight, and its months around it:
-#: September 22 to October 22 has 30 days, October 22 to November 22 has 31.
-ANCHORED = {
-    "aug": datetime(2026, 8, 22, tzinfo=UTC),
-    "sep": datetime(2026, 9, 22, tzinfo=UTC),
-    "oct": datetime(2026, 10, 22, tzinfo=UTC),
-    "nov": datetime(2026, 11, 22, tzinfo=UTC),
-}
 
 
 class TestDuplicateInvoice:
@@ -259,35 +255,6 @@ class TestProrationMismatch:
     def test_silent_on_a_full_period_line(self):
         """Full-period lines are not prorated; a different rule's business."""
         assert proration_mismatch(invoice("inv_063"), subscription()) is None
-
-    # A line outside the subscription's current period -- arrears billed once
-    # the subscription renewed, a cancelled subscription's last period -- was
-    # compared with the current period's length: a 30-day month against a
-    # 31-day one read as a proration (Stripe contract run, 2026-10-23).
-
-    def test_a_whole_earlier_period_billed_in_arrears_is_not_a_proration(self):
-        renewed = subscription(start=ANCHORED["oct"], end=ANCHORED["nov"])
-        arrears = line(2350, unit_minor=2350, start=ANCHORED["sep"], end=ANCHORED["oct"])
-        assert proration_mismatch(invoice("inv_064", lines=[arrears]), renewed) is None
-
-    def test_a_whole_period_after_a_cancellation_is_not_a_proration(self):
-        ended = subscription(
-            status=SubscriptionStatus.CANCELLED,
-            cancelled_at=datetime(2026, 9, 21, tzinfo=UTC),
-            start=ANCHORED["aug"],
-            end=ANCHORED["sep"],
-        )
-        after = line(4900, unit_minor=4900, start=ANCHORED["sep"], end=ANCHORED["oct"])
-        assert proration_mismatch(invoice("inv_065", lines=[after]), ended) is None
-
-    def test_a_partial_line_outside_the_current_period_is_not_judged_against_it(self):
-        """Its own period's length is not known here: `checks_not_evaluable`
-        says it could not be checked."""
-        renewed = subscription(start=ANCHORED["oct"], end=ANCHORED["nov"])
-        partial = line(
-            9900, unit_minor=9900, start=datetime(2026, 10, 7, tzinfo=UTC), end=ANCHORED["oct"]
-        )
-        assert proration_mismatch(invoice("inv_066", lines=[partial]), renewed) is None
 
     # A plan change mid-period, the way Stripe bills it: two lines, each at the
     # full price of its own plan, the unused time on the old plan credited with
@@ -735,30 +702,6 @@ class TestChecksNotEvaluable:
         assert {"check": "billing_after_cancellation", "reason": "subscription_not_found"} in gaps
         assert {"check": "proration", "reason": "subscription_not_found"} in gaps
 
-    def test_a_whole_earlier_period_is_no_gap(self):
-        renewed = subscription(start=ANCHORED["oct"], end=ANCHORED["nov"])
-        arrears = line(2350, start=ANCHORED["sep"], end=ANCHORED["oct"])
-        assert self.gaps(invoice("inv_001", total_minor=2350, lines=[arrears]), sub=renewed) is None
-
-    @pytest.mark.parametrize(
-        ("start", "end"),
-        [
-            (datetime(2026, 10, 7, tzinfo=UTC), ANCHORED["oct"]),
-            (ANCHORED["sep"], datetime(2026, 10, 22, 12, tzinfo=UTC)),
-            (ANCHORED["aug"], datetime(2026, 9, 21, tzinfo=UTC)),
-        ],
-        ids=["starts_off_the_anchor", "ends_at_another_hour", "ends_off_the_anchor"],
-    )
-    def test_a_partial_line_outside_the_current_period_is_said(self, start, end):
-        renewed = subscription(start=ANCHORED["oct"], end=ANCHORED["nov"])
-        partial = invoice("inv_001", lines=[line(9900, start=start, end=end)])
-        gaps = self.gaps(partial, sub=renewed)
-        assert gaps == [{"check": "proration", "reason": "line_outside_current_period"}]
-
-    def test_a_line_inside_the_current_period_is_no_gap_whatever_its_bounds(self):
-        mid = line(4950, unit_minor=9900, start=datetime(2026, 9, 16, tzinfo=UTC), end=OCT)
-        assert self.gaps(invoice("inv_001", total_minor=4950, lines=[mid])) is None
-
     def test_a_line_without_period_for_proration(self):
         lines = [line(9900), line(500, start=None, end=None)]
         gaps = self.gaps(invoice("inv_001", lines=lines))
@@ -772,3 +715,140 @@ class TestChecksNotEvaluable:
         other = invoice("inv_002", lines=bare)
         assert detect_duplicate_invoice(target, [other]) is None
         assert checks_not_evaluable(target, subscription(), [other]) is not None
+
+
+def utc(*parts) -> datetime:
+    return datetime(*parts, tzinfo=UTC)
+
+
+class TestLinesOutsideTheCurrentPeriod:
+    """A line of another period than the current one -- arrears billed once
+    the subscription renewed, a period after a cancellation, an older line --
+    was measured against the current period's length: a 30-day month read as
+    a proration against a 31-day one (Stripe contract run, 2026-10-23).
+
+    Now a line inside the current period is measured as before. One outside
+    covers whole periods -- nothing to prorate -- only when both its bounds
+    fall on the subscription's schedule: its original anchor, stepped by its
+    cadence, months clamped to their last day as billing platforms clamp
+    them. Any other line outside is said not evaluable, never passed in
+    silence. Both functions are checked together.
+    """
+
+    def judged(self, lines, sub):
+        target = invoice(
+            "inv_070", total_minor=sum(x.amount.amount_minor for x in lines), lines=lines
+        )
+        mismatch = proration_mismatch(target, sub)
+        gap = checks_not_evaluable(target, sub, [])
+        gaps = gap.evidence["checks"] if gap is not None else []
+        return mismatch, {"check": "proration", "reason": "line_outside_current_period"} in gaps
+
+    def monthly_on_the_22nd(self, start, end, **changes):
+        return subscription(start=start, end=end, anchor=utc(2026, 1, 22), **changes)
+
+    def test_arrears_for_a_whole_earlier_month_are_no_proration(self):
+        renewed = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
+        arrears = line(2350, start=utc(2026, 9, 22), end=utc(2026, 10, 22))
+        assert self.judged([arrears], renewed) == (None, False)
+
+    def test_a_whole_month_after_a_cancellation_is_no_proration(self):
+        ended = self.monthly_on_the_22nd(
+            utc(2026, 8, 22),
+            utc(2026, 9, 22),
+            status=SubscriptionStatus.CANCELLED,
+            cancelled_at=utc(2026, 9, 21),
+        )
+        after = line(4900, start=utc(2026, 9, 22), end=utc(2026, 10, 22))
+        assert self.judged([after], ended) == (None, False)
+
+    def test_one_month_of_a_yearly_subscription_is_not_a_whole_period(self):
+        yearly = subscription(
+            start=utc(2026, 1, 22), end=utc(2027, 1, 22), interval="year", anchor=utc(2026, 1, 22)
+        )
+        month = line(9900, start=utc(2025, 9, 22), end=utc(2025, 10, 22))
+        assert self.judged([month], yearly) == (None, True)
+
+    def test_a_whole_earlier_year_is_a_whole_period(self):
+        yearly = subscription(
+            start=utc(2026, 1, 22), end=utc(2027, 1, 22), interval="year", anchor=utc(2025, 1, 22)
+        )
+        year = line(99000, start=utc(2025, 1, 22), end=utc(2026, 1, 22))
+        assert self.judged([year], yearly) == (None, False)
+
+    def test_an_anchor_on_the_31st_is_not_mistaken_for_the_28th(self):
+        """February clamps the 31st to the 28th; January's 28th is no step."""
+        end_of_month = subscription(
+            start=utc(2026, 2, 28), end=utc(2026, 3, 31), anchor=utc(2026, 1, 31)
+        )
+        wrong = line(9900, start=utc(2026, 1, 28), end=utc(2026, 2, 28))
+        right = line(9900, start=utc(2026, 1, 31), end=utc(2026, 2, 28))
+        assert self.judged([wrong], end_of_month) == (None, True)
+        assert self.judged([right], end_of_month) == (None, False)
+
+    def test_every_third_month_steps_by_three(self):
+        quarterly = subscription(
+            start=utc(2026, 7, 22), end=utc(2026, 10, 22), interval_count=3, anchor=utc(2026, 1, 22)
+        )
+        quarter = line(29700, start=utc(2026, 4, 22), end=utc(2026, 7, 22))
+        between = line(9900, start=utc(2026, 5, 22), end=utc(2026, 6, 22))
+        assert self.judged([quarter], quarterly) == (None, False)
+        assert self.judged([between], quarterly) == (None, True)
+
+    def test_weeks_step_by_seven_days(self):
+        weekly = subscription(
+            start=utc(2026, 9, 21), end=utc(2026, 9, 28), interval="week", anchor=utc(2026, 9, 7)
+        )
+        fortnight = line(1000, start=utc(2026, 9, 7), end=utc(2026, 9, 21))
+        off = line(1000, start=utc(2026, 9, 8), end=utc(2026, 9, 21))
+        assert self.judged([fortnight], weekly) == (None, False)
+        assert self.judged([off], weekly) == (None, True)
+
+    def test_the_same_instants_in_another_offset_are_the_same_steps(self):
+        renewed = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
+        paris = timezone(timedelta(hours=2))
+        arrears = line(
+            2350,
+            start=datetime(2026, 9, 22, 2, tzinfo=paris),
+            end=datetime(2026, 10, 22, 2, tzinfo=paris),
+        )
+        assert self.judged([arrears], renewed) == (None, False)
+
+    def test_another_hour_on_the_anchor_day_is_no_step(self):
+        renewed = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
+        late = line(2350, start=utc(2026, 9, 22), end=utc(2026, 10, 22, 12))
+        assert self.judged([late], renewed) == (None, True)
+
+    def test_without_a_known_cadence_a_line_outside_is_said(self):
+        unknown = subscription(
+            start=utc(2026, 10, 22),
+            end=utc(2026, 11, 22),
+            interval=None,
+            interval_count=None,
+            anchor=None,
+        )
+        arrears = line(2350, start=utc(2026, 9, 22), end=utc(2026, 10, 22))
+        assert self.judged([arrears], unknown) == (None, True)
+
+    def test_a_partial_credit_outside_is_said_never_judged(self):
+        renewed = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
+        credit = line(-2450, unit_minor=4900, start=utc(2026, 10, 7), end=utc(2026, 10, 22))
+        charge = line(4900, start=utc(2026, 10, 22), end=utc(2026, 11, 22))
+        assert self.judged([credit, charge], renewed) == (None, True)
+
+    def test_a_line_across_the_current_start_is_said(self):
+        renewed = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
+        across = line(9900, start=utc(2026, 10, 7), end=utc(2026, 11, 7))
+        assert self.judged([across], renewed) == (None, True)
+
+    def test_the_current_period_itself_is_neither(self):
+        renewed = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
+        whole = line(9900, start=utc(2026, 10, 22), end=utc(2026, 11, 22))
+        assert self.judged([whole], renewed) == (None, False)
+
+    def test_a_partial_line_inside_is_still_measured(self):
+        current = self.monthly_on_the_22nd(utc(2026, 10, 22), utc(2026, 11, 22))
+        half = line(9900, unit_minor=9900, start=utc(2026, 11, 7), end=utc(2026, 11, 22))
+        mismatch, said = self.judged([half], current)
+        assert mismatch is not None and mismatch.code is RuleCode.PRORATION_MISMATCH
+        assert not said

@@ -74,6 +74,30 @@ class TestSubscription:
         assert (subscription.current_period_start, subscription.current_period_end) == SEPTEMBER
         assert subscription.cancelled_at is None
 
+    def test_the_cadence_and_the_anchor(self):
+        subscription = mapping.subscription(stripe.subscription(billing_cycle_anchor=SEP_1))
+        assert (subscription.billing_interval, subscription.billing_interval_count) == ("month", 1)
+        assert subscription.billing_anchor == SEPTEMBER[0]
+
+    def test_a_yearly_price_every_two_years(self):
+        recurring = {
+            "interval": "year",
+            "interval_count": 2,
+            "meter": None,
+            "usage_type": "licensed",
+        }
+        payload = stripe.subscription([stripe.item(stripe.price(recurring=recurring))])
+        subscription = mapping.subscription(payload)
+        assert (subscription.billing_interval, subscription.billing_interval_count) == ("year", 2)
+
+    def test_no_anchor_and_no_cadence_are_unknown_never_guessed(self):
+        price = stripe.price(recurring=None)
+        payload = stripe.subscription([stripe.item(price)], billing_cycle_anchor=None)
+        subscription = mapping.subscription(payload)
+        assert subscription.billing_interval is None
+        assert subscription.billing_interval_count is None
+        assert subscription.billing_anchor is None
+
     def test_the_plan_is_the_price_identifier_without_a_lookup_key(self):
         payload = stripe.subscription([stripe.item(stripe.price(lookup_key=None))])
         assert mapping.subscription(payload).plan_code == stripe.PRICE

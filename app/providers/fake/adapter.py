@@ -102,9 +102,7 @@ class FakeBillingProvider:
         return next((i.customer_id for i in self._invoices if i.id == invoice_id), None)
 
     async def list_invoices(self, customer_id: str, since: datetime) -> list[Invoice]:
-        return [
-            i for i in self._invoices if i.customer_id == customer_id and i.issued_at >= since
-        ]
+        return [i for i in self._invoices if i.customer_id == customer_id and i.issued_at >= since]
 
     async def get_usage(
         self, subscription_id: str, period: tuple[datetime, datetime]
@@ -115,8 +113,7 @@ class FakeBillingProvider:
             (
                 u
                 for u in self._usage
-                if u.subscription_id == subscription_id
-                and (u.period_start, u.period_end) == period
+                if u.subscription_id == subscription_id and (u.period_start, u.period_end) == period
             ),
             None,
         )

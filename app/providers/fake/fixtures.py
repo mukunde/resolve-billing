@@ -141,6 +141,9 @@ def _subscription(raw: dict[str, Any]) -> Subscription:
         current_period_start=_at(raw["period_start"]),
         current_period_end=_at(raw["period_end"]),
         cancelled_at=_at(raw.get("cancelled_at")),
+        billing_interval=raw.get("interval"),
+        billing_interval_count=raw.get("interval_count"),
+        billing_anchor=_at(raw.get("anchor")),
     )
 
 

@@ -43,6 +43,11 @@ class TestMapping:
         invoice = await provider.get_invoice("inv_011")
         assert invoice.lines[0].metric == "api_call_blocks_100"
 
+    async def test_a_subscription_says_its_cadence_and_anchor(self, provider):
+        subscription = await provider.get_subscription("sub_77")
+        assert (subscription.billing_interval, subscription.billing_interval_count) == ("month", 1)
+        assert subscription.billing_anchor == datetime(2026, 9, 1, tzinfo=UTC)
+
     async def test_cancellation_date_is_parsed(self, provider):
         sub = await provider.get_subscription("sub_55")
         assert sub.status is SubscriptionStatus.CANCELLED
