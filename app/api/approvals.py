@@ -24,7 +24,7 @@ from app.infrastructure.actions import (
     UnknownAction,
 )
 from app.infrastructure.audit import SqliteAuditRepository
-from app.providers.base import ProviderRejected, ProviderUnsupported
+from app.providers.base import ProviderRejected, ProviderUnavailable, ProviderUnsupported
 
 router = APIRouter(prefix="/api/v1", tags=["approvals"])
 
@@ -43,6 +43,14 @@ class ActionOut(BaseModel):
     failure_reason: str | None = None
     resolution: str | None = None
     expires_at: datetime | None = None
+    #: When the write was first claimed, before it was first sent.
+    first_attempt_at: datetime | None = None
+    #: What the platform said of the write, and when: an observation, not
+    #: the current state (specs/002-stripe-writes, FR-003).
+    provider_status: str | None = None
+    provider_status_at: datetime | None = None
+    #: Why the action needs a person, if it does.
+    attention: str | None = None
     #: While the action awaits a decision: what an approval must name,
     #: the fingerprint of the proposal and of its invoice as they stand.
     proposal: str | None = None
@@ -63,6 +71,10 @@ class ActionOut(BaseModel):
             failure_reason=action.failure_reason,
             resolution=action.resolution,
             expires_at=action.expires_at,
+            first_attempt_at=action.first_attempt_at,
+            provider_status=action.provider_status,
+            provider_status_at=action.provider_status_at,
+            attention=action.attention,
             proposal=proposal,
         )
 
@@ -138,12 +150,30 @@ async def execute(
         raise HTTPException(502, f"the billing platform refused the write: {error}") from error
     except Exception as error:
         # No answer: the action is UNKNOWN_OUTCOME. Calling execute again
-        # asks the platform what it holds before writing anything. ADR-008.
+        # asks the platform what it holds before writing anything, or finds
+        # the action left to a person. ADR-008.
         raise HTTPException(
             504,
             "no answer from the billing platform; the outcome is unknown and will be "
-            "reconciled on the next execute",
+            "reconciled on the next execute, or put to a person",
         ) from error
+
+
+@router.post("/actions/{action_id}/status", response_model=ActionOut)
+async def read_status(
+    action_id: str,
+    _approver: Approver,
+    approvals: Annotated[ApprovalService, Depends(get_approvals)],
+) -> ActionOut:
+    """A person has the platform asked again what became of the write.
+
+    Nothing is sent to the platform; the answer is recorded as a new, dated
+    observation (specs/002-stripe-writes, FR-003).
+    """
+    try:
+        return ActionOut.of(await _guard(lambda: approvals.refresh_status(action_id)))
+    except ProviderUnavailable as error:
+        raise HTTPException(503, "billing platform unavailable: nothing was read") from error
 
 
 @router.get("/actions/{action_id}", response_model=ActionOut)

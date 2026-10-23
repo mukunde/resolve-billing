@@ -372,15 +372,18 @@ class SqliteActionStore:
         uncertain_since: datetime | None = None,
         provider_status: str | None = None,
         provider_status_at: datetime | None = None,
-        attention: str | None = None,
+        attention: str | None | object = _KEEP,
     ) -> PendingAction:
         """Move the action to `to`, from the state it is read in.
 
         `first_attempt_at` and `uncertain_since` are kept once set: the
-        first value wins. The others replace what was there when given.
+        first value wins. The others replace what was there when given; the
+        attention is kept unless given, and None clears it.
         """
-        _check_attention(attention)
         current = self.get(action_id)
+        if attention is _KEEP:
+            attention = current.attention
+        _check_attention(attention)
         if to not in ALLOWED[current.state]:
             raise IllegalTransition(action_id, current.state, to)
         # EXECUTED is a claim that money moved, so it takes the provider's
@@ -409,7 +412,7 @@ class SqliteActionStore:
                     uncertain_since = COALESCE(uncertain_since, ?),
                     provider_status = COALESCE(?, provider_status),
                     provider_status_at = COALESCE(?, provider_status_at),
-                    attention = COALESCE(?, attention)
+                    attention = ?
                 WHERE action_id = ? AND state = ?
                 """,
                 (

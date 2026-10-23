@@ -29,12 +29,14 @@ from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import ActionState
 from app.infrastructure.actions import (
+    INCIDENTS,
     IllegalTransition,
+    NeedsAPerson,
     PendingAction,
     SqliteActionStore,
     WritesNotSupported,
 )
-from app.providers.base import BillingProvider, ProviderRejected
+from app.providers.base import ALLOCATIONS, BillingProvider, ProviderAction, ProviderRejected
 
 #: How long a claim on the write may go without a recorded result before it
 #: is treated as abandoned -- a process that died between ringing the
@@ -150,6 +152,11 @@ class ApprovalService:
         if not self._provider.can_write:
             raise WritesNotSupported(action_id, action.state)
 
+        # An incident stops everything automatic for the action, for good:
+        # nothing is reconciled, read or sent on a retry. A person decides.
+        if action.attention in INCIDENTS:
+            raise NeedsAPerson(action_id, action.state, action.attention)
+
         # The last attempt got no answer, or a claim was abandoned by a
         # process that died mid-write. Find out what happened before anything
         # else: if the write landed, it is recorded and returned; if not, the
@@ -262,17 +269,142 @@ class ApprovalService:
             raise
         except Exception as error:  # noqa: BLE001 - recorded, then re-raised
             # No answer, or one we cannot read: the write may have landed.
+            # An answer the adapter could not read is an incident besides.
+            unreadable = getattr(error, "category", None) == "unreadable_answer"
             self._actions.transition(
                 action_id,
                 ActionState.UNKNOWN_OUTCOME,
                 failure_reason=f"{type(error).__name__}: {error}",
+                uncertain_since=self._now(),
+                **({"attention": "unreadable_answer"} if unreadable else {}),
             )
             raise
 
+        # The platform's own answer is checked like a write found again:
+        # recorded only if it is the write the person approved.
+        problem = _unlike(action, allocation, result)
+        if problem is not None:
+            self._actions.transition(
+                action_id,
+                ActionState.UNKNOWN_OUTCOME,
+                failure_reason=f"the platform's answer is not the write approved ({problem})",
+                uncertain_since=self._now(),
+                attention=problem,
+            )
+            raise NeedsAPerson(action_id, ActionState.UNKNOWN_OUTCOME, problem)
+        return self._record(action_id, result, how="made")
+
+    def _record(self, action_id: str, made: ProviderAction, how: str) -> PendingAction:
+        """The action EXECUTED with the platform's reference, and what the
+        platform said of the write, dated. A status but success is put to a
+        person; the write is never made again for it."""
+        followed = made.status != "succeeded"
+        resolution = (
+            f"{how} as {made.provider_action_id}; the platform says {made.status} "
+            f"({made.observed_at:%Y-%m-%d %H:%M} UTC): to follow up"
+            if followed
+            else f"{how} as {made.provider_action_id}"
+        )
         return self._actions.transition(
             action_id,
             ActionState.EXECUTED,
-            provider_action_id=result.provider_action_id,
+            provider_action_id=made.provider_action_id,
+            resolution=resolution,
+            provider_status=made.status,
+            provider_status_at=made.observed_at,
+            attention="not_successful" if followed else None,
+        )
+
+    async def refresh_status(self, action_id: str) -> PendingAction:
+        """A person has the platform asked again what became of the write.
+
+        Nothing is ever sent: a read, which needs no writing, so it works
+        with writes switched off. For a write made, the status observed is
+        recorded with its instant. For an action an incident left to a
+        person, the platform's answer settles it only when it holds exactly
+        one write alike; anything else leaves it where it is, and never
+        permits a new write (specs/002-stripe-writes, FR-003).
+        """
+        action = self._actions.get(action_id)
+        left = action.attention in INCIDENTS and action.state in (
+            ActionState.UNKNOWN_OUTCOME,
+            ActionState.EXECUTING,
+            ActionState.FAILED,
+        )
+        if action.state is not ActionState.EXECUTED and not left:
+            raise IllegalTransition(
+                action_id,
+                action.state,
+                ActionState.EXECUTED,
+                why="(only a write made, or an action left to a person, has a status to read)",
+            )
+        found = await self._provider.find_action(action.idempotency_key, action.invoice_id)
+        if action.state is ActionState.EXECUTED:
+            return self._observed(action, found)
+        return self._settled_by_a_person(action, found)
+
+    def _observed(self, action: PendingAction, found: list[ProviderAction]) -> PendingAction:
+        mine = [made for made in found if made.provider_action_id == action.provider_action_id]
+        if len(mine) != 1:
+            return self._actions.annotate(
+                action.action_id,
+                ActionState.EXECUTED,
+                attention="unlike_the_action",
+                resolution=(
+                    f"status read: the platform no longer shows {action.provider_action_id} "
+                    f"alone under this idempotency key; left to a person"
+                ),
+            )
+        (made,) = mine
+        problem = _unlike(action, action.allocation, made)
+        if problem is not None:
+            return self._actions.annotate(
+                action.action_id,
+                ActionState.EXECUTED,
+                attention=problem,
+                resolution=f"status read: {made.provider_action_id} is not the write approved",
+            )
+        followed = made.status != "succeeded"
+        return self._actions.annotate(
+            action.action_id,
+            ActionState.EXECUTED,
+            attention="not_successful" if followed else None,
+            provider_status=made.status,
+            provider_status_at=made.observed_at,
+            resolution=(
+                f"status read: the platform says {made.status} "
+                f"({made.observed_at:%Y-%m-%d %H:%M} UTC)" + (": to follow up" if followed else "")
+            ),
+        )
+
+    def _settled_by_a_person(
+        self, action: PendingAction, found: list[ProviderAction]
+    ) -> PendingAction:
+        if len(found) == 1:
+            (made,) = found
+            problem = _unlike(action, action.allocation, made)
+            if problem is None:
+                return self._record(action.action_id, made, how="found by a person's status read")
+            return self._actions.annotate(
+                action.action_id,
+                action.state,
+                attention=problem,
+                resolution=f"status read: {made.provider_action_id} is not the write approved",
+            )
+        if found:
+            return self._actions.annotate(
+                action.action_id,
+                action.state,
+                attention="several_writes",
+                resolution=(
+                    f"status read: the platform holds {len(found)} writes under this "
+                    f"idempotency key; left to a person"
+                ),
+            )
+        return self._actions.annotate(
+            action.action_id,
+            action.state,
+            resolution="status read: nothing under this idempotency key; left to a person",
         )
 
     async def reconcile(
@@ -334,3 +466,30 @@ class ApprovalService:
             failure_reason="no write found on the platform after an unknown outcome",
             resolution="reconciled: nothing held under this idempotency key; safe to retry",
         )
+
+
+def _unlike(action: PendingAction, allocation: str | None, made: ProviderAction) -> str | None:
+    """Why a write the platform holds is not the one approved, or None.
+
+    Every field the action fixed is compared; a write that does not say how
+    it was allocated, or what became of it, cannot be read. With no
+    allocation planned (an action older than the plan, or one whose plan
+    never completed), the write's must be one its type allows.
+    """
+    if made.allocation is None or made.status is None:
+        return "unreadable_answer"
+    if (
+        made.invoice_id != action.invoice_id
+        or made.action_type != action.action_type
+        or made.amount_minor != action.amount.amount_minor
+        or made.currency != action.amount.currency
+        or not made.test_mode
+        or made.idempotency_key != action.idempotency_key
+        or (made.action_id is not None and made.action_id != action.action_id)
+    ):
+        return "unlike_the_action"
+    if allocation is not None and made.allocation != allocation:
+        return "unlike_the_action"
+    if made.allocation not in ALLOCATIONS.get(action.action_type, frozenset()):
+        return "unlike_the_action"
+    return None

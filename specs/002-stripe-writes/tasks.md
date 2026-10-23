@@ -68,7 +68,7 @@ the maintainer's: they need the key or the test account.
 
 ### The execution service
 
-- [ ] T020 Test first, `tests/unit/test_execute_action.py`: a direct answer
+- [x] T020 Test first, `tests/unit/test_execute_action.py`: a direct answer
   alike → `EXECUTED` with its reference, status and instant; a status but
   success → `EXECUTED`, annotated `not_successful`, said in `resolution`,
   never written again; an answer unlike the action (each field: invoice,
@@ -84,12 +84,12 @@ the maintainer's: they need the key or the test account.
   sent for an action not approved, expired, changed since approval, above
   the invoice or in another currency (kept from today, extended to Stripe's
   refusal path).
-- [ ] T021 `app/application/execute_action.py`: the check (`_unlike`),
+- [x] T021 `app/application/execute_action.py`: the check (`_unlike`),
   `plan_write` and the stored allocation, the outcomes of a send, the clock.
 
 ### The Stripe adapter, writing
 
-- [ ] T022 [P] Test first, `tests/unit/test_stripe_writes.py`, stub client:
+- [x] T022 [P] Test first, `tests/unit/test_stripe_writes.py`, stub client:
   a credit note on an open invoice with nothing paid (`amount` only) and on
   a paid one (`credit_amount`); a refund on a paid one (`refund_amount`);
   the metadata exactly the key, the action identifier and the type;
@@ -104,23 +104,23 @@ the maintainer's: they need the key or the test account.
   refusals; an idempotency error, a 409, a rate limit, a connection error, a
   5xx and the time budget to `ProviderOutcomeUnknown`); no Stripe text in
   any message or log; no mutating call but `credit_notes.create`.
-- [ ] T023 [P] Test first, `tests/unit/test_stripe_mapping.py`:
+- [x] T023 [P] Test first, `tests/unit/test_stripe_mapping.py`:
   `provider_action` from credit note payloads (version `2026-07-29.dahlia`,
   in `tests/unit/stripe_payloads/`): each allocation, each status of
   FR-015 (issued, void; a refund pending, requiring action, succeeded,
   failed, cancelled), `livemode`, a field missing → unreadable.
-- [ ] T024 `app/providers/stripe/client.py` (`StripeWriter`,
+- [x] T024 `app/providers/stripe/client.py` (`StripeWriter`,
   `_write_outcome`), `mapping.py` (`allocation`, `allows`,
   `credit_note_params`, `provider_action`), `adapter.py` (`plan_write`, the
   writes, `can_write`, `idempotency_window`).
-- [ ] T025 Test first, `tests/unit/test_provider_wiring.py`: `can_write` only
+- [x] T025 Test first, `tests/unit/test_provider_wiring.py`: `can_write` only
   with `STRIPE_WRITES=enabled` exactly (absent, `true`, `Enabled`, empty →
   read-only); the variable read in `deps` only; `stripe` still imported only
   where allowed. Then `app/api/deps.py`.
 
 ### The API
 
-- [ ] T026 Test first, `tests/integration/test_approval_flow.py`: `ActionOut`
+- [x] T026 Test first, `tests/integration/test_approval_flow.py`: `ActionOut`
   carries the status, its instant, `attention` and `first_attempt_at`;
   `NeedsAPerson` answers 409 with its category, never 504; `POST
   /actions/{id}/status` by an approver records a new observation and sends

@@ -455,3 +455,80 @@ class TestReferences:
     )
     def test_anything_else_is_not_a_reference(self, text):
         assert mapping.references(text) == []
+
+
+NOW = datetime(2026, 9, 16, 12, 0, tzinfo=UTC)
+
+
+def written(payload):
+    return mapping.provider_action(payload, observed_at=NOW)
+
+
+class TestCreditNote:
+    """A credit note, as the execution service checks it
+    (specs/002-stripe-writes, FR-004 and FR-015)."""
+
+    def test_what_it_made(self):
+        made = written(stripe.credit_note())
+
+        assert made.provider == "stripe"
+        assert made.provider_action_id == stripe.CREDIT_NOTE
+        assert (made.invoice_id, made.amount_minor, made.currency) == (stripe.INVOICE, 4900, "EUR")
+        assert (made.idempotency_key, made.action_id) == (stripe.KEY, stripe.ACTION)
+        assert made.action_type == "credit_note"
+        assert made.test_mode is True
+        assert made.created_at == datetime.fromtimestamp(SEP_16, UTC)
+        assert made.observed_at == NOW
+
+    def test_before_payment_it_lowers_what_is_due(self):
+        assert written(stripe.credit_note(kind="pre_payment")).allocation == "reduce_due"
+
+    def test_after_payment_without_a_refund_it_credits_the_balance(self):
+        made = written(stripe.credit_note(kind="post_payment"))
+        assert (made.allocation, made.status) == ("customer_balance", "succeeded")
+
+    def test_after_payment_refunded_in_full_it_is_a_refund(self):
+        made = written(stripe.credit_note(refunds=[stripe.credit_note_refund()]))
+        assert (made.allocation, made.action_type) == ("refund", "refund")
+
+    def test_partly_refunded_it_cannot_be_read(self):
+        made = written(stripe.credit_note(refunds=[stripe.credit_note_refund(amount=1000)]))
+        assert made.allocation is None
+
+    def test_paid_out_of_band_it_cannot_be_read(self):
+        made = written(stripe.credit_note(out_of_band_amount=4900))
+        assert made.allocation is None
+
+    @pytest.mark.parametrize(
+        ("refund_status", "status"),
+        [
+            ("succeeded", "succeeded"),
+            ("pending", "pending"),
+            ("requires_action", "pending"),
+            ("failed", "failed"),
+            ("canceled", "failed"),
+        ],
+    )
+    def test_a_refunds_status(self, refund_status, status):
+        payload = stripe.credit_note(
+            refunds=[stripe.credit_note_refund(stripe.refund(status=refund_status))]
+        )
+        assert written(payload).status == status
+
+    def test_a_refund_not_expanded_leaves_the_status_unread(self):
+        payload = stripe.credit_note(refunds=[stripe.credit_note_refund(stripe.REFUND)])
+        assert written(payload).status is None
+
+    def test_a_void_credit_note_failed(self):
+        assert written(stripe.credit_note(status="void")).status == "failed"
+
+    def test_a_live_credit_note_is_not_test_mode(self):
+        assert written(stripe.credit_note(livemode=True)).test_mode is False
+
+    def test_without_its_type_it_cannot_be_represented(self):
+        with refused("missing_field"):
+            written(stripe.credit_note(metadata={"rb_idempotency_key": stripe.KEY}))
+
+    def test_without_its_key_it_cannot_be_represented(self):
+        with refused("missing_field"):
+            written(stripe.credit_note(metadata={"rb_action_type": "credit_note"}))

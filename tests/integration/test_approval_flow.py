@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_actions, get_provider
+from app.domain.enums import ActionState
 from app.main import app
 from tests.integration._auth import APPROVER, SERVICE
 from tests.integration._proposal import shown
@@ -178,3 +179,75 @@ class TestResumability:
 
     def test_an_unknown_run_is_a_404(self, client):
         assert client.get("/api/v1/runs/run_nope").status_code == 404
+
+
+class TestWhatAnActionSays:
+    """specs/002-stripe-writes, FR-003: the platform's status, dated, and
+    why an action needs a person, in its API answer."""
+
+    def test_an_executed_action_carries_the_status_observed(self, client, action_id):
+        approve(client, action_id)
+
+        executed = client.post(f"/api/v1/actions/{action_id}/execute").json()
+
+        assert executed["provider_status"] == "succeeded"
+        assert executed["provider_status_at"] is not None
+        assert executed["first_attempt_at"] is not None
+        assert executed["attention"] is None
+
+    def test_an_action_needing_a_person_is_refused_with_why(self, client, action_id):
+        approve(client, action_id)
+        actions = get_actions()
+        actions.transition(action_id, ActionState.EXECUTING)
+        actions.transition(action_id, ActionState.UNKNOWN_OUTCOME)
+        actions.annotate(action_id, ActionState.UNKNOWN_OUTCOME, attention="several_writes")
+        before = len(get_provider().executed_actions)
+
+        response = client.post(f"/api/v1/actions/{action_id}/execute")
+
+        assert response.status_code == 409
+        assert "needs a person: several_writes" in response.text
+        assert len(get_provider().executed_actions) == before
+        assert client.get(f"/api/v1/actions/{action_id}").json()["attention"] == "several_writes"
+
+
+class TestAPersonReadsTheStatusAgain:
+    def test_it_records_a_new_observation_and_sends_nothing(self, client, action_id):
+        approve(client, action_id)
+        executed = client.post(f"/api/v1/actions/{action_id}/execute").json()
+        get_provider().set_status(executed["provider_action_id"], "failed")
+        before = len(get_provider().executed_actions)
+
+        read = client.post(f"/api/v1/actions/{action_id}/status", auth=APPROVER)
+
+        assert read.status_code == 200
+        assert read.json()["provider_status"] == "failed"
+        assert read.json()["attention"] == "not_successful"
+        assert len(get_provider().executed_actions) == before
+
+    def test_it_is_a_persons_call(self, action_id):
+        anonymous = TestClient(app)
+
+        assert anonymous.post(f"/api/v1/actions/{action_id}/status").status_code == 401
+
+    def test_an_action_with_no_write_has_no_status(self, client, action_id):
+        approve(client, action_id)
+
+        response = client.post(f"/api/v1/actions/{action_id}/status", auth=APPROVER)
+
+        assert response.status_code == 409
+
+
+class TestNoAnswer:
+    def test_the_answer_says_what_comes_next(self, client, action_id, monkeypatch):
+        approve(client, action_id)
+
+        async def lost(*args, **kwargs):
+            raise TimeoutError("no answer")
+
+        monkeypatch.setattr(get_provider(), "create_credit_note", lost)
+
+        response = client.post(f"/api/v1/actions/{action_id}/execute")
+
+        assert response.status_code == 504
+        assert "reconciled on the next execute, or put to a person" in response.text

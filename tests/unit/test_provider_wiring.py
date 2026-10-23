@@ -38,7 +38,7 @@ def is_stripe_test(name: str) -> bool:
 @pytest.fixture
 def chosen(monkeypatch):
     def choose(**environment):
-        for name in ("BILLING_PROVIDER", "STRIPE_API_KEY"):
+        for name in ("BILLING_PROVIDER", "STRIPE_API_KEY", "STRIPE_WRITES"):
             monkeypatch.delenv(name, raising=False)
         for name, value in environment.items():
             monkeypatch.setenv(name, value)
@@ -71,6 +71,41 @@ class TestTheChoice:
             chosen(BILLING_PROVIDER="stripe", **environment)()
         assert raised.value.category == category
 
+    def test_stripe_reads_only_unless_writes_are_switched_on(self, chosen, monkeypatch):
+        monkeypatch.setattr(deps, "connect", lambda key: object())
+        monkeypatch.setattr(deps, "connect_writer", self.forbidden)
+        provider = chosen(BILLING_PROVIDER="stripe", STRIPE_API_KEY="rk_test_51RbAbc")()
+        assert provider.can_write is False
+
+    @pytest.mark.parametrize("value", ["true", "Enabled", "enabled ", "", "1", "yes"])
+    def test_only_the_exact_word_switches_writes_on(self, chosen, monkeypatch, value):
+        monkeypatch.setattr(deps, "connect", lambda key: object())
+        monkeypatch.setattr(deps, "connect_writer", self.forbidden)
+        provider = chosen(
+            BILLING_PROVIDER="stripe", STRIPE_API_KEY="rk_test_51RbAbc", STRIPE_WRITES=value
+        )()
+        assert provider.can_write is False
+
+    def test_enabled_builds_the_writer_on_the_same_key(self, chosen, monkeypatch):
+        opened = []
+        monkeypatch.setattr(deps, "connect", lambda key: object())
+        monkeypatch.setattr(deps, "connect_writer", lambda key: opened.append(key) or object())
+        provider = chosen(
+            BILLING_PROVIDER="stripe", STRIPE_API_KEY="rk_test_51RbAbc", STRIPE_WRITES="enabled"
+        )()
+        assert provider.can_write is True
+        assert opened == ["rk_test_51RbAbc"]
+
+    def test_writes_switched_on_still_refuse_a_wrong_key(self, chosen):
+        with pytest.raises(ProviderConfigurationError):
+            chosen(
+                BILLING_PROVIDER="stripe", STRIPE_API_KEY="sk_live_51RbAbc", STRIPE_WRITES="enabled"
+            )()
+
+    @staticmethod
+    def forbidden(key):
+        raise AssertionError("no writer unless STRIPE_WRITES=enabled")
+
     def test_an_unknown_platform_is_refused(self, chosen):
         with pytest.raises(RuntimeError, match="unknown billing provider"):
             chosen(BILLING_PROVIDER="chargebee")()
@@ -82,6 +117,14 @@ class TestWhereStripeIsNamed:
             relative(p)
             for p in (ROOT / "app").rglob("*.py")
             if "STRIPE_API_KEY" in p.read_text(encoding="utf-8")
+        }
+        assert readers == {"app/api/deps.py"}
+
+    def test_the_switch_is_read_in_the_wiring_only(self):
+        readers = {
+            relative(p)
+            for p in (ROOT / "app").rglob("*.py")
+            if "STRIPE_WRITES" in p.read_text(encoding="utf-8")
         }
         assert readers == {"app/api/deps.py"}
 

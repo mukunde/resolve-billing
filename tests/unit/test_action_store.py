@@ -214,3 +214,25 @@ class TestActionsOlderThanTheColumns:
         again = SqliteActionStore(database)
         assert again.get(action.action_id).attention is None
         again.close()
+
+
+class TestATransitionCanClearAnIncident:
+    def test_executed_with_no_attention_clears_it(self, store):
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+        store.transition(action.action_id, ActionState.UNKNOWN_OUTCOME, attention="window_passed")
+
+        held = store.transition(
+            action.action_id, ActionState.EXECUTED, provider_action_id="cn_001", attention=None
+        )
+
+        assert held.attention is None
+
+    def test_a_transition_that_says_nothing_of_it_keeps_it(self, store):
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+        store.transition(action.action_id, ActionState.UNKNOWN_OUTCOME, attention="window_passed")
+
+        held = store.transition(action.action_id, ActionState.FAILED)
+
+        assert held.attention == "window_passed"

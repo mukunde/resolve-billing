@@ -345,12 +345,21 @@ class FakeBillingProvider:
             if action.provider_action_id == provider_action_id:
                 self._actions[key] = action.model_copy(update={"status": status})
 
-    def change_invoice(self, invoice_id: str, *, total_minor: int) -> Invoice:
+    def change_invoice(
+        self,
+        invoice_id: str,
+        *,
+        total_minor: int | None = None,
+        status: InvoiceStatus | None = None,
+    ) -> Invoice:
         """Change an invoice behind the application's back, as someone
         working in the platform's own console would."""
         invoice = next(i for i in self._invoices if i.id == invoice_id)
-        changed = invoice.model_copy(
-            update={"total": invoice.total.model_copy(update={"amount_minor": total_minor})}
-        )
+        update: dict = {}
+        if total_minor is not None:
+            update["total"] = invoice.total.model_copy(update={"amount_minor": total_minor})
+        if status is not None:
+            update["status"] = status
+        changed = invoice.model_copy(update=update)
         self._invoices[self._invoices.index(invoice)] = changed
         return changed

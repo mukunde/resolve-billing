@@ -406,3 +406,99 @@ def invoice_payment(intent: dict | str | None = None, **changes) -> dict:
         },
         changes,
     )
+
+
+CREDIT_NOTE = "cn_1RbWorld00000001"
+REFUND = "re_1RbWorld00000001"
+KEY = "6f1c" + "0" * 60
+ACTION = "act_6f1c00000000"
+
+
+def refund(**changes) -> dict:
+    return _with(
+        {
+            "id": REFUND,
+            "object": "refund",
+            "amount": 4900,
+            "charge": "ch_RbWorld0000001",
+            "created": SEP_16,
+            "currency": "eur",
+            "metadata": {},
+            "payment_intent": "pi_RbWorld0000001",
+            "reason": None,
+            "status": "succeeded",
+        },
+        changes,
+    )
+
+
+def credit_note_refund(refunded: dict | str | None = None, amount: int = 4900) -> dict:
+    """One entry of a credit note's `refunds`: the refund expanded, unless a
+    bare identifier is given."""
+    return {
+        "amount_refunded": amount,
+        "payment_record_refund": None,
+        "refund": refunded if refunded is not None else refund(amount=amount),
+        "type": "refund",
+    }
+
+
+def credit_note(
+    amount: int = 4900,
+    kind: str = "post_payment",
+    refunds: list[dict] | None = None,
+    metadata: dict | None = None,
+    **changes,
+) -> dict:
+    """A credit note on the invoice. `kind` says where it lands: `pre_payment`
+    lowers what is due, `post_payment` comes after payment -- refunded by
+    what `refunds` holds, credited to the balance otherwise."""
+    held = refunds if refunds is not None else []
+    return _with(
+        {
+            "id": CREDIT_NOTE,
+            "object": "credit_note",
+            "amount": amount,
+            "amount_shipping": 0,
+            "created": SEP_16,
+            "currency": "eur",
+            "customer": CUSTOMER,
+            "customer_balance_transaction": (
+                "cbtxn_RbWorld0000001" if kind == "post_payment" and not held else None
+            ),
+            "discount_amount": 0,
+            "discount_amounts": [],
+            "effective_at": SEP_16,
+            "invoice": INVOICE,
+            "lines": page([], url=f"/v1/credit_notes/{CREDIT_NOTE}/lines"),
+            "livemode": False,
+            "memo": None,
+            "metadata": (
+                metadata
+                if metadata is not None
+                else {
+                    "rb_idempotency_key": KEY,
+                    "rb_action_id": ACTION,
+                    "rb_action_type": "refund" if held else "credit_note",
+                }
+            ),
+            "number": "RBW0001-0001-CN-01",
+            "out_of_band_amount": None,
+            "pdf": "https://pay.stripe.com/credit_notes/test",
+            "post_payment_amount": amount if kind == "post_payment" else 0,
+            "pre_payment_amount": amount if kind == "pre_payment" else 0,
+            "pretax_credit_amounts": [],
+            "reason": None,
+            "refunds": held,
+            "shipping_cost": None,
+            "status": "issued",
+            "subtotal": amount,
+            "subtotal_excluding_tax": amount,
+            "total": amount,
+            "total_excluding_tax": amount,
+            "total_taxes": [],
+            "type": kind,
+            "voided_at": None,
+        },
+        changes,
+    )
