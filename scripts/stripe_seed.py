@@ -253,16 +253,7 @@ def starts_at(name: str, dates: Dates) -> int:
     """When a world's clock starts."""
     if name in ("billed_after_cancellation", "failed_payment"):
         return dates.previous
-    if name == "unsupported_unrepresentable_period":
-        return dates.start + 30  # off a whole minute, on purpose
     return dates.start
-
-
-def arrears_due(name: str, dates: Dates) -> int:
-    """When a metered subscription started with its world's clock has its
-    first arrears invoice finalised: fixed by the dates, so a second run
-    never moves the clock further."""
-    return starts_at(name, dates) + (dates.end - dates.start) + HOUR + MINUTE
 
 
 # -- what a run says ---------------------------------------------------------
@@ -1178,14 +1169,6 @@ async def _multi_invoice_payment(w: World) -> str:
     return invoices[0]["id"]
 
 
-async def _arrears(w: World) -> str:
-    """A metered subscription's invoice for its first period, once it ended."""
-    subscription = await w.subscription("subscription", "rb_blocks_metered")
-    await w.taken("first_invoice", subscription, reason=CREATED, optional=True)
-    await w.advance(arrears_due(w.name, w.dates))
-    return (await w.taken("arrears", subscription, reason=CYCLE))["id"]
-
-
 async def _invoice_credit(w: World) -> str:
     subscription = await w.subscription("subscription", "rb_blocks_metered")
     await w.taken("first_invoice", subscription, reason=CREATED, optional=True)
@@ -1229,7 +1212,6 @@ BUILDERS: dict[str, Builder] = {
     "unsupported_fractional_unit_price": _first_invoice_of("rb_pro_fractional"),
     "unsupported_partial_refund": _partial_refund,
     "unsupported_multi_invoice_payment": _multi_invoice_payment,
-    "unsupported_unrepresentable_period": _arrears,
     "unsupported_invoice_credit": _invoice_credit,
 }
 

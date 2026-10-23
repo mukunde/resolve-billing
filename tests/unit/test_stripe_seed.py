@@ -97,14 +97,6 @@ class TestTheClocks:
         assert seed.starts_at("duplicate", dates) == dates.start
         assert seed.starts_at("billed_after_cancellation", dates) == dates.previous
         assert seed.starts_at("failed_payment", dates) == dates.previous
-        off = seed.starts_at("unsupported_unrepresentable_period", dates)
-        assert off % 60 == 30
-
-    def test_the_arrears_are_due_a_month_and_an_hour_after_the_clock_starts(self):
-        dates = seed.Dates.before(RUN)
-        name = "unsupported_unrepresentable_period"
-        due = seed.arrears_due(name, dates)
-        assert due == seed.starts_at(name, dates) + (dates.end - dates.start) + 3600 + 60
 
 
 class TestTheAmounts:

@@ -54,7 +54,6 @@ UNSUPPORTED = tuple(
         "fractional_unit_price",
         "partial_refund",
         "multi_invoice_payment",
-        "unrepresentable_period",
         "invoice_credit",
     )
 )
@@ -64,6 +63,10 @@ NOT_SEEDED = {
     "cancellation_without_end": "a subscription the seed cancels is expected to carry `ended_at`.",
     "unplaced_payment": "an invoice payment without a payment intent is not built here.",
     "missing_field": "the seed fills every field the mapping needs; absences are mapping tests.",
+    # Seen on the first run (2026-10-23, T032): a metered subscription made on a
+    # clock 30 seconds past midnight billed its arrears line from 00:00:00 to
+    # 00:00:00 -- Stripe aligned the period, so no world can produce one.
+    "unrepresentable_period": "Stripe aligns subscription periods on whole minutes.",
 }
 
 WORLDS = SUPPORTED + UNSUPPORTED

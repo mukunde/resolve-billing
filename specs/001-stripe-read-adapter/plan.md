@@ -348,10 +348,12 @@ full (test-clock customers included) and keeps those issued at or after
   cents), partial refund (10.00 refunded on a paid invoice), a payment
   across invoices (one payment intent attached to two invoices, where the API
   allows it), a credit balance applied before tax (a billing credit grant on a
-  metered subscription; target = the arrears invoice), and a period off whole
-  minutes (a metered subscription on a clock started 30 seconds past a minute;
-  target = the arrears invoice). A reason the seed cannot produce is covered
-  by mapping tests only, and listed (`scripts/stripe_worlds.py`).
+  metered subscription; target = the arrears invoice). A reason the seed
+  cannot produce is covered by mapping tests only, and listed
+  (`scripts/stripe_worlds.py`). A period off whole minutes was planned too,
+  on a clock started 30 seconds past a minute; the first run (2026-10-23)
+  showed Stripe aligning the period to the minute, and the maintainer
+  approved moving that reason to the list the seed does not produce.
 - Waits, within a bound, for each clock to be `ready`, the target invoices
   finalised and the meter summaries present; never writes a zero in place of
   a delay. The bound holds for the whole wait, reads included, and a wait
