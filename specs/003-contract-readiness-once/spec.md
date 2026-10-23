@@ -106,9 +106,12 @@ independent copies.
 
 ## Requirements *(mandatory)*
 
-- **FR-001**: The readiness of the seeded account MUST be checked at most
+- **FR-001**: The readiness of the seeded account MUST be settled at most
   once per pytest process, by the first Stripe test that needs it, within
-  the existing bound.
+  the existing bound. Only a success or a controlled diagnosis (FR-003)
+  settles it; a platform error, a skip or an interruption settles nothing,
+  is not kept, and the next test checks again (revised after review r144,
+  for the maintainer's approval).
 - **FR-002**: What is kept MUST be loop-independent, immutable data:
   identifiers, dates, periods. No provider, client, coroutine, task or raw
   exception.

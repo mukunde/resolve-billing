@@ -106,10 +106,11 @@ Each test with fresh `READINESS` and `WRITE_GENERATION`:
 | An interruption not kept | a check raising `KeyboardInterrupt`: propagates; the next call runs it again. |
 | No Stripe text kept | a diagnosis's reason equals the contract's message; a check raising a Stripe-shaped error with a sentinel keeps nothing. |
 | Immutable | the kept `seeded` and `invoices` refuse assignment; a `Seeded` refuses attribute change. |
-| Distinct loops, distinct providers | two async tests in sequence (each on its own loop) call `stripe_platform()` with a key set, `connect` and `_ready` replaced by stubs: one readiness check, two different provider objects, equal kept data. |
+| Distinct loops, distinct providers | a `pytester` sub-run, isolated from the outer session, of two async tests marked `loop_scope="function"` sharing that sub-run's cache; each calls `stripe_platform()` with a key set and `connect` and `_ready` stubbed, and records its loop's and provider's identity: two loops, two providers, one readiness check, equal data. |
 | The fake untouched | `fake_platform()` and `fake_writing()` leave both caches empty. |
 | Two caches apart | filling `WRITE_GENERATION` leaves `READINESS` empty, and the reverse. |
 | Pinned | a second discovery after a new generation is noted returns the first. |
+| Freshness per scenario | two `stripe_writing()` calls sharing one discovery; each `untouched(invoice)` called: one discovery, two real credit-note reads; a credit note added between them makes the second answer False. |
 
 ## Project Structure
 
