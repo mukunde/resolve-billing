@@ -180,21 +180,21 @@ the maintainer's: they need the key or the test account.
 
 ## Phase 6: Write worlds and the contract
 
-- [ ] T050 Test first, `tests/unit/test_stripe_seed.py` (stub): `--write-run`
+- [x] T050 Test first, `tests/unit/test_stripe_seed.py` (stub): `--write-run`
   opens a new generation each time; the manifest keeps one bounded entry,
   `w_last`, however many generations (sixty in the test); each generation
   found by its own objects' metadata; one invoice per
   purpose, paid in full or open with nothing paid, tagged; a fresh duplicate
   world under the generation's own name and keys; keys per step; the lock;
   refusals reported; nothing reused from an earlier generation.
-- [ ] T051 `scripts/stripe_seed.py`, `scripts/stripe_worlds.py`.
-- [ ] T052 Test first, then `tests/contract/test_billing_platform_writes.py`:
+- [x] T051 `scripts/stripe_seed.py`, `scripts/stripe_worlds.py`.
+- [x] T052 Test first, then `tests/contract/test_billing_platform_writes.py`:
   the seven write properties, on the fake in CI and on Stripe when the key
   and `STRIPE_WRITES=enabled` are set; each scenario checks at its start
   that its invoices carry no credit note and stops, asking for a new write
   run, if one does -- its own later writes (property 1's second call,
   property 5's write beyond the cap) are intended.
-- [ ] T053 `tests/contract/test_stripe_execution.py` (SC-002): the fresh
+- [x] T053 `tests/contract/test_stripe_execution.py` (SC-002): the fresh
   duplicate world investigated, its proposal approved as shown, executed
   twice -- one credit note for the approved amount; a refund executed through
   the service on a paid write invoice.

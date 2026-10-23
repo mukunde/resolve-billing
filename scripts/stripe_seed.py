@@ -24,6 +24,11 @@ investigate it at, on its customer -- only once its facts, read back through
 the adapter's own mapping, hold; a recorded world is checked again on every
 run. A world that cannot be built, or whose facts do not hold, is reported,
 never dropped: removing a world from the contract needs the maintainer.
+
+With `--write-run`, the seed builds instead a fresh generation of invoices to
+write on, for the write contract (specs/002-stripe-writes, FR-032):
+
+    python -m dotenv -f .env.seed run -- python -m scripts.stripe_seed --write-run
 """
 
 from __future__ import annotations
@@ -100,6 +105,10 @@ MANIFEST_EMAIL = f"seed-manifest@{worlds.DOMAIN}"
 #: Stripe's billing reasons for the invoices a world takes.
 CREATED = "subscription_create"
 CYCLE = "subscription_cycle"
+
+#: The manifest's one entry for write runs: the last generation opened. It
+#: never grows with the runs (specs/002-stripe-writes, FR-032).
+WRITE_LAST = "w_last"
 
 #: How long Stripe returns the first answer to an idempotency key: at least a
 #: day. A creation the seed may have sent is re-sent with its key within it;
@@ -271,6 +280,8 @@ class Outcome:
     def line(self) -> str:
         if self.state == "reported":
             return f"{self.world}: REPORTED -- {self.detail}"
+        if self.instant is None:
+            return f"{self.world}: {self.state}, {self.detail}"
         return (
             f"{self.world}: {self.state}, target {self.target}, "
             f"investigate at {self.instant.isoformat()}"
@@ -1338,6 +1349,173 @@ CHECKS: dict[str, Check] = {
 # -- running it ----------------------------------------------------------------
 
 
+# -- write runs (specs/002-stripe-writes, FR-032) ------------------------------
+
+
+class WriteRun:
+    """Fresh invoices to write on, and a fresh duplicate dispute.
+
+    Each run opens the next write generation -- noted as the manifest's one
+    entry, `w_last`, before anything is made, so a run stopped half way is
+    never resumed: the next opens its own -- and builds, without a test
+    clock, a customer with one invoice per purpose of `WRITE_PURPOSES`, and a
+    second customer with a duplicate dispute for SC-002. Every object carries
+    its generation and every creation a key of it: nothing an earlier
+    generation made is reused, so no contract run writes on an invoice a
+    previous one wrote on.
+    """
+
+    def __init__(
+        self,
+        seeder: Seeder,
+        *,
+        duplicate: Builder | None = None,
+        check: Check | None = None,
+    ) -> None:
+        self.seeder = seeder
+        self.duplicate = duplicate or _write_duplicate
+        self.check = check or CHECKS["duplicate"]
+
+    async def run(self) -> list[Outcome]:
+        try:
+            await self.seeder._shared()
+            noted = self.seeder._noted(WRITE_LAST) or "0"
+            if not noted.isdigit():
+                raise Collision(f"the seed manifest's {WRITE_LAST} is not a number: {noted!r}")
+            number = int(noted) + 1
+            await self.seeder._note({WRITE_LAST: str(number)})
+        except Exception as error:
+            if not (_is_stripe(error) or isinstance(error, _REPORTED)):
+                raise
+            detail = _refusal(error) if _is_stripe(error) else str(error)
+            return [
+                Outcome("write", "reported", detail=detail),
+                Outcome(worlds.WRITE_DUPLICATE, "reported", detail=detail),
+            ]
+        return [
+            await self._reported_if_refused(f"write/w{number}", lambda: self._invoices(number)),
+            await self._reported_if_refused(
+                worlds.WRITE_DUPLICATE, lambda: self._duplicate(number)
+            ),
+        ]
+
+    async def _reported_if_refused(
+        self, name: str, build: Callable[[], Awaitable[Outcome]]
+    ) -> Outcome:
+        try:
+            return await build()
+        except _REPORTED as error:
+            return Outcome(name, "reported", detail=str(error))
+        except Exception as error:
+            if not _is_stripe(error):
+                raise  # a defect of the seed, not something Stripe said
+            return Outcome(name, "reported", detail=_refusal(error))
+
+    async def _invoices(self, number: int) -> Outcome:
+        seeder, v1 = self.seeder, self.seeder.v1
+        tag = f"write/w{number}"
+        generation = {worlds.WRITE_GENERATION: str(number)}
+        customer = await seeder.call(
+            v1.customers.create_async,
+            params={
+                "email": f"write-w{number}@{worlds.DOMAIN}",
+                "name": f"RB write w{number}",
+                "metadata": {**generation, worlds.WORLD: "write"},
+            },
+            key=f"{tag}/customer",
+        )
+        customer = await seeder.card(customer, CARD, tag)
+        dates = seeder.dates
+        for purpose, state in worlds.WRITE_PURPOSES.items():
+            step = f"{tag}/{purpose}"
+            params: dict[str, Any] = {
+                "customer": customer["id"],
+                "auto_advance": False,
+                "pending_invoice_items_behavior": "exclude",
+                "metadata": {**generation, worlds.PURPOSE: purpose, STEP: step},
+            }
+            if state == "paid":
+                params["collection_method"] = "charge_automatically"
+            else:
+                params.update(collection_method="send_invoice", days_until_due=30)
+            invoice = await seeder.call(
+                v1.invoices.create_async, params=params, key=f"{step}/invoice"
+            )
+            await seeder.call(
+                v1.invoice_items.create_async,
+                params={
+                    "customer": customer["id"],
+                    "invoice": invoice["id"],
+                    "pricing": {"price": seeder.prices["rb_pro_once"]},
+                    "period": {"start": dates.start, "end": dates.end},
+                    "metadata": {**generation, STEP: f"{step}/item"},
+                },
+                key=f"{step}/item",
+            )
+            invoice = await seeder.call(
+                v1.invoices.finalize_invoice_async, invoice["id"], params={"auto_advance": False}
+            )
+            if state == "paid":
+                invoice = await seeder.call(v1.invoices.pay_async, invoice["id"])
+            if invoice["status"] != state:
+                raise Unexpected(f"the {purpose} invoice is {invoice['status']}, not {state}")
+        return Outcome(
+            tag,
+            "built",
+            target=customer["id"],
+            detail=f"customer {customer['id']}, {len(worlds.WRITE_PURPOSES)} invoices",
+        )
+
+    async def _duplicate(self, number: int) -> Outcome:
+        seeder = self.seeder
+        spec = worlds.World(worlds.WRITE_DUPLICATE)
+        generation = Generation(number, seeder.dates, seeder.run_at)
+        customer = await seeder.call(
+            seeder.v1.customers.create_async,
+            params={
+                "email": f"write-duplicate-w{number}@{worlds.DOMAIN}",
+                "name": f"RB write duplicate w{number}",
+                "metadata": {
+                    worlds.WRITE_GENERATION: str(number),
+                    worlds.WORLD: worlds.WRITE_DUPLICATE,
+                },
+            },
+            key=f"{spec.name}/g{number}/customer",
+        )
+        customer = await seeder.card(customer, CARD, f"{spec.name}/g{number}")
+        world = World(seeder, spec, clock={}, customer=customer, generation=generation)
+        target = await self.duplicate(world)
+        problems = await self.check(world, target)
+        if problems:
+            return Outcome(spec.name, "reported", target=target, detail="; ".join(problems))
+        invoice = await seeder.call(seeder.v1.invoices.retrieve_async, target)
+        finalized = (invoice.get("status_transitions") or {}).get("finalized_at") or seeder.run_at
+        instant = datetime.fromtimestamp(finalized + MINUTE, UTC)
+        await seeder.call(
+            seeder.v1.customers.update_async,
+            customer["id"],
+            params={
+                "metadata": {
+                    worlds.TARGET_INVOICE: target,
+                    worlds.INVESTIGATE_AT: instant.isoformat(),
+                }
+            },
+        )
+        return Outcome(spec.name, "built", target, instant)
+
+
+async def _write_duplicate(w: World) -> str:
+    """The duplicate world, on a customer without a clock: its subscription's
+    first invoice paid, then a one-off invoice for the same period, paid."""
+    subscription = await w.subscription("subscription", "rb_enterprise_monthly")
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
+    current = await w.call(w.v1.subscriptions.retrieve_async, subscription["id"])
+    item = current["items"]["data"][0]
+    period = (item["current_period_start"], item["current_period_end"])
+    await w.item("item", subscription=subscription, period=period, price="rb_enterprise_once")
+    return (await w.paid(await w.invoice("invoice", subscription)))["id"]
+
+
 class Busy(Exception):  # noqa: N818 -- a state, not a programming error
     """Another seed run holds the lock."""
 
@@ -1372,15 +1550,16 @@ def main() -> int:
     except ProviderConfigurationError as error:
         print(f"stripe_seed: refused ({error.category})", file=sys.stderr)
         return 2
+    write = "--write-run" in sys.argv[1:]
     try:
         with only_run():
-            return _run(key)
+            return _run(key, write=write)
     except Busy:
         print("stripe_seed: refused (another seed run is in progress)", file=sys.stderr)
         return 2
 
 
-def _run(key: str) -> int:
+def _run(key: str, *, write: bool = False) -> int:
     try:
         import stripe
 
@@ -1390,8 +1569,12 @@ def _run(key: str) -> int:
         return 2
     sdk = stripe.StripeClient(key, stripe_version=API_VERSION, max_network_retries=NETWORK_RETRIES)
     seeder = Seeder(sdk, run_at=datetime.now(UTC))
-    print(f"stripe_seed: a new world is built on the month from {seeder.dates.start_day}")
-    outcomes = asyncio.run(seeder.run())
+    if write:
+        print("stripe_seed: a new write generation is built")
+        outcomes = asyncio.run(WriteRun(seeder).run())
+    else:
+        print(f"stripe_seed: a new world is built on the month from {seeder.dates.start_day}")
+        outcomes = asyncio.run(seeder.run())
     for outcome in outcomes:
         print(outcome.line())
     return 0 if all(o.state != "reported" for o in outcomes) else 1

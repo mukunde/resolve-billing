@@ -76,3 +76,32 @@ NOT_SEEDED = {
 }
 
 WORLDS = SUPPORTED + UNSUPPORTED
+
+
+# -- worlds to write on (specs/002-stripe-writes, FR-032) ----------------------
+
+#: Metadata of a write run: the generation an object belongs to, and what an
+#: invoice is for.
+WRITE_GENERATION = "rb_write_generation"
+PURPOSE = "rb_purpose"
+
+#: The invoices a write run builds, one per contract scenario that writes,
+#: and the state each is left in: paid in full by a card, or open with
+#: nothing paid. Each scenario writes on its own invoice, so none sees
+#: another's credit note.
+WRITE_PURPOSES = {
+    "replay": "paid",  # property 1: a credit note sent twice under one key
+    "find": "paid",  # property 2: a write found again, after the fact
+    "credit_paid": "paid",  # property 3: a credit note credits the balance
+    "credit_open": "open",  # property 3: a credit note lowers what is due
+    "refund": "paid",  # property 4: a refund through a credit note
+    "cap": "paid",  # property 5: credit notes and refunds within the invoice
+    "refund_open": "open",  # property 6: a refund refused before sending
+    "execute_refund": "paid",  # SC-002: a refund through the execution service
+}
+
+#: What each write invoice totals, in cents.
+WRITE_TOTAL = 4900
+
+#: The duplicate dispute a write run builds for SC-002, on its own customer.
+WRITE_DUPLICATE = "write_duplicate"
