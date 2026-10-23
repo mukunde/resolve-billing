@@ -346,10 +346,8 @@ full (test-clock customers included) and keeps those issued at or after
   exclusive rate), discount (a 10% coupon), negative line (an invoice with a
   49.00 item and a -10.00 one), fractional unit price (a price of 4900.5
   cents), partial refund (10.00 refunded on a paid invoice), a payment
-  across invoices (one payment intent attached to two one-off invoices sent
-  to the customer, where the API allows it: on subscription invoices charged
-  automatically, Stripe takes only a payment matching the invoice's total, as
-  the first run showed), a credit balance applied before tax (a billing credit grant on a
+  across invoices (one payment intent attached to two invoices, where the API
+  allows it), a credit balance applied before tax (a billing credit grant on a
   metered subscription; target = the arrears invoice). A reason the seed
   cannot produce is covered by mapping tests only, and listed
   (`scripts/stripe_worlds.py`). A period off whole minutes was planned too,
