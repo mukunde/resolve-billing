@@ -118,24 +118,26 @@ async def test_a_diagnosis_is_kept_and_repeated_at_once():
     assert check.runs == 1
 
 
+SKIPPED = pytest.skip.Exception("STRIPE_API_KEY is not set")
+FAILING = RuntimeError(SENTINEL)
+INTERRUPTED = KeyboardInterrupt()
+
+
 @pytest.mark.parametrize(
-    "outcome",
-    [
-        lambda: pytest.skip("STRIPE_API_KEY is not set"),
-        RuntimeError(SENTINEL),
-        KeyboardInterrupt(),
-    ],
-    ids=["skip", "platform-error", "interruption"],
+    "raised", [SKIPPED, FAILING, INTERRUPTED], ids=["skip", "platform-error", "interruption"]
 )
-async def test_anything_else_settles_nothing_and_is_checked_again(outcome):
+async def test_anything_else_settles_nothing_and_is_checked_again(raised):
+    """Propagated as it is -- the same exception, not one made of it -- and
+    nothing kept, so the next call runs the check again."""
     once = conftest.Once()
-    check = Counting(outcome)
+    check = Counting(raised)
 
-    for _ in range(2):
-        with pytest.raises(BaseException):  # noqa: B017 -- each kind, propagated as it is
+    for runs in (1, 2):
+        with pytest.raises(type(raised)) as seen:
             await once(check)
-
-    assert check.runs == 2
+        assert seen.value is raised
+        assert once.kept is None
+        assert check.runs == runs
 
 
 async def test_what_is_kept_of_a_diagnosis_is_its_message_alone():
@@ -167,6 +169,13 @@ class CountingHung(Hung):
 
 
 class OneWorldShort(Settled):
+    def __init__(self) -> None:
+        self.looks = 0
+
+    async def test_clocks(self):
+        self.looks += 1
+        return await super().test_clocks()
+
     async def customers(self, test_clock=None):
         return (await super().customers(test_clock))[1:]
 
@@ -193,13 +202,18 @@ async def test_an_account_never_ready_is_waited_for_once(fresh, monkeypatch):
 
 
 async def test_a_world_missing_is_said_once_and_repeated(fresh):
-    provider = Provider(OneWorldShort())
+    reader = OneWorldShort()
+    provider = Provider(reader)
+    said = []
 
     for _ in range(2):
-        with pytest.raises(pytest.fail.Exception, match="worlds missing"):
+        with pytest.raises(pytest.fail.Exception, match="worlds missing") as seen:
             await conftest.READINESS(lambda: conftest._readiness(provider))
+        said.append(str(seen.value.msg))
 
-    assert isinstance(conftest.READINESS.kept, conftest.Diagnosis)
+    assert reader.looks == 1
+    assert said[0] == said[1]
+    assert conftest.READINESS.kept == conftest.Diagnosis(said[0])
 
 
 async def test_a_platform_error_is_not_kept(fresh):
@@ -238,7 +252,7 @@ def test_the_fake_touches_neither_cache(fresh):
 pytest_plugins = ["pytester"]
 
 TWO_TESTS = """
-import json, os, sys, types, asyncio
+import asyncio, sys, types
 from types import MappingProxyType
 from datetime import UTC, datetime
 
@@ -249,6 +263,8 @@ from scripts import stripe_worlds as worlds
 from tests.contract import conftest
 
 CHECKS = []
+#: Strong references, so no identity is reused between the two tests.
+LOOPS, PLATFORMS = [], []
 
 
 @pytest.fixture(autouse=True)
@@ -270,10 +286,8 @@ def stubbed(monkeypatch):
 
 
 async def record():
-    platform = await conftest.stripe_platform()
-    with open(os.environ["RB_RECORDS"], "a") as out:
-        seen = [id(asyncio.get_running_loop()), id(platform.provider), len(CHECKS)]
-        out.write(json.dumps(seen) + "\\n")
+    LOOPS.append(asyncio.get_running_loop())
+    PLATFORMS.append(await conftest.stripe_platform())
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -284,29 +298,24 @@ async def test_first():
 @pytest.mark.asyncio(loop_scope="function")
 async def test_second():
     await record()
+    first, second = PLATFORMS
+    assert LOOPS[0] is not LOOPS[1]
+    assert first.provider is not second.provider
+    assert len(CHECKS) == 1
+    assert first.seeded is second.seeded
+    assert (first.usage, first.customers) == (second.usage, second.customers)
 """
 
 
-def test_two_tests_on_their_own_loops_share_one_check_and_own_their_providers(
-    fresh, pytester, monkeypatch, tmp_path
-):
+def test_two_tests_on_their_own_loops_share_one_check_and_own_their_providers(fresh, pytester):
     """Each test builds its own provider on its own event loop; what the
-    readiness check found is shared, and the check runs once."""
-    import json
-
-    records = tmp_path / "records.jsonl"
-    monkeypatch.setenv("RB_RECORDS", str(records))
+    readiness check found is shared, and the check runs once. The second
+    test of the sub-run asserts it, holding both loops and platforms."""
     pytester.makepyfile(test_two=TWO_TESTS)
 
     result = pytester.runpytest_inprocess("-q", "-o", "asyncio_default_fixture_loop_scope=function")
 
     result.assert_outcomes(passed=2)
-    (loop_1, provider_1, checks_1), (loop_2, provider_2, checks_2) = [
-        json.loads(line) for line in records.read_text().splitlines()
-    ]
-    assert loop_1 != loop_2
-    assert provider_1 != provider_2
-    assert checks_1 == checks_2 == 1
 
 
 # -- the write generation, once (US2) -------------------------------------------
