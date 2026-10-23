@@ -1,30 +1,39 @@
-"""Stripe as a billing platform, read-only.
+"""Stripe as a billing platform.
 
 Implements :class:`BillingProvider` on a Stripe test account: reads through
-`StripeReader`, maps through the pure functions of `mapping`. It cannot
-write (`can_write = False`): the execution service never asks it to, and the
-two writes and `find_action` raise `PlatformCannotWrite` without any call
-(ADR-008). Each port call has a time budget; spent, the read is
-`ProviderUnavailable`. specs/001-stripe-read-adapter.
+`StripeReader`, maps through the pure functions of `mapping`. It writes only
+when built with a `StripeWriter` -- writes switched on -- and then makes one
+kind of write, a credit note: a refund is a credit note that refunds
+(specs/002-stripe-writes). Without one it cannot write (`can_write` false):
+the execution service never asks it to, and the writes raise
+`PlatformCannotWrite` without any call (ADR-008). Each port call has a time
+budget; spent, a read is `ProviderUnavailable` and a write an unknown
+outcome. specs/001-stripe-read-adapter.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
 from app.providers.base import (
+    ALLOCATIONS,
+    Allocation,
     NotFound,
+    NotSent,
     PlatformCannotWrite,
     ProviderAction,
+    ProviderOutcomeUnknown,
+    ProviderRejected,
     ProviderUnavailable,
     ProviderUnsupported,
 )
 from app.providers.stripe import mapping
-from app.providers.stripe.client import StripeReader
+from app.providers.stripe.client import StripeReader, StripeWriter
+from app.providers.stripe.keys import ProviderConfigurationError
 
 #: Seconds one port call may take, every page and retry included.
 TIME_BUDGET = 30.0
@@ -33,10 +42,23 @@ TIME_BUDGET = 30.0
 class StripeBillingProvider:
     name = "stripe"
     can_write = False
+    #: A margin under the day Stripe keeps idempotency keys, by its
+    #: documentation (specs/002-stripe-writes, FR-005).
+    idempotency_window = timedelta(hours=23)
 
-    def __init__(self, reader: StripeReader, *, budget: float = TIME_BUDGET) -> None:
+    def __init__(
+        self,
+        reader: StripeReader,
+        *,
+        writer: StripeWriter | None = None,
+        budget: float = TIME_BUDGET,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
         self.reader = reader
+        self._writer = writer
+        self.can_write = writer is not None
         self._budget = budget
+        self._now = now or (lambda: datetime.now(UTC))
 
     # -- references (taxonomy S6, D10) ------------------------------------
 
@@ -165,18 +187,141 @@ class StripeBillingProvider:
 
     # -- the writes this slice does not make -------------------------------
 
+    async def plan_write(self, invoice_id: str, action_type: str) -> Allocation:
+        """How a write of this type lands on the invoice as it stands; a
+        state the slice does not write on is `invoice_state` (FR-012)."""
+        self._writing()
+        async with self._bounded():
+            payload = await self._invoice_written_on(invoice_id)
+        allowed = mapping.allocations(payload) & ALLOCATIONS.get(action_type, frozenset())
+        if not allowed:
+            raise ProviderRejected("invoice_state")
+        (allocation,) = allowed
+        return allocation
+
     async def create_credit_note(
-        self, invoice_id: str, amount_minor: int, currency: str, reason: str, idempotency_key: str
+        self,
+        invoice_id: str,
+        amount_minor: int,
+        currency: str,
+        reason: str,
+        idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
     ) -> ProviderAction:
-        raise PlatformCannotWrite("stripe: this platform is read-only")
+        return await self._write(
+            "credit_note",
+            invoice_id,
+            amount_minor,
+            idempotency_key,
+            action_id=action_id,
+            allocation=allocation,
+            send_by=send_by,
+        )
 
     async def create_refund(
-        self, invoice_id: str, amount_minor: int, currency: str, reason: str, idempotency_key: str
+        self,
+        invoice_id: str,
+        amount_minor: int,
+        currency: str,
+        reason: str,
+        idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
     ) -> ProviderAction:
-        raise PlatformCannotWrite("stripe: this platform is read-only")
+        """A credit note whose whole amount is refunded to the invoice's
+        payment: never a standalone refund (FR-011)."""
+        return await self._write(
+            "refund",
+            invoice_id,
+            amount_minor,
+            idempotency_key,
+            action_id=action_id,
+            allocation=allocation,
+            send_by=send_by,
+        )
 
-    async def find_action(self, idempotency_key: str) -> ProviderAction | None:
-        raise PlatformCannotWrite("stripe: this platform is read-only")
+    async def _write(
+        self,
+        action_type: str,
+        invoice_id: str,
+        amount_minor: int,
+        idempotency_key: str,
+        *,
+        action_id: str,
+        allocation: Allocation,
+        send_by: datetime,
+    ) -> ProviderAction:
+        """Check the invoice still takes the planned allocation -- never
+        rebuild it -- check the deadline at the point of sending, then send
+        the one credit note. The `reason` the port carries never reaches
+        Stripe (FR-013)."""
+        self._writing()
+        if allocation not in ALLOCATIONS[action_type]:
+            # Another instrument's allocation: refused before anything is
+            # read or sent, so a refund is never made a balance credit.
+            raise ProviderRejected("allocation")
+        try:
+            async with asyncio.timeout(self._budget):
+                try:
+                    payload = await self._invoice_written_on(invoice_id)
+                except (ProviderUnavailable, ProviderConfigurationError, ProviderUnsupported):
+                    # After the claim, a read that fails leaves the outcome as
+                    # unknown as any other failure (FR-012).
+                    raise ProviderOutcomeUnknown("invoice_read") from None
+                if allocation not in mapping.allocations(payload):
+                    raise ProviderRejected("invoice_state")
+                if self._now() >= send_by:
+                    raise NotSent("window_passed")
+                answer = await self._writer.create_credit_note(
+                    mapping.credit_note_params(
+                        invoice_id,
+                        amount_minor,
+                        allocation,
+                        idempotency_key,
+                        action_id,
+                        action_type,
+                    ),
+                    idempotency_key,
+                )
+        except TimeoutError:
+            raise ProviderOutcomeUnknown("time_budget") from None
+        try:
+            made = mapping.provider_action(answer, observed_at=self._now())
+        except ProviderUnsupported:
+            raise ProviderOutcomeUnknown("unreadable_answer") from None
+        if made.allocation is None or made.status is None:
+            raise ProviderOutcomeUnknown("unreadable_answer")
+        return made
+
+    async def _invoice_written_on(self, invoice_id: str) -> dict:
+        """The invoice itself, its lines not completed: its state is all a
+        write reads. An unknown invoice is Stripe's no."""
+        try:
+            return await self.reader.invoice(invoice_id, every_line=False)
+        except NotFound:
+            raise ProviderRejected("not_found") from None
+
+    def _writing(self) -> None:
+        if self._writer is None:
+            raise PlatformCannotWrite("stripe: writes are not switched on")
+
+    async def find_action(self, idempotency_key: str, invoice_id: str) -> list[ProviderAction]:
+        """Every credit note of the invoice that carries the key, read to the
+        end, never through Stripe's search (FR-014). A read: it needs no
+        writer, so a person can have a status read with writes off."""
+        async with self._bounded():
+            notes = await self.reader.credit_notes(invoice_id)
+        observed = self._now()
+        return [
+            mapping.provider_action(note, observed_at=observed)
+            for note in notes
+            if (note.get("metadata") or {}).get(mapping.KEY_FIELD) == idempotency_key
+        ]
 
     # -- the time budget ---------------------------------------------------
 

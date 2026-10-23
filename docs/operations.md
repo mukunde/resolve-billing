@@ -50,8 +50,9 @@ The default is the mock, so tests and demos cost nothing.
 ### On a Stripe test account
 
 The fake is the default. To investigate on a Stripe test account instead --
-read-only: nothing is ever written to Stripe, and execution there is refused
-(specs/001-stripe-read-adapter, [contract](contract/billing-platform.md)):
+read-only unless writes are switched on below; then an approved correction is
+made there as a credit note (specs/001-stripe-read-adapter,
+specs/002-stripe-writes, [contract](contract/billing-platform.md)):
 
 ```bash
 pip install -e ".[stripe]"   # the SDK pinned to its API version, and httpx
@@ -61,9 +62,14 @@ Two keys, created by you in the account's test mode (Developers -> API keys),
 each in its own git-ignored file, and never anywhere else:
 
 - `STRIPE_API_KEY`, in `.env`: a **restricted** key (`rk_test_...`) with
-  **Read** only on Customers, Subscriptions, Invoices, Payment Intents, Charges, Prices,
-  Products, Billing Meters, Billing Meter Events and Test Clocks, and nothing
-  else. The service refuses any other kind of key before calling Stripe, and
+  **Read** on Customers, Subscriptions, Invoices, Payment Intents, Charges and
+  Refunds, Prices, Products, Billing Meters, Billing Meter Events and Test
+  Clocks, and **Credit Notes** -- Read at least, so that a person can read a
+  write's status with writes switched off; existing credit notes were read
+  on the test account with Write granted, which allows reading. To write, it
+  needs **Write** on Credit Notes, and only that: a refund is a credit note
+  that refunds, and the first write run without it was refused (403, nothing
+  made) (2026-10-23). The service refuses any other kind of key before calling Stripe, and
   refuses to start the SDK with console logging on (`STRIPE_LOG`), which
   would print what Stripe answered.
 - `STRIPE_SEED_KEY`, in `.env.seed` and nowhere else: the **secret** test
@@ -72,6 +78,10 @@ each in its own git-ignored file, and never anywhere else:
   service starts from.
 
 Then `BILLING_PROVIDER=stripe` selects Stripe for the API and the MCP server.
+Stripe reads only, and execution there is refused (409), unless
+`STRIPE_WRITES=enabled` -- that exact value -- is set beside it: then an
+approved credit note, or refund, is made on Stripe as one credit note, with
+no mail to the customer.
 
 **The test worlds.** `scripts/stripe_seed.py` builds, on the account, the
 worlds of `scripts/stripe_worlds.py` -- each a customer on its own test clock,
@@ -101,6 +111,32 @@ python -m dotenv run -- python -m pytest tests/contract -rs -q
 Without `STRIPE_API_KEY` the Stripe half is skipped, with the reason; CI runs
 the fake half only. A run takes minutes: every test first checks that the
 account has settled, within a bound.
+
+**The write contract on Stripe.** A write is permanent, so the write
+properties run on invoices made for them, fresh each time. First a write
+run, which opens a new write generation -- a customer with one invoice per
+scenario, paid or open, and a duplicate dispute -- reusing nothing an earlier
+one made:
+
+```bash
+python -m dotenv -f .env.seed run -- python -m scripts.stripe_seed --write-run
+```
+
+Then the contract with writes switched on (the key with its write
+permissions):
+
+```bash
+STRIPE_WRITES=enabled python -m dotenv run -- python -m pytest tests/contract -rs -q
+```
+
+Each scenario first checks that its invoice carries no credit note, and
+stops, asking for a new write run, if one does. A write property skipped on
+Stripe is not demonstrated: all seven must run and pass. Only the write
+tests can be run, without waiting for the clocked worlds:
+`tests/contract/test_billing_platform_writes.py` and
+`tests/contract/test_stripe_execution.py`. A refusal reads as its category
+alone (`permission`, say): Stripe's message, naming a missing permission, is
+in the Dashboard's logs (Developers -> Logs).
 
 ### What CI actually enforces
 
@@ -271,6 +307,7 @@ GET  /api/v1/actions/{id}/review      the approval page                   approv
 POST /api/v1/actions/{id}/review      a human decision                    approver
 POST /api/v1/actions/{id}/approve     | reject                            approver
 POST /api/v1/actions/{id}/execute     carry out what a person approved    orchestrator
+POST /api/v1/actions/{id}/status      read a write's status again         approver
 GET  /api/v1/actions/{id}             one action                          either
 GET  /api/v1/runs/{id}                the run, its trace, what is waiting either
 GET  /api/v1/runs/{id}/view           the same, as a page                 either
@@ -287,6 +324,17 @@ carries, or that `GET /actions/{id}` returns, sent back as
 changes before execution, the action expires instead of going through. A
 request left undecided past its deadline (72 hours by default) expires
 too (ADR-008).
+
+An action says when it needs a person, in `attention`
+([contract](contract/approval-and-execution.md)): `not_successful` when a
+write was made and the platform's status is not success -- a refund pending
+or failed, a credit note voided -- to follow up; anything else
+(`window_passed`, `window_unknown`, `several_writes`, `unlike_the_action`,
+`unreadable_answer`) stops everything automatic for that action, and
+`execute` answers 409 with the reason. `POST /actions/{id}/status` has the
+platform read again: it records the status observed and sends nothing, with
+writes switched on or off; for an action left to a person, it settles it
+only when the platform holds exactly one write alike.
 
 ### The audit, in SQL
 

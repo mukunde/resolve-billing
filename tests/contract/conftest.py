@@ -6,13 +6,17 @@ with the reason. Before any Stripe test the account must be ready, within a
 bound: every test clock ready, every target invoice finalised, the usage
 world's meter summary available. A world missing from the account is a
 failure, not a skip: dropping one from the contract needs the maintainer.
+
+The write contract (specs/002-stripe-writes) runs on the fake, always, and on
+Stripe only with `STRIPE_WRITES=enabled` beside the key, on the latest write
+generation the seed built (`--write-run`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -162,3 +166,106 @@ async def platform(request) -> Platform:
 @pytest.fixture
 async def stripe_account() -> Platform:
     return await stripe_platform()
+
+
+# -- the write contract (specs/002-stripe-writes) ------------------------------
+
+#: On the fake, the invoice each scenario writes on: paid in full by a
+#: settled payment, or open with nothing paid, as the purpose asks.
+FAKE_WRITE_INVOICES = {
+    "replay": "inv_001",
+    "find": "inv_010",
+    "credit_paid": "inv_030",
+    "credit_open": "inv_020",
+    "refund": "inv_170",
+    "cap": "inv_002",
+    "refund_open": "inv_040",
+    "execute_refund": "inv_171",
+}
+
+
+@dataclass
+class Writing:
+    name: str
+    provider: object
+    #: The invoice each scenario writes on, by purpose.
+    invoices: dict[str, str]
+    #: Whether an invoice carries no credit note yet.
+    untouched: Callable[[str], Awaitable[bool]]
+    #: Every credit note of an invoice, as the platform holds it (Stripe).
+    credit_notes: Callable[[str], Awaitable[list[dict]]] | None = None
+    #: The same platform, unable to write (Stripe).
+    read_only: object | None = None
+    #: The write run's duplicate dispute: its customer (Stripe).
+    duplicate: dict | None = None
+
+
+def fake_writing() -> Writing:
+    async def untouched(invoice_id: str) -> bool:
+        return True
+
+    return Writing(
+        name="fake",
+        provider=FakeBillingProvider(),
+        invoices=dict(FAKE_WRITE_INVOICES),
+        untouched=untouched,
+    )
+
+
+async def stripe_writing() -> Writing:
+    key = os.getenv("STRIPE_API_KEY")
+    if not key or os.getenv("STRIPE_WRITES") != "enabled":
+        pytest.skip(
+            "STRIPE_API_KEY and STRIPE_WRITES=enabled are not both set: the write contract "
+            "runs locally, with the writing key, on a fresh write run"
+        )
+    pytest.importorskip("stripe", reason="the Stripe SDK is the optional extra `stripe`")
+    from app.providers.stripe.adapter import StripeBillingProvider
+    from app.providers.stripe.client import connect, connect_writer
+    from scripts.stripe_seed import MANIFEST, WRITE_LAST
+
+    provider = StripeBillingProvider(connect(key), writer=connect_writer(key))
+    reader = provider.reader
+    customers = await reader.customers()
+    manifests = [c for c in customers if (c.get("metadata") or {}).get(MANIFEST) == "1"]
+    number = manifests[0]["metadata"].get(WRITE_LAST) if len(manifests) == 1 else None
+    if not number:
+        pytest.skip("no write run on this account: run the seed with --write-run")
+    ours = {
+        (c.get("metadata") or {}).get(worlds.WORLD): c
+        for c in customers
+        if (c.get("metadata") or {}).get(worlds.WRITE_GENERATION) == number
+    }
+    if "write" not in ours or worlds.WRITE_DUPLICATE not in ours:
+        pytest.fail(f"write generation {number} is incomplete: run the seed with --write-run")
+    invoices = {
+        invoice["metadata"][worlds.PURPOSE]: invoice["id"]
+        for invoice in await reader.invoices(ours["write"]["id"])
+        if worlds.PURPOSE in (invoice.get("metadata") or {})
+    }
+    missing = sorted(set(worlds.WRITE_PURPOSES) - invoices.keys())
+    if missing:
+        pytest.fail(f"write generation {number} lacks invoices for {missing}")
+
+    async def untouched(invoice_id: str) -> bool:
+        return not await reader.credit_notes(invoice_id)
+
+    return Writing(
+        name="stripe",
+        provider=provider,
+        invoices=invoices,
+        untouched=untouched,
+        credit_notes=reader.credit_notes,
+        read_only=StripeBillingProvider(connect(key)),
+        duplicate=ours[worlds.WRITE_DUPLICATE],
+    )
+
+
+@pytest.fixture(params=["fake", "stripe"])
+async def writing(request) -> Writing:
+    return fake_writing() if request.param == "fake" else await stripe_writing()
+
+
+@pytest.fixture
+async def stripe_writer() -> Writing:
+    return await stripe_writing()

@@ -9,7 +9,7 @@ for this layout are in
 
 ## Coverage
 
-One capability is covered. For the others, behaviour is described by the
+Two capabilities are covered. For the others, behaviour is described by the
 existing records, which remain authoritative.
 
 | Capability | Contract | Authoritative today |
@@ -19,7 +19,7 @@ existing records, which remain authoritative.
 | Investigation and rules | not written | ADR-003, `evals/taxonomy.md` |
 | Decision engine | not written | ADR-002, ADR-006, ADR-009 (model provider) |
 | Money and corrections | not written | ADR-004, ADR-005, `.specify/bugs/d14-silent-rules/` |
-| Approval and execution | not written | ADR-004, ADR-008 |
+| Approval and execution | [approval-and-execution.md](approval-and-execution.md) | the contract, then ADR-004, ADR-008 |
 | Disclosure and replies | not written | ADR-009 (disclosure), ADR-011 |
 | Evaluation | not written | README "Evaluation", `evals/taxonomy.md`, docs/operations.md |
 

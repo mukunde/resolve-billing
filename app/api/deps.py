@@ -20,7 +20,7 @@ from app.infrastructure.audit import SqliteAuditRepository
 from app.providers.base import BillingProvider
 from app.providers.fake.adapter import FakeBillingProvider
 from app.providers.stripe.adapter import StripeBillingProvider
-from app.providers.stripe.client import connect
+from app.providers.stripe.client import connect, connect_writer
 
 #: Engines that exist today. The roadmap ones are absent on purpose: an empty
 #: stub in this table would suggest an integration that is not there.
@@ -40,9 +40,14 @@ def get_provider() -> BillingProvider:
     if name == "fake":
         return FakeBillingProvider()
     if name == "stripe":
-        # The restricted read-only test key, read here and nowhere else, and
-        # checked before anything else is done (FR-021, FR-024).
-        return StripeBillingProvider(connect(os.getenv("STRIPE_API_KEY")))
+        # The restricted test key, read here and nowhere else, and checked
+        # before anything else is done (FR-021, FR-024). Stripe reads only
+        # unless writes are switched on, by this exact word and nowhere else
+        # (specs/002-stripe-writes, FR-002).
+        key = os.getenv("STRIPE_API_KEY")
+        reader = connect(key)
+        writer = connect_writer(key) if os.getenv("STRIPE_WRITES") == "enabled" else None
+        return StripeBillingProvider(reader, writer=writer)
     raise RuntimeError(f"unknown billing provider {name!r}; available: {list(PROVIDERS)}")
 
 

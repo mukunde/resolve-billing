@@ -5,7 +5,8 @@ its nested lists complete (the client reads them to the end). What the domain
 cannot represent is refused with `ProviderUnsupported` and a reason from the
 port's closed set -- never with the platform's data, and never by guessing a
 value: a field the mapping needs and Stripe sends null is `missing_field`.
-specs/001-stripe-read-adapter, FR-010 to FR-017 and plan section 4.
+specs/001-stripe-read-adapter, FR-010 to FR-017 and plan section 4; the
+credit notes the adapter writes, specs/002-stripe-writes, plan section 6.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from typing import Any
 from app.domain.enums import InvoiceStatus, PaymentStatus, SubscriptionStatus
 from app.domain.models import Customer, Invoice, InvoiceLine, Payment, Subscription, Usage
 from app.domain.money import Money
-from app.providers.base import ProviderUnsupported
+from app.providers.base import Allocation, ProviderAction, ProviderUnsupported
 
 Payload = Mapping[str, Any]
 
@@ -402,3 +403,148 @@ def usage(
 def references(text: str) -> list[tuple[int, int, str]]:
     """Stripe invoice identifiers in `text`, where each sits (FR-017)."""
     return [(match.start(), match.end(), match.group()) for match in _REFERENCE.finditer(text)]
+
+
+# -- writes (specs/002-stripe-writes) -----------------------------------------
+
+#: Where a credit note carries what the execution service finds it by.
+KEY_FIELD = "rb_idempotency_key"
+ACTION_FIELD = "rb_action_id"
+TYPE_FIELD = "rb_action_type"
+
+#: The expansion a credit note needs for its refunds' statuses (FR-015).
+REFUNDS = "refunds.refund"
+
+#: A refund's statuses, as the port says them.
+_REFUND_STATUSES = {
+    "succeeded": "succeeded",
+    "pending": "pending",
+    "requires_action": "pending",
+    "failed": "failed",
+    "canceled": "failed",
+}
+
+
+def allocations(invoice: Payload) -> frozenset[str]:
+    """What the invoice's state lets a credit note do (FR-010 to FR-012).
+
+    Open with nothing paid: lower what is due. Paid in full by a payment:
+    credit the balance, or refund. Anything else -- partly paid, paid out of
+    band, draft, void, uncollectible -- takes no write.
+    """
+    status = invoice.get("status")
+    paid = invoice.get("amount_paid")
+    if status == "open" and paid == 0:
+        return frozenset({"reduce_due"})
+    if status == "paid" and invoice.get("amount_remaining") == 0 and paid == invoice.get("total"):
+        return frozenset({"customer_balance", "refund"})
+    return frozenset()
+
+
+def credit_note_params(
+    invoice_id: str,
+    amount_minor: int,
+    allocation: Allocation,
+    idempotency_key: str,
+    action_id: str,
+    action_type: str,
+) -> dict[str, Any]:
+    """The one request: a credit note for the whole amount, allocated as
+    planned, carrying the action's key, identifier and type and nothing of
+    the case -- no memo, no reason, no mail to the customer (FR-013)."""
+    params: dict[str, Any] = {
+        "invoice": invoice_id,
+        "amount": amount_minor,
+        "email_type": "none",
+        "metadata": {
+            KEY_FIELD: idempotency_key,
+            ACTION_FIELD: action_id,
+            TYPE_FIELD: action_type,
+        },
+        "expand": [REFUNDS],
+    }
+    if allocation == "customer_balance":
+        params["credit_amount"] = amount_minor
+    elif allocation == "refund":
+        params["refund_amount"] = amount_minor
+    return params
+
+
+def provider_action(credit_note: Payload, observed_at: datetime) -> ProviderAction:
+    """A credit note as the execution service checks it.
+
+    What it cannot tell -- how it was allocated, what became of a refund it
+    holds -- is None, never guessed; a credit note without the key or the
+    type it was written with is not one this system made: `missing_field`.
+    """
+    metadata = credit_note.get("metadata") or {}
+    key = metadata.get(KEY_FIELD)
+    action_type = metadata.get(TYPE_FIELD)
+    if not key or action_type not in ("credit_note", "refund"):
+        raise ProviderUnsupported("missing_field")
+    livemode = credit_note.get("livemode")
+    if livemode is None:
+        raise ProviderUnsupported("missing_field")
+    return ProviderAction(
+        provider="stripe",
+        provider_action_id=_required(credit_note.get("id")),
+        action_type=action_type,
+        idempotency_key=key,
+        status=_credit_note_status(credit_note),
+        created_at=_at(credit_note.get("created")),
+        invoice_id=identifier(_required(credit_note.get("invoice"))),
+        amount_minor=_required(credit_note.get("amount")),
+        currency=_currency(credit_note.get("currency")),
+        test_mode=not livemode,
+        allocation=_allocation_of(credit_note),
+        action_id=metadata.get(ACTION_FIELD) or None,
+        observed_at=observed_at,
+    )
+
+
+def _allocation_of(credit_note: Payload) -> str | None:
+    """Read from the amounts Stripe states; a field it does not state --
+    absent or null -- is never taken for zero, and leaves it unread."""
+    amount = credit_note.get("amount")
+    if credit_note.get("out_of_band_amount"):
+        return None
+    before = credit_note.get("pre_payment_amount")
+    after = credit_note.get("post_payment_amount")
+    refunds = credit_note.get("refunds")
+    if before is None or after is None or refunds is None:
+        return None
+    if any(entry.get("amount_refunded") is None for entry in refunds):
+        return None
+    refunded = sum(entry["amount_refunded"] for entry in refunds)
+    if before == amount and after == 0 and refunded == 0:
+        return "reduce_due"
+    if after == amount and before == 0:
+        if refunded == amount:
+            return "refund"
+        if refunded == 0:
+            return "customer_balance"
+    return None
+
+
+def _credit_note_status(credit_note: Payload) -> str | None:
+    """FR-015: void is failed; issued is its refunds' outcome, or succeeded
+    when it refunds nothing. A refund not expanded cannot be read."""
+    status = credit_note.get("status")
+    if status == "void":
+        return "failed"
+    refunds = credit_note.get("refunds")
+    if status != "issued" or refunds is None:
+        return None
+    seen = []
+    for entry in refunds:
+        refund = entry.get("refund")
+        if not isinstance(refund, Mapping):
+            return None
+        seen.append(_REFUND_STATUSES.get(refund.get("status")))
+    if None in seen:
+        return None
+    if "failed" in seen:
+        return "failed"
+    if "pending" in seen:
+        return "pending"
+    return "succeeded"

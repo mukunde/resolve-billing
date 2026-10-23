@@ -199,3 +199,54 @@ abandoned claim is too slow. At that point, reconciliation becomes a sweep
 over every `UNKNOWN_OUTCOME` and abandoned `EXECUTING`, run on a schedule,
 instead of a step in `execute()`. `find_action` is keyed on the idempotency
 key, so it already serves refunds and credit notes alike.
+
+## Writes on a real platform
+
+Added 2026-10-23, with Stripe's writes (specs/002-stripe-writes, approved by
+the maintainer). A real platform answers in ways the fake never did: it
+forgets keys after a while, its answer can differ from what was asked, and
+a write it made can fail later. What changes:
+
+- **`find_action(key, invoice_id)` answers every write** under the key on
+  the action's invoice -- none, one or more -- and the writes take the
+  action's identifier, which the platform keeps with them. Two writes, or one
+  unlike the action, are an incident for a person, never "the first one
+  found". It is a read: a platform answers it whether or not it can write,
+  so Stripe without writes now answers it instead of raising
+  `PlatformCannotWrite`; `execute()` and `reconcile()` still refuse first.
+- **The answer is checked before `EXECUTED`**, the platform's direct answer
+  like a write found again: invoice, type, amount, currency, test mode, the
+  allocation planned, the key and identifier the platform holds.
+- **A write is planned once.** `plan_write` fixes, after the first claim and
+  before the first send, how the write lands on the invoice; every send
+  passes that, and an invoice that no longer takes it is refused.
+- **A window bounds every send, and every absence taken as proof.** The
+  first attempt's instant is recorded in the first claim and never reset;
+  past the platform's `idempotency_window` from it (Stripe: 23 hours, under
+  the day its documentation says it keeps keys), nothing is sent again and
+  an absence leaves the outcome unknown. The adapter checks the deadline at
+  the point of sending too.
+- **A refusal after an unknown outcome settles nothing on its own.** The
+  first answer lost, a retry refused: the earlier attempt may have landed,
+  so the action is reconciled. Writes are sent without the SDK's own
+  retries, so each attempt is one request whose outcome the service sees.
+- **What became of a write is an observation.** The platform's status is
+  recorded with its instant; a write made is `EXECUTED` whatever its status,
+  never written again, and a status but success is put to a person. A person
+  can have it read again (`POST /actions/{id}/status`), which sends nothing.
+- **An action says why it needs a person** (`attention`, a closed set). Every
+  incident stops everything automatic for good; only a person's status read
+  finding exactly one write alike settles one, which is why the table gains
+  `FAILED -> EXECUTED`, still under the store's rule that `EXECUTED` takes
+  the platform's reference. Actions older than the columns are marked
+  `window_unknown`: when they were first sent cannot be shown.
+
+Stripe's caps -- "to verify, not assume" above -- were measured by the
+write contract on a seeded test account on 2026-10-23 (specs/002-stripe-writes,
+property 5, the maintainer's run): a refund beyond what a fully credited
+invoice could still give back was refused, and nothing was written. What
+Stripe enforces holds there; it is no longer a property of the fake alone.
+
+**Re-evaluation condition:** a platform whose keys outlive any retry, or a
+scheduler sweeping unknown outcomes (above), changes how the window is set,
+not that there is one.

@@ -57,7 +57,22 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     expires_at          TEXT,
     -- What the approver approved: the fingerprint of the proposal and of
     -- the invoice as they were. Execution refuses if it no longer holds.
-    approved_fingerprint TEXT
+    approved_fingerprint TEXT,
+    -- When the write was first claimed, before it was first sent; never
+    -- reset. Every send falls within the platform's window from it.
+    first_attempt_at    TEXT,
+    -- How the write lands on the invoice, planned once before the first
+    -- send and reused by every retry.
+    allocation          TEXT,
+    -- When an attempt's outcome first became unknown; never cleared. A
+    -- refusal after it settles nothing on its own.
+    uncertain_since     TEXT,
+    -- What the platform said of the write once made, and when it said it:
+    -- an observation, not the current state.
+    provider_status     TEXT,
+    provider_status_at  TEXT,
+    -- Why the action needs a person, if it does (ATTENTION).
+    attention           TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_run ON pending_actions(run_id);
@@ -89,10 +104,33 @@ ALLOWED: dict[ActionState, set[ActionState]] = {
     # A failed write may be retried, through a fresh claim: it then succeeds
     # with the provider's reference or fails again. Reaching EXECUTED takes
     # that reference -- see transition() -- so a retry cannot be skipped by
-    # asking for the end state directly.
-    ActionState.FAILED: {ActionState.EXECUTING, ActionState.EXPIRED},
+    # asking for the end state directly. FAILED -> EXECUTED is there for one
+    # caller only: a person's status read that finds the write on the
+    # platform for an action needing a person (specs/002-stripe-writes).
+    ActionState.FAILED: {ActionState.EXECUTING, ActionState.EXPIRED, ActionState.EXECUTED},
     ActionState.EXPIRED: set(),
 }
+
+
+#: Why an action needs a person. Closed: a new reason is a decision.
+ATTENTION = frozenset(
+    {
+        # The platform may no longer answer the key: nothing is sent, and an
+        # absence proves nothing.
+        "window_passed",
+        # When the first attempt was sent cannot be shown (an action older
+        # than the column): treated as past the window.
+        "window_unknown",
+        "several_writes",
+        "unlike_the_action",
+        "unreadable_answer",
+        # A write was made and its status is not success: to follow up.
+        "not_successful",
+    }
+)
+
+#: The attentions that stop everything automatic for the action, for good.
+INCIDENTS = ATTENTION - {"not_successful"}
 
 
 class IllegalTransition(BillingDomainError):
@@ -123,8 +161,26 @@ class WritesNotSupported(IllegalTransition):
         )
 
 
+class NeedsAPerson(IllegalTransition):
+    """The action is left to a person: nothing automatic happens to it.
+
+    An `IllegalTransition`, so the API answers 409 with the reason; never an
+    unknown outcome to retry (specs/002-stripe-writes).
+    """
+
+    def __init__(self, action_id: str, current: ActionState, attention: str) -> None:
+        super().__init__(
+            action_id, current, ActionState.EXECUTED, why=f"(it needs a person: {attention})"
+        )
+        self.attention = attention
+
+
 class UnknownAction(BillingDomainError):
     pass
+
+
+#: `annotate` leaves the attention as it is unless told otherwise.
+_KEEP = object()
 
 
 class PendingAction(BaseModel):
@@ -146,6 +202,12 @@ class PendingAction(BaseModel):
     updated_at: datetime | None = None
     expires_at: datetime | None = None
     approved_fingerprint: str | None = None
+    first_attempt_at: datetime | None = None
+    allocation: str | None = None
+    uncertain_since: datetime | None = None
+    provider_status: str | None = None
+    provider_status_at: datetime | None = None
+    attention: str | None = None
 
     def expired(self, now: datetime | None = None) -> bool:
         """Past the deadline for a decision."""
@@ -188,9 +250,27 @@ class SqliteActionStore:
             ("resolution", "TEXT"),
             ("expires_at", "TEXT"),
             ("approved_fingerprint", "TEXT"),
+            ("first_attempt_at", "TEXT"),
+            ("allocation", "TEXT"),
+            ("uncertain_since", "TEXT"),
+            ("provider_status", "TEXT"),
+            ("provider_status_at", "TEXT"),
+            ("attention", "TEXT"),
         ):
             if column not in held:
                 self._connection.execute(f"ALTER TABLE pending_actions ADD COLUMN {column} {ddl}")
+        if "first_attempt_at" not in held:
+            # An action already attempted when the column did not exist: when
+            # its first attempt was sent cannot be shown, so it is never sent
+            # again automatically. Its status can still be read.
+            self._connection.execute(
+                "UPDATE pending_actions SET attention = 'window_unknown' WHERE state IN (?, ?, ?)",
+                (
+                    ActionState.EXECUTING.value,
+                    ActionState.UNKNOWN_OUTCOME.value,
+                    ActionState.FAILED.value,
+                ),
+            )
 
     def create(
         self,
@@ -287,8 +367,31 @@ class SqliteActionStore:
         failure_reason: str | None = None,
         resolution: str | None = None,
         approved_fingerprint: str | None = None,
+        *,
+        first_attempt_at: datetime | None = None,
+        uncertain_since: datetime | None = None,
+        provider_status: str | None = None,
+        provider_status_at: datetime | None = None,
+        attention: str | None | object = _KEEP,
+        unless_incident: bool = False,
     ) -> PendingAction:
+        """Move the action to `to`, from the state it is read in.
+
+        `first_attempt_at` and `uncertain_since` are kept once set: the
+        first value wins. The others replace what was there when given; the
+        attention is kept as the row holds it -- not as it was read -- unless
+        given, and None clears it. A claim (`EXECUTING`), and any transition
+        made `unless_incident` -- what the system settles on its own -- is
+        refused, in the `UPDATE` itself, while the action has an incident:
+        one another process recorded after this one read the action stops it
+        too. Only a person's status read settles an incident.
+        """
         current = self.get(action_id)
+        keep = attention is _KEEP
+        _check_attention(None if keep else attention)
+        guarded = to is ActionState.EXECUTING or unless_incident
+        if guarded and current.attention in INCIDENTS:
+            raise NeedsAPerson(action_id, current.state, current.attention)
         if to not in ALLOWED[current.state]:
             raise IllegalTransition(action_id, current.state, to)
         # EXECUTED is a claim that money moved, so it takes the provider's
@@ -312,9 +415,15 @@ class SqliteActionStore:
                     provider_action_id = COALESCE(?, provider_action_id),
                     failure_reason = ?,
                     resolution = COALESCE(?, resolution),
-                    approved_fingerprint = COALESCE(?, approved_fingerprint)
+                    approved_fingerprint = COALESCE(?, approved_fingerprint),
+                    first_attempt_at = COALESCE(first_attempt_at, ?),
+                    uncertain_since = COALESCE(uncertain_since, ?),
+                    provider_status = COALESCE(?, provider_status),
+                    provider_status_at = COALESCE(?, provider_status_at),
+                    attention = CASE WHEN ? THEN attention ELSE ? END
                 WHERE action_id = ? AND state = ?
-                """,
+                  AND NOT (? AND COALESCE(attention, '') IN ({incidents}))
+                """.format(incidents=", ".join("?" * len(INCIDENTS))),
                 (
                     to.value,
                     datetime.now(UTC).isoformat(),
@@ -323,18 +432,102 @@ class SqliteActionStore:
                     failure_reason,
                     resolution,
                     approved_fingerprint,
+                    _iso(first_attempt_at),
+                    _iso(uncertain_since),
+                    provider_status,
+                    _iso(provider_status_at),
+                    keep,
+                    None if keep else attention,
                     action_id,
                     current.state.value,
+                    guarded,
+                    *sorted(INCIDENTS),
                 ),
             ).rowcount
         if updated != 1:
+            held = self._attention_now(action_id)
+            if guarded and held in INCIDENTS:
+                raise NeedsAPerson(action_id, current.state, held)
             raise IllegalTransition(
                 action_id, current.state, to, why="(its state changed concurrently)"
             )
         return self.get(action_id)
 
+    def _attention_now(self, action_id: str) -> str | None:
+        """The attention as the row holds it now, read past any cached view."""
+        row = self._connection.execute(
+            "SELECT attention FROM pending_actions WHERE action_id = ?", (action_id,)
+        ).fetchone()
+        return row["attention"] if row else None
+
+    def annotate(
+        self,
+        action_id: str,
+        expected: ActionState,
+        *,
+        attention: str | None | object = _KEEP,
+        resolution: str | None = None,
+        allocation: str | None = None,
+        provider_status: str | None = None,
+        provider_status_at: datetime | None = None,
+    ) -> PendingAction:
+        """Record something about an action that stays in its state.
+
+        Conditional like a transition: if the action is no longer in
+        `expected`, nothing changes and it raises. The attention is replaced
+        when given -- None clears it -- and kept otherwise; the allocation is
+        kept once set.
+        """
+        current = self.get(action_id)
+        if current.state is not expected:
+            raise IllegalTransition(action_id, current.state, expected)
+        keep = attention is _KEEP
+        _check_attention(None if keep else attention)
+        with self._connection:
+            updated = self._connection.execute(
+                """
+                UPDATE pending_actions
+                SET updated_at = ?,
+                    attention = CASE WHEN ? THEN attention ELSE ? END,
+                    resolution = COALESCE(?, resolution),
+                    allocation = COALESCE(allocation, ?),
+                    provider_status = COALESCE(?, provider_status),
+                    provider_status_at = COALESCE(?, provider_status_at)
+                WHERE action_id = ? AND state = ?
+                """,
+                (
+                    datetime.now(UTC).isoformat(),
+                    keep,
+                    None if keep else attention,
+                    resolution,
+                    allocation,
+                    provider_status,
+                    _iso(provider_status_at),
+                    action_id,
+                    expected.value,
+                ),
+            ).rowcount
+        if updated != 1:
+            raise IllegalTransition(
+                action_id, current.state, expected, why="(its state changed concurrently)"
+            )
+        return self.get(action_id)
+
     def close(self) -> None:
         self._connection.close()
+
+
+def _check_attention(attention: object) -> None:
+    if attention is not None and attention not in ATTENTION:
+        raise ValueError(f"unknown attention {attention!r}")
+
+
+def _iso(moment: datetime | None) -> str | None:
+    return moment.isoformat() if moment is not None else None
+
+
+def _moment(text: str | None) -> datetime | None:
+    return datetime.fromisoformat(text) if text else None
 
 
 def _to_action(row: sqlite3.Row) -> PendingAction:
@@ -355,4 +548,10 @@ def _to_action(row: sqlite3.Row) -> PendingAction:
         updated_at=datetime.fromisoformat(row["updated_at"]),
         expires_at=(datetime.fromisoformat(row["expires_at"]) if row["expires_at"] else None),
         approved_fingerprint=row["approved_fingerprint"],
+        first_attempt_at=_moment(row["first_attempt_at"]),
+        allocation=row["allocation"],
+        uncertain_since=_moment(row["uncertain_since"]),
+        provider_status=row["provider_status"],
+        provider_status_at=_moment(row["provider_status_at"]),
+        attention=row["attention"],
     )

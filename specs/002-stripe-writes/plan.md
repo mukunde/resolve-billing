@@ -1,0 +1,412 @@
+# Implementation Plan: Stripe as a billing platform, writing
+
+**Branch**: `002-stripe-writes` | **Date**: 2026-10-23 | **Spec**: [spec.md](spec.md), approved by the maintainer at commit `c51e175`
+
+**Input**: Feature specification from `specs/002-stripe-writes/spec.md`
+
+## Summary
+
+Stripe, in test mode, makes the two writes the domain has -- a credit note,
+and a refund through a credit note -- when `STRIPE_WRITES=enabled`. The port
+changes so that a write can be checked and found again: the writes take the
+action's identifier, `find_action` takes the invoice and answers every write
+under the key, and a `ProviderAction` carries what the checks read. The
+execution service (ADR-008) gains what the spec requires around a write: a
+first-attempt instant recorded with the claim and a window checked before
+every send, a refusal that never settles an earlier unknown outcome, the
+platform's answer checked before `EXECUTED`, the platform's status recorded
+as a dated observation that a person can have read again, and an action that
+says when it needs a person. The seed builds fresh worlds to write on; write
+contract tests run against the fake in CI and against Stripe locally.
+
+Before the change is folded in, the capability *Approval and execution* gets
+its contract, written from the existing records (constitution, "Product
+Contract").
+
+## Technical Context
+
+**Language/Version**: Python 3.12 (CI), 3.13 locally.
+
+**Primary Dependencies**: `stripe` 15.4.0, API version `2026-07-29.dahlia`,
+both pinned already (specs/001). The SDK's credit note service takes
+`invoice`, `amount`, `credit_amount`, `refund_amount`, `out_of_band_amount`,
+`email_type`, `metadata`; a credit note carries `status` (`issued`, `void`),
+`livemode`, `metadata`, `refunds` (each with `amount_refunded`, `refund`,
+`type`), `pre_payment_amount`, `post_payment_amount`; a refund's status is
+`pending`, `requires_action`, `succeeded`, `failed` or `canceled`. Request
+options take `idempotency_key` and `max_network_retries` per request.
+
+**Storage**: the action table gains columns (section 3); added by the
+store's existing migration.
+
+**Testing**: pytest. Execution tests on the fake and on test doubles (CI);
+Stripe adapter tests on the stub client (CI, no SDK, no network); write
+contract tests on the fake (CI) and on Stripe with the writing key on fresh
+seeded worlds (local, run by the maintainer).
+
+**Target Platform**: the existing service; Stripe in test mode only.
+
+**Constraints**: test mode only; nothing sent without `STRIPE_WRITES=enabled`;
+no Stripe name outside the adapter, the wiring, the seed and Stripe tests;
+no key and no Stripe text in any output; no write but the credit note.
+
+**Scale/Scope**: one action at a time per invoice; a handful of write worlds
+per contract run.
+
+## Constitution Check
+
+| Principle | How this plan meets it |
+|---|---|
+| I. Deterministic before probabilistic | Untouched: no rule or engine changes. |
+| II. Evidence, then human approval, before money | Nothing is sent but an approved action, unexpired, on the invoice shown (fingerprint), within the invoice and its currency (ADR-008's guard), within the window; writing is off unless configured. Execution writes exactly the approved instrument: a refund stays a refund. |
+| III. Provider-agnostic boundaries | The port additions are vendor-neutral (an action identifier, the invoice, a window the platform declares, fields any platform's write has). Stripe's vocabulary stays in the adapter. |
+| IV. Money in minor units | Amounts cross the port as integer minor units; Stripe's are minor units already. |
+| V. A model acts within bounds | Untouched. Nothing a model wrote reaches Stripe (FR-013). |
+| VI. Auditable; the platform is authoritative | Every outcome, recovery and incident is said in the action's `resolution`; the platform's status is an observation with its instant. No ledger: Stripe's caps decide, and the contract run measures them. |
+| VII. Untrusted input, trust boundaries | No customer text reaches Stripe; Stripe sends no mail (`email_type=none`). The status read is an authenticated person's call. |
+| VIII. Measured | The mock baseline stays matched (no decision changes); the write properties and SC-002 are measured on the test account. |
+| Sensitive areas | The money-moving core (II, IV) and a normative change to ADR-008 and the product contract: **final-diff approval** before merge. |
+
+No violation; no complexity to justify.
+
+## Design
+
+### 1. The Approval and execution contract, first
+
+`docs/contract/approval-and-execution.md`, written from ADR-004 and ADR-008
+as they stand -- states, the claim, the three outcomes, reconciliation, the
+guards, expiry, a platform that cannot write -- in a commit of its own, before
+anything changes; `docs/contract/README.md` lists it. The change is then
+folded into it with the code (section 9).
+
+### 2. The port (`app/providers/base.py`; ADR-001 and ADR-008 amended)
+
+- **The parameters of a write are fixed once, before its first send.**
+  `plan_write(invoice_id, action_type) -> Allocation` reads the invoice and
+  says how the write will be allocated (`reduce_due` | `customer_balance` |
+  `refund`), or raises `ProviderRejected("invoice_state")` for a state the
+  platform does not write on (FR-012). The service stores the allocation
+  with the action and passes it to every send; nothing is recomputed on a
+  retry.
+- **The writes take the action's identifier, the allocation and a
+  deadline**: `create_credit_note(invoice_id, amount_minor, currency, reason,
+  idempotency_key, action_id, allocation, send_by)`, likewise
+  `create_refund`. The adapter checks the invoice still allows that
+  allocation -- it never rebuilds it -- and refuses
+  (`ProviderRejected("invoice_state")`) if not; then, at the point of sending,
+  checks `send_by` and sends nothing past it (`NotSent("window_passed")`, a
+  `ProviderRejected`: nothing left). `reason` stays on the port for platforms
+  that record one; Stripe ignores it (FR-013).
+- **`find_action(idempotency_key, invoice_id) -> list[ProviderAction]`**:
+  every write under the key on that invoice, in the platform's order; an
+  empty list is "none". A list cut short is `ProviderUnavailable`. It is a
+  read: a platform answers it whether or not it can write (section 6), so a
+  person can read a status with writes switched off. On Stripe this changes
+  the read-only slice's behaviour, where it raised `PlatformCannotWrite`;
+  `execute()` and `reconcile()` still refuse first on a platform that cannot
+  write (ADR-008).
+- **`ProviderAction`** gains what the checks read (FR-001, FR-004):
+  `invoice_id`, `amount_minor`, `currency`, `test_mode: bool`,
+  `allocation` (`reduce_due` | `customer_balance` | `refund`),
+  `action_id: str | None` (what the platform holds), `observed_at`. `status`
+  keeps `succeeded` | `pending` | `failed`.
+- **`idempotency_window: timedelta`**: how long after a first attempt the
+  platform still answers a key with what it made. The execution service
+  reads it; the number is the platform's (Stripe: 23 hours; the fake models
+  the same). Vendor-neutral, so the service never names Stripe.
+- **`NotSent(ProviderRejected)`**: the adapter sent nothing because the
+  deadline passed before the send.
+- **`ProviderOutcomeUnknown(Exception)`**: what an adapter raises when a
+  write was, or may have been, sent and its answer is unknown -- never
+  `ProviderUnavailable`, which is for reads (FR-020). The execution service
+  still treats any exception but `ProviderRejected` as unknown, as a
+  defence.
+
+### 3. Execution (`app/application/execute_action.py`, `app/infrastructure/actions.py`)
+
+**New columns** on `pending_actions`, added by `_migrate`:
+
+| column | meaning |
+|---|---|
+| `first_attempt_at` | set in the claim's own `UPDATE`, only when null; never reset (FR-005) |
+| `allocation` | set once, after the first claim and before the first send, from `plan_write`; reused by every send |
+| `uncertain_since` | set when an attempt's outcome first becomes unknown; never cleared (FR-006) |
+| `provider_status`, `provider_status_at` | the platform's status of the write, and when it was observed (FR-003, FR-015) |
+| `attention` | why the action needs a person, from a closed set; null otherwise |
+
+`attention` takes `window_passed`, `window_unknown`, `several_writes`,
+`unlike_the_action`, `unreadable_answer`, `not_successful` (a write made
+whose status is not success). It is not a state: the state machine of
+ADR-008 keeps its states and transitions; an action needing a person stays
+`UNKNOWN_OUTCOME` (nothing proved), `FAILED` or `EXECUTED` (made, to follow
+up). The store gains `annotate(action_id, expected_state, attention,
+resolution)`: a conditional `UPDATE` that changes no state, for an action
+that stays where it is.
+
+**An incident is sticky.** `several_writes`, `unlike_the_action`,
+`unreadable_answer`, `window_passed` and `window_unknown` stop everything
+automatic for the action, for good: `execute()` raises `NeedsAPerson` (an
+`IllegalTransition`, so 409) before reconciling, reading or claiming, and a
+later reconciliation that finds nothing never makes it `FAILED`. Only a
+reconciliation finding exactly one write alike settles it as `EXECUTED`; it
+runs when a person asks for the status (below), never on a retry. Clearing
+an incident otherwise is a person's act on the platform, outside this slice.
+
+**Actions older than the columns.** The migration marks every action found
+in `EXECUTING`, `UNKNOWN_OUTCOME` or `FAILED` `window_unknown`: when its first
+attempt was sent cannot be shown, so it is never sent again automatically;
+its status can still be read. `APPROVED` and earlier ones are untouched --
+they have not been sent.
+
+**The window, checked before the claim and at the send.** `execute()`
+computes `now - first_attempt_at` right before the claim, on the stored
+value -- a restart reads the same. At or past `provider.idempotency_window`:
+nothing is claimed or sent; the action is annotated `window_passed` and
+`execute()` raises `NeedsAPerson`. The claim then passes
+`send_by = first_attempt_at + window` to the write, and the adapter checks it
+at the point of sending, after its own reads: a read that starts before the
+limit and ends after it sends nothing (`NotSent`). The service takes a clock
+(`now`) for the tests.
+
+**Same parameters on every send.** After the first claim, `plan_write`
+fixes the allocation and the store keeps it; every send passes it, and the
+request is a pure function of the action (invoice, type, amount, currency,
+key, identifier) and of that stored allocation. A `plan_write` refusal is a
+refusal before sending (`FAILED`, or reconciled under FR-006); a failed read
+there is an unknown outcome (FR-012). An invoice that no longer allows the
+stored allocation is refused by the adapter, never written with another. An
+approval without a fingerprint (ADR-008) is held to the same: its parameters
+are fixed the same way, so the identity of its sends does not rest on the
+fingerprint. Tests pin two sends of one action making the same request,
+across a restart, and an invoice paid between the plan and a retry being
+refused rather than written differently.
+
+**Outcomes of a send:**
+
+- *An answer*: checked against the action (below). Alike: `EXECUTED` with the
+  reference and the status observed; a status but success also annotates
+  `not_successful` and says it in `resolution`. Unlike, incomplete or
+  unreadable: `UNKNOWN_OUTCOME`, `uncertain_since` set, annotated
+  (`unlike_the_action` or `unreadable_answer`), and `NeedsAPerson`.
+- *`NotSent`*: nothing left; annotated `window_passed`, then as a refusal
+  below -- `FAILED`, or reconciled under FR-006 -- and never sent again.
+- *`ProviderRejected`*, with `uncertain_since` null: `FAILED`, as today.
+  With `uncertain_since` set (FR-006): `UNKNOWN_OUTCOME`, then reconciled at
+  once; the refusal is kept in `failure_reason`.
+- *Anything else*: `UNKNOWN_OUTCOME`, `uncertain_since` set if null; 504, as
+  today.
+
+**Reconciliation** (an `UNKNOWN_OUTCOME`, or a claim abandoned past 5
+minutes, which first becomes `UNKNOWN_OUTCOME` with `uncertain_since` set):
+`find_action(key, invoice_id)`, then:
+
+| found | within the window | past it |
+|---|---|---|
+| one, alike | `EXECUTED`, status observed | the same |
+| one, unlike; or several | stays unknown, annotated | the same |
+| none, no incident | `FAILED` (retried by the next `execute()`, within the window) | stays unknown, annotated `window_passed` |
+| none, an incident | stays unknown | the same |
+
+Reconciliation never writes. A read that fails leaves the state as it was.
+
+**The check** (`_unlike(action, found) -> str | None`, pure): the invoice,
+the type, the amount, the currency, `test_mode` true, **the allocation equal
+to the one stored** -- a credit note planned `reduce_due` and found
+`customer_balance` is unlike -- and, where the platform holds them, the key
+and the action identifier. A missing field is `unreadable_answer`. With no
+allocation stored -- an action older than the column, or one whose plan
+never completed -- the found write's allocation must be one the type allows
+(a refund: `refund`; a credit note: `reduce_due` or `customer_balance`), and
+only a person's status read can settle it: automatic reconciliation
+annotates it `window_unknown` and goes no further.
+
+**Reading the status again** (FR-003): `ApprovalService.refresh_status(id)`.
+For an `EXECUTED` action: `find_action`, the write with the recorded
+reference, its status and the instant observed recorded; `not_successful` set
+or cleared by what is observed; its write gone or unlike: annotated,
+reported. For an action with an incident -- `UNKNOWN_OUTCOME`, or, marked
+`window_unknown` by the migration, `EXECUTING` or `FAILED` too -- the
+reconciliation read: exactly one write alike makes it `EXECUTED` with that
+reference and its status; nothing found, several, or unlike leaves its state
+as it is, annotated, and never permits a new write. `EXECUTING` and
+`UNKNOWN_OUTCOME` reach `EXECUTED` by transitions that exist; `FAILED →
+EXECUTED` is added to the table for this read alone, still under the store's
+guard that `EXECUTED` takes the platform's reference (ADR-008) -- so a write
+can be recorded only when the platform shows it. Nothing is ever sent, and
+the read needs no writing: it works with `STRIPE_WRITES` off, so a person
+can follow up after switching writes off.
+
+### 4. The API (`app/api/approvals.py`)
+
+- `ActionOut` gains `provider_status`, `provider_status_at`, `attention` and
+  `first_attempt_at`.
+- `POST /api/v1/actions/{id}/status`: reads the status again; an approver's
+  call (a person), 409 unless `EXECUTED` or an action with an incident.
+- `NeedsAPerson` answers 409 with the category, ahead of the catch-all;
+  the 504 message no longer promises that the next call settles everything:
+  "reconciled on the next execute, or put to a person".
+
+### 5. The fake (`app/providers/fake/adapter.py`)
+
+Follows the port: `plan_write` from the invoice's status and the type;
+writes take `action_id`, the allocation and `send_by`, and record them;
+`find_action(key, invoice_id)` answers a list, filtered by invoice;
+`ProviderAction` filled (`test_mode` true); `idempotency_window` 23 hours. Its caps are unchanged. Test helpers model a
+lost answer, a second write under one key, a write unlike the action and a
+status that changes.
+
+### 6. The Stripe adapter (`app/providers/stripe/`)
+
+**`client.py`.** `StripeReader` stays read-only. A `StripeWriter`, built only
+when writes are enabled, has one method, `create_credit_note(params,
+idempotency_key)`, sent with **`max_network_retries=0`**: the SDK retries a
+409 and any 5xx on its own, so one attempt of ours could otherwise be
+several requests, and a refusal of the last would hide an earlier one that
+landed (FR-006). Each attempt is one request, whose outcome the execution
+service sees. Reads keep their retries. Errors on a write are classified by
+`_write_outcome`:
+
+| Stripe answers | the port's |
+|---|---|
+| `InvalidRequestError` (400, 404), not an idempotency error | `ProviderRejected("invalid_request")`, `("not_found")` |
+| `AuthenticationError` (401), `PermissionError` (403) | `ProviderRejected("authentication")`, `("permission")` |
+| `IdempotencyError`, a 409, a rate limit, a connection error, a 5xx, anything else; the time budget spent | `ProviderOutcomeUnknown(category)` |
+
+Categories only; `from None`, so no Stripe text reaches a traceback.
+
+**`mapping.py`**, pure: `allocation(invoice, action_type)` -- open with
+nothing paid (`amount_paid` 0) → `reduce_due` for a credit note, refused for
+a refund; paid in full (`amount_remaining` 0, `amount_paid` equal to the
+total) → `customer_balance` for a credit note, `refund` for a refund; any
+other state refused (FR-010 to FR-012); `allows(invoice, allocation)`, the
+same table read the other way; `credit_note_params(invoice_id, amount,
+allocation, key, action_id, type)` -- `amount`, plus `credit_amount` or
+`refund_amount` equal to it by allocation, the metadata (`rb_idempotency_key`,
+`rb_action_id`, `rb_action_type`), `email_type` `none`, no `memo`, no `reason`,
+`expand=["refunds.refund"]` -- and `provider_action(credit_note)`: type from
+the metadata, allocation from the amounts (`pre_payment_amount` →
+`reduce_due`; `post_payment_amount` refunded → `refund`, credited →
+`customer_balance`; anything else unreadable), status per FR-015 from the
+credit note's status and its refunds' statuses, `test_mode` from `livemode`.
+A refund not expanded -- a bare identifier -- makes the answer unreadable:
+there is no complementary read, since an answer Stripe was asked to expand
+and did not is an anomaly for a person.
+
+**`adapter.py`.** `can_write` is true only when built with a writer.
+
+- *`plan_write`*: reads the invoice, returns `allocation(...)`; a refusal is
+  `ProviderRejected("invoice_state")`.
+- *The write*: reads the invoice and checks `allows(invoice, allocation)`
+  (`ProviderRejected("invoice_state")` if not; a failed read is
+  `ProviderOutcomeUnknown`, FR-012), then checks `send_by` (`NotSent`), then
+  one `credit_notes.create` with the action's key; a refund is a credit note
+  whose whole amount is `refund_amount` (FR-011). No other mutating call
+  exists in the module (FR-016); the stub fails on any.
+- *`find_action`*: the invoice's credit notes listed to the end (`invoice=<id>`,
+  `expand=["data.refunds.refund"]`), those whose metadata holds the key
+  mapped. Never search (FR-014). A read: it uses the reader, so it works
+  without the writer, on a key with read permission on credit notes.
+- `idempotency_window` = 23 hours.
+
+### 7. Wiring and configuration
+
+- `app/api/deps.py`: with `BILLING_PROVIDER=stripe`, `STRIPE_WRITES=enabled`
+  (read there only, compared exactly) builds the writer on the same
+  restricted test key; anything else, or absent, keeps the slice read-only
+  (FR-002, SC-004).
+- The restricted key's write permissions are **established on the test
+  account by the maintainer** (credit notes; whatever a refunding credit
+  note needs besides) and recorded in `docs/operations.md` and
+  `.env.example` (FR-021). No agent sees the key.
+
+### 8. Write worlds and the contract tests
+
+- **`scripts/stripe_seed.py --write-run`** opens a new write generation: the
+  manifest keeps one bounded entry, `w_last=<n>`, the last number opened, so
+  it never grows with the runs; each generation is identified on its own
+  objects (`rb_write_generation=<n>`). It builds, without a test clock, one
+  customer `rb:write/w<n>` with one invoice per purpose, tagged
+  `rb_purpose=<purpose>`: paid in full by a test card, or open with nothing
+  paid, one per write scenario below. For SC-002 it also builds a fresh
+  duplicate world, as the read-only catalogue does, under the generation's
+  own name and keys. Same rules as the seed: test key only, keys per step,
+  the lock, lists read to their end, reported refusals.
+- **The contract tests never write on an invoice written before**: each
+  scenario, at its start, lists the credit notes of the invoices it will use
+  and stops if any exists, asking for a new `--write-run` (FR-032); its own
+  writes after that -- the second call of property 1, the write beyond the
+  cap of property 5 -- are intended.
+- **`tests/contract/test_billing_platform_writes.py`**, one test per write
+  property (spec, 1 to 7), on the fake in CI (fresh in memory) and on Stripe
+  when `STRIPE_API_KEY` and `STRIPE_WRITES=enabled` are set, else skipped
+  with the reason. Property 1 also measures a key answered twice within the
+  run; the day-long retention is not measured (spec, Assumptions). On
+  Stripe, a skipped property is not demonstrated: SC-001 needs all seven
+  run and passed, and the run's report lists each one, passed, failed or
+  skipped with its reason.
+- **`tests/contract/test_stripe_execution.py`** (SC-002): on the fresh
+  duplicate world, investigate, approve the proposal as shown, execute twice,
+  and read Stripe: one credit note for the approved amount. A second test
+  executes a refund through the execution service on a paid write invoice.
+
+### 9. Documents
+
+- `docs/contract/approval-and-execution.md`: the change folded in (the
+  window, refusals after an unknown outcome, the answer checked, statuses as
+  observations, attention, the status read).
+- `docs/contract/billing-platform.md`: the port changes; Stripe writing;
+  the write properties as measured.
+- ADR-008 amended (dated section): `find_action` by invoice, the window,
+  FR-006, the answer checked, attention, the status read; its "to verify"
+  on Stripe's caps answered by the contract run. ADR-001: the port changes.
+- `docs/operations.md`, `.env.example`, README (what Stripe does now).
+
+## Tests (what proves each requirement)
+
+| Requirement | Where | Runs |
+|---|---|---|
+| FR-001, FR-004 (port, the check) | `tests/unit/test_execute_action.py`, `tests/unit/test_fake_provider.py` | CI |
+| FR-003, FR-015 (status observed, read again) | `tests/unit/test_execute_action.py`, `tests/integration/test_approval_flow.py`, `tests/unit/test_stripe_writes.py` | CI |
+| FR-005, FR-006 (window, refusal after unknown) | `tests/unit/test_execute_action.py`: no send at or past the window, after a restart (a new store on the same file), from `FAILED` and from `UNKNOWN_OUTCOME`; a read crossing the deadline sends nothing; landed, answer lost, retry refused; an incident never retried; actions older than the columns | CI |
+| FR-002, SC-004 (switched on) | `tests/unit/test_provider_wiring.py` | CI |
+| FR-010 to FR-016, FR-020 | `tests/unit/test_stripe_writes.py` on the stub client: parameters, allocation, metadata, no `memo`, `email_type`, no retries on a write, every error class, the state check, pages and a page cut short, two matches, statuses, no other mutating call | CI, no SDK |
+| FR-031, SC-001, SC-002 | `tests/contract/` | fake in CI; Stripe locally |
+| FR-032 | `tests/unit/test_stripe_seed.py` (stub): a new generation per `--write-run`, purposes, keys | CI |
+| SC-003 | `evals/` baseline, coverage check | CI |
+
+## Project Structure
+
+```text
+specs/002-stripe-writes/          spec.md, plan.md, tasks.md
+app/providers/base.py             port changes, ProviderOutcomeUnknown, idempotency_window
+app/providers/fake/adapter.py
+app/providers/stripe/             client.py (StripeWriter), mapping.py, adapter.py
+app/infrastructure/actions.py     columns, annotate, NeedsAPerson
+app/application/execute_action.py
+app/api/approvals.py, app/api/deps.py
+scripts/stripe_seed.py, scripts/stripe_worlds.py
+tests/unit/ tests/integration/ tests/contract/
+docs/contract/approval-and-execution.md (new), docs/contract/billing-platform.md, docs/contract/README.md
+docs/adr/001-*.md, docs/adr/008-*.md, docs/operations.md, .env.example, README.md
+```
+
+**Structure Decision**: the existing layout; no new package.
+
+## Research notes (2026-10-23)
+
+- From the SDK 15.4.0 sources: the credit note create parameters and
+  object fields listed under Technical Context; the list takes `invoice`;
+  request options take `idempotency_key` and `max_network_retries`; the SDK
+  retries on its own a 409, a 5xx, a connection error, or when Stripe says
+  `Stripe-Should-Retry: true`; `IdempotencyError` comes on a 400 or 404 whose
+  type is `idempotency_error`.
+- From Stripe's documentation, not measured: keys are kept at least 24
+  hours; a result is saved once the endpoint starts executing, so a request
+  failing validation saves nothing.
+- To measure in the contract run: that a refunding credit note on a paid
+  invoice creates the refund itself; Stripe's cap on credit notes and refunds
+  together; a refund's status on the credit note right after creation.
+
+## Complexity Tracking
+
+None.

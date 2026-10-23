@@ -101,13 +101,18 @@ class TestThePort:
         assert adapter.name == "stripe"
         assert adapter.can_write is False
 
-    async def test_writes_and_find_action_are_refused_without_a_call(self):
+    async def test_writes_are_refused_without_a_call(self):
         held = account()
         adapter = provider(held)
+        sent = {
+            "action_id": "act_x",
+            "allocation": "customer_balance",
+            "send_by": datetime(2100, 1, 1, tzinfo=UTC),
+        }
         for write in (
-            lambda: adapter.create_credit_note(stripe.INVOICE, 100, "EUR", "r", "key"),
-            lambda: adapter.create_refund(stripe.INVOICE, 100, "EUR", "r", "key"),
-            lambda: adapter.find_action("key"),
+            lambda: adapter.plan_write(stripe.INVOICE, "credit_note"),
+            lambda: adapter.create_credit_note(stripe.INVOICE, 100, "EUR", "r", "key", **sent),
+            lambda: adapter.create_refund(stripe.INVOICE, 100, "EUR", "r", "key", **sent),
         ):
             with pytest.raises(PlatformCannotWrite):
                 await write()

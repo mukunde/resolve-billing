@@ -7,6 +7,9 @@ included: a list cut short is `ProviderUnavailable`, never a partial answer
 (FR-018). Stripe's errors become the port's, by category, never with the
 platform's text (FR-020). The reader takes anything shaped like the SDK's
 client, so the tests hand it an account in memory instead.
+
+`StripeWriter`, built by `connect_writer` only when writes are switched on,
+makes the one write: a credit note (specs/002-stripe-writes, plan section 6).
 """
 
 from __future__ import annotations
@@ -15,7 +18,12 @@ import logging
 import os
 from typing import Any
 
-from app.providers.base import NotFound, ProviderUnavailable
+from app.providers.base import (
+    NotFound,
+    ProviderOutcomeUnknown,
+    ProviderRejected,
+    ProviderUnavailable,
+)
 from app.providers.stripe.keys import ProviderConfigurationError, check_read_key
 
 #: The API version this SDK release targets (stripe 15.4.0), pinned (FR-022):
@@ -28,6 +36,9 @@ NETWORK_RETRIES = 2
 
 #: Stripe's largest page.
 PAGE = 100
+
+#: A credit note's refunds, expanded for their statuses (FR-015).
+REFUNDS = "refunds.refund"
 
 #: Invoice payments come with their payment intent and its latest charge:
 #: what the payment mapping reads, and no deeper (plan section 4).
@@ -62,6 +73,27 @@ def connect(
         http_client=http_client,
     )
     return StripeReader(sdk)
+
+
+def connect_writer(
+    api_key: str | None,
+    *,
+    api_base: str | None = None,
+    http_client: Any = None,
+) -> StripeWriter:
+    """A writer on the account `api_key` opens, under the same key rules as
+    the reader: a restricted test key only."""
+    check_read_key(api_key)
+    import stripe
+
+    silence(stripe)
+    sdk = stripe.StripeClient(
+        api_key,
+        stripe_version=API_VERSION,
+        base_addresses={"api": api_base} if api_base else None,
+        http_client=http_client,
+    )
+    return StripeWriter(sdk)
 
 
 def silence(stripe: Any) -> None:
@@ -158,6 +190,13 @@ class StripeReader:
     async def meter(self, meter_id: str) -> dict:
         return await self._call(self._v1.billing.meters.retrieve_async, meter_id)
 
+    async def credit_notes(self, invoice_id: str) -> list[dict]:
+        """Every credit note of the invoice, its refunds expanded."""
+        return await self._every(
+            self._v1.credit_notes.list_async,
+            params={"invoice": invoice_id, "expand": [f"data.{REFUNDS}"]},
+        )
+
     async def meter_summaries(
         self, meter_id: str, customer_id: str, start: int, end: int
     ) -> list[dict]:
@@ -195,6 +234,62 @@ class StripeReader:
             # `from None`: the platform's message stays out of every traceback.
             raise translated from None
         return response.to_dict() if hasattr(response, "to_dict") else dict(response)
+
+
+class StripeWriter:
+    """The one write: a credit note, under the action's idempotency key.
+
+    Sent with none of the SDK's own retries: the SDK retries a 409 or a 5xx
+    by itself, and a refusal of a later request would hide an earlier one
+    that landed. Each attempt is one request, whose outcome the execution
+    service sees (FR-006). Stripe's answer is a refusal only when it proves
+    nothing was made (FR-020); anything else leaves the outcome unknown.
+    """
+
+    def __init__(self, sdk: Any) -> None:
+        self._v1 = sdk.v1
+
+    async def create_credit_note(self, params: dict, idempotency_key: str) -> dict:
+        try:
+            response = await self._v1.credit_notes.create_async(
+                params=params,
+                options={"idempotency_key": idempotency_key, "max_network_retries": 0},
+            )
+        except Exception as error:
+            # `from None`: the platform's message stays out of every traceback.
+            raise _write_outcome(error) from None
+        return response.to_dict() if hasattr(response, "to_dict") else dict(response)
+
+
+def _write_outcome(error: Exception) -> Exception:
+    """The port's error for a failed write, by category.
+
+    A refusal is a closed list, by class and HTTP status together: an invalid
+    request other than an idempotency error (400, 404), an authentication or
+    permission refusal (401, 403). Everything else -- an idempotency
+    conflict, one of those classes with any other status or none, a 409, a
+    rate limit, a connection error, a server error, an error that is not
+    Stripe's -- may hide a write that landed.
+    """
+    names = {cls.__name__ for cls in type(error).__mro__}
+    if "StripeError" not in names:
+        return ProviderOutcomeUnknown("unexpected")
+    if "IdempotencyError" in names:
+        return ProviderOutcomeUnknown("idempotency_error")
+    status = getattr(error, "http_status", None)
+    if "InvalidRequestError" in names and status in (400, 404):
+        if getattr(error, "code", None) == "resource_missing":
+            return ProviderRejected("not_found")
+        return ProviderRejected("invalid_request")
+    if "AuthenticationError" in names and status == 401:
+        return ProviderRejected("authentication")
+    if "PermissionError" in names and status == 403:
+        return ProviderRejected("permission")
+    if "RateLimitError" in names:
+        return ProviderOutcomeUnknown("rate_limited")
+    if "APIConnectionError" in names:
+        return ProviderOutcomeUnknown("connection")
+    return ProviderOutcomeUnknown("platform_error")
 
 
 def _translated(error: Exception) -> Exception | None:

@@ -7,7 +7,7 @@ platform cannot exercise is skipped with the reason, never weakened.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -146,6 +146,14 @@ class TestNineUnsupportedData:
         assert owner == seeded.customer_id
 
 
+#: What a write carries beside its amount (specs/002-stripe-writes, FR-001).
+SENT = {
+    "action_id": "act_x",
+    "allocation": "customer_balance",
+    "send_by": datetime(2100, 1, 1, tzinfo=UTC),
+}
+
+
 class TestTenWrites:
     async def test_a_platform_says_whether_it_can_write(self, platform):
         assert isinstance(platform.provider.can_write, bool)
@@ -155,9 +163,18 @@ class TestTenWrites:
         if provider.can_write:
             pytest.skip(f"the {platform.name} platform writes: see test_fake_provider")
         for write in (
-            lambda: provider.create_credit_note("in_x", 100, "EUR", "test", "key"),
-            lambda: provider.create_refund("in_x", 100, "EUR", "test", "key"),
-            lambda: provider.find_action("key"),
+            lambda: provider.plan_write("in_x", "credit_note"),
+            lambda: provider.create_credit_note("in_x", 100, "EUR", "test", "key", **SENT),
+            lambda: provider.create_refund("in_x", 100, "EUR", "test", "key", **SENT),
         ):
             with pytest.raises(PlatformCannotWrite):
                 await write()
+
+    async def test_one_that_cannot_still_reads_what_was_written(self, platform):
+        """find_action is a read: a person can have a status read with
+        writes switched off (specs/002-stripe-writes, plan section 2)."""
+        provider = platform.provider
+        if provider.can_write:
+            pytest.skip(f"the {platform.name} platform writes: see test_fake_provider")
+        invoice = platform.seeded["duplicate"].target_invoice
+        assert await provider.find_action("rb-key-never-used", invoice) == []

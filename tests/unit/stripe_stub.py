@@ -3,7 +3,9 @@
 The adapter's client is handed this in place of `stripe.StripeClient`. It
 answers only the reads the adapter may make, with the SDK's parameter names
 (pinned against the real SDK in test_stripe_adapter when it is installed);
-any other method -- a create, an update, anything -- fails the test. Lists
+any other method -- a create, an update, anything -- fails the test, except
+the one write a writable account takes: a credit note
+(specs/002-stripe-writes, FR-016). Lists
 are served a few objects per page, and nested lists cut short, so a client
 that does not read to the end is caught. Responses are objects with
 `to_dict()`, like the SDK's.
@@ -31,7 +33,15 @@ READS: dict[str, tuple[str, ...]] = {
     "v1.prices.retrieve_async": ("price", "params", "options"),
     "v1.billing.meters.retrieve_async": ("id", "params", "options"),
     "v1.billing.meters.event_summaries.list_async": ("id", "params", "options"),
+    "v1.credit_notes.list_async": ("params", "options"),
 }
+
+#: The one write, answered only by an account built writable.
+WRITES: dict[str, tuple[str, ...]] = {
+    "v1.credit_notes.create_async": ("params", "options"),
+}
+
+REFUND_EXPANSION = "refunds.refund"
 
 PAYMENT_EXPANSION = "data.payment.payment_intent.latest_charge"
 
@@ -39,9 +49,12 @@ PAYMENT_EXPANSION = "data.payment.payment_intent.latest_charge"
 # Errors named as the SDK names them: the client recognises Stripe's errors
 # by their class names, so the free CI job needs no SDK to test the mapping.
 class StripeError(Exception):
-    def __init__(self, message: str = "", code: str | None = None) -> None:
+    def __init__(
+        self, message: str = "", code: str | None = None, http_status: int | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.http_status = http_status
 
 
 class APIConnectionError(StripeError): ...
@@ -62,6 +75,9 @@ class PermissionError(StripeError): ...  # noqa: A001 -- the SDK's own name
 class InvalidRequestError(StripeError): ...
 
 
+class IdempotencyError(StripeError): ...
+
+
 def missing(what: str) -> InvalidRequestError:
     return InvalidRequestError(f"No such {what}: SENTINEL-platform-text", code="resource_missing")
 
@@ -77,9 +93,13 @@ class StripeObject:
 class Account:
     """What the account holds, how it serves it, and every call made to it."""
 
-    def __init__(self, page_size: int = 2, embedded: int = 1) -> None:
+    def __init__(self, page_size: int = 2, embedded: int = 1, writable: bool = False) -> None:
         self.page_size = page_size
         self.embedded = embedded
+        self.writable = writable
+        self.credit_notes: list[dict] = []
+        #: (method, options) for every call: what was sent beside the params.
+        self.options: list[tuple[str, dict]] = []
         self.clocks: list[dict] = []
         self.customers: list[dict] = []
         self.subscriptions: list[dict] = []
@@ -103,7 +123,7 @@ class Account:
     # -- serving -------------------------------------------------------------
 
     async def serve(self, method: str, *args: Any, **kwargs: Any) -> StripeObject:
-        names = READS[method]
+        names = READS.get(method) or WRITES[method]
         bound = inspect.Signature(
             [
                 inspect.Parameter(
@@ -117,6 +137,7 @@ class Account:
         positional = tuple(bound.arguments.get(n) for n in names if n not in ("params", "options"))
         params = dict(bound.arguments.get("params") or {})
         self.calls.append((method, positional, params))
+        self.options.append((method, dict(bound.arguments.get("options") or {})))
         if self.delay:
             await asyncio.sleep(self.delay)
         if method in self.failures:
@@ -224,6 +245,54 @@ class Account:
         ]
         return self._page(found, params)
 
+    def _credit_notes_list(self, params):
+        found = [cn for cn in self.credit_notes if cn["invoice"] == params.get("invoice")]
+        if f"data.{REFUND_EXPANSION}" not in params.get("expand", ()):
+            found = [_bare_refunds(cn) for cn in found]
+        return self._page(found, params)
+
+    def _credit_notes_create(self, params):
+        """One credit note per idempotency key, as Stripe replays a key."""
+        _, options = self.options[-1]
+        key = options.get("idempotency_key")
+        replayed = next(
+            (cn for cn in self.credit_notes if cn["metadata"].get("rb_idempotency_key") == key),
+            None,
+        )
+        made = replayed or self._credit_note_from(params)
+        if replayed is None:
+            self.credit_notes.append(made)
+        return made if REFUND_EXPANSION in params.get("expand", ()) else _bare_refunds(made)
+
+    def _credit_note_from(self, params: dict) -> dict:
+        from tests.unit import stripe_payloads as stripe
+
+        invoice = next(i for i in self.invoices if i["id"] == params["invoice"])
+        amount = params["amount"]
+        refunded = params.get("refund_amount", 0)
+        after_payment = invoice["status"] == "paid"
+        return stripe.credit_note(
+            id=f"cn_RbMade{len(self.credit_notes) + 1:010d}",
+            amount=amount,
+            kind="post_payment" if after_payment else "pre_payment",
+            refunds=[stripe.credit_note_refund(amount=refunded)] if refunded else [],
+            metadata=dict(params.get("metadata") or {}),
+            invoice=invoice["id"],
+            customer=invoice["customer"],
+        )
+
+
+def _bare_refunds(credit_note: dict) -> dict:
+    return {
+        **credit_note,
+        "refunds": [
+            {**entry, "refund": entry["refund"]["id"]}
+            if isinstance(entry["refund"], dict)
+            else entry
+            for entry in credit_note["refunds"]
+        ],
+    }
+
 
 def _unexpanded(payload: dict) -> dict:
     intent = payload["payment"]["payment_intent"]
@@ -238,7 +307,8 @@ class _Node:
     def __getattr__(self, name: str):
         path = f"{self._path}.{name}"
         if name.endswith("_async") or name in ("list", "retrieve", "create", "update", "delete"):
-            if path not in READS:
+            allowed = path in READS or (path in WRITES and self._account.writable)
+            if not allowed:
                 raise AssertionError(f"the adapter called {path}, which it must never call")
 
             async def call(*args, **kwargs):

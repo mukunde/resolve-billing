@@ -100,3 +100,26 @@ brings a usage record into the engine's context: no rule compared it. On the
 development set this changes the engine context of four cases (`duplicate_fr`,
 `duplicate_en`, `known_customer_bulk_dispute`, `proration`) and no finding;
 the maintainer accepted it on 2026-10-22.
+
+## Amendment, 2026-10-23 -- writes the execution service can check
+
+With Stripe's writes (specs/002-stripe-writes) the port carries what the
+execution service needs to check a write, on any platform:
+
+- **`plan_write(invoice_id, action_type)`**: how a write of that type lands on
+  the invoice as it stands -- what is due lowered, the customer's balance
+  credited, or money paid back -- or `ProviderRejected("invoice_state")`.
+- **The writes take the action's identifier, the allocation planned and a
+  deadline**, and refuse an invoice that no longer takes that allocation, or
+  a deadline passed (`NotSent`). What they return says what the platform
+  made: invoice, type, amount, currency, test mode, allocation, key, action
+  identifier, and its status as observed, with the instant.
+- **`find_action(key, invoice_id)`** answers every write under the key on the
+  invoice, as a list.
+- **`idempotency_window`**: how long the platform answers a key with what it
+  made. The service reads it, so it never names a platform.
+- **`ProviderOutcomeUnknown`**: a write sent, or perhaps sent, whose outcome
+  is unknown -- distinct from `ProviderUnavailable`, which is for reads.
+
+The fake follows each of these; the vocabulary is the domain's, and a
+platform's own -- Stripe's credit note fields -- stays in its adapter.

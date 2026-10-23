@@ -880,3 +880,159 @@ class TestTheMeterEvent:
 
 def _price(account, lookup_key):
     return next(p for p in account.objects["v1.prices"] if p["lookup_key"] == lookup_key)
+
+
+# -- write runs (specs/002-stripe-writes, FR-032) -------------------------------
+
+
+async def a_duplicate(w: seed.World) -> str:
+    """Stands for the write run's duplicate: what Stripe invoices on its own
+    is not simulated here."""
+    invoice = await w.once(
+        "invoice",
+        find=w.v1.invoices.list_async,
+        where={"customer": w.customer_id},
+        create=w.v1.invoices.create_async,
+        params={"customer": w.customer_id},
+    )
+    return (await w.paid(invoice))["id"]
+
+
+def write_run(account, *, duplicate=a_duplicate, check=holds):
+    return seed.WriteRun(
+        seed.Seeder(stub.StubSdk(account), run_at=RUN, worlds=()),
+        duplicate=duplicate,
+        check=check,
+    )
+
+
+def write_invoices(account, generation: int) -> dict[str, dict]:
+    return {
+        i["metadata"][worlds.PURPOSE]: i
+        for i in account.objects["v1.invoices"]
+        if i["metadata"].get(worlds.WRITE_GENERATION) == str(generation)
+        and worlds.PURPOSE in i["metadata"]
+    }
+
+
+def write_customers(account, generation: int) -> list[dict]:
+    return [
+        c
+        for c in account.objects["v1.customers"]
+        if c["metadata"].get(worlds.WRITE_GENERATION) == str(generation)
+    ]
+
+
+class TestAWriteRun:
+    async def test_it_opens_a_new_generation_each_time(self):
+        account = stub.Account()
+
+        first = await write_run(account).run()
+        second = await write_run(account).run()
+
+        assert all(o.state == "built" for o in first + second)
+        assert manifest_of(account)["metadata"][seed.WRITE_LAST] == "2"
+        assert len(write_customers(account, 1)) == len(write_customers(account, 2)) == 2
+
+    async def test_the_manifest_keeps_one_bounded_entry_however_many_runs(self):
+        account = stub.Account(page_size=100)
+        for _ in range(60):
+            await write_run(account).run()
+
+        metadata = manifest_of(account)["metadata"]
+        assert metadata[seed.WRITE_LAST] == "60"
+        assert [k for k in metadata if k.startswith("w")] == [seed.WRITE_LAST]
+
+    async def test_one_invoice_per_purpose_in_the_state_it_is_for(self):
+        account = stub.Account()
+
+        await write_run(account).run()
+
+        made = write_invoices(account, 1)
+        assert set(made) == set(worlds.WRITE_PURPOSES)
+        for purpose, state in worlds.WRITE_PURPOSES.items():
+            invoice = made[purpose]
+            assert invoice["status"] == state, purpose
+            method = "charge_automatically" if state == "paid" else "send_invoice"
+            assert invoice["collection_method"] == method, purpose
+        items = account.objects["v1.invoice_items"]
+        assert {i["invoice"] for i in items} >= {i["id"] for i in made.values()}
+        price = _price(account, "rb_pro_once")["id"]
+        assert all(i["pricing"] == {"price": price} for i in items if "pricing" in i)
+        assert all(i["period"]["start"] < i["period"]["end"] for i in items)
+
+    async def test_every_key_carries_its_generation_and_none_is_reused(self):
+        account = stub.Account()
+
+        await write_run(account).run()
+        first = {o.get("idempotency_key") for o in account.options} - {None}
+        await write_run(account).run()
+        second = {o.get("idempotency_key") for o in account.options} - {None} - first
+
+        made = [k for k in first | second if "/write/" in k or "/write_duplicate/" in k]
+        assert made
+        assert all("/w1/" in k or "/g1/" in k for k in first if k in made)
+        assert all("/w2/" in k or "/g2/" in k for k in second if k in made)
+        ids_1 = {i["id"] for i in write_invoices(account, 1).values()}
+        ids_2 = {i["id"] for i in write_invoices(account, 2).values()}
+        assert not ids_1 & ids_2
+
+    async def test_the_duplicate_is_recorded_once_its_facts_hold(self):
+        account = stub.Account()
+
+        [_, duplicate] = await write_run(account).run()
+
+        [customer] = [
+            c
+            for c in write_customers(account, 1)
+            if c["metadata"].get(worlds.WORLD) == worlds.WRITE_DUPLICATE
+        ]
+        assert customer["metadata"][worlds.TARGET_INVOICE] == duplicate.target
+        assert worlds.INVESTIGATE_AT in customer["metadata"]
+        assert customer["email"] == f"write-duplicate-w1@{worlds.DOMAIN}"
+
+    async def test_a_duplicate_whose_facts_do_not_hold_is_reported_unrecorded(self):
+        account = stub.Account()
+
+        [_, duplicate] = await write_run(account, check=never).run()
+
+        assert duplicate.state == "reported"
+        assert not any(worlds.TARGET_INVOICE in c["metadata"] for c in write_customers(account, 1))
+
+    async def test_a_refusal_is_reported_by_its_type_never_its_text(self):
+        account = stub.Account()
+        failing_once(
+            account,
+            lambda path, params: path.endswith("invoices.create_async"),
+            InvalidRequestError(SENTINEL, code="parameter_invalid"),
+        )
+
+        outcomes = await write_run(account).run()
+
+        assert outcomes[0].state == "reported"
+        assert all(SENTINEL not in o.line() for o in outcomes)
+
+    async def test_an_unreadable_counter_stops_the_run_before_anything_is_made(self):
+        account = stub.Account()
+        account.objects["v1.customers"].append(
+            {"id": "cus_manifest", "metadata": {seed.MANIFEST: "1", seed.WRITE_LAST: "two"}}
+        )
+
+        outcomes = await write_run(account).run()
+
+        assert all(o.state == "reported" for o in outcomes)
+        assert not [c for c in account.writes() if "customers" in c[0] and "create" in c[0]]
+
+    def test_a_write_run_takes_the_lock_and_the_secret_test_key(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        lock = tmp_path / "seed.lock"
+        monkeypatch.setattr(seed, "LOCK", str(lock))
+        monkeypatch.setitem(sys.modules, "stripe", None)
+        monkeypatch.setattr(sys, "argv", ["stripe_seed", "--write-run"])
+        monkeypatch.setenv("STRIPE_SEED_KEY", "rk_test_51RbAbc")
+        assert seed.main() == 2
+        monkeypatch.setenv("STRIPE_SEED_KEY", "sk_test_51RbAbc")
+        with seed.only_run(str(lock)):
+            assert seed.main() == 2
+        assert "another seed run is in progress" in capsys.readouterr().err

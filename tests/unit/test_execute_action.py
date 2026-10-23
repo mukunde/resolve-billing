@@ -1,15 +1,15 @@
 """The one path by which money moves: what may and may not become EXECUTED."""
 
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.application.execute_action import ApprovalService
-from app.domain.enums import ActionState
+from app.domain.enums import ActionState, InvoiceStatus
 from app.domain.money import Money
-from app.infrastructure.actions import IllegalTransition, SqliteActionStore
-from app.providers.base import ProviderRejected
+from app.infrastructure.actions import IllegalTransition, NeedsAPerson, SqliteActionStore
+from app.providers.base import ProviderOutcomeUnknown, ProviderRejected, ProviderUnavailable
 from app.providers.fake.adapter import FakeBillingProvider
 
 NINETY_NINE = Money(amount_minor=9900, currency="EUR")
@@ -35,6 +35,21 @@ def store():
     actions = SqliteActionStore(":memory:")
     yield actions
     actions.close()
+
+
+async def written_behind(provider: FakeBillingProvider, action) -> None:
+    """The write landed on the platform, as a process that died before
+    recording it would have left it."""
+    await provider.create_credit_note(
+        invoice_id=action.invoice_id,
+        amount_minor=action.amount.amount_minor,
+        currency=action.amount.currency,
+        reason=action.reason,
+        idempotency_key=action.idempotency_key,
+        action_id=action.action_id,
+        allocation=await provider.plan_write(action.invoice_id, action.action_type),
+        send_by=datetime.now(UTC) + timedelta(hours=1),
+    )
 
 
 def approved(store: SqliteActionStore):
@@ -256,14 +271,11 @@ class TestATimeoutIsNotAFailure:
         outcome and resolved against the platform."""
         provider = FakeBillingProvider()
         action = approved(store)
-        store.transition(action.action_id, ActionState.EXECUTING)
-        await provider.create_credit_note(
-            invoice_id=action.invoice_id,
-            amount_minor=action.amount.amount_minor,
-            currency=action.amount.currency,
-            reason=action.reason,
-            idempotency_key=action.idempotency_key,
+        store.transition(
+            action.action_id, ActionState.EXECUTING, first_attempt_at=datetime.now(UTC)
         )
+        store.annotate(action.action_id, ActionState.EXECUTING, allocation="customer_balance")
+        await written_behind(provider, action)
 
         service = ApprovalService(provider, store)
         assert (await service.reconcile(action.action_id)).state is ActionState.EXECUTING
@@ -278,14 +290,11 @@ class TestATimeoutIsNotAFailure:
         abandoned, asks the platform, and records what it holds."""
         provider = FakeBillingProvider()
         action = approved(store)
-        store.transition(action.action_id, ActionState.EXECUTING)
-        await provider.create_credit_note(
-            invoice_id=action.invoice_id,
-            amount_minor=action.amount.amount_minor,
-            currency=action.amount.currency,
-            reason=action.reason,
-            idempotency_key=action.idempotency_key,
+        store.transition(
+            action.action_id, ActionState.EXECUTING, first_attempt_at=datetime.now(UTC)
         )
+        store.annotate(action.action_id, ActionState.EXECUTING, allocation="customer_balance")
+        await written_behind(provider, action)
 
         fresh = ApprovalService(provider, store)
         with pytest.raises(IllegalTransition):
@@ -296,6 +305,24 @@ class TestATimeoutIsNotAFailure:
 
         assert done.state is ActionState.EXECUTED
         assert len(provider.executed_actions) == 1
+
+    async def test_two_writes_under_the_key_leave_the_outcome_unknown(self, store):
+        """find_action answers every write under the key: two is an incident
+        for a person, never "the first one found" (specs/002-stripe-writes,
+        FR-001, FR-004)."""
+        provider = LostResponseProvider()
+        action = approved(store)
+        with pytest.raises(TimeoutError):
+            await ApprovalService(provider, store).execute(action.action_id)
+        (made,) = provider.executed_actions
+        provider.plant_action(made.model_copy(update={"provider_action_id": "cn_other"}))
+        provider.lose_responses = False
+
+        held = await ApprovalService(provider, store).reconcile(action.action_id)
+
+        assert held.state is ActionState.UNKNOWN_OUTCOME
+        assert held.attention == "several_writes"
+        assert provider.writes == 1
 
 
 def approved_refund(store: SqliteActionStore):
@@ -508,7 +535,7 @@ class ReadOnlyProvider(FakeBillingProvider):
         self.touched.append("create_credit_note")
         raise AssertionError("no write on a read-only platform")
 
-    async def find_action(self, idempotency_key):
+    async def find_action(self, idempotency_key, invoice_id):
         self.touched.append("find_action")
         raise AssertionError("no reconciliation on a read-only platform")
 
@@ -549,3 +576,763 @@ class TestAReadOnlyPlatformIsNeverWritten:
 
         assert issubclass(PlatformCannotWrite, Exception)
         assert not issubclass(PlatformCannotWrite, ProviderRejected)
+
+
+class Answering(FakeBillingProvider):
+    """Makes the write, then answers with something else: what a platform
+    returning a malformed or mismatched answer looks like."""
+
+    def __init__(self, **answer) -> None:
+        super().__init__()
+        self.answer = answer
+        self.calls = 0
+
+    async def create_credit_note(self, *args, **kwargs):
+        self.calls += 1
+        made = await super().create_credit_note(*args, **kwargs)
+        return made.model_copy(update=self.answer)
+
+    async def create_refund(self, *args, **kwargs):
+        self.calls += 1
+        made = await super().create_refund(*args, **kwargs)
+        return made.model_copy(update=self.answer)
+
+
+class TestTheAnswerIsCheckedBeforeExecuted:
+    """specs/002-stripe-writes, FR-003 and FR-004: the platform's own answer
+    is checked against the action before the action is EXECUTED."""
+
+    async def test_an_answer_alike_records_the_write_and_its_status(self, store):
+        provider = FakeBillingProvider()
+        action = approved(store)
+
+        done = await ApprovalService(provider, store).execute(action.action_id)
+
+        assert done.state is ActionState.EXECUTED
+        assert done.provider_status == "succeeded"
+        assert done.provider_status_at is not None
+        assert done.allocation == "customer_balance"
+        assert done.attention is None
+
+    async def test_a_status_but_success_is_executed_and_put_to_a_person(self, store):
+        provider = Answering(status="pending")
+        action = approved_refund(store)
+
+        done = await ApprovalService(provider, store).execute(action.action_id)
+
+        assert done.state is ActionState.EXECUTED
+        assert done.provider_status == "pending"
+        assert done.attention == "not_successful"
+        assert "pending" in done.resolution
+        assert await ApprovalService(provider, store).execute(action.action_id) == done
+        assert provider.calls == 1
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            {"invoice_id": "inv_001"},
+            {"action_type": "refund"},
+            {"amount_minor": 9800},
+            {"currency": "USD"},
+            {"test_mode": False},
+            {"allocation": "reduce_due"},
+            {"idempotency_key": "another"},
+            {"action_id": "act_another"},
+        ],
+        ids=lambda answer: next(iter(answer)),
+    )
+    async def test_an_answer_unlike_the_action_is_an_incident(self, store, answer):
+        provider = Answering(**answer)
+        action = approved(store)
+        service = ApprovalService(provider, store)
+
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.state is ActionState.UNKNOWN_OUTCOME
+        assert held.attention == "unlike_the_action"
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+        assert provider.calls == 1
+
+    @pytest.mark.parametrize("missing", ["allocation", "status"])
+    async def test_an_answer_that_does_not_say_what_it_made_is_unreadable(self, store, missing):
+        provider = Answering(**{missing: None})
+        action = approved(store)
+
+        with pytest.raises(NeedsAPerson):
+            await ApprovalService(provider, store).execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.state is ActionState.UNKNOWN_OUTCOME
+        assert held.attention == "unreadable_answer"
+
+    async def test_an_answer_the_adapter_could_not_read_is_unreadable(self, store):
+        class Unreadable(FakeBillingProvider):
+            async def create_credit_note(self, *args, **kwargs):
+                await super().create_credit_note(*args, **kwargs)
+                raise ProviderOutcomeUnknown("unreadable_answer")
+
+        action = approved(store)
+
+        with pytest.raises(ProviderOutcomeUnknown):
+            await ApprovalService(Unreadable(), store).execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.state is ActionState.UNKNOWN_OUTCOME
+        assert held.attention == "unreadable_answer"
+
+
+class Recording(FakeBillingProvider):
+    """Records every send; the first `lost` sends never arrive."""
+
+    def __init__(self, lost: int = 0) -> None:
+        super().__init__()
+        self.sent: list[dict] = []
+        self.lost = lost
+
+    async def create_credit_note(self, *args, **kwargs):
+        self.sent.append(kwargs)
+        if len(self.sent) <= self.lost:
+            raise TimeoutError("connection dropped before the write")
+        return await super().create_credit_note(*args, **kwargs)
+
+
+class TestTheParametersAreFixedOnce:
+    """specs/002-stripe-writes, FR-005 and plan section 3: how a write lands
+    is planned once, before its first send, and every retry sends exactly
+    that."""
+
+    async def test_two_sends_of_one_action_are_the_same_request_across_a_restart(self, tmp_path):
+        database = tmp_path / "actions.db"
+        provider = Recording(lost=1)
+        before = SqliteActionStore(database)
+        action = approved(before)
+        with pytest.raises(TimeoutError):
+            await ApprovalService(provider, before).execute(action.action_id)
+        before.close()
+
+        after = SqliteActionStore(database)
+        done = await ApprovalService(provider, after).execute(action.action_id)
+        after.close()
+
+        assert done.state is ActionState.EXECUTED
+        first, second = provider.sent
+        assert first == second
+
+    async def test_an_invoice_paid_between_the_plan_and_a_retry_is_not_written_otherwise(
+        self, store
+    ):
+        provider = Recording(lost=1)
+        action = store.create(
+            run_id="run_test",
+            action_type="credit_note",
+            invoice_id="inv_020",
+            amount=NINETY_NINE,
+            reason="x",
+            provider="fake",
+        )
+        store.transition(action.action_id, ActionState.APPROVED, approved_by="approver")
+        service = ApprovalService(provider, store)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        provider.change_invoice("inv_020", status=InvoiceStatus.PAID)
+
+        with pytest.raises(ProviderRejected):
+            await service.execute(action.action_id)
+
+        assert {sent["allocation"] for sent in provider.sent} == {"reduce_due"}
+        assert provider.executed_actions == []
+        assert store.get(action.action_id).state is ActionState.FAILED
+
+    async def test_a_plan_that_cannot_be_read_is_an_unknown_outcome(self, store):
+        class Unreachable(FakeBillingProvider):
+            async def plan_write(self, invoice_id, action_type):
+                raise ProviderUnavailable("the platform did not answer")
+
+        action = approved(store)
+
+        with pytest.raises(ProviderUnavailable):
+            await ApprovalService(Unreachable(), store).execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.state is ActionState.UNKNOWN_OUTCOME
+        assert held.allocation is None
+
+    async def test_an_action_in_another_currency_is_refused_before_the_claim(self, store):
+        provider = FakeBillingProvider()
+        action = store.create(
+            run_id="run_test",
+            action_type="credit_note",
+            invoice_id="inv_002",
+            amount=Money(amount_minor=9900, currency="USD"),
+            reason="x",
+            provider="fake",
+        )
+        store.transition(action.action_id, ActionState.APPROVED, approved_by="approver")
+
+        with pytest.raises(IllegalTransition):
+            await ApprovalService(provider, store).execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.state is ActionState.APPROVED
+        assert held.first_attempt_at is None
+        assert provider.executed_actions == []
+
+
+async def left_to_a_person(
+    store, provider, state, attention, *, written=True, allocation="customer_balance"
+):
+    """An action an incident left to a person, its write landed or not."""
+    action = approved(store)
+    now = datetime.now(UTC)
+    store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=now)
+    if allocation is not None:
+        store.annotate(action.action_id, ActionState.EXECUTING, allocation=allocation)
+    if written:
+        await written_behind(provider, action)
+    if state is ActionState.UNKNOWN_OUTCOME:
+        store.transition(action.action_id, state, uncertain_since=now)
+    elif state is ActionState.FAILED:
+        store.transition(action.action_id, state)
+    return store.annotate(action.action_id, state, attention=attention)
+
+
+class TestAPersonReadsTheStatus:
+    """specs/002-stripe-writes, FR-003: the status recorded is an
+    observation; a person can have it read again, which writes nothing."""
+
+    async def test_a_status_read_again_is_a_new_observation(self, store):
+        provider = FakeBillingProvider()
+        service = ApprovalService(provider, store)
+        action = approved_refund(store)
+        done = await service.execute(action.action_id)
+        provider.set_status(done.provider_action_id, "failed")
+
+        read = await service.refresh_status(action.action_id)
+
+        assert read.state is ActionState.EXECUTED
+        assert read.provider_status == "failed"
+        assert read.provider_status_at >= done.provider_status_at
+        assert read.attention == "not_successful"
+        assert len(provider.executed_actions) == 1
+
+    async def test_success_seen_later_clears_the_follow_up(self, store):
+        provider = Answering(status="pending")
+        service = ApprovalService(provider, store)
+        action = approved_refund(store)
+        await service.execute(action.action_id)
+
+        read = await service.refresh_status(action.action_id)
+
+        assert (read.provider_status, read.attention) == ("succeeded", None)
+
+    async def test_it_needs_no_writing(self, store):
+        provider = FakeBillingProvider()
+        action = approved(store)
+        await ApprovalService(provider, store).execute(action.action_id)
+        provider.can_write = False
+
+        read = await ApprovalService(provider, store).refresh_status(action.action_id)
+
+        assert read.provider_status == "succeeded"
+
+    @pytest.mark.parametrize(
+        ("state", "attention", "allocation"),
+        [
+            (ActionState.UNKNOWN_OUTCOME, "window_passed", "customer_balance"),
+            (ActionState.UNKNOWN_OUTCOME, "window_unknown", None),
+            (ActionState.EXECUTING, "window_unknown", None),
+            (ActionState.FAILED, "window_unknown", None),
+        ],
+        ids=["unknown-past-the-window", "unknown-older", "executing-older", "failed-older"],
+    )
+    async def test_one_write_alike_settles_an_incident(self, store, state, attention, allocation):
+        provider = FakeBillingProvider()
+        action = await left_to_a_person(store, provider, state, attention, allocation=allocation)
+
+        read = await ApprovalService(provider, store).refresh_status(action.action_id)
+
+        assert read.state is ActionState.EXECUTED
+        assert read.provider_action_id == provider.executed_actions[0].provider_action_id
+        assert read.attention is None
+        assert len(provider.executed_actions) == 1
+
+    @pytest.mark.parametrize(
+        "state", [ActionState.UNKNOWN_OUTCOME, ActionState.EXECUTING, ActionState.FAILED]
+    )
+    async def test_nothing_found_never_permits_a_write(self, store, state):
+        provider = FakeBillingProvider()
+        action = await left_to_a_person(store, provider, state, "window_unknown", written=False)
+        service = ApprovalService(provider, store)
+
+        read = await service.refresh_status(action.action_id)
+
+        assert (read.state, read.attention) == (state, "window_unknown")
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+        assert provider.executed_actions == []
+
+    async def test_two_writes_found_stay_with_a_person(self, store):
+        provider = FakeBillingProvider()
+        action = await left_to_a_person(
+            store, provider, ActionState.UNKNOWN_OUTCOME, "window_passed"
+        )
+        (made,) = provider.executed_actions
+        provider.plant_action(made.model_copy(update={"provider_action_id": "cn_other"}))
+
+        read = await ApprovalService(provider, store).refresh_status(action.action_id)
+
+        assert (read.state, read.attention) == (ActionState.UNKNOWN_OUTCOME, "several_writes")
+
+    async def test_a_write_unlike_the_plan_stays_with_a_person(self, store):
+        provider = FakeBillingProvider()
+        action = await left_to_a_person(
+            store,
+            provider,
+            ActionState.UNKNOWN_OUTCOME,
+            "window_passed",
+            allocation="reduce_due",
+        )
+
+        read = await ApprovalService(provider, store).refresh_status(action.action_id)
+
+        assert (read.state, read.attention) == (ActionState.UNKNOWN_OUTCOME, "unlike_the_action")
+
+    async def test_an_action_without_a_write_or_an_incident_has_no_status(self, store):
+        action = approved(store)
+
+        with pytest.raises(IllegalTransition):
+            await ApprovalService(FakeBillingProvider(), store).refresh_status(action.action_id)
+
+
+T0 = datetime(2026, 10, 23, 9, 0, tzinfo=UTC)
+
+
+class Clock:
+    """The time the service and the fake both read; a test moves it."""
+
+    def __init__(self, at: datetime = T0) -> None:
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+    def advance(self, **delta) -> None:
+        self.at += timedelta(**delta)
+
+
+class Scripted(FakeBillingProvider):
+    """A platform whose sends follow a script: each entry says what one
+    send does -- "lost" (no write, no answer), "landed-lost" (written, no
+    answer), "refused", "conflict" (an idempotency error), or "ok"."""
+
+    def __init__(self, *script: str, clock: Clock | None = None) -> None:
+        super().__init__()
+        self.script = list(script)
+        self.sends = 0
+        self.hidden = 0
+        if clock is not None:
+            self.now = clock
+
+    async def create_credit_note(self, *args, **kwargs):
+        self.sends += 1
+        step = self.script.pop(0) if self.script else "ok"
+        if step == "lost":
+            raise TimeoutError("connection dropped before the write")
+        if step == "refused":
+            raise ProviderRejected("permission")
+        if step == "conflict":
+            raise ProviderOutcomeUnknown("idempotency_error")
+        made = await super().create_credit_note(*args, **kwargs)
+        if step == "landed-lost":
+            raise TimeoutError("no response from the billing platform")
+        return made
+
+    async def find_action(self, idempotency_key, invoice_id):
+        if self.hidden:
+            self.hidden -= 1
+            return []
+        return await super().find_action(idempotency_key, invoice_id)
+
+
+def service_at(provider, store, clock):
+    return ApprovalService(provider, store, now=clock)
+
+
+class TestReconciliation:
+    """specs/002-stripe-writes, FR-004 and FR-005: what reconciliation may
+    conclude from what the platform holds, and when."""
+
+    async def test_one_write_alike_is_executed_with_its_status(self, store):
+        clock = Clock()
+        provider = Scripted("landed-lost", clock=clock)
+        action = approved(store)
+        with pytest.raises(TimeoutError):
+            await service_at(provider, store, clock).execute(action.action_id)
+
+        held = await service_at(provider, store, clock).reconcile(action.action_id)
+
+        assert held.state is ActionState.EXECUTED
+        assert held.provider_status == "succeeded"
+        assert held.provider_status_at == T0
+        assert "reconciled" in held.resolution
+        assert provider.sends == 1
+
+    async def test_one_write_unlike_the_action_stays_with_a_person(self, store):
+        clock = Clock()
+        provider = Scripted("lost", clock=clock)
+        action = approved(store)
+        with pytest.raises(TimeoutError):
+            await service_at(provider, store, clock).execute(action.action_id)
+        await written_behind(provider, action)
+        (made,) = provider.executed_actions
+        provider._actions.clear()
+        provider.plant_action(made.model_copy(update={"amount_minor": 100}))
+
+        held = await service_at(provider, store, clock).reconcile(action.action_id)
+
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "unlike_the_action")
+
+    async def test_an_incident_then_nothing_found_never_fails_nor_sends(self, store):
+        clock = Clock()
+        provider = Scripted("lost", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        store.annotate(action.action_id, ActionState.UNKNOWN_OUTCOME, attention="unlike_the_action")
+
+        with pytest.raises(NeedsAPerson):
+            await service.reconcile(action.action_id)
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "unlike_the_action")
+        assert provider.sends == 1
+
+    async def test_nothing_found_within_the_window_fails_and_is_retried_under_the_key(self, store):
+        clock = Clock()
+        provider = Scripted("lost", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        clock.advance(hours=22, minutes=59)
+
+        done = await service.execute(action.action_id)
+
+        assert done.state is ActionState.EXECUTED
+        assert provider.sends == 2
+        assert done.first_attempt_at == T0
+
+    async def test_nothing_found_past_the_window_proves_nothing(self, store):
+        clock = Clock()
+        provider = Scripted("lost", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        clock.advance(hours=23)
+
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "window_passed")
+        assert provider.sends == 1
+
+    async def test_a_write_found_with_no_allocation_planned_is_never_settled_alone(self, store):
+        provider = FakeBillingProvider()
+        action = approved(store)
+        store.transition(
+            action.action_id, ActionState.EXECUTING, first_attempt_at=datetime.now(UTC)
+        )
+        await written_behind(provider, action)
+        store.transition(action.action_id, ActionState.UNKNOWN_OUTCOME)
+
+        held = await ApprovalService(provider, store).reconcile(action.action_id)
+
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "window_unknown")
+
+    async def test_an_abandoned_claim_within_the_window_fails(self, store):
+        clock = Clock()
+        provider = Scripted(clock=clock)
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+
+        held = await ApprovalService(
+            provider, store, stale_after=timedelta(0), now=clock
+        ).reconcile(action.action_id)
+
+        assert held.state is ActionState.FAILED
+        assert held.uncertain_since == T0
+
+    async def test_an_abandoned_claim_past_the_window_proves_nothing(self, store):
+        clock = Clock()
+        provider = Scripted(clock=clock)
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+        clock.advance(hours=30)
+
+        held = await ApprovalService(
+            provider, store, stale_after=timedelta(0), now=clock
+        ).reconcile(action.action_id)
+
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "window_passed")
+
+    async def test_a_read_that_fails_leaves_the_state_as_it_was(self, store):
+        class Unreachable(Scripted):
+            async def find_action(self, idempotency_key, invoice_id):
+                raise ProviderUnavailable("no answer")
+
+        clock = Clock()
+        provider = Unreachable("lost", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+
+        with pytest.raises(ProviderUnavailable):
+            await service.reconcile(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.UNKNOWN_OUTCOME
+
+    async def test_reconciliation_never_writes(self, store):
+        class NoWrite(Scripted):
+            async def create_credit_note(self, *args, **kwargs):
+                raise AssertionError("reconciliation wrote")
+
+        clock = Clock()
+        provider = NoWrite(clock=clock)
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+        store.transition(action.action_id, ActionState.UNKNOWN_OUTCOME, uncertain_since=T0)
+
+        held = await service_at(provider, store, clock).reconcile(action.action_id)
+
+        assert held.state is ActionState.FAILED
+
+
+class TestTheWindowBoundsEverySend:
+    """specs/002-stripe-writes, FR-005: every send within 23 hours of the
+    first attempt, a retry and a restart included."""
+
+    async def test_no_retry_past_the_window(self, store):
+        clock = Clock()
+        provider = Scripted("refused", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(ProviderRejected):
+            await service.execute(action.action_id)
+        clock.advance(hours=23)
+
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.FAILED, "window_passed")
+        assert provider.sends == 1
+
+    async def test_no_retry_past_the_window_after_a_restart(self, tmp_path):
+        clock = Clock()
+        provider = Scripted("refused", clock=clock)
+        database = tmp_path / "actions.db"
+        before = SqliteActionStore(database)
+        action = approved(before)
+        with pytest.raises(ProviderRejected):
+            await service_at(provider, before, clock).execute(action.action_id)
+        before.close()
+        clock.advance(hours=24)
+
+        after = SqliteActionStore(database)
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, after, clock).execute(action.action_id)
+        after.close()
+
+        assert provider.sends == 1
+
+    async def test_a_send_whose_deadline_passes_during_its_reads_goes_nowhere(self, store):
+        clock = Clock()
+        provider = Scripted(clock=Clock(T0 + timedelta(hours=24)))
+        action = approved(store)
+        service = service_at(provider, store, clock)
+
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.attention == "window_passed"
+        assert held.state is ActionState.FAILED
+        with pytest.raises(NeedsAPerson):
+            await service.execute(action.action_id)
+        assert provider.executed_actions == []
+
+    async def test_an_action_older_than_the_columns_is_never_sent(self, store):
+        provider = Scripted()
+        action = approved(store)
+        store.transition(action.action_id, ActionState.EXECUTING)
+        store.transition(action.action_id, ActionState.FAILED)
+        store.annotate(action.action_id, ActionState.FAILED, attention="window_unknown")
+
+        with pytest.raises(NeedsAPerson):
+            await ApprovalService(provider, store).execute(action.action_id)
+
+        assert provider.sends == 0
+
+
+class TestARefusalAfterAnUnknownOutcome:
+    """specs/002-stripe-writes, FR-006: a refusal settles nothing when an
+    earlier attempt's outcome was unknown."""
+
+    async def test_an_idempotency_conflict_after_a_lost_answer_is_unknown(self, store):
+        clock = Clock()
+        provider = Scripted("lost", "conflict", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+
+        with pytest.raises(ProviderOutcomeUnknown):
+            await service.execute(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.UNKNOWN_OUTCOME
+
+    async def test_landed_lost_then_refused_is_reconciled_as_executed(self, store):
+        clock = Clock()
+        provider = Scripted("landed-lost", "refused", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+        provider.hidden = 1  # the first look misses it
+
+        done = await service.execute(action.action_id)
+
+        assert done.state is ActionState.EXECUTED
+        assert len(provider.executed_actions) == 1
+        assert provider.sends == 2
+
+    async def test_refused_after_a_lost_answer_with_nothing_found_fails(self, store):
+        clock = Clock()
+        provider = Scripted("lost", "refused", clock=clock)
+        action = approved(store)
+        service = service_at(provider, store, clock)
+        with pytest.raises(TimeoutError):
+            await service.execute(action.action_id)
+
+        with pytest.raises(ProviderRejected):
+            await service.execute(action.action_id)
+
+        held = store.get(action.action_id)
+        assert held.state is ActionState.FAILED
+        assert "permission" in held.failure_reason
+
+
+class TestR137:
+    """Review r137 of specs/002-stripe-writes."""
+
+    async def test_an_incident_annotated_during_the_reads_before_the_claim_sends_nothing(
+        self, tmp_path
+    ):
+        database = tmp_path / "actions.db"
+        here, there = SqliteActionStore(database), SqliteActionStore(database)
+        clock = Clock()
+        provider = Scripted("refused", clock=clock)
+        action = approved(here)
+        with pytest.raises(ProviderRejected):
+            await service_at(provider, here, clock).execute(action.action_id)
+
+        reads = provider.find_invoice
+
+        async def find_invoice(invoice_id):
+            there.annotate(action.action_id, ActionState.FAILED, attention="unlike_the_action")
+            return await reads(invoice_id)
+
+        provider.find_invoice = find_invoice
+
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, here, clock).execute(action.action_id)
+
+        assert provider.sends == 1
+        here.close()
+        there.close()
+
+    async def test_reconcile_never_settles_an_incident_even_on_a_write_alike(self, store):
+        clock = Clock()
+        provider = Scripted("landed-lost", clock=clock)
+        action = approved(store)
+        with pytest.raises(TimeoutError):
+            await service_at(provider, store, clock).execute(action.action_id)
+        store.annotate(action.action_id, ActionState.UNKNOWN_OUTCOME, attention="window_passed")
+
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, store, clock).reconcile(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.UNKNOWN_OUTCOME
+
+    async def test_a_status_read_sees_a_second_write_beside_the_one_recorded(self, store):
+        provider = FakeBillingProvider()
+        service = ApprovalService(provider, store)
+        action = approved(store)
+        done = await service.execute(action.action_id)
+        (made,) = provider.executed_actions
+        provider.plant_action(made.model_copy(update={"provider_action_id": "cn_other"}))
+
+        read = await service.refresh_status(action.action_id)
+
+        assert read.state is ActionState.EXECUTED
+        assert read.attention == "several_writes"
+        assert read.provider_action_id == done.provider_action_id
+
+
+class TestR138:
+    """Review r138: an incident recorded elsewhere while reconciliation reads
+    is never cleared by it."""
+
+    @staticmethod
+    async def incident_during_the_read(tmp_path, script):
+        database = tmp_path / "actions.db"
+        here, there = SqliteActionStore(database), SqliteActionStore(database)
+        clock = Clock()
+        provider = Scripted(script, clock=clock)
+        action = approved(here)
+        with pytest.raises(TimeoutError):
+            await service_at(provider, here, clock).execute(action.action_id)
+        reads = provider.find_action
+
+        async def find_action(idempotency_key, invoice_id):
+            found = await reads(idempotency_key, invoice_id)
+            there.annotate(
+                action.action_id, ActionState.UNKNOWN_OUTCOME, attention="several_writes"
+            )
+            return found
+
+        provider.find_action = find_action
+        return here, there, clock, provider, action
+
+    async def test_a_write_alike_found_does_not_clear_it(self, tmp_path):
+        here, there, clock, provider, action = await self.incident_during_the_read(
+            tmp_path, "landed-lost"
+        )
+
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, here, clock).reconcile(action.action_id)
+
+        held = there.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "several_writes")
+        here.close()
+        there.close()
+
+    async def test_nothing_found_does_not_make_it_failed(self, tmp_path):
+        here, there, clock, provider, action = await self.incident_during_the_read(tmp_path, "lost")
+
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, here, clock).reconcile(action.action_id)
+
+        held = there.get(action.action_id)
+        assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "several_writes")
+        here.close()
+        there.close()

@@ -24,16 +24,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import ActionState
 from app.infrastructure.actions import (
+    INCIDENTS,
     IllegalTransition,
+    NeedsAPerson,
     PendingAction,
     SqliteActionStore,
     WritesNotSupported,
 )
-from app.providers.base import BillingProvider, ProviderRejected
+from app.providers.base import (
+    ALLOCATIONS,
+    BillingProvider,
+    NotSent,
+    ProviderAction,
+    ProviderRejected,
+)
 
 #: How long a claim on the write may go without a recorded result before it
 #: is treated as abandoned -- a process that died between ringing the
@@ -49,10 +58,12 @@ class ApprovalService:
         provider: BillingProvider,
         actions: SqliteActionStore,
         stale_after: timedelta = STALE_CLAIM,
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         self._provider = provider
         self._actions = actions
         self._stale_after = stale_after
+        self._now = now or (lambda: datetime.now(UTC))
 
     async def proposal_fingerprint(self, action: PendingAction) -> str:
         """What an approver is asked to approve, reduced to a comparable value.
@@ -147,6 +158,11 @@ class ApprovalService:
         if not self._provider.can_write:
             raise WritesNotSupported(action_id, action.state)
 
+        # An incident stops everything automatic for the action, for good:
+        # nothing is reconciled, read or sent on a retry. A person decides.
+        if action.attention in INCIDENTS:
+            raise NeedsAPerson(action_id, action.state, action.attention)
+
         # The last attempt got no answer, or a claim was abandoned by a
         # process that died mid-write. Find out what happened before anything
         # else: if the write landed, it is recorded and returned; if not, the
@@ -156,6 +172,8 @@ class ApprovalService:
             action = await self.reconcile(action_id)
             if action.state is ActionState.EXECUTED:
                 return action
+            if action.attention in INCIDENTS:
+                raise NeedsAPerson(action_id, action.state, action.attention)
 
         # An approved action is executed; a failed one is retried, through the
         # provider and with the same idempotency key, never by marking it
@@ -223,57 +241,313 @@ class ApprovalService:
                 ),
             )
 
+        # Every send falls within the platform's window from the first
+        # attempt, read from the store -- a restart reads the same. Past it,
+        # the platform may no longer answer the key: nothing is sent again.
+        if action.first_attempt_at is not None and not self._within_window(action):
+            self._actions.annotate(
+                action_id,
+                action.state,
+                attention="window_passed",
+                resolution=(
+                    "not sent again: the platform may no longer answer this idempotency "
+                    "key; left to a person"
+                ),
+            )
+            raise NeedsAPerson(action_id, action.state, "window_passed")
+
         # Claim the write before making it. Of two concurrent executions, one
         # moves the action to EXECUTING and rings the provider; the other
         # finds it claimed and is refused. The guarantee is the store's
         # conditional UPDATE: transition() re-reads the state and only moves
         # it from the one it found, so whichever caller claims second fails,
         # in this process or another.
-        self._actions.transition(action_id, ActionState.EXECUTING)
+        # The first claim records when the write was first attempted, before
+        # anything is sent; a later claim keeps it.
+        action = self._actions.transition(
+            action_id, ActionState.EXECUTING, first_attempt_at=self._now()
+        )
+        send_by = action.first_attempt_at + self._provider.idempotency_window
 
         try:
+            # How the write lands on the invoice is planned once, before the
+            # first send, and every retry sends exactly that.
+            allocation = action.allocation
+            if allocation is None:
+                allocation = await self._provider.plan_write(action.invoice_id, action.action_type)
+                self._actions.annotate(action_id, ActionState.EXECUTING, allocation=allocation)
             result = await write(
                 invoice_id=action.invoice_id,
                 amount_minor=action.amount.amount_minor,
                 currency=action.amount.currency,
                 reason=action.reason,
                 idempotency_key=action.idempotency_key,
+                action_id=action.action_id,
+                allocation=allocation,
+                send_by=send_by,
             )
+        except NotSent:
+            # The deadline passed before the adapter could send: nothing left
+            # by this attempt, and nothing will be sent again. After an
+            # earlier unknown outcome it proves nothing about that one: the
+            # outcome stays unknown, for a person's status read.
+            settled = (
+                ActionState.FAILED
+                if action.uncertain_since is None
+                else ActionState.UNKNOWN_OUTCOME
+            )
+            self._actions.transition(
+                action_id,
+                settled,
+                failure_reason="not sent: the platform's window had passed",
+                unless_incident=True,
+            )
+            self._actions.annotate(
+                action_id,
+                settled,
+                attention="window_passed",
+                resolution=(
+                    "not sent: the platform may no longer answer this idempotency key; "
+                    "left to a person"
+                ),
+            )
+            raise NeedsAPerson(action_id, settled, "window_passed") from None
         except ProviderRejected as error:
-            # The platform answered no: nothing was created.
-            self._actions.transition(action_id, ActionState.FAILED, failure_reason=str(error))
-            raise
+            return await self._refused(action, error)
         except Exception as error:  # noqa: BLE001 - recorded, then re-raised
             # No answer, or one we cannot read: the write may have landed.
+            # An answer the adapter could not read is an incident besides.
+            unreadable = getattr(error, "category", None) == "unreadable_answer"
             self._actions.transition(
                 action_id,
                 ActionState.UNKNOWN_OUTCOME,
                 failure_reason=f"{type(error).__name__}: {error}",
+                uncertain_since=self._now(),
+                **({"attention": "unreadable_answer"} if unreadable else {}),
             )
             raise
 
+        # The platform's own answer is checked like a write found again:
+        # recorded only if it is the write the person approved.
+        problem = _unlike(action, allocation, result)
+        if problem is not None:
+            self._actions.transition(
+                action_id,
+                ActionState.UNKNOWN_OUTCOME,
+                failure_reason=f"the platform's answer is not the write approved ({problem})",
+                uncertain_since=self._now(),
+                attention=problem,
+            )
+            raise NeedsAPerson(action_id, ActionState.UNKNOWN_OUTCOME, problem)
+        return self._record(action_id, result, how="made as {ref}")
+
+    async def _refused(self, action: PendingAction, error: ProviderRejected) -> PendingAction:
+        """The platform said no to this attempt.
+
+        Nothing was created by it. If no earlier attempt of the action had an
+        unknown outcome, the action is FAILED. Otherwise an earlier one may
+        have landed -- a first answer lost, then a retry refused: the action
+        is reconciled, and the refusal settles nothing on its own
+        (specs/002-stripe-writes, FR-006).
+        """
+        if action.uncertain_since is None:
+            self._actions.transition(
+                action.action_id,
+                ActionState.FAILED,
+                failure_reason=str(error),
+                unless_incident=True,
+            )
+            raise error
+        self._actions.transition(
+            action.action_id,
+            ActionState.UNKNOWN_OUTCOME,
+            failure_reason=f"refused ({error}) after an earlier attempt's outcome was unknown",
+        )
+        settled = await self.reconcile(action.action_id, refusal=str(error))
+        if settled.state is ActionState.EXECUTED:
+            return settled
+        if settled.state is ActionState.FAILED:
+            raise error
+        raise NeedsAPerson(action.action_id, settled.state, settled.attention or "outcome_unknown")
+
+    def _within_window(self, action: PendingAction) -> bool:
+        """Whether the platform still answers the action's key with what it
+        made: only when the first attempt is known, and recent enough."""
+        return (
+            action.first_attempt_at is not None
+            and self._now() - action.first_attempt_at < self._provider.idempotency_window
+        )
+
+    def _record(
+        self, action_id: str, made: ProviderAction, how: str, by_person: bool = False
+    ) -> PendingAction:
+        """The action EXECUTED with the platform's reference, and what the
+        platform said of the write, dated. A status but success is put to a
+        person; the write is never made again for it. Settled by the system,
+        it is refused if an incident was recorded meanwhile; only a person's
+        status read (`by_person`) settles one."""
+        followed = made.status != "succeeded"
+        made_how = how.format(ref=made.provider_action_id)
+        resolution = (
+            f"{made_how}; the platform says {made.status} "
+            f"({made.observed_at:%Y-%m-%d %H:%M} UTC): to follow up"
+            if followed
+            else made_how
+        )
         return self._actions.transition(
             action_id,
             ActionState.EXECUTED,
-            provider_action_id=result.provider_action_id,
+            provider_action_id=made.provider_action_id,
+            resolution=resolution,
+            provider_status=made.status,
+            provider_status_at=made.observed_at,
+            attention="not_successful" if followed else None,
+            unless_incident=not by_person,
+        )
+
+    async def refresh_status(self, action_id: str) -> PendingAction:
+        """A person has the platform asked again what became of the write.
+
+        Nothing is ever sent: a read, which needs no writing, so it works
+        with writes switched off. For a write made, the status observed is
+        recorded with its instant. For an action an incident left to a
+        person, the platform's answer settles it only when it holds exactly
+        one write alike; anything else leaves it where it is, and never
+        permits a new write (specs/002-stripe-writes, FR-003).
+        """
+        action = self._actions.get(action_id)
+        left = action.attention in INCIDENTS and action.state in (
+            ActionState.UNKNOWN_OUTCOME,
+            ActionState.EXECUTING,
+            ActionState.FAILED,
+        )
+        if action.state is not ActionState.EXECUTED and not left:
+            raise IllegalTransition(
+                action_id,
+                action.state,
+                ActionState.EXECUTED,
+                why="(only a write made, or an action left to a person, has a status to read)",
+            )
+        found = await self._provider.find_action(action.idempotency_key, action.invoice_id)
+        if action.state is ActionState.EXECUTED:
+            return self._observed(action, found)
+        return self._settled_by_a_person(action, found)
+
+    def _observed(self, action: PendingAction, found: list[ProviderAction]) -> PendingAction:
+        # Every write under the key counts: a second one beside the write
+        # recorded is an incident, never hidden by looking at ours alone.
+        if len(found) > 1:
+            return self._actions.annotate(
+                action.action_id,
+                ActionState.EXECUTED,
+                attention="several_writes",
+                resolution=(
+                    f"status read: the platform holds {len(found)} writes under this "
+                    f"idempotency key; left to a person"
+                ),
+            )
+        mine = [made for made in found if made.provider_action_id == action.provider_action_id]
+        if len(mine) != 1:
+            return self._actions.annotate(
+                action.action_id,
+                ActionState.EXECUTED,
+                attention="unlike_the_action",
+                resolution=(
+                    f"status read: the platform no longer shows {action.provider_action_id} "
+                    f"alone under this idempotency key; left to a person"
+                ),
+            )
+        (made,) = mine
+        problem = _unlike(action, action.allocation, made)
+        if problem is not None:
+            return self._actions.annotate(
+                action.action_id,
+                ActionState.EXECUTED,
+                attention=problem,
+                resolution=f"status read: {made.provider_action_id} is not the write approved",
+            )
+        followed = made.status != "succeeded"
+        return self._actions.annotate(
+            action.action_id,
+            ActionState.EXECUTED,
+            attention="not_successful" if followed else None,
+            provider_status=made.status,
+            provider_status_at=made.observed_at,
+            resolution=(
+                f"status read: the platform says {made.status} "
+                f"({made.observed_at:%Y-%m-%d %H:%M} UTC)" + (": to follow up" if followed else "")
+            ),
+        )
+
+    def _settled_by_a_person(
+        self, action: PendingAction, found: list[ProviderAction]
+    ) -> PendingAction:
+        if len(found) == 1:
+            (made,) = found
+            problem = _unlike(action, action.allocation, made)
+            if problem is None:
+                return self._record(
+                    action.action_id,
+                    made,
+                    how="found by a person's status read: {ref}",
+                    by_person=True,
+                )
+            return self._actions.annotate(
+                action.action_id,
+                action.state,
+                attention=problem,
+                resolution=f"status read: {made.provider_action_id} is not the write approved",
+            )
+        if found:
+            return self._actions.annotate(
+                action.action_id,
+                action.state,
+                attention="several_writes",
+                resolution=(
+                    f"status read: the platform holds {len(found)} writes under this "
+                    f"idempotency key; left to a person"
+                ),
+            )
+        return self._actions.annotate(
+            action.action_id,
+            action.state,
+            resolution="status read: nothing under this idempotency key; left to a person",
         )
 
     async def reconcile(
-        self, action_id: str, stale_after: timedelta | None = None
+        self,
+        action_id: str,
+        stale_after: timedelta | None = None,
+        refusal: str | None = None,
     ) -> PendingAction:
         """Settle an action whose outcome nobody recorded.
 
         Two situations reach here: the platform did not answer
         (UNKNOWN_OUTCOME), or a claim was left in EXECUTING for longer than
         ``stale_after`` by a process that died before writing the answer
-        down. Either way the platform is asked what it holds under the
-        idempotency key. If the write landed, the action is EXECUTED with the
-        platform's reference; if not, it is FAILED, which ``execute`` retries.
-        Anything else is returned unchanged.
+        down -- itself an unknown outcome. Either way the platform is asked
+        what it holds under the idempotency key on the invoice:
+
+        - one write, alike: EXECUTED with its reference and status;
+        - one unlike the action, or several: left to a person;
+        - one, with no allocation planned for it: left to a person;
+        - none, within the window: FAILED, which ``execute`` retries under
+          the same key;
+        - none past the window: left to a person -- an absence the platform
+          can no longer vouch for proves nothing.
+
+        An action with an incident is refused before anything is read: it is
+        a person's to settle (`refresh_status`). It never writes. Anything
+        else is returned unchanged. `refusal` is what the platform answered
+        the latest attempt, kept as the reason when nothing is found.
         """
         if not self._provider.can_write:
             raise WritesNotSupported(action_id, self._actions.get(action_id).state)
         action = self._actions.get(action_id)
+        # An incident is never settled automatically, not even by a write
+        # alike: only a person's status read does that. Nothing is read.
+        if action.attention in INCIDENTS:
+            raise NeedsAPerson(action_id, action.state, action.attention)
         stale_after = self._stale_after if stale_after is None else stale_after
         abandoned = (
             action.state is ActionState.EXECUTING
@@ -282,21 +556,101 @@ class ApprovalService:
         )
         if action.state is not ActionState.UNKNOWN_OUTCOME and not abandoned:
             return action
-
-        found = await self._provider.find_action(action.idempotency_key)
-        if found is not None:
-            return self._actions.transition(
+        if abandoned:
+            action = self._actions.transition(
                 action_id,
-                ActionState.EXECUTED,
-                provider_action_id=found.provider_action_id,
+                ActionState.UNKNOWN_OUTCOME,
+                failure_reason="the claim was abandoned before its outcome was recorded",
+                uncertain_since=self._now(),
+            )
+
+        found = await self._provider.find_action(action.idempotency_key, action.invoice_id)
+        if len(found) > 1:
+            # Two writes under one key: an incident for a person, never "the
+            # first one found". Nothing is written, and nothing settled.
+            return self._actions.annotate(
+                action_id,
+                ActionState.UNKNOWN_OUTCOME,
+                attention="several_writes",
                 resolution=(
-                    f"reconciled: the platform already held {found.provider_action_id} "
-                    f"under this idempotency key; no second write"
+                    f"reconciled: the platform holds {len(found)} writes under this "
+                    f"idempotency key; left to a person"
+                ),
+            )
+        if found:
+            (made,) = found
+            if action.allocation is None:
+                return self._actions.annotate(
+                    action_id,
+                    ActionState.UNKNOWN_OUTCOME,
+                    attention="window_unknown",
+                    resolution=(
+                        f"reconciled: {made.provider_action_id} is held under this "
+                        f"idempotency key, but no allocation was planned for it; left to a person"
+                    ),
+                )
+            problem = _unlike(action, action.allocation, made)
+            if problem is not None:
+                return self._actions.annotate(
+                    action_id,
+                    ActionState.UNKNOWN_OUTCOME,
+                    attention=problem,
+                    resolution=(
+                        f"reconciled: {made.provider_action_id} is held under this "
+                        f"idempotency key and is not the write approved; left to a person"
+                    ),
+                )
+            return self._record(
+                action_id,
+                made,
+                how="reconciled: the platform already held {ref} under this idempotency key; "
+                "no second write",
+            )
+        if not self._within_window(action):
+            return self._actions.annotate(
+                action_id,
+                ActionState.UNKNOWN_OUTCOME,
+                attention="window_passed",
+                resolution=(
+                    "reconciled: nothing under this idempotency key, but the platform may no "
+                    "longer answer it; left to a person"
                 ),
             )
         return self._actions.transition(
             action_id,
             ActionState.FAILED,
-            failure_reason="no write found on the platform after an unknown outcome",
+            failure_reason=(
+                f"refused ({refusal}); no earlier write found on the platform"
+                if refusal
+                else "no write found on the platform after an unknown outcome"
+            ),
+            unless_incident=True,
             resolution="reconciled: nothing held under this idempotency key; safe to retry",
         )
+
+
+def _unlike(action: PendingAction, allocation: str | None, made: ProviderAction) -> str | None:
+    """Why a write the platform holds is not the one approved, or None.
+
+    Every field the action fixed is compared; a write that does not say how
+    it was allocated, or what became of it, cannot be read. With no
+    allocation planned (an action older than the plan, or one whose plan
+    never completed), the write's must be one its type allows.
+    """
+    if made.allocation is None or made.status is None:
+        return "unreadable_answer"
+    if (
+        made.invoice_id != action.invoice_id
+        or made.action_type != action.action_type
+        or made.amount_minor != action.amount.amount_minor
+        or made.currency != action.amount.currency
+        or not made.test_mode
+        or made.idempotency_key != action.idempotency_key
+        or (made.action_id is not None and made.action_id != action.action_id)
+    ):
+        return "unlike_the_action"
+    if allocation is not None and made.allocation != allocation:
+        return "unlike_the_action"
+    if made.allocation not in ALLOCATIONS.get(action.action_type, frozenset()):
+        return "unlike_the_action"
+    return None
