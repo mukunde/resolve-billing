@@ -264,10 +264,13 @@ class TestRefusalsAndUnknownOutcomes:
     @pytest.mark.parametrize(
         ("error", "category"),
         [
-            (stub.InvalidRequestError(SENTINEL), "invalid_request"),
-            (stub.InvalidRequestError(SENTINEL, code="resource_missing"), "not_found"),
-            (stub.AuthenticationError(SENTINEL), "authentication"),
-            (stub.PermissionError(SENTINEL), "permission"),
+            (stub.InvalidRequestError(SENTINEL, http_status=400), "invalid_request"),
+            (
+                stub.InvalidRequestError(SENTINEL, code="resource_missing", http_status=404),
+                "not_found",
+            ),
+            (stub.AuthenticationError(SENTINEL, http_status=401), "authentication"),
+            (stub.PermissionError(SENTINEL, http_status=403), "permission"),
         ],
         ids=["invalid", "missing", "authentication", "permission"],
     )
@@ -290,8 +293,26 @@ class TestRefusalsAndUnknownOutcomes:
             (stub.RateLimitError(SENTINEL), "rate_limited"),
             (stub.APIConnectionError(SENTINEL), "connection"),
             (ValueError(SENTINEL), "unexpected"),
+            (stub.InvalidRequestError(SENTINEL, http_status=409), "platform_error"),
+            (stub.InvalidRequestError(SENTINEL, http_status=500), "platform_error"),
+            (stub.InvalidRequestError(SENTINEL), "platform_error"),
+            (stub.PermissionError(SENTINEL, http_status=500), "platform_error"),
+            (stub.AuthenticationError(SENTINEL, http_status=409), "platform_error"),
+            (stub.IdempotencyError(SENTINEL, http_status=400), "idempotency_error"),
         ],
-        ids=["idempotency", "server", "rate-limit", "connection", "anything-else"],
+        ids=[
+            "idempotency",
+            "server",
+            "rate-limit",
+            "connection",
+            "anything-else",
+            "invalid-409",
+            "invalid-500",
+            "invalid-no-status",
+            "permission-500",
+            "authentication-409",
+            "idempotency-400",
+        ],
     )
     async def test_everything_else_leaves_the_outcome_unknown(self, error, category, caplog):
         held = account()
@@ -407,9 +428,10 @@ class TestAgainstTheRealSdk:
     async def test_the_sdks_own_errors_map_the_same(self):
         sdk = pytest.importorskip("stripe")
         for error, expected in (
-            (sdk.InvalidRequestError(SENTINEL, "amount"), "invalid_request"),
-            (sdk.PermissionError(SENTINEL), "permission"),
-            (sdk.IdempotencyError(SENTINEL), "idempotency_error"),
+            (sdk.InvalidRequestError(SENTINEL, "amount", http_status=400), "invalid_request"),
+            (sdk.InvalidRequestError(SENTINEL, "amount", http_status=409), "platform_error"),
+            (sdk.PermissionError(SENTINEL, http_status=403), "permission"),
+            (sdk.IdempotencyError(SENTINEL, http_status=400), "idempotency_error"),
             (sdk.APIConnectionError(SENTINEL), "connection"),
         ):
             held = account()
@@ -444,7 +466,7 @@ class TestThroughTheExecutionService:
         from app.infrastructure.actions import SqliteActionStore
 
         held = account()
-        held.failures[CREATE] = stub.InvalidRequestError(SENTINEL)
+        held.failures[CREATE] = stub.InvalidRequestError(SENTINEL, http_status=400)
         store = SqliteActionStore(":memory:")
         action = self.approved(store, "refund")
 
@@ -469,4 +491,23 @@ class TestThroughTheExecutionService:
             await ApprovalService(writer(held), store).execute(action.action_id)
 
         assert store.get(action.action_id).state is ActionState.FAILED
+        assert sent(held) == []
+
+
+class TestTheAllocationBelongsToTheInstrument:
+    """r137: an allocation the write's type does not take is refused before
+    anything is read or sent."""
+
+    @pytest.mark.parametrize(
+        ("action_type", "allocation"),
+        [("refund", "customer_balance"), ("refund", "reduce_due"), ("credit_note", "refund")],
+    )
+    async def test_an_allocation_of_another_instrument_is_refused_unsent(
+        self, action_type, allocation
+    ):
+        held = account()
+
+        with pytest.raises(ProviderRejected, match="allocation"):
+            await send(writer(held), action_type, allocation)
+
         assert sent(held) == []

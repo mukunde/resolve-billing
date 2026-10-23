@@ -241,9 +241,10 @@ a write it made can fail later. What changes:
   the platform's reference. Actions older than the columns are marked
   `window_unknown`: when they were first sent cannot be shown.
 
-Stripe's caps -- "to verify, not assume" above -- are measured by the write
-contract on a seeded test account (specs/002-stripe-writes, property 5),
-run by the maintainer.
+Stripe's caps -- "to verify, not assume" above -- are to be measured by the
+write contract on a seeded test account (specs/002-stripe-writes, property
+5), run by the maintainer (T055); until that run, they are a property of the
+fake, stated as such.
 
 **Re-evaluation condition:** a platform whose keys outlive any retry, or a
 scheduler sweeping unknown outcomes (above), changes how the window is set,

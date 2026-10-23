@@ -408,6 +408,18 @@ class ApprovalService:
         return self._settled_by_a_person(action, found)
 
     def _observed(self, action: PendingAction, found: list[ProviderAction]) -> PendingAction:
+        # Every write under the key counts: a second one beside the write
+        # recorded is an incident, never hidden by looking at ours alone.
+        if len(found) > 1:
+            return self._actions.annotate(
+                action.action_id,
+                ActionState.EXECUTED,
+                attention="several_writes",
+                resolution=(
+                    f"status read: the platform holds {len(found)} writes under this "
+                    f"idempotency key; left to a person"
+                ),
+            )
         mine = [made for made in found if made.provider_action_id == action.provider_action_id]
         if len(mine) != 1:
             return self._actions.annotate(
@@ -490,18 +502,23 @@ class ApprovalService:
         - one write, alike: EXECUTED with its reference and status;
         - one unlike the action, or several: left to a person;
         - one, with no allocation planned for it: left to a person;
-        - none, within the window and with no incident: FAILED, which
-          ``execute`` retries under the same key;
-        - none past the window, or after an incident: left to a person --
-          an absence the platform can no longer vouch for proves nothing.
+        - none, within the window: FAILED, which ``execute`` retries under
+          the same key;
+        - none past the window: left to a person -- an absence the platform
+          can no longer vouch for proves nothing.
 
-        It never writes. Anything else is returned unchanged. `refusal` is
-        what the platform answered the latest attempt, kept as the reason
-        when nothing is found.
+        An action with an incident is refused before anything is read: it is
+        a person's to settle (`refresh_status`). It never writes. Anything
+        else is returned unchanged. `refusal` is what the platform answered
+        the latest attempt, kept as the reason when nothing is found.
         """
         if not self._provider.can_write:
             raise WritesNotSupported(action_id, self._actions.get(action_id).state)
         action = self._actions.get(action_id)
+        # An incident is never settled automatically, not even by a write
+        # alike: only a person's status read does that. Nothing is read.
+        if action.attention in INCIDENTS:
+            raise NeedsAPerson(action_id, action.state, action.attention)
         stale_after = self._stale_after if stale_after is None else stale_after
         abandoned = (
             action.state is ActionState.EXECUTING
@@ -559,12 +576,6 @@ class ApprovalService:
                 made,
                 how="reconciled: the platform already held {ref} under this idempotency key; "
                 "no second write",
-            )
-        if action.attention in INCIDENTS:
-            return self._actions.annotate(
-                action_id,
-                ActionState.UNKNOWN_OUTCOME,
-                resolution="reconciled: nothing under this idempotency key; left to a person",
             )
         if not self._within_window(action):
             return self._actions.annotate(

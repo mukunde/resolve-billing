@@ -49,9 +49,12 @@ PAYMENT_EXPANSION = "data.payment.payment_intent.latest_charge"
 # Errors named as the SDK names them: the client recognises Stripe's errors
 # by their class names, so the free CI job needs no SDK to test the mapping.
 class StripeError(Exception):
-    def __init__(self, message: str = "", code: str | None = None) -> None:
+    def __init__(
+        self, message: str = "", code: str | None = None, http_status: int | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
+        self.http_status = http_status
 
 
 class APIConnectionError(StripeError): ...

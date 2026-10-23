@@ -322,3 +322,15 @@ class TestThePortsOwnErrors:
 
     def test_the_fake_can_write(self, provider):
         assert provider.can_write is True
+
+
+class TestTheFakeBindsTheAllocationToTheInstrument:
+    async def test_a_refund_planned_as_a_balance_credit_is_refused(self, provider):
+        with pytest.raises(ProviderRejected, match="allocation"):
+            await refund(provider, "inv_002", 100, "k", allocation="customer_balance")
+        assert provider.executed_actions == []
+
+    async def test_a_credit_note_planned_as_a_refund_is_refused(self, provider):
+        with pytest.raises(ProviderRejected, match="allocation"):
+            await credit(provider, "inv_002", 100, "k", allocation="refund")
+        assert provider.executed_actions == []

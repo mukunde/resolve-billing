@@ -264,24 +264,26 @@ class StripeWriter:
 def _write_outcome(error: Exception) -> Exception:
     """The port's error for a failed write, by category.
 
-    A refusal is a closed list: an invalid request other than an idempotency
-    error (400, 404), an authentication or permission refusal (401, 403).
-    Everything else -- an idempotency conflict, a 409, a rate limit, a
-    connection error, a server error, an error that is not Stripe's -- may
-    hide a write that landed.
+    A refusal is a closed list, by class and HTTP status together: an invalid
+    request other than an idempotency error (400, 404), an authentication or
+    permission refusal (401, 403). Everything else -- an idempotency
+    conflict, one of those classes with any other status or none, a 409, a
+    rate limit, a connection error, a server error, an error that is not
+    Stripe's -- may hide a write that landed.
     """
     names = {cls.__name__ for cls in type(error).__mro__}
     if "StripeError" not in names:
         return ProviderOutcomeUnknown("unexpected")
     if "IdempotencyError" in names:
         return ProviderOutcomeUnknown("idempotency_error")
-    if "InvalidRequestError" in names:
+    status = getattr(error, "http_status", None)
+    if "InvalidRequestError" in names and status in (400, 404):
         if getattr(error, "code", None) == "resource_missing":
             return ProviderRejected("not_found")
         return ProviderRejected("invalid_request")
-    if "AuthenticationError" in names:
+    if "AuthenticationError" in names and status == 401:
         return ProviderRejected("authentication")
-    if "PermissionError" in names:
+    if "PermissionError" in names and status == 403:
         return ProviderRejected("permission")
     if "RateLimitError" in names:
         return ProviderOutcomeUnknown("rate_limited")

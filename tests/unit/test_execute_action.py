@@ -1004,10 +1004,12 @@ class TestReconciliation:
             await service.execute(action.action_id)
         store.annotate(action.action_id, ActionState.UNKNOWN_OUTCOME, attention="unlike_the_action")
 
-        held = await service.reconcile(action.action_id)
+        with pytest.raises(NeedsAPerson):
+            await service.reconcile(action.action_id)
         with pytest.raises(NeedsAPerson):
             await service.execute(action.action_id)
 
+        held = store.get(action.action_id)
         assert (held.state, held.attention) == (ActionState.UNKNOWN_OUTCOME, "unlike_the_action")
         assert provider.sends == 1
 
@@ -1227,3 +1229,60 @@ class TestARefusalAfterAnUnknownOutcome:
         held = store.get(action.action_id)
         assert held.state is ActionState.FAILED
         assert "permission" in held.failure_reason
+
+
+class TestR137:
+    """Review r137 of specs/002-stripe-writes."""
+
+    async def test_an_incident_annotated_during_the_reads_before_the_claim_sends_nothing(
+        self, tmp_path
+    ):
+        database = tmp_path / "actions.db"
+        here, there = SqliteActionStore(database), SqliteActionStore(database)
+        clock = Clock()
+        provider = Scripted("refused", clock=clock)
+        action = approved(here)
+        with pytest.raises(ProviderRejected):
+            await service_at(provider, here, clock).execute(action.action_id)
+
+        reads = provider.find_invoice
+
+        async def find_invoice(invoice_id):
+            there.annotate(action.action_id, ActionState.FAILED, attention="unlike_the_action")
+            return await reads(invoice_id)
+
+        provider.find_invoice = find_invoice
+
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, here, clock).execute(action.action_id)
+
+        assert provider.sends == 1
+        here.close()
+        there.close()
+
+    async def test_reconcile_never_settles_an_incident_even_on_a_write_alike(self, store):
+        clock = Clock()
+        provider = Scripted("landed-lost", clock=clock)
+        action = approved(store)
+        with pytest.raises(TimeoutError):
+            await service_at(provider, store, clock).execute(action.action_id)
+        store.annotate(action.action_id, ActionState.UNKNOWN_OUTCOME, attention="window_passed")
+
+        with pytest.raises(NeedsAPerson):
+            await service_at(provider, store, clock).reconcile(action.action_id)
+
+        assert store.get(action.action_id).state is ActionState.UNKNOWN_OUTCOME
+
+    async def test_a_status_read_sees_a_second_write_beside_the_one_recorded(self, store):
+        provider = FakeBillingProvider()
+        service = ApprovalService(provider, store)
+        action = approved(store)
+        done = await service.execute(action.action_id)
+        (made,) = provider.executed_actions
+        provider.plant_action(made.model_copy(update={"provider_action_id": "cn_other"}))
+
+        read = await service.refresh_status(action.action_id)
+
+        assert read.state is ActionState.EXECUTED
+        assert read.attention == "several_writes"
+        assert read.provider_action_id == done.provider_action_id

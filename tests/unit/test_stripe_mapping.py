@@ -532,3 +532,19 @@ class TestCreditNote:
     def test_without_its_key_it_cannot_be_represented(self):
         with refused("missing_field"):
             written(stripe.credit_note(metadata={"rb_action_type": "credit_note"}))
+
+    @pytest.mark.parametrize("field", ["pre_payment_amount", "post_payment_amount", "refunds"])
+    def test_a_missing_amount_field_leaves_the_allocation_unread(self, field):
+        payload = stripe.credit_note()
+        del payload[field]
+        assert written(payload).allocation is None
+
+    def test_a_refund_entry_without_its_amount_leaves_the_allocation_unread(self):
+        entry = stripe.credit_note_refund()
+        del entry["amount_refunded"]
+        assert written(stripe.credit_note(refunds=[entry])).allocation is None
+
+    def test_missing_refunds_leave_the_status_unread(self):
+        payload = stripe.credit_note()
+        del payload["refunds"]
+        assert written(payload).status is None

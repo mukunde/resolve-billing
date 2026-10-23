@@ -261,6 +261,10 @@ class StripeBillingProvider:
         the one credit note. The `reason` the port carries never reaches
         Stripe (FR-013)."""
         self._writing()
+        if allocation not in ALLOCATIONS[action_type]:
+            # Another instrument's allocation: refused before anything is
+            # read or sent, so a refund is never made a balance credit.
+            raise ProviderRejected("allocation")
         try:
             async with asyncio.timeout(self._budget):
                 try:

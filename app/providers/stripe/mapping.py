@@ -503,12 +503,19 @@ def provider_action(credit_note: Payload, observed_at: datetime) -> ProviderActi
 
 
 def _allocation_of(credit_note: Payload) -> str | None:
+    """Read from the amounts Stripe states; a field it does not state --
+    absent or null -- is never taken for zero, and leaves it unread."""
     amount = credit_note.get("amount")
     if credit_note.get("out_of_band_amount"):
         return None
-    before = credit_note.get("pre_payment_amount") or 0
-    after = credit_note.get("post_payment_amount") or 0
-    refunded = sum(entry.get("amount_refunded") or 0 for entry in credit_note.get("refunds") or [])
+    before = credit_note.get("pre_payment_amount")
+    after = credit_note.get("post_payment_amount")
+    refunds = credit_note.get("refunds")
+    if before is None or after is None or refunds is None:
+        return None
+    if any(entry.get("amount_refunded") is None for entry in refunds):
+        return None
+    refunded = sum(entry["amount_refunded"] for entry in refunds)
     if before == amount and after == 0 and refunded == 0:
         return "reduce_due"
     if after == amount and before == 0:
@@ -525,10 +532,11 @@ def _credit_note_status(credit_note: Payload) -> str | None:
     status = credit_note.get("status")
     if status == "void":
         return "failed"
-    if status != "issued":
+    refunds = credit_note.get("refunds")
+    if status != "issued" or refunds is None:
         return None
     seen = []
-    for entry in credit_note.get("refunds") or []:
+    for entry in refunds:
         refund = entry.get("refund")
         if not isinstance(refund, Mapping):
             return None

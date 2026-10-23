@@ -186,6 +186,8 @@ class FakeBillingProvider:
         if replayed is not None:
             return replayed
 
+        if allocation not in ALLOCATIONS["credit_note"]:
+            raise ProviderRejected("allocation")
         invoice = await self._writable(invoice_id, allocation, send_by)
         self._refuse_beyond_the_invoice(invoice, amount_minor, currency)
 
@@ -223,6 +225,8 @@ class FakeBillingProvider:
         if replayed is not None:
             return replayed
 
+        if allocation not in ALLOCATIONS["refund"]:
+            raise ProviderRejected("allocation")
         invoice = await self._writable(invoice_id, allocation, send_by)
         self._refuse_beyond_the_invoice(invoice, amount_minor, currency)
 

@@ -378,12 +378,16 @@ class SqliteActionStore:
 
         `first_attempt_at` and `uncertain_since` are kept once set: the
         first value wins. The others replace what was there when given; the
-        attention is kept unless given, and None clears it.
+        attention is kept as the row holds it -- not as it was read -- unless
+        given, and None clears it. A claim (`EXECUTING`) is refused, in the
+        `UPDATE` itself, while the action has an incident: one another
+        process recorded after this one read the action stops it too.
         """
         current = self.get(action_id)
-        if attention is _KEEP:
-            attention = current.attention
-        _check_attention(attention)
+        keep = attention is _KEEP
+        _check_attention(None if keep else attention)
+        if to is ActionState.EXECUTING and current.attention in INCIDENTS:
+            raise NeedsAPerson(action_id, current.state, current.attention)
         if to not in ALLOWED[current.state]:
             raise IllegalTransition(action_id, current.state, to)
         # EXECUTED is a claim that money moved, so it takes the provider's
@@ -412,9 +416,10 @@ class SqliteActionStore:
                     uncertain_since = COALESCE(uncertain_since, ?),
                     provider_status = COALESCE(?, provider_status),
                     provider_status_at = COALESCE(?, provider_status_at),
-                    attention = ?
+                    attention = CASE WHEN ? THEN attention ELSE ? END
                 WHERE action_id = ? AND state = ?
-                """,
+                  AND NOT (? AND COALESCE(attention, '') IN ({incidents}))
+                """.format(incidents=", ".join("?" * len(INCIDENTS))),
                 (
                     to.value,
                     datetime.now(UTC).isoformat(),
@@ -427,16 +432,29 @@ class SqliteActionStore:
                     _iso(uncertain_since),
                     provider_status,
                     _iso(provider_status_at),
-                    attention,
+                    keep,
+                    None if keep else attention,
                     action_id,
                     current.state.value,
+                    to is ActionState.EXECUTING,
+                    *sorted(INCIDENTS),
                 ),
             ).rowcount
         if updated != 1:
+            held = self._attention_now(action_id)
+            if to is ActionState.EXECUTING and held in INCIDENTS:
+                raise NeedsAPerson(action_id, current.state, held)
             raise IllegalTransition(
                 action_id, current.state, to, why="(its state changed concurrently)"
             )
         return self.get(action_id)
+
+    def _attention_now(self, action_id: str) -> str | None:
+        """The attention as the row holds it now, read past any cached view."""
+        row = self._connection.execute(
+            "SELECT attention FROM pending_actions WHERE action_id = ?", (action_id,)
+        ).fetchone()
+        return row["attention"] if row else None
 
     def annotate(
         self,
@@ -459,15 +477,14 @@ class SqliteActionStore:
         current = self.get(action_id)
         if current.state is not expected:
             raise IllegalTransition(action_id, current.state, expected)
-        if attention is _KEEP:
-            attention = current.attention
-        _check_attention(attention)
+        keep = attention is _KEEP
+        _check_attention(None if keep else attention)
         with self._connection:
             updated = self._connection.execute(
                 """
                 UPDATE pending_actions
                 SET updated_at = ?,
-                    attention = ?,
+                    attention = CASE WHEN ? THEN attention ELSE ? END,
                     resolution = COALESCE(?, resolution),
                     allocation = COALESCE(allocation, ?),
                     provider_status = COALESCE(?, provider_status),
@@ -476,7 +493,8 @@ class SqliteActionStore:
                 """,
                 (
                     datetime.now(UTC).isoformat(),
-                    attention,
+                    keep,
+                    None if keep else attention,
                     resolution,
                     allocation,
                     provider_status,

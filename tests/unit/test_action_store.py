@@ -236,3 +236,42 @@ class TestATransitionCanClearAnIncident:
         held = store.transition(action.action_id, ActionState.FAILED)
 
         assert held.attention == "window_passed"
+
+
+class TestAClaimSeesAnIncidentMadeElsewhere:
+    """r137: the claim refuses an incident in the store itself, so one
+    annotated by another process after this one read the action stops it."""
+
+    def test_an_incident_annotated_by_another_connection_stops_the_claim(self, tmp_path):
+        from app.infrastructure.actions import NeedsAPerson
+
+        database = tmp_path / "actions.db"
+        here, there = SqliteActionStore(database), SqliteActionStore(database)
+        action = approved(here)
+        here.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+        here.transition(action.action_id, ActionState.FAILED)
+        stale = here.get(action.action_id)
+        there.annotate(action.action_id, ActionState.FAILED, attention="several_writes")
+        here.get = lambda action_id: stale  # this process read before the annotation
+
+        with pytest.raises(NeedsAPerson):
+            here.transition(action.action_id, ActionState.EXECUTING)
+
+        assert there.get(action.action_id).state is ActionState.FAILED
+        here.close()
+        there.close()
+
+    def test_a_transition_keeps_an_attention_set_since_it_read(self, tmp_path):
+        database = tmp_path / "actions.db"
+        here, there = SqliteActionStore(database), SqliteActionStore(database)
+        action = approved(here)
+        here.transition(action.action_id, ActionState.EXECUTING, first_attempt_at=T0)
+        stale = here.get(action.action_id)
+        there.annotate(action.action_id, ActionState.EXECUTING, attention="window_passed")
+        here.get = lambda action_id: stale if action_id == action.action_id else None
+
+        here.transition(action.action_id, ActionState.FAILED)
+
+        assert there.get(action.action_id).attention == "window_passed"
+        here.close()
+        there.close()
