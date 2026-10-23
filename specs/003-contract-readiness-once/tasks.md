@@ -22,14 +22,14 @@ and the coverage check pass; committed locally.
 
 ## Phase 2: Readiness once (US1)
 
-- [ ] T010 Test first, `tests/contract/test_readiness.py`: a failure on
+- [x] T010 Test first, `tests/contract/test_readiness.py`: a failure on
   `Hung` shared without a second wait; a world missing shared; the kept data
   immutable; a platform error not kept, checked again; a `pytester`
   sub-run of two async tests (`loop_scope="function"`) sharing that
   sub-run's cache and calling `stripe_platform()` (key set, `connect` and
   `_ready` stubbed): two loops, two providers, one check; the fake
   untouched.
-- [ ] T011 `tests/contract/conftest.py`: `Readiness`, `_readiness`,
+- [x] T011 `tests/contract/conftest.py`: `Readiness`, `_readiness`,
   `stripe_platform()` on `READINESS`.
 
 ## Phase 3: The write generation once (US2)

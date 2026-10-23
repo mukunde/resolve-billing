@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -91,6 +92,16 @@ class Seeded:
     investigate_at: datetime
 
 
+@dataclass(frozen=True)
+class Readiness:
+    """What the readiness check found: the seeded worlds, and the
+    subscription and period the usage world's record covers. Data only, and
+    read-only: every test that shares it builds its own provider."""
+
+    seeded: Mapping[str, Seeded]
+    usage: tuple[str, tuple[datetime, datetime]]
+
+
 @dataclass
 class Platform:
     name: str
@@ -104,8 +115,8 @@ class Platform:
     #: The same platform behind an address that never answers, or None when
     #: the platform cannot be made to fail (the fake).
     unreachable: Callable[[], object] | None = None
-    #: Seeded worlds by name (Stripe only).
-    seeded: dict[str, Seeded] = field(default_factory=dict)
+    #: Seeded worlds by name (Stripe only), read-only.
+    seeded: Mapping[str, Seeded] = field(default_factory=dict)
 
 
 def fake_platform() -> Platform:
@@ -130,19 +141,31 @@ async def stripe_platform() -> Platform:
     from app.providers.stripe.adapter import StripeBillingProvider
     from app.providers.stripe.client import connect
 
+    # This test's own provider, on this test's event loop; what the account's
+    # readiness check found is shared by the process (specs/003, FR-001).
     provider = StripeBillingProvider(connect(key))
-    seeded = await _ready(provider)
-    usage_world = seeded["usage"]
-    target = await provider.get_invoice(usage_world.target_invoice)
-    metered = next(line for line in target.lines if line.metric)
+    ready = await READINESS(lambda: _readiness(provider))
+    seeded = ready.seeded
     return Platform(
         name="stripe",
         provider=provider,
         customers=[seeded[w.name].customer_id for w in worlds.SUPPORTED],
         customer_id=seeded["duplicate"].customer_id,
-        usage=(target.subscription_id, (metered.period_start, metered.period_end)),
+        usage=ready.usage,
         unreachable=lambda: StripeBillingProvider(connect(key, api_base=UNREACHABLE, retries=0)),
         seeded=seeded,
+    )
+
+
+async def _readiness(provider) -> Readiness:
+    """The account's preconditions, once it has settled, as data: the
+    seeded worlds and the usage world's period."""
+    seeded = await _ready(provider)
+    target = await provider.get_invoice(seeded["usage"].target_invoice)
+    metered = next(line for line in target.lines if line.metric)
+    return Readiness(
+        seeded=MappingProxyType(dict(seeded)),
+        usage=(target.subscription_id, (metered.period_start, metered.period_end)),
     )
 
 

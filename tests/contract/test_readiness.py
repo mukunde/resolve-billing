@@ -145,3 +145,165 @@ async def test_what_is_kept_of_a_diagnosis_is_its_message_alone():
         await once(await_fail)
 
     assert once.kept == conftest.Diagnosis("worlds missing from the seeded account: ['x']")
+
+
+# -- readiness, once (US1) -------------------------------------------------------
+
+
+@pytest.fixture
+def fresh(monkeypatch):
+    """Both caches empty for the test, and the session's own restored after."""
+    monkeypatch.setattr(conftest, "READINESS", conftest.Once())
+    monkeypatch.setattr(conftest, "WRITE_GENERATION", conftest.Once())
+
+
+class CountingHung(Hung):
+    def __init__(self) -> None:
+        self.looks = 0
+
+    async def test_clocks(self):
+        self.looks += 1
+        return await super().test_clocks()
+
+
+class OneWorldShort(Settled):
+    async def customers(self, test_clock=None):
+        return (await super().customers(test_clock))[1:]
+
+
+class Failing(Settled):
+    def __init__(self) -> None:
+        self.looks = 0
+
+    async def test_clocks(self):
+        self.looks += 1
+        raise RuntimeError(SENTINEL)
+
+
+async def test_an_account_never_ready_is_waited_for_once(fresh, monkeypatch):
+    monkeypatch.setattr(conftest, "READY_WITHIN", 0.05)
+    reader = CountingHung()
+    provider = Provider(reader)
+
+    for _ in range(2):
+        with pytest.raises(pytest.fail.Exception, match="not ready"):
+            await conftest.READINESS(lambda: conftest._readiness(provider))
+
+    assert reader.looks == 1
+
+
+async def test_a_world_missing_is_said_once_and_repeated(fresh):
+    provider = Provider(OneWorldShort())
+
+    for _ in range(2):
+        with pytest.raises(pytest.fail.Exception, match="worlds missing"):
+            await conftest.READINESS(lambda: conftest._readiness(provider))
+
+    assert isinstance(conftest.READINESS.kept, conftest.Diagnosis)
+
+
+async def test_a_platform_error_is_not_kept(fresh):
+    reader = Failing()
+    provider = Provider(reader)
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            await conftest.READINESS(lambda: conftest._readiness(provider))
+
+    assert reader.looks == 2
+    assert conftest.READINESS.kept is None
+
+
+async def test_what_is_kept_cannot_be_changed(fresh, monkeypatch):
+    monkeypatch.setattr(conftest, "READY_WITHIN", 1)
+    ready = await conftest.READINESS(lambda: conftest._readiness(Provider(Settled())))
+
+    with pytest.raises(TypeError):
+        ready.seeded["duplicate"] = None
+    with pytest.raises(AttributeError):
+        ready.seeded["duplicate"].target_invoice = "in_other"
+    with pytest.raises(AttributeError):
+        ready.usage = None
+    assert ready.usage == ("sub_usage", SEPTEMBER)
+
+
+def test_the_fake_touches_neither_cache(fresh):
+    conftest.fake_platform()
+    conftest.fake_writing()
+
+    assert conftest.READINESS.kept is None
+    assert conftest.WRITE_GENERATION.kept is None
+
+
+pytest_plugins = ["pytester"]
+
+TWO_TESTS = """
+import json, os, sys, types, asyncio
+from types import MappingProxyType
+from datetime import UTC, datetime
+
+import pytest
+
+import app.providers.stripe.client as client
+from scripts import stripe_worlds as worlds
+from tests.contract import conftest
+
+CHECKS = []
+
+
+@pytest.fixture(autouse=True)
+def stubbed(monkeypatch):
+    monkeypatch.setenv("STRIPE_API_KEY", "rk_test_51RbAbc")
+    sdk = sys.modules.get("stripe") or types.ModuleType("stripe")
+    monkeypatch.setitem(sys.modules, "stripe", sdk)
+    monkeypatch.setattr(client, "connect", lambda key, **kw: object())
+
+    async def readiness(provider):
+        CHECKS.append(1)
+        at = datetime(2026, 10, 1, tzinfo=UTC)
+        seeded = {
+            w.name: conftest.Seeded(f"cus_{w.name}", f"in_{w.name}", at) for w in worlds.WORLDS
+        }
+        return conftest.Readiness(MappingProxyType(seeded), ("sub_usage", (at, at)))
+
+    monkeypatch.setattr(conftest, "_readiness", readiness)
+
+
+async def record():
+    platform = await conftest.stripe_platform()
+    with open(os.environ["RB_RECORDS"], "a") as out:
+        seen = [id(asyncio.get_running_loop()), id(platform.provider), len(CHECKS)]
+        out.write(json.dumps(seen) + "\\n")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_first():
+    await record()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_second():
+    await record()
+"""
+
+
+def test_two_tests_on_their_own_loops_share_one_check_and_own_their_providers(
+    fresh, pytester, monkeypatch, tmp_path
+):
+    """Each test builds its own provider on its own event loop; what the
+    readiness check found is shared, and the check runs once."""
+    import json
+
+    records = tmp_path / "records.jsonl"
+    monkeypatch.setenv("RB_RECORDS", str(records))
+    pytester.makepyfile(test_two=TWO_TESTS)
+
+    result = pytester.runpytest_inprocess("-q", "-o", "asyncio_default_fixture_loop_scope=function")
+
+    result.assert_outcomes(passed=2)
+    (loop_1, provider_1, checks_1), (loop_2, provider_2, checks_2) = [
+        json.loads(line) for line in records.read_text().splitlines()
+    ]
+    assert loop_1 != loop_2
+    assert provider_1 != provider_2
+    assert checks_1 == checks_2 == 1
