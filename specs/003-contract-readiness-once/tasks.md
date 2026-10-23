@@ -8,6 +8,12 @@ description: "Tasks for the seeded account checked once per contract session"
 
 **Tests**: required, written before the code and shown to fail on it.
 
+**State (2026-10-23)**: every task done but T033, the maintainer's approval
+of the final diff and the delivery. T031: on a fresh write run (w3), a full
+contract run passed -- 80 passed, 13 fake-only skips -- in 3 min 25, against
+9 min 19 before; a run on a used generation skipped each write scenario,
+writing nothing, as the freshness check requires. Codex: r142-r147.
+
 **Checkpoint after each phase**: `ruff check`, `pytest`, the mock baseline
 and the coverage check pass; committed locally.
 
@@ -47,10 +53,10 @@ and the coverage check pass; committed locally.
 ## Phase 4: Documents, run, review, delivery
 
 - [x] T030 `docs/operations.md` and the conftest docstring (plan section 4).
-- [ ] T031 **[maintainer]** A full contract run on the seeded account, with
+- [x] T031 **[maintainer]** A full contract run on the seeded account, with
   writes on a fresh write run; its duration reported beside the nine minutes
   of 2026-10-23 (SC-001), and recorded in `docs/operations.md`.
-- [ ] T032 Codex reviews the final diff; findings fixed until nothing is
+- [x] T032 Codex reviews the final diff; findings fixed until nothing is
   left.
 - [ ] T033 **[maintainer]** Approval of the final diff by its commit; then
   the push and the pull request, declaring "behaviour unchanged in the

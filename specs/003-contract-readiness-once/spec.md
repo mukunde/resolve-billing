@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-23 · **Revised**: 2026-10-23, after review r143
 
-**Status**: Draft -- for the maintainer's approval
+**Status**: Approved by the maintainer at commit `0e1ec7f`; FR-001 amendment approved at `ec4924d`
 
 **Input**: The maintainer's choice of 2026-10-23 (step 3 of the order set
 after specs/002-stripe-writes): contract tests check the seeded Stripe
