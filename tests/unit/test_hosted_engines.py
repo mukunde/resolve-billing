@@ -153,6 +153,47 @@ class TestWhatAnAnswerBecomes:
         assert engine.model_versions == ["gemini-3.8-flash-001"]
 
 
+class TestTheLimitsAsRead:
+    """The limits the maintainer read on 2026-10-24 (spec 004 amendment)."""
+
+    def test_gemini_s_real_limits_and_daily_quota(self):
+        config = configuration("gemini-3.8-flash")
+
+        assert config.requests_per_second == pytest.approx(5 / 60)
+        assert config.tokens_per_minute == 250_000
+        assert config.requests_per_day == 20
+        assert config.quota_timezone == "America/Los_Angeles"
+        assert config.attempts == 1
+        assert config.stop_on_outage is True
+        assert "resolve-billing-eval" in config.limits_source
+        assert "2026-10-24" in config.limits_source
+
+    @pytest.mark.parametrize("name", ["mistral-large-4", "zai-glm-5-3"])
+    def test_mistral_keeps_its_attempts_and_has_no_daily_quota(self, name):
+        config = configuration(name)
+
+        assert config.requests_per_day is None
+        assert config.quota_timezone is None
+        assert config.attempts == 3
+        assert config.stop_on_outage is False
+        assert "2026-10-24" in config.limits_source
+
+    @pytest.mark.parametrize("name", ["gemini-3.8-flash", "mistral-large-4", "zai-glm-5-3"])
+    def test_one_named_estimator_for_all_three(self, name):
+        assert configuration(name).reservation_estimator == "utf8-bytes-v1"
+
+    def test_the_estimator_counts_bytes_not_characters(self):
+        from app.decision.hosted import estimated_tokens
+        from app.decision.verdict import verdict_schema
+
+        text = "é" * 1000 + "日本" * 500  # 2000 characters, 5000 bytes
+
+        estimate = estimated_tokens("", text, margin=512, max_output=4096)
+
+        schema = len(json.dumps(verdict_schema()).encode("utf-8"))
+        assert estimate == 5000 + schema + 512 + 4096
+
+
 class TestTheConfigurations:
     def test_exactly_three_closed_configurations(self):
         assert set(CONFIGURATIONS) == {"gemini-3.8-flash", "mistral-large-4", "zai-glm-5-3"}

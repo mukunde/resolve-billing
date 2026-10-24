@@ -30,6 +30,14 @@ from app.decision.masking import ReferenceFinder, mask_message
 from app.decision.verdict import ModelVerdict, escalation, verdict_schema
 from app.domain.models import BillingContext, Dispute, RuleFinding
 
+#: Where the limits below were read, and when (T071).
+GEMINI_LIMITS = "AI Studio rate-limit page, project resolve-billing-eval, read 2026-10-24"
+MISTRAL_LIMITS = "Mistral admin console, limits page, read 2026-10-24"
+
+#: The one estimator of a request's tokens: its UTF-8 bytes, a margin, the
+#: output cap (`estimated_tokens`). Named in every result.
+ESTIMATOR = "utf8-bytes-v1"
+
 #: Where the prices below were read, and when.
 MISTRAL_PRICES = "docs.mistral.ai/inference/pricing, read 2026-10-24"
 GEMINI_PRICES = "ai.google.dev/gemini-api/docs/pricing (free tier), read 2026-10-24"
@@ -56,6 +64,16 @@ class Configuration:
     safety: str
     tokens_per_minute: int
     requests_per_second: float
+    #: Requests a quota day allows, and the zone the day is counted in; None
+    #: where no daily limit applies.
+    requests_per_day: int | None
+    quota_timezone: str | None
+    #: Attempts per case; and whether an outage on the last one stops the
+    #: run rather than escalating the case and going on.
+    attempts: int
+    stop_on_outage: bool
+    #: Where and when the limits above were read.
+    limits_source: str
     #: Limits shared with other configurations of the same vendor account.
     shared_limits: str | None
     #: USD per million tokens (input, output); None under a free quota.
@@ -66,6 +84,7 @@ class Configuration:
     #: answer, never a guarantee; `uncapped` when reasoning has no billable
     #: cap at all, which the evaluation runner never sends.
     reservation: Literal["estimated", "uncapped"]
+    reservation_estimator: str
 
     @property
     def prompt_version(self) -> str:
@@ -87,14 +106,21 @@ CONFIGURATIONS: dict[str, Configuration] = {
             max_output_tokens=4096,
             reasoning="low",
             safety="vendor default",
-            # Conservative until the maintainer reads his project's limits in
-            # AI Studio (T071): the docs publish none.
-            tokens_per_minute=100_000,
-            requests_per_second=0.08,
+            # 5 requests a minute, 250,000 tokens a minute, 20 a day: the
+            # day's quota is one full run (20 cases reach the engine), so
+            # one attempt per case, and an outage stops the run.
+            tokens_per_minute=250_000,
+            requests_per_second=5 / 60,
+            requests_per_day=20,
+            quota_timezone="America/Los_Angeles",
+            attempts=1,
+            stop_on_outage=True,
+            limits_source=GEMINI_LIMITS,
             shared_limits=None,
             price_per_mtok=None,
             price_source=GEMINI_PRICES,
             reservation="estimated",
+            reservation_estimator=ESTIMATOR,
         ),
         Configuration(
             name="mistral-large-4",
@@ -110,10 +136,16 @@ CONFIGURATIONS: dict[str, Configuration] = {
             safety="vendor default",
             tokens_per_minute=20_000,
             requests_per_second=0.83,
+            requests_per_day=None,
+            quota_timezone=None,
+            attempts=3,
+            stop_on_outage=False,
+            limits_source=MISTRAL_LIMITS,
             shared_limits="mistral",
             price_per_mtok=(1.36, 4.18),
             price_source=MISTRAL_PRICES,
             reservation="estimated",
+            reservation_estimator=ESTIMATOR,
         ),
         Configuration(
             name="zai-glm-5-3",
@@ -129,10 +161,16 @@ CONFIGURATIONS: dict[str, Configuration] = {
             safety="vendor default",
             tokens_per_minute=20_000,
             requests_per_second=1.0,
+            requests_per_day=None,
+            quota_timezone=None,
+            attempts=3,
+            stop_on_outage=False,
+            limits_source=MISTRAL_LIMITS,
             shared_limits="mistral",
             price_per_mtok=(1.40, 4.40),
             price_source=MISTRAL_PRICES,
             reservation="estimated",
+            reservation_estimator=ESTIMATOR,
         ),
     )
 }
@@ -265,6 +303,17 @@ def _user_payload(message: str, payload: dict) -> str:
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
         "</billing_context>"
     )
+
+
+def estimated_tokens(system: str, user: str, margin: int, max_output: int) -> int:
+    """A request's tokens, estimated (`ESTIMATOR`): the UTF-8 bytes of all it
+    carries -- system prompt, user payload, the verdict schema as sent --
+    plus a margin for what the vendor adds around them, plus the output cap.
+    An estimate, not a bound: neither vendor documents its tokenizer (the
+    maintainer's waivers, 2026-10-24); each answer's reported usage is
+    checked against it."""
+    material = system + user + json.dumps(verdict_schema())
+    return len(material.encode("utf-8")) + margin + max_output
 
 
 def unavailable(category: str, response=None) -> EngineUnavailable:

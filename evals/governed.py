@@ -31,9 +31,10 @@ from app.decision.hosted import Answer, HostedEngine, usable
 from app.decision.verdict import escalation
 from evals.ledger import Ledger
 from evals.limits import Limiter, RunStopped
+from evals.quota import DailyQuota
 
-ATTEMPTS = 3
-#: The whole run, in seconds: 34 cases at Gemini's placeholder pace fit.
+#: The whole run, in seconds: Gemini's 20 requests at 5 a minute fit, and
+#: Mistral's at about one a minute (20,000 tokens a minute).
 DEADLINE = 3600.0
 #: The wait between attempts when the vendor names none.
 BACKOFF = 2.0
@@ -45,22 +46,28 @@ class Governed:
         engine: HostedEngine,
         limiters: list[Limiter],
         ledger: Ledger | None,
-        attempts: int = ATTEMPTS,
+        attempts: int | None = None,
         deadline: float = DEADLINE,
         run_id: str = "",
         on_send: Callable[[], None] | None = None,
+        quota: DailyQuota | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         if engine.config.vendor == "mistral" and ledger is None:
             raise ValueError("a Mistral configuration runs against the envelope's ledger")
+        if engine.config.requests_per_day is not None and quota is None:
+            raise ValueError(f"{engine.name} runs against its daily quota")
         self.engine = engine
         self.config = engine.config
         self.name = engine.name
         self.version = engine.version
         self._limiters = limiters
         self._ledger = ledger
-        self._attempts = attempts
+        # The configuration's own, unless the run asks fewer (a first call).
+        self._attempts = attempts if attempts is not None else engine.config.attempts
+        #: The day's request count, for a configuration with a daily limit.
+        self._quota = quota
         self._deadline = deadline
         self._run_id = run_id
         #: Told of each request to the model before it is sent.
@@ -80,6 +87,10 @@ class Governed:
         #: The reported cost of the run's attempts, in dollars (priced
         #: configurations only).
         self.cost_usd = 0.0
+        #: Requests actually handed to the vendor, across the run.
+        self.sends = 0
+        #: Per case, the category of an outage the case was left with.
+        self.outages: dict[str, str] = {}
 
     # The provider hands the engine how invoice references are written (D10).
     @property
@@ -145,11 +156,16 @@ class Governed:
                 if self._on_send is not None:
                     self._on_send()
             if reserved is not None:
+                # Before a request, in this order; a refusal at any step sends
+                # nothing, and a count already taken is never refunded.
                 await self._acquire(reserved)
+                if self._quota is not None:
+                    self._quota.take()
                 ticket = self._reserve(attempt, reserved)
                 self.attempts[self._case] = attempt
                 if self._on_send is not None:
                     self._on_send()
+                self.sends += 1
             started = self._clock()
             outage = None
             try:
@@ -175,6 +191,11 @@ class Governed:
             if attempt == self._attempts:
                 if str(outage) == "rate_limited":
                     raise RunStopped(f"rate limiting persisted past {self._attempts} attempts")
+                self.outages[self._case] = str(outage)
+                if self.config.stop_on_outage:
+                    # The day's requests are one per case: going on would
+                    # leave the run short anyway (spec 004 amendment).
+                    raise RunStopped(f"outage: {outage}")
                 raise outage
             wait = getattr(outage, "retry_after", None) or BACKOFF * attempt
             if wait >= self._remaining():

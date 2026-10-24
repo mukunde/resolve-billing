@@ -524,6 +524,16 @@ def main() -> int:
         help="what the vendor's data terms rest on (engines evaluated on free tiers)",
     )
     parser.add_argument(
+        "--first-call-only",
+        action="store_true",
+        help="a smoke test: one attempt on the first case reaching the engine, then stop",
+    )
+    parser.add_argument(
+        "--gemini-requests-used-today",
+        type=int,
+        help="declare today's Gemini requests already used, as AI Studio shows them",
+    )
+    parser.add_argument(
         "--mistral-allowance-usd",
         type=float,
         help="declare this month's Mistral allowance, once a month",
@@ -552,8 +562,16 @@ def main() -> int:
         from evals import hosted_run
 
         return hosted_run.main(args, guarded, parser)
-    if args.data_terms or args.mistral_allowance_usd is not None:
-        parser.error("--data-terms and --mistral-allowance-usd are for the engines on free tiers")
+    if (
+        args.data_terms
+        or args.mistral_allowance_usd is not None
+        or args.first_call_only
+        or args.gemini_requests_used_today is not None
+    ):
+        parser.error(
+            "--data-terms, --first-call-only and the allowance and quota declarations are "
+            "for the engines on free tiers"
+        )
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
 

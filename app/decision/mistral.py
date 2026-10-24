@@ -12,11 +12,16 @@ kept. Imported by the evaluation runner only.
 
 from __future__ import annotations
 
-import json
 import os
 
 from app.decision.base import EngineRejected, EngineUnavailable
-from app.decision.hosted import Answer, Configuration, HostedEngine, unavailable
+from app.decision.hosted import (
+    Answer,
+    Configuration,
+    HostedEngine,
+    estimated_tokens,
+    unavailable,
+)
 from app.decision.verdict import verdict_schema
 
 #: A margin over the request's UTF-8 bytes for the chat template's special
@@ -69,8 +74,7 @@ class MistralEngine(HostedEngine):
         """The request's UTF-8 bytes -- a byte-level tokenizer gives each
         ordinary token at least one -- plus the template margin, plus the
         output cap."""
-        text = system + user + json.dumps(verdict_schema())
-        return len(text.encode("utf-8")) + TEMPLATE_MARGIN + self.config.max_output_tokens
+        return estimated_tokens(system, user, TEMPLATE_MARGIN, self.config.max_output_tokens)
 
 
 def _answer(response) -> Answer:

@@ -204,44 +204,73 @@ pip install -e ".[engines]"
 **Keys.** `GEMINI_API_KEY` (Google AI Studio) and `MISTRAL_API_KEY`
 (Mistral's admin console), created by the maintainer and kept in `.env`.
 Nothing else reads them; the project does not load `.env` by itself.
+`GEMINI_QUOTA_PROJECT`, beside them, names the Google project the Gemini
+key belongs to (its id, as AI Studio shows it): the daily quota is the
+project's, and the key alone does not say which. That association is the
+maintainer's declaration; the code does not verify it.
 
-**Before the first call of each configuration, a documented check** (the
-spec's assumptions), recorded here with its date:
+**The documented check** (the spec's assumptions), as the maintainer read it
+on 2026-10-24:
 
 | | gemini-3.8-flash | mistral-large-4 | zai-glm-5-3 |
 |---|---|---|---|
-| usable on the free level (Mistral: what "Activer" requires) | to check | to check | to check |
-| what the quota counts; a ceiling shared with other models | to check | to check | to check |
-| licence; stable or preview | to check | preview (public) | to check |
-| data regime (a preview or third-party regime over the opt-out?) | to check | to check | to check |
-| privacy setting | to check | to check | to check |
-| per-minute limits read in the console | to check | to check | to check |
-
-The limits in `app/decision/hosted.py` are conservative placeholders until
-that check: Gemini's documentation publishes none, and Mistral's two models
-share one limiter set to the smaller of their limits.
+| usable on the free level | yes: a dedicated project, `resolve-billing-eval`, free tier, no billing | yes, by default: $10 of API usage a month, reset on the 1st; "Activer" (Pay-As-You-Go) enables paid usage beyond it and stays off | as Large 4 |
+| limits read in the console | 5 requests/min, 250,000 tokens/min, **20 requests/day** (per project, reset at midnight Pacific) | 20,000 tokens/min, 0.83 requests/s | 20,000 tokens/min, 1.00 request/s |
+| a ceiling shared with other models | not shown | none shown; the code applies the stricter limits to both models together | as Large 4 |
+| status | stable | Public Preview | Z.ai's model, served by Mistral |
+| data regime | free services may improve Google's products, except that for users in the EEA, Switzerland and the UK the paid-service terms apply (Google's terms, 2026-04-28) -- the maintainer's situation, to confirm | "Allow your API calls to train Mistral's models" is on; the opt-out does not cover Labs or preview models | the same toggle; whether it covers a third-party model is not stated |
+| Labs models | -- | off; whether a model needs them shows at the first call (a 4xx refusal, settled at zero) | as Large 4 |
 
 **The maintainer's waivers (2026-10-24).** Reservations and costs are
-estimates, never guarantees: Gemini's is Google's count of the request as one
-text plus a 256-token margin and the output cap; Mistral's is the request's
-UTF-8 bytes plus a 512-token margin and the output cap. Each answer's
-reported usage is checked against its reservation, and a run stops when one
-is exceeded or usage is not reported.
+estimates, never guarantees: for all three, the request's UTF-8 bytes plus a
+512-token margin plus the output cap (`utf8-bytes-v1`). Gemini's was first
+Google's count of the request; it became local the same day, since a counting
+request could spend the day's quota. Each answer's reported usage is checked
+against its reservation, and a run stops when one is exceeded or usage is not
+reported.
 
-**A first minimal call, then the run.** For each configuration:
+**A first call, then the run.** For each configuration, first a smoke test,
+`--first-call-only`: the development set up to the first case that reaches
+the engine, one attempt, then the run stops, written incomplete, its
+`sends` 0 or 1. Then, on another occasion, the full run. `--data-terms` says
+what the vendor's terms for the run rest on -- `contractual`, `opted_out`,
+`training_allowed` or `unknown` -- and is required.
+
+For Mistral, declare the month's allowance once, on the month's first run:
 
 ```bash
-python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms unknown --json evals/results/gemini-3.8-flash.json
+python -m dotenv run -- python -m evals.runner --engine mistral-large-4 --data-terms training_allowed --mistral-allowance-usd 10 --first-call-only --json evals/results/mistral-large-4.json
 ```
-
-`--data-terms` says what the vendor's terms for this run rest on --
-`contractual`, `opted_out`, `training_allowed` or `unknown` -- and is
-required. For Mistral, declare the month's allowance once, on the month's
-first run:
 
 ```bash
-python -m dotenv run -- python -m evals.runner --engine mistral-large-4 --data-terms unknown --mistral-allowance-usd 10 --json evals/results/mistral-large-4.json
+python -m dotenv run -- python -m evals.runner --engine mistral-large-4 --data-terms training_allowed --json evals/results/mistral-large-4.json
 ```
+
+For Gemini, twenty requests a day are exactly one full run (twenty cases
+reach the engine), so the smoke test and the full run go on **two different
+Pacific days**. On each day, declare once, before its first request, the
+requests already used that day as AI Studio shows them (`0` on a fresh day):
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms unknown --gemini-requests-used-today 0 --first-call-only --json evals/results/gemini-3.8-flash.json
+```
+
+and, another day:
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms unknown --gemini-requests-used-today 0 --json evals/results/gemini-3.8-flash.json
+```
+
+**Gemini's daily quota.** Kept in `~/.resolve-billing/quota-<project>.json`,
+under a lock every checkout of the project shares. A day is declared once,
+never lowered; each request is counted before it is sent and never refunded,
+failed ones included. A full run starts only on a day with nothing used; a
+request that would pass twenty is not sent and the run stops ("daily quota
+exhausted (local count)"), as it does on reaching a day not declared -- a run
+crossing Pacific midnight -- and on a clock gone back. Gemini makes one
+attempt per case, and an outage stops the run. The project is assumed
+dedicated, with no other caller: neither the console nor this count can see
+one.
 
 The ledger, `~/.resolve-billing/mistral-envelope.json`, lives outside every
 checkout, so both Mistral models, every run of the month and every worktree

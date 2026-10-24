@@ -90,6 +90,39 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 - [x] T060 The two contracts with the change; ADR-009's model-provider row;
   `docs/operations.md`; `evals/results/README.md`; `.env.example`; README.
 
+## Phase 7a: The daily quota and the first call (amendment, plan A1-A7)
+
+- [x] T090 Test first: the configurations' new fields and Gemini's real
+  limits; the shared estimator (`utf8-bytes-v1`) on Unicode text; Gemini
+  sending no counting request.
+- [x] T091 `app/decision/hosted.py`, `app/decision/gemini.py`,
+  `app/decision/mistral.py`.
+- [x] T092 Test first, `tests/unit/test_daily_quota.py`: the 20th request of
+  a day sent, the 21st refused; persistence across restarts and two
+  checkouts under one lock; an interruption after `take` kept counted; the
+  day changing at Pacific midnight, daylight saving included; a clock gone
+  back refused before a declaration, an admission or a send, nothing
+  mutated; an unreadable or inconsistent state refused, never reset; a
+  declaration initialising its day once, never lowering; an undeclared day
+  stopping the run; `admit_full_run`; Pacific dates converted without the
+  system's time zone database (`tzdata`).
+- [x] T093 `evals/quota.py`; `tzdata` in the `engines` extra.
+- [x] T094 Test first: attempts from the configuration; the order of the
+  pre-send steps, each refusal sending nothing; `sends`; a Gemini outage
+  stopping the run with the later cases not attempted; Mistral unchanged;
+  `--first-call-only` (one attempt, at most one send, zero on a refusal
+  before sending, the reasons); a Gemini run, full or smoke test,
+  requiring today declared -- already or by `--gemini-requests-used-today`
+  -- the flag refused on a declared day and for Mistral;
+  `GEMINI_QUOTA_PROJECT` required for every Gemini run and its format
+  checked; the result's new fields; the investigator reaching the
+  instrumented engine exactly 20 times.
+- [x] T095 `evals/governed.py`, `evals/hosted_run.py`, `evals/runner.py`.
+- [x] T096 Docs: the evaluation contract, `docs/operations.md` (T071's
+  check as read, the Gemini procedure), `.env.example`.
+- [ ] T097 Codex reviews the diff until nothing is left; the maintainer
+  approves the final diff by its commit; push and pull request.
+
 ## Phase 8: The maintainer's runs
 
 - [ ] T070 **[maintainer]** Keys: `GEMINI_API_KEY` (AI Studio),
@@ -99,8 +132,10 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   quota counts and any shared ceiling, the model's licence, status and data
   regime (GLM 5.3's in particular), the privacy setting; recorded in
   `docs/operations.md`.
-- [ ] T072 **[maintainer]** A first minimal call per configuration, then one
-  run of the 34 cases each; results stored (SC-001).
+- [ ] T072 **[maintainer]** A first minimal call per configuration
+  (`--first-call-only`), then one run of the 34 cases each, on another
+  occasion -- for Gemini, another Pacific quota day; results stored
+  (SC-001). After phase 7a.
 
 ## Phase 9: Review and delivery
 

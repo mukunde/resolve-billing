@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -37,7 +38,15 @@ from evals import engines
 from evals.governed import Governed
 from evals.ledger import Ledger, LedgerRefused
 from evals.limits import RunStopped, limiters_for
+from evals.quota import DailyQuota, QuotaRefused
 from evals.state import AccountBusy, AccountRun
+
+#: Where the maintainer names his Gemini project: the key alone does not say.
+QUOTA_PROJECT = "GEMINI_QUOTA_PROJECT"
+QUOTA_ASSUMPTIONS = (
+    "dedicated project, no other caller; every attempt counted, never refunded; "
+    "the key's project as declared by the maintainer, not verified"
+)
 
 STATEMENT = (
     "regression score on development cases: these cases shaped the prompt; the score says "
@@ -73,10 +82,17 @@ class HostedRun:
 
 
 async def run(
-    record: HostedRun, cases: list[dict], ledger: Ledger | None, account: AccountRun
+    record: HostedRun,
+    cases: list[dict],
+    ledger: Ledger | None,
+    account: AccountRun,
+    quota: DailyQuota | None = None,
+    first_call_only: bool = False,
 ) -> None:
     """Run the cases into `record`, which holds what was done whatever stops
-    the run. `account` is held: no other run shares its quota meanwhile."""
+    the run. `account` is held: no other run shares its quota meanwhile. With
+    `first_call_only`, a smoke test: one attempt on the first case that
+    reaches the engine, then the run stops, whatever came of it."""
     from app.api.deps import wire
     from app.application.investigate_dispute import DisputeInvestigator
     from app.domain.models import Dispute
@@ -98,8 +114,10 @@ async def run(
         # is this run's alone.
         limiters_for(config, shared={}),
         ledger,
+        attempts=1 if first_call_only else None,
         run_id=record.started_at.strftime("%Y%m%dT%H%M%S.%fZ"),
         on_send=account.record_send,
+        quota=quota,
     )
     record.governed = governed
     investigator = DisputeInvestigator(provider=provider, engine=wire(governed, provider))
@@ -127,6 +145,9 @@ async def run(
             except LedgerRefused as refusal:
                 record.stop(f"the ledger refused: {refusal}", cases, index)
                 return
+            except QuotaRefused as refusal:
+                record.stop(f"the quota refused: {refusal}", cases, index)
+                return
             except (KeyboardInterrupt, asyncio.CancelledError):
                 record.stop("interrupted", cases, index)
                 raise
@@ -138,10 +159,36 @@ async def run(
             record.outcomes.append(runner._evaluate(case, result))
             # A case the rules settled never entered the engine.
             record.statuses[case["id"]] = governed.statuses.get(case["id"], "rules_only")
+            if first_call_only and case["id"] in governed.statuses:
+                record.stop_reason = _first_call_reason(
+                    governed.statuses[case["id"]], governed.outages.get(case["id"])
+                )
+                record.stopped_at = case["id"]
+                return
         record.complete = True
     finally:
         record.finished = time.monotonic()
         await governed.aclose()
+
+
+def _first_call_reason(status: str, outage: str | None) -> str:
+    if status in {"decided", "abstained", "invalid"}:
+        return "first call only"
+    if status == "not_sent_oversized":
+        return "not sent: oversized"
+    if outage is not None:
+        return f"outage: {outage}"
+    return f"first call {status}"
+
+
+def _admitted(quota: DailyQuota, args) -> None:
+    """Today declared -- already, or by the flag -- and the run admitted."""
+    if args.gemini_requests_used_today is not None:
+        quota.declare(args.gemini_requests_used_today)
+    if args.first_call_only:
+        quota.admit_first_call()
+    else:
+        quota.admit_full_run()
 
 
 def main(args, cases: list[dict], parser) -> int:
@@ -158,6 +205,8 @@ def main(args, cases: list[dict], parser) -> int:
     config = configuration(args.engine)
     if config.vendor != "mistral" and args.mistral_allowance_usd is not None:
         parser.error("--mistral-allowance-usd is for the Mistral configurations")
+    if config.requests_per_day is None and args.gemini_requests_used_today is not None:
+        parser.error("--gemini-requests-used-today is for a configuration with a daily limit")
     if (missing := runner.missing_credential(args.engine)) is not None:
         raise SystemExit(missing)
 
@@ -179,11 +228,40 @@ def main(args, cases: list[dict], parser) -> int:
         not_attempted=[case["id"] for case in cases],
     )
     started = time.monotonic()
+
+    quota = None
+    if config.requests_per_day is not None:
+        # Before any client is built: the project named, today declared, the
+        # run admitted (a full run needs the whole day).
+        try:
+            quota = DailyQuota(
+                os.environ.get(QUOTA_PROJECT, ""),
+                config.requests_per_day,
+                config.quota_timezone,
+            )
+        except QuotaRefused as refusal:
+            print(f"refused: {refusal}; name the project in {QUOTA_PROJECT}", file=sys.stderr)
+            return 2
+        try:
+            _admitted(quota, args)
+        except QuotaRefused as refusal:
+            print(
+                f"refused: {refusal}. Declare today's requests already used, as AI Studio "
+                "shows them, with --gemini-requests-used-today",
+                file=sys.stderr,
+            )
+            if not args.first_call_only:
+                return 2
+            # A smoke test refused before sending is still a result: zero sends.
+            record.stop_reason = f"not sent: the quota refused ({refusal})"
+            written = write(record, args, ledger, started)
+            print(f"result written to {written}", file=sys.stderr)
+            return 3
     defect = None
     try:
         with AccountRun(config.shared_limits or config.vendor) as account:
             try:
-                asyncio.run(run(record, cases, ledger, account))
+                asyncio.run(run(record, cases, ledger, account, quota, args.first_call_only))
             except (KeyboardInterrupt, asyncio.CancelledError):
                 record.stop_reason = record.stop_reason or "interrupted"
                 record.complete = False
@@ -196,7 +274,7 @@ def main(args, cases: list[dict], parser) -> int:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
 
-    written = write(record, args, ledger, started)
+    written = write(record, args, ledger, started, quota)
     if defect is not None:
         print(f"result written to {written}", file=sys.stderr)
         raise defect
@@ -216,7 +294,13 @@ def main(args, cases: list[dict], parser) -> int:
     return status if record.complete else 3
 
 
-def write(record: HostedRun, args, ledger: Ledger | None, started: float) -> Path:
+def write(
+    record: HostedRun,
+    args,
+    ledger: Ledger | None,
+    started: float,
+    quota: DailyQuota | None = None,
+) -> Path:
     config = configuration(record.engine_name)
     governed = record.governed
     if config.price_per_mtok is None:
@@ -264,8 +348,20 @@ def write(record: HostedRun, args, ledger: Ledger | None, started: float) -> Pat
         "network_s": _rounded(governed.network) if governed else {},
         "duration_s": round(finished - started, 3),
         "cost": cost,
+        "reservation_estimator": config.reservation_estimator,
+        "smoke_test": bool(args.first_call_only),
+        "sends": governed.sends if governed else 0,
         "outcomes": [vars(o) for o in record.outcomes],
     }
+    if quota is not None:
+        try:
+            held = quota.state()
+        except QuotaRefused as refusal:
+            held = {"unreadable": str(refusal)}
+        payload["daily_quota"] = held | {
+            "run_sends": governed.sends if governed else 0,
+            "assumptions": QUOTA_ASSUMPTIONS,
+        }
     return _new_file(args.json, record.started_at, payload)
 
 

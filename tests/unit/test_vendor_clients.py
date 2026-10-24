@@ -189,15 +189,15 @@ class TestGemini:
         assert SENTINEL not in str(raised.value)
         assert raised.value.__suppress_context__
 
-    async def test_the_reservation_counts_the_whole_text_plus_its_margins(self):
+    async def test_the_reservation_is_estimated_locally_never_counted_by_google(self):
         engine, models = gemini(gemini_response(json.dumps(VALID_VERDICT)), counted=850)
 
-        reserved = await engine.reservation("SYSTEM", "USER")
+        reserved = await engine.reservation("SYSTEM", "USÉR")
 
-        (counted,) = models.counts
-        assert "SYSTEM" in counted["contents"] and "USER" in counted["contents"]
-        assert json.dumps(verdict_schema()) in counted["contents"]
-        assert reserved == 850 + 256 + 4096
+        assert models.counts == []
+        material = "SYSTEM" + "USÉR" + json.dumps(verdict_schema())
+        assert reserved == len(material.encode("utf-8")) + 512 + 4096
+        assert engine.counts_remotely is False
 
 
 # -- Mistral -----------------------------------------------------------------
@@ -371,7 +371,7 @@ class TestAgainstThePinnedSdks:
 
         from google.genai.models import AsyncModels
 
-        for method in (AsyncModels.generate_content, AsyncModels.count_tokens):
+        for method in (AsyncModels.generate_content,):
             parameters = inspect.signature(method).parameters
             assert {"model", "contents", "config"} <= set(parameters), method.__name__
 
@@ -423,13 +423,14 @@ class TestPinnedAndHonest:
 
         assert client.sdk_configuration.get_server_details()[0] == "https://api.mistral.ai"
 
-    async def test_gemini_counts_without_the_sdk_s_retries(self):
+    async def test_a_gemini_decision_sends_no_counting_request(self, context, findings, dispute):
         engine, models = gemini(gemini_response(json.dumps(VALID_VERDICT)))
 
-        await engine.reservation("system", "user")
+        await engine.reservation(*engine.request_texts(dispute, context, findings)[:2])
+        await engine.decide(dispute, context, findings)
 
-        (count,) = models.counts
-        assert count["config"].http_options.retry_options.attempts == 1
+        assert models.counts == []
+        assert len(models.generated) == 1
 
     @pytest.mark.parametrize("defect", [TypeError("a bug"), AttributeError("a bug")])
     async def test_a_defect_in_the_gemini_call_is_not_an_outage(

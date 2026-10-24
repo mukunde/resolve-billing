@@ -361,6 +361,125 @@ still built and tested on stubs -- the shared core, the chunk parsing, the
 envelope -- and the runner refuses a blocked configuration, naming what
 blocks it; unblocking one is a recorded decision.
 
+## Amendment (2026-10-24): the daily quota and the first call
+
+For the spec's amendment of the same date (approved at `b84a92d`). Branch
+`004-daily-quota`, its own pull request, before any of the maintainer's
+runs (T072).
+
+### A1. The configurations (`app/decision/hosted.py`)
+
+New fields on `Configuration`:
+
+- `requests_per_day: int | None` and `quota_timezone: str | None` --
+  `gemini-3.8-flash`: 20, `America/Los_Angeles`; None for Mistral, whose
+  monthly envelope is the binding limit.
+- `attempts: int` -- `gemini-3.8-flash`: 1; Mistral: 3, as today.
+- `stop_on_outage: bool` -- True for Gemini (FR-007d), False for Mistral.
+- `limits_source: str` -- where and when the limits were read: Gemini, "AI
+  Studio rate-limit page, project resolve-billing-eval, read 2026-10-24";
+  Mistral, "admin console limits page, read 2026-10-24".
+- `reservation_estimator: str` -- `utf8-bytes-v1` for all three.
+
+Gemini's limits become the ones read: `requests_per_second = 5 / 60`,
+`tokens_per_minute = 250_000`. Mistral's are unchanged (they match the
+console).
+
+### A2. Gemini's reservation, local (`app/decision/gemini.py`)
+
+One estimator shared by both clients, `estimated_tokens(system, user,
+margin, max_output)` in `hosted.py`: the UTF-8 bytes of `system + user +
+json.dumps(verdict_schema())` plus the margin plus the output cap. Gemini's
+margin becomes 512 (as Mistral's): the system instruction and the schema
+travel as fields, and their framing is not documented. `GeminiEngine` no
+longer calls `count_tokens`; `counts_remotely` is False and `_count_config`
+goes. An estimate under the new waiver; each answer's usage is still
+checked (unchanged code in `evals/governed.py`).
+
+### A3. The daily quota (`evals/quota.py`, new)
+
+`DailyQuota(project, limit, timezone, now)`, its state in
+`STATE_DIR/quota-<project>.json`, under its own lock file
+`quota-<project>.lock` (`state.try_lock`), so every key and every checkout
+of one project share it (FR-007b). The project is the Google project id,
+from `GEMINI_QUOTA_PROJECT` in the maintainer's `.env` (not a secret).
+Any Gemini run, smoke test included, without it -- or with a value that is
+not a Google project id (lowercase letters, digits and hyphens, 6 to 30
+characters) -- is refused before any client is built; the value names a
+file, so it is checked before use. The association between the key and
+the project is the maintainer's declaration, not verified by the code; the
+documentation says so.
+
+State: `{"project", "days": {"YYYY-MM-DD": {"declared": n, "sent": m}},
+"last_seen": <epoch>}`, written atomically (`state.write_atomically`).
+Read failures or an inconsistent shape refuse (`QuotaRefused`), never
+reset. The quota day is the date in `quota_timezone` (`zoneinfo`, daylight
+saving included); `tzdata` joins the `engines` extra, since Windows ships
+no IANA database, and a test converts Pacific dates without the system's.
+
+Every operation -- `declare`, `admit_full_run`, `take` -- holds the lock,
+reads the clock once, refuses before mutating anything if `now <
+last_seen` (a clock gone back), and on success advances `last_seen` to
+`now`.
+
+- `declare(used)` -- initialises today once, with the count read in the
+  console; a second declaration for the same day is refused, so a count
+  is never lowered (FR-007c).
+- `admit_full_run()` -- refused unless today is declared and
+  `declared + sent == 0` (FR-007c).
+- `take()` -- the day re-read from the clock; an undeclared day stops the run
+  (`RunStopped`, "quota day <d> not declared", FR-007e); `declared + sent
+  + 1 > limit` stops it ("daily quota exhausted (local count)"); otherwise
+  `sent += 1` persisted before returning. Never decreased.
+- `state()` -- for the result.
+
+`--gemini-requests-used-today N` declares today before the run, when today
+is not declared yet. A Gemini run, full or smoke test, requires today to be
+declared -- already, or by this flag; the flag on a day already declared is
+refused (a count is never lowered), and so is the flag for a configuration
+without a daily limit.
+
+### A4. The governed engine (`evals/governed.py`)
+
+- Attempts come from the configuration (`attempts`), forced to 1 by
+  `--first-call-only`.
+- Before each send, in this order: the limiters; `quota.take()` when the
+  configuration has a daily limit; the ledger's reservation (Mistral);
+  `on_send`; the send. A refusal at any step sends nothing.
+- `sends` counts requests actually handed to the vendor.
+- On the last attempt's outage: with `stop_on_outage`, `RunStopped("outage:
+  <category>")`, the case `unavailable`, nothing sent after it; otherwise
+  as today (the investigation escalates, the run goes on). A vendor 429 on
+  the last attempt stays "rate limiting persisted", told apart from the
+  local count's exhaustion.
+
+### A5. The first call (`evals/hosted_run.py`, `evals/runner.py`)
+
+`--first-call-only`: the governed engine with one attempt; after the first
+case that entered `decide` (whatever came of it), the run stops: written
+incomplete, `"smoke_test": true`, `"sends": 0 or 1`, its reason "first call
+only" on success, otherwise the refusal's or failure's own (a
+`not_sent_oversized` case reads "not sent: oversized"). Allowed for every
+configuration; `admit_full_run` is not required for it (a smoke test
+needs one request, not twenty).
+
+### A6. The result
+
+Adds `reservation_estimator`, `smoke_test`, `sends`, and for a configuration
+with a daily limit `daily_quota`: `{project, limit, timezone, days: {date:
+{declared, sent}}, run_sends, assumptions: "dedicated project, no other
+caller; every attempt counted, never refunded"}` (FR-009 amended).
+
+### A7. Tests and documents
+
+Tests before code, as SC-004 lists them, plus: the instrumented,
+network-free engine reached exactly 20 times by the investigator on the
+development set (a pinned count; a change of the set updates it in the
+same commit). Docs: the evaluation contract; `docs/operations.md` (the
+check recorded for both vendors as read on 2026-10-24, the Gemini
+procedure -- declare, first call one Pacific day, full run another --
+`GEMINI_QUOTA_PROJECT`); `.env.example`; ADR-009's row unchanged.
+
 ## Complexity Tracking
 
 None.
