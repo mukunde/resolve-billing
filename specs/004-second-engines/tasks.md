@@ -27,11 +27,11 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 3: The shared core
 
-- [ ] T020 Test first, before the extraction: on a fake client, the exact
+- [x] T020 Test first, before the extraction: on a fake client, the exact
   request Claude sends and its decisions for a valid, an invalid and a
   truncated answer, pinned; the helpers importable from
   `app/decision/verdict.py`. Both pass unchanged after T021.
-- [ ] T021 `app/decision/verdict.py`; `claude.py` imports it.
+- [x] T021 `app/decision/verdict.py`; `claude.py` imports it.
 - [ ] T022 Test first, `tests/unit/test_hosted_engines.py`: `HostedEngine` on a
   fake `_complete`: payload holds the pseudonymised context and masked
   message only; references restored, not-issued ones dropped; invalid or

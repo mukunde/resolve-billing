@@ -27,7 +27,7 @@ import os
 import time
 from pathlib import Path
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from app.decision.anonymise import anonymise
 from app.decision.base import (
@@ -36,9 +36,9 @@ from app.decision.base import (
     EngineRejected,
     EngineTelemetry,
     EngineUnavailable,
-    RecommendedAction,
 )
 from app.decision.masking import MASKING_VERSION, ReferenceFinder, mask_message
+from app.decision.verdict import ModelVerdict, escalation, verdict_schema
 from app.domain.models import BillingContext, Dispute, RuleFinding
 from app.observability import tracing
 
@@ -172,60 +172,9 @@ PRICING_PER_MTOK: dict[str, tuple[float, float] | None] = {
 }
 
 
-class _ModelVerdict(BaseModel):
-    """Exactly what the model is allowed to fill in.
-
-    Note what is absent: ``confidence_kind``. Whether a number is calibrated
-    is not the model's to declare -- the engine sets it, and only an
-    evaluation run can promote it.
-    """
-
-    classification: Classification
-    confidence: float = Field(ge=0.0, le=1.0)
-    recommended_action: RecommendedAction
-    explanation: str = Field(min_length=1, max_length=2000)
-    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
-
-
 def _response_schema() -> dict:
-    """JSON schema sent to the API, generated from the domain enums.
-
-    Hand-built rather than derived from the Pydantic model so the enum values
-    are flat and ``additionalProperties`` is explicit -- and so that adding a
-    classification to the enum updates the schema automatically.
-    """
-    return {
-        "type": "json_schema",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "classification": {
-                    "type": "string",
-                    "enum": [c.value for c in Classification],
-                },
-                # No minimum/maximum: the API rejects those keywords on a
-                # number ("properties maximum, minimum are not supported").
-                # The bound is enforced on arrival instead, by _ModelVerdict,
-                # and a value outside it fails validation and escalates to a
-                # human -- the same safety, checked one step later.
-                "confidence": {"type": "number"},
-                "recommended_action": {
-                    "type": "string",
-                    "enum": [a.value for a in RecommendedAction],
-                },
-                "explanation": {"type": "string"},
-                "evidence_refs": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": [
-                "classification",
-                "confidence",
-                "recommended_action",
-                "explanation",
-                "evidence_refs",
-            ],
-            "additionalProperties": False,
-        },
-    }
+    """The verdict schema, in the form Anthropic's structured output takes."""
+    return {"type": "json_schema", "schema": verdict_schema()}
 
 
 class ClaudeDecisionEngine:
@@ -369,7 +318,7 @@ class ClaudeDecisionEngine:
                 raise EngineRejected(_refusal(error)) from error
             raise
 
-    def _parse(self, response) -> _ModelVerdict | None:
+    def _parse(self, response) -> ModelVerdict | None:
         """Validate the response, or return None to send the run to a human.
 
         Three ways this fails, all handled the same way: the model declined,
@@ -386,24 +335,13 @@ class ClaudeDecisionEngine:
         if not text:
             return None
         try:
-            return _ModelVerdict.model_validate_json(text)
+            return ModelVerdict.model_validate_json(text)
         except ValidationError:
             return None
 
     def _to_human(self, telemetry: EngineTelemetry) -> Decision:
         """The engine did not answer. That is a decision to escalate."""
-        return Decision(
-            classification=Classification.UNKNOWN,
-            confidence=0.0,
-            confidence_kind="self_reported",
-            recommended_action=RecommendedAction.ESCALATE,
-            explanation=(
-                "Le moteur de décision n'a pas produit de sortie conforme au schéma. "
-                "Le litige part en revue humaine."
-            ),
-            evidence_refs=[],
-            telemetry=telemetry,
-        )
+        return escalation(telemetry)
 
     def _telemetry(self, response, latency_ms: int) -> EngineTelemetry:
         usage = getattr(response, "usage", None)
