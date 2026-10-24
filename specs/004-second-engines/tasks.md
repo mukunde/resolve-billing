@@ -12,7 +12,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 1: Contracts as they stand
 
-- [ ] T001 `docs/contract/decision-engine.md` and `docs/contract/evaluation.md`,
+- [x] T001 `docs/contract/decision-engine.md` and `docs/contract/evaluation.md`,
   as the capabilities stand; `docs/contract/README.md` lists them. Own commit.
 
 ## Phase 2: Research, pinned
