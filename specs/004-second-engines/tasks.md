@@ -32,12 +32,12 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   truncated answer, pinned; the helpers importable from
   `app/decision/verdict.py`. Both pass unchanged after T021.
 - [x] T021 `app/decision/verdict.py`; `claude.py` imports it.
-- [ ] T022 Test first, `tests/unit/test_hosted_engines.py`: `HostedEngine` on a
+- [x] T022 Test first, `tests/unit/test_hosted_engines.py`: `HostedEngine` on a
   fake `_complete`: payload holds the pseudonymised context and masked
   message only; references restored, not-issued ones dropped; invalid or
   absent answer → person; error categories; no vendor text; configurations
   closed (exact ids, endpoint, key; an ignored parameter reported).
-- [ ] T023 `app/decision/hosted.py`.
+- [x] T023 `app/decision/hosted.py`.
 
 ## Phase 4: Registry and guards
 
