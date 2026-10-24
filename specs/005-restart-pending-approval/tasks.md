@@ -36,9 +36,9 @@ committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 3: Documents
 
-- [ ] T020 `docs/operations.md`: "After a restart" (find by identifier,
+- [x] T020 `docs/operations.md`: "After a restart" (find by identifier,
   read-only SQL with the store's real column names, what is safe).
-- [ ] T021 `docs/contract/approval-and-execution.md`: the guarantee, the
+- [x] T021 `docs/contract/approval-and-execution.md`: the guarantee, the
   test under "Covered by", the limits under "Not guaranteed today".
 
 ## Phase 4: Review and delivery

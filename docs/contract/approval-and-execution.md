@@ -31,6 +31,12 @@ approvals bound to what was shown, writes on a real platform) and ADR-009
   the orchestrator's, as an authenticated service. A route whose kind of
   caller is not configured refuses. The review page takes decisions by POST
   only; a GET moves nothing.
+- **A pending action survives a restart of the service.** It lives in the
+  service's database with its deadline and its run, not in the process; its
+  review fingerprint, computed from the stored action and the invoice as
+  the platform holds it, stays equal while neither changes. After a clean
+  stop or a kill, a new process decides and executes it as the old one
+  would have.
 - **An approval holds for what was shown, and not forever.**
   - A request for approval has a deadline, 72 hours by default
     (`RESOLVE_APPROVAL_TTL_HOURS`); past it, the action becomes `EXPIRED`
@@ -166,6 +172,10 @@ An action says why in `attention`, from a closed set:
   correction: two legitimate disputes on one invoice for the same amount
   collide (ADR-008, D6).
 - There is no scheduler: an abandoned claim waits for the next `execute()`.
+- The restart guarantee is shown at the service boundary, with no write
+  before the restart, on the fake platform: not recovery from a crash inside
+  a database transaction, not the orchestrator's resumption, not a write in
+  flight at the moment of a crash, not exactly-once on a real platform.
 
 Stripe's cap on what an invoice's credit notes and refunds give back held
 on its test account (2026-10-23, write property 5); an approved correction
@@ -179,5 +189,6 @@ was made there once, end to end (SC-002).
 `tests/integration/test_approval_binding.py`,
 `tests/integration/test_review_page.py`,
 `tests/integration/test_resume_callback.py`, `tests/integration/test_auth.py`,
-`tests/integration/test_unsupported_platform_data.py`; on a Stripe test
-account, `tests/contract/test_stripe_execution.py`.
+`tests/integration/test_unsupported_platform_data.py`,
+`tests/e2e/test_restart_pending_approval.py`; on a Stripe test account,
+`tests/contract/test_stripe_execution.py`.
