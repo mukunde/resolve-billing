@@ -101,17 +101,21 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   a day sent, the 21st refused; persistence across restarts and two
   checkouts under one lock; an interruption after `take` kept counted; the
   day changing at Pacific midnight, daylight saving included; a clock gone
-  back, an unreadable or inconsistent state refused, never reset; a
+  back refused before a declaration, an admission or a send, nothing
+  mutated; an unreadable or inconsistent state refused, never reset; a
   declaration initialising its day once, never lowering; an undeclared day
-  stopping the run; `admit_full_run`.
-- [ ] T093 `evals/quota.py`.
+  stopping the run; `admit_full_run`; Pacific dates converted without the
+  system's time zone database (`tzdata`).
+- [ ] T093 `evals/quota.py`; `tzdata` in the `engines` extra.
 - [ ] T094 Test first: attempts from the configuration; the order of the
   pre-send steps, each refusal sending nothing; `sends`; a Gemini outage
   stopping the run with the later cases not attempted; Mistral unchanged;
   `--first-call-only` (one attempt, at most one send, zero on a refusal
-  before sending, the reasons); `--gemini-requests-used-today` and
-  `GEMINI_QUOTA_PROJECT` required for a Gemini full run and refused
-  elsewhere; the result's new fields; the investigator reaching the
+  before sending, the reasons); a Gemini run, full or smoke test,
+  requiring today declared -- already or by `--gemini-requests-used-today`
+  -- the flag refused on a declared day and for Mistral;
+  `GEMINI_QUOTA_PROJECT` required for every Gemini run and its format
+  checked; the result's new fields; the investigator reaching the
   instrumented engine exactly 20 times.
 - [ ] T095 `evals/governed.py`, `evals/hosted_run.py`, `evals/runner.py`.
 - [ ] T096 Docs: the evaluation contract, `docs/operations.md` (T071's

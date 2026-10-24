@@ -402,29 +402,42 @@ checked (unchanged code in `evals/governed.py`).
 `STATE_DIR/quota-<project>.json`, under its own lock file
 `quota-<project>.lock` (`state.try_lock`), so every key and every checkout
 of one project share it (FR-007b). The project is the Google project id,
-from `GEMINI_QUOTA_PROJECT` in the maintainer's `.env` (not a secret; a
-Gemini run without it is refused before any client is built).
+from `GEMINI_QUOTA_PROJECT` in the maintainer's `.env` (not a secret).
+Any Gemini run, smoke test included, without it -- or with a value that is
+not a Google project id (lowercase letters, digits and hyphens, 6 to 30
+characters) -- is refused before any client is built; the value names a
+file, so it is checked before use. The association between the key and
+the project is the maintainer's declaration, not verified by the code; the
+documentation says so.
 
 State: `{"project", "days": {"YYYY-MM-DD": {"declared": n, "sent": m}},
 "last_seen": <epoch>}`, written atomically (`state.write_atomically`).
 Read failures or an inconsistent shape refuse (`QuotaRefused`), never
 reset. The quota day is the date in `quota_timezone` (`zoneinfo`, daylight
-saving included).
+saving included); `tzdata` joins the `engines` extra, since Windows ships
+no IANA database, and a test converts Pacific dates without the system's.
+
+Every operation -- `declare`, `admit_full_run`, `take` -- holds the lock,
+reads the clock once, refuses before mutating anything if `now <
+last_seen` (a clock gone back), and on success advances `last_seen` to
+`now`.
 
 - `declare(used)` -- initialises today once, with the count read in the
   console; a second declaration for the same day is refused, so a count
   is never lowered (FR-007c).
 - `admit_full_run()` -- refused unless today is declared and
   `declared + sent == 0` (FR-007c).
-- `take()` -- under the lock: refuse if `now < last_seen` (a clock gone
-  back); the day re-read from the clock; an undeclared day stops the run
+- `take()` -- the day re-read from the clock; an undeclared day stops the run
   (`RunStopped`, "quota day <d> not declared", FR-007e); `declared + sent
   + 1 > limit` stops it ("daily quota exhausted (local count)"); otherwise
   `sent += 1` persisted before returning. Never decreased.
 - `state()` -- for the result.
 
-`--gemini-requests-used-today N` declares before the run; it is refused
-for a configuration without a daily limit.
+`--gemini-requests-used-today N` declares today before the run, when today
+is not declared yet. A Gemini run, full or smoke test, requires today to be
+declared -- already, or by this flag; the flag on a day already declared is
+refused (a count is never lowered), and so is the flag for a configuration
+without a daily limit.
 
 ### A4. The governed engine (`evals/governed.py`)
 
