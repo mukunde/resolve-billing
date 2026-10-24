@@ -73,7 +73,11 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   honoured, a timeout during a call or a wait, durable exhaustion stops;
   the Mistral ledger charged per attempt before sending, persisted, shared
   by both models and runs, never reset by switching model, a new month a
-  new ledger, a second allowance declaration refused; `KeyboardInterrupt`
+  new ledger, a second allowance declaration refused; two processes
+  reserving at once never both spend the last of it (the lock); an
+  interruption after a reservation leaves it counted; an unreadable or
+  inconsistent ledger refused, never reset; a configuration with uncapped
+  reasoning blocked; `KeyboardInterrupt`
   and cancellation write an incomplete result, non-zero exit, no total over
   34, never overwriting an earlier file; statuses per case; `--data-terms`
   accepting `unknown`; mock and Claude outputs unchanged.

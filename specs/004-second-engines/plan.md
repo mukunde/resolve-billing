@@ -125,13 +125,14 @@ reasoning is capped by the output limit. A point the docs do not settle
 - Each request reserves an upper bound of its tokens: the vendor's own count
   of the whole request (system prompt, user payload, schema) where T010
   finds one; otherwise the request's UTF-8 byte count -- a token covers at
-  least one byte -- plus the overhead the vendor documents; plus the maximum
-  output; plus reasoning when the output limit does not cap it. If reasoning
-  has no demonstrable cap, no guaranteed maximum is claimed: the cost is
-  then an estimate, said so. The usage each answer reports is checked
-  against the reservation: above it, or absent, the run stops. (Prompt v3 is
-  5.3 kB; the byte bound keeps a request under the 20,000 tokens/min of the
-  Mistral models.)
+  least one byte, a bound T010 must justify for each vendor's tokenizer,
+  never assume -- plus the overhead the vendor documents; plus the maximum
+  output; plus reasoning when the output limit does not cap it. A
+  configuration whose reasoning has no demonstrable billable cap is
+  **blocked** -- never sent -- until one is established: without a maximum,
+  the envelope cannot be guaranteed, and a waiver is the maintainer's
+  explicit decision, not this plan's. The usage each answer reports is
+  checked against the reservation: above it, or absent, the run stops.
 - A request whose reservation exceeds a per-minute quota on its own is not
   sent; its case is `not_sent_oversized`, never counted as a decision of the
   model.
@@ -143,10 +144,14 @@ reasoning is capped by the output limit. A point the docs do not settle
   file (`evals/.mistral-envelope.json`), shared by both Mistral models and
   every run. The maintainer declares the month's allowance once
   (`--mistral-allowance-usd`, refused if the month's ledger already holds
-  one); each attempt is charged its reserved maximum before it is sent, and
-  an attempt that would exceed what remains is not sent and stops the run.
-  Switching model or starting a new run never resets it; a new month starts
-  a new ledger, since the allowance resets on the 1st.
+  one). Under an interprocess lock held across read, check and reserve, each
+  attempt's reserved maximum is written durably -- a temporary file, then an
+  atomic replace -- before it is sent; an attempt that would exceed what
+  remains is not sent and stops the run. After the answer, the attempt is
+  settled at its reported cost; a reservation never settled (an interrupted
+  run) stays counted as spent. An unreadable or inconsistent ledger is a
+  refusal, never a reset. Switching model or starting a new run never resets
+  it; a new month starts a new ledger, since the allowance resets on the 1st.
 - Per case, a status: `decided`, `abstained`, `invalid`, `unavailable`,
   `not_sent_oversized`, `not_attempted`; attempts; total, limiter-wait and
   network times.
