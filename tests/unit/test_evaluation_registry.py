@@ -117,3 +117,27 @@ class TestTheDevelopmentSetOnly:
         shutil.copy(engines.DEVELOPMENT_SET, copy)
 
         engines.guard("mock", copy)  # no refusal
+
+
+def test_the_vendors_sdks_are_imported_only_by_their_clients():
+    """Constitution III: a vendor is named only behind the port."""
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    allowed = {"app/decision/gemini.py", "app/decision/mistral.py"}
+    offenders = []
+    for directory in ("app", "evals", "scripts"):
+        for path in (root / directory).rglob("*.py"):
+            name = path.relative_to(root).as_posix()
+            if name in allowed:
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                modules = []
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.level == 0:
+                    modules = [node.module or ""]
+                if any(m.startswith(("google.genai", "google", "mistralai")) for m in modules):
+                    offenders.append(name)
+    assert offenders == []

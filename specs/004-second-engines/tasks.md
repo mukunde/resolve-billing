@@ -51,17 +51,17 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 5: The clients
 
-- [ ] T040 Test first: Gemini on an SDK-shaped stub -- exact request (model,
+- [x] T040 Test first: Gemini on an SDK-shaped stub -- exact request (model,
   schema, parameters, SDK retries off), usage and model version read,
   truncated / filtered / empty → invalid, errors by class and status; and,
   without network, against the pinned SDK: signatures, request objects
   built, representative responses and exceptions mapped.
-- [ ] T041 `app/decision/gemini.py`.
-- [ ] T042 Test first: Mistral on a stub -- `mistral-large-4` request and
+- [x] T041 `app/decision/gemini.py`.
+- [x] T042 Test first: Mistral on a stub -- `mistral-large-4` request and
   parsing; `zai-glm-5-3` with `reasoning_effort` pinned, blocks: final text
   only, reasoning dropped and never stored, no final text → invalid; errors;
   the same network-free checks against the pinned SDK.
-- [ ] T043 `app/decision/mistral.py`.
+- [x] T043 `app/decision/mistral.py`.
 
 ## Phase 6: Limits, envelope, outcomes
 

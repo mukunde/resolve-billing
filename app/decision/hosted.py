@@ -173,12 +173,27 @@ class HostedEngine:
         #: the model versions that answered.
         self.notes: list[str] = []
         self.model_versions: list[str] = []
+        #: Answers that came without their token counts: the runner stops on
+        #: one, since the reservation can no longer be checked.
+        self.usage_missing = 0
 
     async def _complete(self, system: str, user: str) -> Answer:  # pragma: no cover
         raise NotImplementedError
 
+    async def reservation(self, system: str, user: str) -> int:  # pragma: no cover
+        """The tokens a request may use, input and output, reserved before it
+        is sent. An estimate (the maintainer's waiver, 2026-10-24)."""
+        raise NotImplementedError
+
     async def aclose(self) -> None:
         """Release the vendor's client, if it holds one."""
+
+    def request_texts(self, dispute: Dispute, context: BillingContext, findings) -> tuple:
+        """The system prompt, the user payload a decision sends, and the
+        pseudonyms that map its references back."""
+        payload, names = anonymise(context, findings)
+        message = mask_message(dispute.customer_message, context, names, self.invoice_references)
+        return self._system, _user_payload(message, payload), names
 
     async def decide(
         self,
@@ -186,20 +201,13 @@ class HostedEngine:
         context: BillingContext,
         findings: list[RuleFinding],
     ) -> Decision:
-        payload, names = anonymise(context, findings)
-        message = mask_message(dispute.customer_message, context, names, self.invoice_references)
-        user = (
-            "<customer_message>\n"
-            f"{message}\n"
-            "</customer_message>\n\n"
-            "<billing_context>\n"
-            f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
-            "</billing_context>"
-        )
+        system, user, names = self.request_texts(dispute, context, findings)
         started = time.perf_counter()
-        answer = await self._complete(self._system, user)
+        answer = await self._complete(system, user)
         latency_ms = int((time.perf_counter() - started) * 1000)
         self.notes.extend(answer.notes)
+        if answer.input_tokens is None or answer.output_tokens is None:
+            self.usage_missing += 1
         if answer.model_version:
             self.model_versions.append(answer.model_version)
         telemetry = EngineTelemetry(
@@ -228,6 +236,18 @@ class HostedEngine:
     @staticmethod
     def schema() -> dict:
         return verdict_schema()
+
+
+def _user_payload(message: str, payload: dict) -> str:
+    """The same user payload as the Claude engine's."""
+    return (
+        "<customer_message>\n"
+        f"{message}\n"
+        "</customer_message>\n\n"
+        "<billing_context>\n"
+        f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+        "</billing_context>"
+    )
 
 
 def _verdict(answer: Answer) -> ModelVerdict | None:
