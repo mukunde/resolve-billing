@@ -379,9 +379,13 @@ retired version, and what it serves today is unknown.
   estimate of what reasoning brings.
 - **His Mistral waiver extends to both**: the reservation and the cost are
   estimates; a reasoning effort whose billable tokens no documentation caps
-  is accepted, the monthly envelope bounding the month; each answer's
-  reported usage is still checked and the run stops above the reservation.
-  *(To be confirmed by the maintainer with this amendment.)*
+  is accepted. The local envelope is conservative admission accounting, not
+  a guaranteed bound: one request can use more than it reserved before the
+  check after its answer stops the run. What keeps the account from being
+  billed is Mistral's own enforcement of the free level, Pay-As-You-Go being
+  off. Each answer's reported usage is still checked, and the run stops
+  above the reservation. *(Pending: to be confirmed by the maintainer with
+  this amendment.)*
 
 **Requirements.**
 
@@ -403,9 +407,14 @@ retired version, and what it serves today is unknown.
   stored (FR-005), and a verdict cut off because reasoning used the cap is
   an `invalid` answer, counted as such.
 - **FR-016**: Each configuration's first call (`--first-call-only`) MUST
-  precede its full run; it confirms access on the free level, the strict
-  schema and the reported usage. No full run before both smoke tests and
-  the limits are settled.
+  precede its full run, and opens the way to it only if it shows: an
+  answer accepted by the local verdict validation (status `decided` or
+  `abstained`), its usage reported and within the reservation, and the
+  configuration and returned model version recorded. A refusal, an
+  outage, a cut-off or invalid answer, or missing usage keeps the full run
+  closed until the cause is settled. The smoke test's result says which
+  (`"first call accepted"` or the reason it was not). No full run before
+  both smoke tests are accepted and the limits are settled.
 
 **Success criteria.**
 
@@ -414,5 +423,8 @@ retired version, and what it serves today is unknown.
   by the service; their requests carrying the same model, cap and schema
   and differing only by reasoning effort; thinking chunks dropped at
   effort `high`; their usage and cost from Medium 3.5's prices; both
-  sharing the Mistral limiter, envelope and lock; Gemini unchanged.
+  sharing the Mistral limiter, envelope and lock; a smoke test accepted
+  only on a valid verdict with its usage reported and within the
+  reservation, and refused acceptance on a refusal, an outage, a cut-off
+  or invalid answer, or missing usage; Gemini unchanged.
 
