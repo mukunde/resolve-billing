@@ -68,6 +68,27 @@ later reader does not have to take a filename's word for it.
 The gap is the same one the project argues against elsewhere: a score whose
 exam is unnamed is comparable to nothing. It was found by hitting it.
 
+## The engines on free tiers, listed apart
+
+Runs of `gemini-3.8-flash`, `mistral-large-4` and `zai-glm-5-3`
+(specs/004-second-engines) are not rows of the table above, and none is
+stored yet. When they are, each file is one run, named by its start time,
+and carries beyond the usual fields: the configuration (vendor, developer,
+model, every parameter, the limits, the prices and their source), the model
+versions the vendor reported, `complete` and, if not, where and why it
+stopped and the cases not attempted, a status per case, the attempts and
+times, the cost (Gemini: estimated zero under the free quota; Mistral: the
+estimate from reported usage, the envelope's state, and the console's usage
+the maintainer reads after), the data terms as declared, and the statement
+that its score is a regression score on development cases.
+
+An incomplete run is kept, not replaced: its totals are over the cases it
+scored, and it is never read as a score over 34.
+
+| file | configuration | ran at | complete | fully correct |
+|---|---|---|---|---|
+| -- | none yet | | | |
+
 ## What they contain
 
 One row per case: the expectations it met, the confidence and its kind, the

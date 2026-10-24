@@ -22,6 +22,9 @@ Usage:
     python -m evals.runner --cases other.json
     python -m evals.runner --check-only --cases other.json
                                            # plumbing only, totals only, see check.py
+    python -m evals.runner --engine gemini-3.8-flash --data-terms unknown
+        --json evals/results/gemini.json  # an engine on a free tier, development
+                                           # cases only, see hosted_run.py
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ from app.decision.base import Classification
 from app.domain.enums import SenderStatus
 from app.domain.models import Dispute
 from app.providers.fake.adapter import FakeBillingProvider
+from evals import engines
 
 CASES_PATH = Path(__file__).parent / "cases.json"
 
@@ -63,9 +67,13 @@ NO_MONEY_ON = {Classification.UNKNOWN, Classification.INSUFFICIENT_INFORMATION}
 MONEY_ACTIONS = {"credit_note", "refund"}
 
 #: Engines that cannot run without a credential, and the variables that can
-#: carry it. Checked before the first case rather than discovered on it: the
-#: SDK only raises when a request is built, as a traceback mid-run.
-CREDENTIALS = {"claude": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+#: carry it, from the evaluation registry. Checked before the first case
+#: rather than discovered on it: an SDK only raises when a request is built,
+#: as a traceback mid-run.
+CREDENTIALS = engines.CREDENTIALS
+
+#: What the run's data terms rest on, for the engines evaluated on free tiers.
+DATA_TERMS = ("contractual", "opted_out", "training_allowed", "unknown")
 
 
 def missing_credential(engine_name: str) -> str | None:
@@ -226,7 +234,9 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
     )
 
 
-async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[CaseOutcome], str]:
+async def run(
+    engine_name: str, cases_path: Path = CASES_PATH, cases: list[dict] | None = None
+) -> tuple[list[CaseOutcome], str]:
     """Run the case set, and report which engine version produced it.
 
     The version travels back with the outcomes because a stored result whose
@@ -234,14 +244,20 @@ async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[Cas
     carries `prompt_version` next to the model id. A file saying only "claude"
     cannot be held against a later run.
     """
-    from app.api.deps import ENGINES, wire
+    from app.api.deps import wire
 
-    if engine_name not in ENGINES:
-        sys.exit(f"unknown engine {engine_name!r}; available: {sorted(ENGINES)}")
+    if engine_name in engines.HOSTED:
+        # Their run is held to the guard, the limits and the envelope:
+        # `evals.hosted_run`, never this path.
+        raise ValueError(f"{engine_name} runs through evals.hosted_run alone")
+    available = engines.evaluation_engines()
+    if engine_name not in available:
+        sys.exit(f"unknown engine {engine_name!r}; available: {sorted(available)}")
 
-    cases = json.loads(cases_path.read_text(encoding="utf-8"))
+    if cases is None:
+        cases = json.loads(cases_path.read_text(encoding="utf-8"))
     provider = FakeBillingProvider()
-    engine = wire(ENGINES[engine_name](), provider)
+    engine = wire(available[engine_name](), provider)
     investigator = DisputeInvestigator(provider=provider, engine=engine)
 
     outcomes = []
@@ -502,6 +518,16 @@ def main() -> int:
         action="store_true",
         help="check the case file against the fixtures, call no engine, print totals only",
     )
+    parser.add_argument(
+        "--data-terms",
+        choices=DATA_TERMS,
+        help="what the vendor's data terms rest on (engines evaluated on free tiers)",
+    )
+    parser.add_argument(
+        "--mistral-allowance-usd",
+        type=float,
+        help="declare this month's Mistral allowance, once a month",
+    )
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
@@ -515,6 +541,19 @@ def main() -> int:
         from evals import check
 
         return check.check(args.cases)
+    # The engines evaluated on free tiers run on the development cases alone:
+    # refused here, before a case is read beyond them or a client is built.
+    try:
+        guarded = engines.guard(args.engine, args.cases)
+    except engines.OffTheDevelopmentSet as refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 2
+    if guarded is not None:
+        from evals import hosted_run
+
+        return hosted_run.main(args, guarded, parser)
+    if args.data_terms or args.mistral_allowance_usd is not None:
+        parser.error("--data-terms and --mistral-allowance-usd are for the engines on free tiers")
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
 
@@ -524,7 +563,7 @@ def main() -> int:
     for index in range(args.runs):
         ran_at = datetime.now(UTC).isoformat()
         try:
-            outcomes, engine_version = asyncio.run(run(args.engine, args.cases))
+            outcomes, engine_version = asyncio.run(run(args.engine, args.cases, guarded))
         except EngineRejected as refusal:
             # A configuration or account problem, not a result: the series
             # stops whole and nothing is written -- earlier complete runs

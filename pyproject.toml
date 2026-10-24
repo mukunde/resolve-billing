@@ -24,6 +24,13 @@ stripe = [
     # The SDK's async calls, which the adapter makes, go through httpx.
     "httpx>=0.27",
 ]
+# The engines evaluated on free tiers, for the evaluation runner only
+# (specs/004-second-engines). Pinned exactly: the clients are written to these
+# releases, and checked against them without network in CI.
+engines = [
+    "google-genai==2.29.0",
+    "mistralai==3.2.0",
+]
 # Optional on purpose: the MCP server is a second face on the billing port,
 # not something the API or the tests need in order to run.
 mcp = [
