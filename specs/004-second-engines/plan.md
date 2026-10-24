@@ -251,10 +251,14 @@ sources at the pinned versions. Each point says where it comes from.
   content holding the system prompt, the user payload and the serialised
   schema together, plus a fixed allowance for the request's framing (256
   tokens, checked against `prompt_token_count` on every answer -- above the
-  reservation, the run stops), plus `max_output_tokens`. A test builds the
-  counting request without network against the pinned SDK. Gemini is free:
-  a reservation exceeded costs nothing but a 429, which the limiter treats
-  as such.
+  reservation, the run stops), plus `max_output_tokens`. This is **not a
+  demonstrated bound** (Codex r159): the 256-token margin is an estimate,
+  and an undercount is caught only after the request is sent. Gemini stays
+  **blocked** until the maintainer accepts an explicitly estimative
+  reservation (margin, check after each answer, stop on overrun) or a bound
+  is justified. The counting call is itself a network request: SDK retries
+  off, inside the run's deadlines, attempts and measures. A test builds it
+  without network against the pinned SDK.
 - **Response** (SDK `types.py`): `usage_metadata.prompt_token_count`,
   `candidates_token_count`, `thoughts_token_count`, `total_token_count`;
   `candidates[0].finish_reason` among `STOP`, `MAX_TOKENS`, `SAFETY`,
@@ -323,8 +327,9 @@ sources at the pinned versions. Each point says where it comes from.
    which data terms apply to each (and whether the opt-out covers them) is
    the maintainer's documented check (T071).
 
-**What this leaves.** Gemini is unblocked once the counting request above is
-tested. Both Mistral configurations are blocked on points 1 and 2. They are
+**What this leaves.** Gemini is blocked on its input reservation (above),
+pending the maintainer's decision. Both Mistral configurations are blocked
+on points 1 and 2. They are
 still built and tested on stubs -- the shared core, the chunk parsing, the
 envelope -- and the runner refuses a blocked configuration, naming what
 blocks it; unblocking one is a recorded decision.
