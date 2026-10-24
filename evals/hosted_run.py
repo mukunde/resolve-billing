@@ -160,7 +160,9 @@ async def run(
             # A case the rules settled never entered the engine.
             record.statuses[case["id"]] = governed.statuses.get(case["id"], "rules_only")
             if first_call_only and case["id"] in governed.statuses:
-                record.stop_reason = _first_call_reason(governed.statuses[case["id"]])
+                record.stop_reason = _first_call_reason(
+                    governed.statuses[case["id"]], governed.outages.get(case["id"])
+                )
                 record.stopped_at = case["id"]
                 return
         record.complete = True
@@ -169,27 +171,24 @@ async def run(
         await governed.aclose()
 
 
-def _first_call_reason(status: str) -> str:
+def _first_call_reason(status: str, outage: str | None) -> str:
     if status in {"decided", "abstained", "invalid"}:
         return "first call only"
     if status == "not_sent_oversized":
         return "not sent: oversized"
+    if outage is not None:
+        return f"outage: {outage}"
     return f"first call {status}"
 
 
-def _quota_for(config, args) -> DailyQuota:
-    """The day's count for a configuration with a daily limit, today
-    declared -- already, or by the flag -- and the run admitted."""
-    quota = DailyQuota(
-        os.environ.get(QUOTA_PROJECT, ""), config.requests_per_day, config.quota_timezone
-    )
+def _admitted(quota: DailyQuota, args) -> None:
+    """Today declared -- already, or by the flag -- and the run admitted."""
     if args.gemini_requests_used_today is not None:
         quota.declare(args.gemini_requests_used_today)
     if args.first_call_only:
         quota.admit_first_call()
     else:
         quota.admit_full_run()
-    return quota
 
 
 def main(args, cases: list[dict], parser) -> int:
@@ -222,21 +221,6 @@ def main(args, cases: list[dict], parser) -> int:
             print(f"refused: {refusal}", file=sys.stderr)
             return 2
 
-    quota = None
-    if config.requests_per_day is not None:
-        # Before any client is built: the project named, today declared, the
-        # run admitted (a full run needs the whole day).
-        try:
-            quota = _quota_for(config, args)
-        except QuotaRefused as refusal:
-            print(
-                f"refused: {refusal}. Name the project in {QUOTA_PROJECT}; declare today's "
-                "requests already used, as AI Studio shows them, with "
-                "--gemini-requests-used-today",
-                file=sys.stderr,
-            )
-            return 2
-
     record = HostedRun(
         args.engine,
         datetime.now(UTC),
@@ -244,6 +228,35 @@ def main(args, cases: list[dict], parser) -> int:
         not_attempted=[case["id"] for case in cases],
     )
     started = time.monotonic()
+
+    quota = None
+    if config.requests_per_day is not None:
+        # Before any client is built: the project named, today declared, the
+        # run admitted (a full run needs the whole day).
+        try:
+            quota = DailyQuota(
+                os.environ.get(QUOTA_PROJECT, ""),
+                config.requests_per_day,
+                config.quota_timezone,
+            )
+        except QuotaRefused as refusal:
+            print(f"refused: {refusal}; name the project in {QUOTA_PROJECT}", file=sys.stderr)
+            return 2
+        try:
+            _admitted(quota, args)
+        except QuotaRefused as refusal:
+            print(
+                f"refused: {refusal}. Declare today's requests already used, as AI Studio "
+                "shows them, with --gemini-requests-used-today",
+                file=sys.stderr,
+            )
+            if not args.first_call_only:
+                return 2
+            # A smoke test refused before sending is still a result: zero sends.
+            record.stop_reason = f"not sent: the quota refused ({refusal})"
+            written = write(record, args, ledger, started)
+            print(f"result written to {written}", file=sys.stderr)
+            return 3
     defect = None
     try:
         with AccountRun(config.shared_limits or config.vendor) as account:

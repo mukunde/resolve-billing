@@ -36,6 +36,18 @@ def gemini_project(monkeypatch):
 FRESH_DAY = ("--gemini-requests-used-today", "0")
 
 
+def fresh_quota(config):
+    """The day's count a configuration with a daily limit runs against,
+    on a freshly declared day; None for the others."""
+    if config.requests_per_day is None:
+        return None
+    from evals.quota import DailyQuota
+
+    book = DailyQuota("resolve-billing-eval", config.requests_per_day, config.quota_timezone)
+    book.declare(0)
+    return book
+
+
 class Clock:
     def __init__(self) -> None:
         self.now = 0.0
@@ -240,7 +252,14 @@ def governed(tmp_path, vendor, allowance=10.0, attempts=3, deadline=3600):
         )
     ]
     return Governed(
-        vendor, limiters, book, attempts=attempts, deadline=deadline, clock=clock, sleep=clock.sleep
+        vendor,
+        limiters,
+        book,
+        attempts=attempts,
+        deadline=deadline,
+        quota=fresh_quota(vendor.config),
+        clock=clock,
+        sleep=clock.sleep,
     ), clock
 
 
@@ -453,7 +472,7 @@ class TestMoreLimits:
                 await asyncio.sleep(10)
 
         vendor = Hanging([], name="gemini-3.8-flash")
-        engine = Governed(vendor, [], None, deadline=0.05)
+        engine = Governed(vendor, [], None, deadline=0.05, quota=fresh_quota(vendor.config))
         engine.begin("c1")
 
         with pytest.raises(RunStopped, match="deadline"):
@@ -627,7 +646,8 @@ class TestCountingAndWaiting:
             async def reservation(self, system, user):
                 await asyncio.sleep(10)
 
-        engine = Governed(HangingCount([], name="gemini-3.8-flash"), [], None, deadline=0.05)
+        vendor = HangingCount([], name="gemini-3.8-flash")
+        engine = Governed(vendor, [], None, deadline=0.05, quota=fresh_quota(vendor.config))
         engine.begin("c1")
 
         with pytest.raises(RunStopped, match="deadline"):
@@ -852,10 +872,12 @@ class TestAfterR161:
         noted = []
         clock = Clock()
         limiter = Limiter(100_000, 0.5, clock=clock, sleep=clock.sleep)
+        vendor = Remote([ok()], name="gemini-3.8-flash")
         engine = Governed(
-            Remote([ok()], name="gemini-3.8-flash"),
+            vendor,
             [limiter],
             None,
+            quota=fresh_quota(vendor.config),
             on_send=lambda: noted.append(clock.now),
             clock=clock,
             sleep=clock.sleep,

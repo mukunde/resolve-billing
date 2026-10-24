@@ -56,6 +56,8 @@ class Governed:
     ) -> None:
         if engine.config.vendor == "mistral" and ledger is None:
             raise ValueError("a Mistral configuration runs against the envelope's ledger")
+        if engine.config.requests_per_day is not None and quota is None:
+            raise ValueError(f"{engine.name} runs against its daily quota")
         self.engine = engine
         self.config = engine.config
         self.name = engine.name
@@ -87,6 +89,8 @@ class Governed:
         self.cost_usd = 0.0
         #: Requests actually handed to the vendor, across the run.
         self.sends = 0
+        #: Per case, the category of an outage the case was left with.
+        self.outages: dict[str, str] = {}
 
     # The provider hands the engine how invoice references are written (D10).
     @property
@@ -187,6 +191,7 @@ class Governed:
             if attempt == self._attempts:
                 if str(outage) == "rate_limited":
                     raise RunStopped(f"rate limiting persisted past {self._attempts} attempts")
+                self.outages[self._case] = str(outage)
                 if self.config.stop_on_outage:
                     # The day's requests are one per case: going on would
                     # leave the run short anyway (spec 004 amendment).

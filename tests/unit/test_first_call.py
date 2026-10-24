@@ -113,6 +113,10 @@ class TestTheGovernedEngine:
             await engine.decide(dispute, context, findings)
         assert engine.statuses == {"c1": "unavailable"}
 
+    async def test_a_gemini_engine_is_never_built_without_its_quota(self):
+        with pytest.raises(ValueError, match="daily quota"):
+            Governed(Vendor([], name="gemini-3.8-flash"), [], None)
+
     async def test_a_mistral_outage_still_escalates_the_case(
         self, tmp_path, context, findings, dispute
     ):
@@ -333,7 +337,37 @@ class TestTheFirstCall:
         result = json.loads(written.read_text(encoding="utf-8"))
         assert result["smoke_test"] is True
         assert result["sends"] == 1
+        assert result["stop_reason"] == "outage: transport"
         assert "daily_quota" not in result
+
+
+class TestAFirstCallRefusedBeforeSending:
+    @pytest.mark.parametrize(
+        ("prepare", "expected"),
+        [
+            ("corrupt", "cannot be read"),
+            ("undeclared", "not declared"),
+        ],
+    )
+    def test_the_refusal_is_written_with_zero_sends_and_no_client(
+        self, tmp_path, monkeypatch, prepare, expected
+    ):
+        if prepare == "corrupt":
+            state.STATE_DIR.mkdir(parents=True, exist_ok=True)
+            (state.STATE_DIR / f"quota-{PROJECT}.json").write_text("{nope", encoding="utf-8")
+        built = []
+        status, result = run_gemini(
+            monkeypatch, tmp_path, lambda: built.append(1) or always(), "--first-call-only"
+        )
+
+        assert status == 3
+        assert built == []
+        assert result["smoke_test"] is True
+        assert result["sends"] == 0
+        assert result["complete"] is False
+        assert result["stop_reason"].startswith("not sent: the quota refused")
+        assert expected in result["stop_reason"]
+        assert len(result["not_attempted"]) == 34
 
 
 class TestTheDevelopmentSet:
