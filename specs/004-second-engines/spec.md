@@ -384,8 +384,8 @@ retired version, and what it serves today is unknown.
   check after its answer stops the run. What keeps the account from being
   billed is Mistral's own enforcement of the free level, Pay-As-You-Go being
   off. Each answer's reported usage is still checked, and the run stops
-  above the reservation. *(Pending: to be confirmed by the maintainer with
-  this amendment.)*
+  above the reservation. *(Confirmed by the maintainer on 2026-10-24,
+  with his approval of this amendment at `518b5a2`.)*
 
 **Requirements.**
 
