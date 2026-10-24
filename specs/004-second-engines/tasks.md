@@ -135,13 +135,13 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   `mistral-medium-3-5` in the console; recorded in the configurations.
   Before T102: no placeholder limit is merged.
 - [x] T102 `app/decision/hosted.py`, `app/decision/mistral.py`.
-- [ ] T103 Test first: the first call's acceptance and its reasons, for
+- [x] T103 Test first: the first call's acceptance and its reasons, for
   every configuration, a returned model version required;
   `first_call_accepted` in the result; the first-calls state (atomic,
   locked, refused when corrupt), recorded only after the result is
   written; the full-run gate (own acceptance, the sibling's for Mistral, a
   change of each fingerprinted element, another key or project).
-- [ ] T104 `evals/hosted_run.py`, `evals/state.py` (or a small
+- [x] T104 `evals/hosted_run.py`, `evals/state.py` (or a small
   `evals/first_calls.py`).
 - [ ] T105 Docs: the two contracts, ADR-009's row, `docs/operations.md`,
   `evals/results/README.md`; the two refusal results committed.

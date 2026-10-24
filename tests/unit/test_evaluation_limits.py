@@ -48,6 +48,13 @@ def fresh_quota(config):
     return book
 
 
+@pytest.fixture(autouse=True)
+def first_calls_accepted(monkeypatch):
+    """The full runs here are not about the first-call gate
+    (`tests/unit/test_first_call_gate.py` is)."""
+    monkeypatch.setattr("evals.first_calls.FirstCalls.admit_full_run", lambda self, config: None)
+
+
 class Clock:
     def __init__(self) -> None:
         self.now = 0.0

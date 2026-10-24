@@ -29,6 +29,13 @@ def gemini_quota(clock=None, declared=0) -> DailyQuota:
     return book
 
 
+@pytest.fixture(autouse=True)
+def first_calls_accepted(monkeypatch):
+    """The full runs here are not about the first-call gate
+    (`tests/unit/test_first_call_gate.py` is)."""
+    monkeypatch.setattr("evals.first_calls.FirstCalls.admit_full_run", lambda self, config: None)
+
+
 class Recording(Vendor):
     """Notes, at each send, what the quota and the ledger already held."""
 
@@ -277,7 +284,7 @@ class TestTheFirstCall:
         assert result["smoke_test"] is True
         assert result["complete"] is False
         assert result["sends"] == 1
-        assert result["stop_reason"] == "first call only"
+        assert result["stop_reason"] == "first call accepted"
         assert result["daily_quota"]["run_sends"] == 1
 
     def test_a_failed_first_call_is_not_retried_nor_followed(self, tmp_path, monkeypatch):
