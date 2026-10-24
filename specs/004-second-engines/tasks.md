@@ -118,7 +118,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   checked; the result's new fields; the investigator reaching the
   instrumented engine exactly 20 times.
 - [x] T095 `evals/governed.py`, `evals/hosted_run.py`, `evals/runner.py`.
-- [ ] T096 Docs: the evaluation contract, `docs/operations.md` (T071's
+- [x] T096 Docs: the evaluation contract, `docs/operations.md` (T071's
   check as read, the Gemini procedure), `.env.example`.
 - [ ] T097 Codex reviews the diff until nothing is left; the maintainer
   approves the final diff by its commit; push and pull request.

@@ -39,11 +39,25 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   two models share; each request's tokens reserved before it is sent, as an
   estimate; a request over a quota on its own is not sent and never scored
   as a decision; attempts bounded at three, honouring `Retry-After`, under a
-  run deadline, counting the request's tokens included -- Gemini's count
-  is a request of its own, paced, noted and counted apart (`count_requests`).
+  run deadline. Every reservation is the same local estimate
+  (`utf8-bytes-v1`), named in the result.
   An answer the vendor's SDK cannot read keeps its reservation spent and
   stops the run; only a 4xx status is a refusal. Usage reported
   above the reservation, or not reported, stops the run.
+- **Gemini's daily quota** (spec 004 amendment). Twenty requests a day
+  per Google project, reset at midnight Pacific -- one full run, since
+  twenty development cases reach the engine. The count is the project's,
+  named by `GEMINI_QUOTA_PROJECT`, kept outside every checkout under one
+  lock: the maintainer declares each day once, before its first request,
+  as the console shows it; each request is counted before it is sent,
+  never refunded. A full run starts only on a day with nothing used;
+  passing the limit, reaching an undeclared day or a clock gone back stops
+  the run before sending. Gemini makes one attempt per case, and an outage
+  stops the run; its reservation is estimated locally, never by a counting
+  request.
+- **A first call** (`--first-call-only`, every configuration): one attempt
+  on the first case that reaches the engine, then the run stops, written
+  incomplete as a smoke test with its sends (0 or 1).
 - **One run per vendor account at a time.** The accounts' state lives
   outside every checkout, in `~/.resolve-billing/`: a run holds its
   account's lock (a second is refused, from any worktree), notes each
