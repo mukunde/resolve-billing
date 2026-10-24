@@ -327,9 +327,20 @@ sources at the pinned versions. Each point says where it comes from.
    which data terms apply to each (and whether the opt-out covers them) is
    the maintainer's documented check (T071).
 
-**What this leaves.** Gemini is blocked on its input reservation (above),
-pending the maintainer's decision. Both Mistral configurations are blocked
-on points 1 and 2. They are
+**The maintainer's decisions (2026-10-24).** He accepted, explicitly:
+(1) for Gemini, an estimative input reservation -- the counted text plus a
+256-token margin, checked against `prompt_token_count` after each answer,
+the run stopping on an overrun; (2) for both Mistral configurations, a
+waiver of points 1 and 2 -- the reasoning cap and the tokenizer bound stay
+undemonstrated; with no payment method on file, the worst case is the
+month's free allowance spent. So every configuration runs with an
+**estimated**, not guaranteed, reservation and cost, said so in every result;
+the envelope, the checks after each answer and the stops stay. These
+waivers are recorded in the configurations (`reservation: estimated`) and in
+`docs/operations.md`.
+
+**Before the waivers.** Gemini was blocked on its input reservation (above).
+Both Mistral configurations were blocked on points 1 and 2. They are
 still built and tested on stubs -- the shared core, the chunk parsing, the
 envelope -- and the runner refuses a blocked configuration, naming what
 blocks it; unblocking one is a recorded decision.
