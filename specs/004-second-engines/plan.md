@@ -219,7 +219,7 @@ sources at the pinned versions. Each point says where it comes from.
   (2026-10-09), both at least two weeks old (PyPI release history). In
   `mistralai` 3.x the client lives under `mistralai.client`.
 
-### Google, `gemini-3.8-flash` -- settled
+### Google, `gemini-3.8-flash`
 
 - **Call** (SDK source, `models.py`): `client.aio.models.generate_content(
   model=..., contents=..., config=types.GenerateContentConfig(...))`. The
@@ -244,9 +244,17 @@ sources at the pinned versions. Each point says where it comes from.
   tokens a response can generate, including thought tokens" -- a cap. A
   response that reaches it may come back truncated or empty: an invalid
   answer. Pinned: `low`, `max_output_tokens` 4096.
-- **Input count**: `client.aio.models.count_tokens(model, contents, config)`
-  gives the request's exact input tokens; the reservation is that count plus
-  `max_output_tokens`.
+- **Input count** (SDK `models.py`, Codex r158): in the Gemini Developer API
+  mode, `count_tokens` refuses `system_instruction`, `tools` and a generation
+  config, and its config takes no output schema -- it cannot count the
+  request as sent. The reservation is therefore: `count_tokens` on one text
+  content holding the system prompt, the user payload and the serialised
+  schema together, plus a fixed allowance for the request's framing (256
+  tokens, checked against `prompt_token_count` on every answer -- above the
+  reservation, the run stops), plus `max_output_tokens`. A test builds the
+  counting request without network against the pinned SDK. Gemini is free:
+  a reservation exceeded costs nothing but a 429, which the limiter treats
+  as such.
 - **Response** (SDK `types.py`): `usage_metadata.prompt_token_count`,
   `candidates_token_count`, `thoughts_token_count`, `total_token_count`;
   `candidates[0].finish_reason` among `STOP`, `MAX_TOKENS`, `SAFETY`,
@@ -266,13 +274,17 @@ sources at the pinned versions. Each point says where it comes from.
   model=..., messages=[system, user], temperature=..., max_tokens=...,
   response_format={"type": "json_schema", "json_schema": {"name":
   "verdict", "schema": ..., "strict": True}}, reasoning_effort=...,
-  retries=<no retry>, timeout_ms=...)`.
+  retries=None, timeout_ms=...)` -- `retries=None` disables the SDK's
+  retries (`chat.py`), where omitting it inherits the client's.
 - **Content** (SDK models; reasoning docs): `message.content` is a string,
   or a list of chunks -- `ThinkChunk` (`type: "thinking"`) and `TextChunk`
   (`type: "text"`). The final text chunk is the answer; thinking chunks are
   dropped, never logged or stored.
 - **Usage** (SDK `usageinfo.py`): `prompt_tokens`, `completion_tokens`,
-  `total_tokens`; no separate reasoning count.
+  `total_tokens`; no separate reasoning count. The SDK defaults each to `0`
+  when absent: presence is read from the fields actually set on the
+  response (`model_fields_set`), never from the values; usage absent or
+  incomplete stops the run, and the attempt's reservation stays charged.
 - **`mistral-large-4`** (model page): **Public Preview**, API names
   `mistral-large-4` / `mistral-large-4-0`, 1M context, "structured-outputs"
   listed; licence not stated ("Open weights: coming soon"). The reasoning
@@ -296,23 +308,26 @@ sources at the pinned versions. Each point says where it comes from.
    `completion_tokens`?** The API reference defines `max_tokens` as "the
    maximum number of tokens to generate in the completion", and the
    thinking chunk is part of the completion -- but no page says so
-   explicitly. Both Mistral configurations stay **blocked** until the
-   maintainer's first minimal call shows it (reasoning on, a small
-   `max_tokens`: `completion_tokens` never above it, and the console's cost
-   consistent with it); the runtime check (usage above the reservation stops
-   the run) stays.
-2. **Mistral: the input bound.** No token-count endpoint for chat; the
-   UTF-8 byte count of the whole request plus a fixed allowance for the
-   chat template's special tokens bounds the input for a byte-level BPE
-   tokenizer (each ordinary token covers at least one byte). Mistral's
-   tokenizer (Tekken) is byte-level; **GLM 5.3's is not confirmed** --
-   `zai-glm-5-3` stays blocked until its tokenizer is shown to be byte-level
-   (model card), or a bound is otherwise justified.
+   explicitly, and one call cannot prove a bound for the next (Codex r158).
+   Both Mistral configurations stay **blocked** until a documentary
+   guarantee or a confirmation from Mistral; a first minimal call then
+   checks that reading. A waiver is the maintainer's explicit decision.
+2. **Mistral: the input bound.** No token-count endpoint for chat. A UTF-8
+   byte count bounds the ordinary tokens of a byte-level BPE tokenizer
+   (Tekken is one), but which tokenizer serves `mistral-large-4` is not
+   established, nor GLM 5.3's; and the template's and schema's added tokens
+   need a bound of their own. Both configurations stay **blocked** on this
+   too, until the tokenizer of the served model and those overheads are
+   documented.
 3. **Terms**: Large 4 is a Public Preview, and GLM 5.3 a third-party model;
    which data terms apply to each (and whether the opt-out covers them) is
    the maintainer's documented check (T071).
 
-Gemini has no blocking point.
+**What this leaves.** Gemini is unblocked once the counting request above is
+tested. Both Mistral configurations are blocked on points 1 and 2. They are
+still built and tested on stubs -- the shared core, the chunk parsing, the
+envelope -- and the runner refuses a blocked configuration, naming what
+blocks it; unblocking one is a recorded decision.
 
 ## Complexity Tracking
 
