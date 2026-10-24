@@ -65,7 +65,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 6: Limits, envelope, outcomes
 
-- [ ] T050 Test first, `tests/unit/test_evaluation_limits.py`: limiters per
+- [x] T050 Test first, `tests/unit/test_evaluation_limits.py`: limiters per
   configuration and shared across Mistral's two models (alternating them);
   the reservation bound on Unicode text, a request over a quota on its own
   not sent and never counted as a decision, reported usage above the
@@ -81,7 +81,9 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   and cancellation write an incomplete result, non-zero exit, no total over
   34, never overwriting an earlier file; statuses per case; `--data-terms`
   accepting `unknown`; mock and Claude outputs unchanged.
-- [ ] T051 `evals/limits.py`, `evals/runner.py`.
+- [x] T051 `evals/limits.py`, `evals/runner.py`; split for size into
+  `evals/ledger.py` (the envelope), `evals/governed.py` (the engine held to
+  its limits) and `evals/hosted_run.py` (the run and its result).
 
 ## Phase 7: Documents
 

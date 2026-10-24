@@ -16,7 +16,7 @@ import json
 import os
 
 from app.decision.base import EngineRejected, EngineUnavailable
-from app.decision.hosted import Answer, Configuration, HostedEngine
+from app.decision.hosted import Answer, Configuration, HostedEngine, unavailable
 from app.decision.verdict import verdict_schema
 
 #: A margin over the request's UTF-8 bytes for the chat template's special
@@ -103,10 +103,11 @@ def _translated(error: Exception) -> Exception:
         return EngineUnavailable("transport")
     status = getattr(error, "status_code", None)
     if isinstance(error, errors.MistralError) and status is not None:
+        response = getattr(error, "raw_response", None)
         if status == 429:
-            return EngineUnavailable("rate_limited")
+            return unavailable("rate_limited", response)
         if status >= 500:
-            return EngineUnavailable("server_error")
+            return unavailable("server_error", response)
         return EngineRejected(str(status))
     return EngineUnavailable("transport")
 

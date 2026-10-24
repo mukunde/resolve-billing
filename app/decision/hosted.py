@@ -24,7 +24,7 @@ from typing import Literal
 from pydantic import ValidationError
 
 from app.decision.anonymise import anonymise
-from app.decision.base import Decision, EngineTelemetry
+from app.decision.base import Decision, EngineTelemetry, EngineUnavailable
 from app.decision.claude import PROMPT_PATH, PROMPT_VERSION
 from app.decision.masking import ReferenceFinder, mask_message
 from app.decision.verdict import ModelVerdict, escalation, verdict_schema
@@ -58,9 +58,11 @@ class Configuration:
     #: USD per million tokens (input, output); None under a free quota.
     price_per_mtok: tuple[float, float] | None
     price_source: str
-    #: The maintainer's waiver (2026-10-24): reservations and costs are
-    #: estimates, checked after each answer, never guarantees.
-    reservation: Literal["estimated"]
+    #: How far the reservation bounds what a request may use: `estimated`
+    #: under the maintainer's waiver (2026-10-24) -- checked after each
+    #: answer, never a guarantee; `uncapped` when reasoning has no billable
+    #: cap at all, which the evaluation runner never sends.
+    reservation: Literal["estimated", "uncapped"]
 
     @property
     def prompt_version(self) -> str:
@@ -205,6 +207,11 @@ class HostedEngine:
         started = time.perf_counter()
         answer = await self._complete(system, user)
         latency_ms = int((time.perf_counter() - started) * 1000)
+        return self.decision_from(answer, names, latency_ms)
+
+    def decision_from(self, answer: Answer, names, latency_ms: int) -> Decision:
+        """The decision an answer makes: the verdict with its references
+        mapped back, or an escalation when the answer is unusable."""
         self.notes.extend(answer.notes)
         if answer.input_tokens is None or answer.output_tokens is None:
             self.usage_missing += 1
@@ -248,6 +255,24 @@ def _user_payload(message: str, payload: dict) -> str:
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
         "</billing_context>"
     )
+
+
+def unavailable(category: str, response=None) -> EngineUnavailable:
+    """The port's outage, with the wait the vendor asked for when its
+    response carried a `Retry-After` in seconds (an HTTP date is ignored)."""
+    outage = EngineUnavailable(category)
+    headers = getattr(response, "headers", None) or {}
+    try:
+        seconds = float(headers.get("retry-after", ""))
+    except (TypeError, ValueError):
+        seconds = None
+    outage.retry_after = seconds if seconds is not None and seconds >= 0 else None
+    return outage
+
+
+def usable(answer: Answer) -> bool:
+    """Whether an answer carries a valid verdict."""
+    return _verdict(answer) is not None
 
 
 def _verdict(answer: Answer) -> ModelVerdict | None:

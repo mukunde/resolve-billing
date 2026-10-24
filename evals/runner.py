@@ -22,6 +22,9 @@ Usage:
     python -m evals.runner --cases other.json
     python -m evals.runner --check-only --cases other.json
                                            # plumbing only, totals only, see check.py
+    python -m evals.runner --engine gemini-3.8-flash --data-terms unknown
+        --json evals/results/gemini.json  # an engine on a free tier, development
+                                           # cases only, see hosted_run.py
 """
 
 from __future__ import annotations
@@ -68,6 +71,9 @@ MONEY_ACTIONS = {"credit_note", "refund"}
 #: rather than discovered on it: an SDK only raises when a request is built,
 #: as a traceback mid-run.
 CREDENTIALS = engines.CREDENTIALS
+
+#: What the run's data terms rest on, for the engines evaluated on free tiers.
+DATA_TERMS = ("contractual", "opted_out", "training_allowed", "unknown")
 
 
 def missing_credential(engine_name: str) -> str | None:
@@ -508,6 +514,16 @@ def main() -> int:
         action="store_true",
         help="check the case file against the fixtures, call no engine, print totals only",
     )
+    parser.add_argument(
+        "--data-terms",
+        choices=DATA_TERMS,
+        help="what the vendor's data terms rest on (engines evaluated on free tiers)",
+    )
+    parser.add_argument(
+        "--mistral-allowance-usd",
+        type=float,
+        help="declare this month's Mistral allowance, once a month",
+    )
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
@@ -528,6 +544,12 @@ def main() -> int:
     except engines.OffTheDevelopmentSet as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
+    if guarded is not None:
+        from evals import hosted_run
+
+        return hosted_run.main(args, guarded, parser)
+    if args.data_terms or args.mistral_allowance_usd is not None:
+        parser.error("--data-terms and --mistral-allowance-usd are for the engines on free tiers")
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
 

@@ -14,7 +14,7 @@ import json
 import os
 
 from app.decision.base import EngineRejected, EngineUnavailable
-from app.decision.hosted import Answer, Configuration, HostedEngine
+from app.decision.hosted import Answer, Configuration, HostedEngine, unavailable
 from app.decision.verdict import verdict_schema
 
 #: A margin over the counted text for the request's framing -- the system
@@ -95,10 +95,11 @@ def _translated(error: Exception) -> Exception:
 
     if isinstance(error, errors.APIError):
         code = getattr(error, "code", None)
+        response = getattr(error, "response", None)
         if code == 429:
-            return EngineUnavailable("rate_limited")
+            return unavailable("rate_limited", response)
         if code is not None and code >= 500:
-            return EngineUnavailable("server_error")
+            return unavailable("server_error", response)
         return EngineRejected(str(code))
     return EngineUnavailable("transport")
 
