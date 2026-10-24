@@ -413,8 +413,13 @@ retired version, and what it serves today is unknown.
   configuration and returned model version recorded. A refusal, an
   outage, a cut-off or invalid answer, or missing usage keeps the full run
   closed until the cause is settled. The smoke test's result says which
-  (`"first call accepted"` or the reason it was not). No full run before
-  both smoke tests are accepted and the limits are settled.
+  (`"first call accepted"` or the reason it was not). This acceptance holds
+  for every configuration, Gemini's included. Neither Mistral
+  configuration's full run starts before both Mistral smoke tests are
+  accepted and their limits are settled.
+- **FR-012 (amended)**: its success reason, "first call only", becomes
+  FR-016's: "first call accepted" for an accepted first call, otherwise
+  the reason it was not.
 
 **Success criteria.**
 
@@ -426,5 +431,6 @@ retired version, and what it serves today is unknown.
   sharing the Mistral limiter, envelope and lock; a smoke test accepted
   only on a valid verdict with its usage reported and within the
   reservation, and refused acceptance on a refusal, an outage, a cut-off
-  or invalid answer, or missing usage; Gemini unchanged.
+  or invalid answer, or missing usage, for every configuration; Gemini
+  otherwise unchanged.
 
