@@ -185,6 +185,10 @@ class HostedEngine:
         #: one, since the reservation can no longer be checked.
         self.usage_missing = 0
 
+    #: Whether `reservation` asks the vendor (a request of its own, paced and
+    #: counted by the runner) or is computed locally.
+    counts_remotely = False
+
     async def _complete(self, system: str, user: str) -> Answer:  # pragma: no cover
         raise NotImplementedError
 

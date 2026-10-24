@@ -16,6 +16,7 @@ quota window a previous run left is never counted twice.
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import tempfile
@@ -66,6 +67,8 @@ class AccountRun:
             return 0.0
         except (OSError, ValueError, KeyError, TypeError):
             # Unreadable: assume a request was just sent.
+            return WINDOW_SECONDS
+        if not math.isfinite(last) or last > self._now() + WINDOW_SECONDS:
             return WINDOW_SECONDS
         return min(max(0.0, last + WINDOW_SECONDS - self._now()), WINDOW_SECONDS)
 

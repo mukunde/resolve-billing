@@ -73,6 +73,8 @@ class Governed:
         #: waiting on the limiters and on the network.
         self.statuses: dict[str, str] = {}
         self.attempts: dict[str, int] = {}
+        #: Per case, the requests made to count tokens, apart from attempts.
+        self.counts: dict[str, int] = {}
         self.waits: dict[str, float] = {}
         self.network: dict[str, float] = {}
         #: The reported cost of the run's attempts, in dollars (priced
@@ -110,7 +112,10 @@ class Governed:
             raise RunStopped(f"{self.name}: its reasoning has no billable cap; never sent")
         system, user, names = self.engine.request_texts(dispute, context, findings)
         # Counting is a call too: held to the same attempts and deadline.
-        reserved, _, _ = await self._attempted(lambda: self.engine.reservation(system, user))
+        reserved, _, _ = await self._attempted(
+            lambda: self.engine.reservation(system, user),
+            counting=self.engine.counts_remotely,
+        )
         if any(reserved > limiter.tokens_per_minute for limiter in self._limiters):
             self.statuses[self._case] = "not_sent_oversized"
             self.attempts[self._case] = 0
@@ -123,14 +128,22 @@ class Governed:
         self.statuses[self._case] = _status(answer, decision)
         return decision
 
-    async def _attempted(self, call, reserved: int | None = None):
+    async def _attempted(self, call, reserved: int | None = None, counting: bool = False):
         """`call` within the attempts and the deadline: its result, the
         ledger's ticket, and the seconds it took. With `reserved`, each
         attempt is a request to the model: paced by the limiters, reserved in
-        the ledger before it is sent, counted."""
+        the ledger before it is sent, counted. With `counting`, a request to
+        count tokens: paced by the request rate, noted, counted apart --
+        whether the vendor counts it against the same quota is not
+        documented, so it is assumed to."""
         for attempt in range(1, self._attempts + 1):
             self._check_deadline()
             ticket = None
+            if counting:
+                await self._acquire(0)
+                self.counts[self._case] = attempt
+                if self._on_send is not None:
+                    self._on_send()
             if reserved is not None:
                 await self._acquire(reserved)
                 ticket = self._reserve(attempt, reserved)

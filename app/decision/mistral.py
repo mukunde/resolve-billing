@@ -54,6 +54,11 @@ class MistralEngine(HostedEngine):
         try:
             response = await self._client.chat.complete_async(**request)
         except Exception as error:
+            if _unreadable(error):
+                # The vendor answered -- possibly generated, possibly billed --
+                # in a shape the SDK could not read: an unusable answer whose
+                # usage is unknown, never a refusal that costs nothing.
+                return Answer(None, "other", None, None, None, ("response_unreadable",))
             translated = _translated(error)
             if translated is None:
                 raise
@@ -112,12 +117,18 @@ def _translated(error: Exception) -> Exception | None:
         response = getattr(error, "raw_response", None)
         if status == 429:
             return unavailable("rate_limited", response)
-        if status >= 500:
-            return unavailable("server_error", response)
-        return EngineRejected(str(status))
+        if 400 <= status < 500:
+            return EngineRejected(str(status))
+        return unavailable("server_error", response)
     if isinstance(error, TimeoutError | ConnectionError | httpx2.TransportError):
         return EngineUnavailable("transport")
     return None
+
+
+def _unreadable(error: Exception) -> bool:
+    from mistralai.client import errors
+
+    return isinstance(error, errors.ResponseValidationError)
 
 
 def _default_client(config: Configuration):

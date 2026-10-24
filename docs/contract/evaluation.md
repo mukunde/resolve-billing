@@ -39,7 +39,10 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   two models share; each request's tokens reserved before it is sent, as an
   estimate; a request over a quota on its own is not sent and never scored
   as a decision; attempts bounded at three, honouring `Retry-After`, under a
-  run deadline, counting the request's tokens included. Usage reported
+  run deadline, counting the request's tokens included -- Gemini's count
+  is a request of its own, paced, noted and counted apart (`count_requests`).
+  An answer the vendor's SDK cannot read keeps its reservation spent and
+  stops the run; only a 4xx status is a refusal. Usage reported
   above the reservation, or not reported, stops the run.
 - **One run per vendor account at a time.** The accounts' state lives
   outside every checkout, in `~/.resolve-billing/`: a run holds its

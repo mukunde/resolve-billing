@@ -85,6 +85,9 @@ async def run(
 
     config = configuration(record.engine_name)
     provider = FakeBillingProvider()
+    # Nothing is attempted until a case begins: whatever stops the run
+    # before then leaves every case unattempted.
+    record.not_attempted = [case["id"] for case in cases]
     # The previous run on this account may still count against the minute.
     if (wait := account.wait()) > 0:
         print(f"waiting {wait:.0f} s for the previous run's quota window", file=sys.stderr)
@@ -102,6 +105,8 @@ async def run(
     investigator = DisputeInvestigator(provider=provider, engine=wire(governed, provider))
     try:
         for index, case in enumerate(cases):
+            record.not_attempted = [later["id"] for later in cases[index + 1 :]]
+            record.stopped_at = case["id"]
             governed.begin(case["id"])
             dispute = Dispute(
                 id=f"eval_{case['id']}",
@@ -129,6 +134,7 @@ async def run(
                 # A defect: recorded by its type alone, then raised as itself.
                 record.stop(f"internal error ({type(error).__name__})", cases, index)
                 raise
+            record.stopped_at = None
             record.outcomes.append(runner._evaluate(case, result))
             # A case the rules settled never entered the engine.
             record.statuses[case["id"]] = governed.statuses.get(case["id"], "rules_only")
@@ -166,7 +172,12 @@ def main(args, cases: list[dict], parser) -> int:
             print(f"refused: {refusal}", file=sys.stderr)
             return 2
 
-    record = HostedRun(args.engine, datetime.now(UTC), total=len(cases))
+    record = HostedRun(
+        args.engine,
+        datetime.now(UTC),
+        total=len(cases),
+        not_attempted=[case["id"] for case in cases],
+    )
     started = time.monotonic()
     defect = None
     try:
@@ -248,6 +259,7 @@ def write(record: HostedRun, args, ledger: Ledger | None, started: float) -> Pat
         "data_terms": args.data_terms,
         "statuses": record.statuses,
         "attempts": governed.attempts if governed else {},
+        "count_requests": governed.counts if governed else {},
         "limiter_wait_s": _rounded(governed.waits) if governed else {},
         "network_s": _rounded(governed.network) if governed else {},
         "duration_s": round(finished - started, 3),

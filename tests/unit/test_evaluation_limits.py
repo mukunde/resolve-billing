@@ -775,3 +775,124 @@ class TestTheRecord:
         unavailable = [c for c, s in result["statuses"].items() if s == "unavailable"]
         assert unavailable
         assert sorted(result["not_scored"]) == sorted(unavailable)
+
+
+# -- After review r161 -----------------------------------------------------------
+
+
+class TestAfterR161:
+    async def test_an_unreadable_mistral_answer_keeps_its_reservation_spent(
+        self, tmp_path, context, findings, dispute
+    ):
+        import httpx2
+        from mistralai.client import errors as mistral_errors
+
+        from app.decision.mistral import MistralEngine
+
+        unreadable = mistral_errors.ResponseValidationError(
+            "SENTINEL",
+            httpx2.Response(200, request=httpx2.Request("POST", "https://api.mistral.ai")),
+            ValueError("SENTINEL"),
+        )
+
+        class Chat:
+            async def complete_async(self, **_):
+                raise unreadable
+
+        class Counted(MistralEngine):
+            async def reservation(self, system, user):
+                return 3000
+
+        vendor = Counted(configuration("mistral-large-4"), client=type("C", (), {"chat": Chat()})())
+        engine, _ = governed(tmp_path, vendor)
+        engine.begin("c1")
+
+        with pytest.raises(RunStopped, match="usage"):
+            await engine.decide(dispute, context, findings)
+
+        held = json.loads((tmp_path / "envelope.json").read_text(encoding="utf-8"))
+        (attempt,) = held["attempts"].values()
+        assert attempt["settled"] is None
+
+    @pytest.mark.parametrize("status", [200, 302])
+    def test_a_status_no_refusal_carries_is_not_a_refusal(self, status):
+        import httpx2
+        from mistralai.client import errors as mistral_errors
+
+        from app.decision.mistral import _translated
+
+        response = httpx2.Response(status, request=httpx2.Request("POST", "https://x"))
+        translated = _translated(mistral_errors.SDKError("SENTINEL", response, "SENTINEL"))
+
+        assert isinstance(translated, EngineUnavailable)
+        assert str(translated) == "server_error"
+
+    async def test_counting_requests_are_paced_noted_and_counted_apart(
+        self, tmp_path, context, findings, dispute
+    ):
+        class Remote(Vendor):
+            counts_remotely = True
+
+        noted = []
+        clock = Clock()
+        limiter = Limiter(100_000, 0.5, clock=clock, sleep=clock.sleep)
+        engine = Governed(
+            Remote([ok()], name="gemini-3.8-flash"),
+            [limiter],
+            None,
+            on_send=lambda: noted.append(clock.now),
+            clock=clock,
+            sleep=clock.sleep,
+        )
+        engine.begin("c1")
+
+        await engine.decide(dispute, context, findings)
+
+        assert engine.counts == {"c1": 1}
+        assert engine.attempts == {"c1": 1}
+        # The count, then the request, two seconds apart at 0.5 per second.
+        assert noted == [0.0, 2.0]
+
+    def test_mistral_counts_locally(self):
+        from app.decision.mistral import MistralEngine
+
+        assert MistralEngine.counts_remotely is False
+
+    def test_an_interruption_before_the_first_case_leaves_every_case_unattempted(
+        self, tmp_path, monkeypatch
+    ):
+        def interrupted(self):
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(state.AccountRun, "wait", interrupted)
+        status, result = run_main(
+            monkeypatch, tmp_path, lambda: Vendor([], name="gemini-3.8-flash")
+        )
+
+        assert status == 3
+        assert result["stop_reason"] == "interrupted"
+        assert len(result["not_attempted"]) == 34
+
+    def test_a_client_that_cannot_be_built_leaves_every_case_unattempted(
+        self, tmp_path, monkeypatch
+    ):
+        def unbuildable():
+            raise RuntimeError("SENTINEL")
+
+        with pytest.raises(RuntimeError):
+            run_main(monkeypatch, tmp_path, unbuildable)
+
+        (written,) = list(tmp_path.glob("gemini-*.json"))
+        result = json.loads(written.read_text(encoding="utf-8"))
+        assert result["stop_reason"] == "internal error (RuntimeError)"
+        assert len(result["not_attempted"]) == 34
+
+    @pytest.mark.parametrize("last", ['"NaN"', '"Infinity"', '"-Infinity"', "1e30"])
+    def test_a_pace_that_is_not_a_time_waits_the_whole_minute(self, last):
+        state.STATE_DIR.mkdir(parents=True, exist_ok=True)
+        (state.STATE_DIR / "google.pace.json").write_text(
+            '{"last_send": ' + last + "}", encoding="utf-8"
+        )
+
+        with state.AccountRun("google") as account:
+            assert account.wait() == state.WINDOW_SECONDS

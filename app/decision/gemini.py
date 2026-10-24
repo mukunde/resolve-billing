@@ -29,6 +29,9 @@ _FILTERED = {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", 
 
 
 class GeminiEngine(HostedEngine):
+    #: The reservation is Google's `count_tokens`, a request of its own.
+    counts_remotely = True
+
     def __init__(self, config: Configuration, client=None, invoice_references=None) -> None:
         super().__init__(config, invoice_references)
         self._client = client if client is not None else _default_client(config)
@@ -138,9 +141,11 @@ def _translated(error: Exception) -> Exception | None:
         response = getattr(error, "response", None)
         if code == 429:
             return unavailable("rate_limited", response)
-        if code is not None and code >= 500:
-            return unavailable("server_error", response)
-        return EngineRejected(str(code))
+        if code is not None and 400 <= code < 500:
+            return EngineRejected(str(code))
+        # A server error, or a status no refusal carries: the request may
+        # have been processed.
+        return unavailable("server_error", response)
     if isinstance(error, _transport_errors()):
         return EngineUnavailable("transport")
     return None
