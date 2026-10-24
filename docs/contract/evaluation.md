@@ -28,7 +28,8 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
 - **Claude, on demand.** A sampling engine: its job fails on an unsafe action
   and carries no floor.
 - **Three engines on free tiers, on the development set alone.**
-  `gemini-3.8-flash`, `mistral-large-4` and `zai-glm-5-3` run from the
+  `gemini-3.8-flash`, `mistral-medium-3-5` and `mistral-medium-3-5-reasoning`
+  run from the
   maintainer's command only, never in CI, refused on any case file but
   `evals/cases.json` at its committed hash or with extra fixtures, before a
   case is read or a client built. Each run requires `--data-terms` (what the
@@ -57,7 +58,16 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   request.
 - **A first call** (`--first-call-only`, every configuration): one attempt
   on the first case that reaches the engine, then the run stops, written
-  incomplete as a smoke test with its sends (0 or 1).
+  incomplete as a smoke test with its sends (0 or 1). It is **accepted** on
+  a valid verdict, its usage reported and within the reservation, and a
+  model version returned ("first call accepted"); otherwise its result says
+  why. An accepted first call is recorded in `~/.resolve-billing/`, after
+  its result is written, with the result's hash, a fingerprint of the
+  configuration (its fields, the prompt, the schema, the masking, the
+  estimator) and the account's non-secret identity.
+- **A full run only after an accepted first call** -- for Mistral, both
+  of its configurations' -- matching the configuration and the account as
+  they are now; refused otherwise, before any client is built.
 - **One run per vendor account at a time.** The accounts' state lives
   outside every checkout, in `~/.resolve-billing/`: a run holds its
   account's lock (a second is refused, from any worktree), notes each

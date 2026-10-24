@@ -143,7 +143,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   change of each fingerprinted element, another key or project).
 - [x] T104 `evals/hosted_run.py`, `evals/state.py` (or a small
   `evals/first_calls.py`).
-- [ ] T105 Docs: the two contracts, ADR-009's row, `docs/operations.md`,
+- [x] T105 Docs: the two contracts, ADR-009's row, `docs/operations.md`,
   `evals/results/README.md`; the two refusal results committed.
 - [ ] T106 Codex reviews the diff until nothing is left; the maintainer
   approves the final diff by its commit; push and pull request.

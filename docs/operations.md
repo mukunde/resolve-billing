@@ -192,7 +192,7 @@ number with teeth into decoration.
 
 ### The engines evaluated on free tiers
 
-`gemini-3.8-flash`, `mistral-large-4` and `zai-glm-5-3`
+`gemini-3.8-flash`, `mistral-medium-3-5` and `mistral-medium-3-5-reasoning`
 (specs/004-second-engines) run from the evaluation runner, on
 `evals/cases.json` only, never in CI. Install them with the `engines`
 extra:
@@ -212,38 +212,68 @@ maintainer's declaration; the code does not verify it.
 **The documented check** (the spec's assumptions), as the maintainer read it
 on 2026-10-24:
 
-| | gemini-3.8-flash | mistral-large-4 | zai-glm-5-3 |
-|---|---|---|---|
-| usable on the free level | yes: a dedicated project, `resolve-billing-eval`, free tier, no billing | yes, by default: $10 of API usage a month, reset on the 1st; "Activer" (Pay-As-You-Go) enables paid usage beyond it and stays off | as Large 4 |
-| limits read in the console | 5 requests/min, 250,000 tokens/min, **20 requests/day** (per project, reset at midnight Pacific) | 20,000 tokens/min, 0.83 requests/s | 20,000 tokens/min, 1.00 request/s |
-| a ceiling shared with other models | not shown | none shown; the code applies the stricter limits to both models together | as Large 4 |
-| status | stable | Public Preview | Z.ai's model, served by Mistral |
-| data regime | free services may improve Google's products, except that for users in the EEA, Switzerland and the UK the paid-service terms apply (Google's terms, 2026-04-28) -- the maintainer's situation, to confirm | "Allow your API calls to train Mistral's models" is on; the opt-out does not cover Labs or preview models | the same toggle; whether it covers a third-party model is not stated |
-| Labs models | -- | off; whether a model needs them shows at the first call (a 4xx refusal, settled at zero) | as Large 4 |
+| | gemini-3.8-flash | mistral-medium-3-5 and mistral-medium-3-5-reasoning |
+|---|---|---|
+| usable on the free level | yes: a dedicated project, `resolve-billing-eval`, free tier, no billing | yes, by default: $10 of API usage a month, reset on the 1st; "Activer" (Pay-As-You-Go) enables paid usage beyond it and stays off; Medium 3.5 is in the key's model list |
+| limits read in the console | 5 requests/min, 250,000 tokens/min, **20 requests/day** (per project, reset at midnight Pacific) | 20,000 tokens/min, 1.00 request/s -- the page lists only `mistral-medium-latest`, taken as `mistral-medium-3-5`'s; one limiter for both configurations |
+| status | stable | Mistral Medium 3.5, v26.04 (2026-04-28), Modified MIT licence |
+| data regime | for users in the EEA, Switzerland and the UK, the paid-service terms apply to free services (Google's terms, 2026-04-28): the maintainer uses it from France -- `contractual` | "Allow your API calls to train Mistral's models" is on -- `training_allowed` |
+| Labs models | -- | off, not needed |
+
+**Refused on the free level (2026-10-24).** The first configurations planned
+on Mistral, `mistral-large-4` (Public Preview) and `zai-glm-5-3` (Z.ai's
+model, served by Mistral), were both refused at their first call: HTTP 403,
+settled at zero locally. The maintainer's diagnostic call outside the runner
+returned Mistral's reason for Large 4: "This model is not available in your
+subscription tier" (`tier_not_allowed`). Their two results are kept in
+`evals/results/`. Magistral Medium, considered next, is retired (its last
+version on 2026-07-31); Medium 3.5 is Mistral's designated replacement.
 
 **The maintainer's waivers (2026-10-24).** Reservations and costs are
 estimates, never guarantees: for all three, the request's UTF-8 bytes plus a
 512-token margin plus the output cap (`utf8-bytes-v1`). Gemini's was first
 Google's count of the request; it became local the same day, since a counting
-request could spend the day's quota. Each answer's reported usage is checked
+request could spend the day's quota. For the two Medium 3.5, a reasoning
+effort whose billable tokens no documentation caps is accepted: the local
+envelope is conservative admission accounting, not a guaranteed bound, and
+what keeps the account from being billed is Mistral's own enforcement of the
+free level, Pay-As-You-Go being off. Each answer's reported usage is checked
 against its reservation, and a run stops when one is exceeded or usage is not
 reported.
 
 **A first call, then the run.** For each configuration, first a smoke test,
 `--first-call-only`: the development set up to the first case that reaches
 the engine, one attempt, then the run stops, written incomplete, its
-`sends` 0 or 1. Then, on another occasion, the full run. `--data-terms` says
+`sends` 0 or 1. It is accepted ("first call accepted") on a valid verdict,
+its usage reported and within the reservation, and a model version
+returned; the acceptance is then recorded in
+`~/.resolve-billing/first-calls.json`, after the result is written. A full
+run is refused until its configuration's first call is accepted -- for
+Mistral, both Medium 3.5 configurations' -- and again after any change to
+the configuration, the prompt, the schema, the masking, the key or the
+Gemini project. The record holds a 12-character fingerprint of the key, never
+the key; it stays in that private folder. `--data-terms` says
 what the vendor's terms for the run rest on -- `contractual`, `opted_out`,
 `training_allowed` or `unknown` -- and is required.
 
-For Mistral, declare the month's allowance once, on the month's first run:
+For Mistral, the two first calls, then the two full runs (the month's
+allowance is declared once, on the month's first run, with
+`--mistral-allowance-usd`):
 
 ```bash
-python -m dotenv run -- python -m evals.runner --engine mistral-large-4 --data-terms training_allowed --mistral-allowance-usd 10 --first-call-only --json evals/results/mistral-large-4.json
+python -m dotenv run -- python -m evals.runner --engine mistral-medium-3-5 --data-terms training_allowed --first-call-only --json evals/results/mistral-medium-3-5.json
 ```
 
 ```bash
-python -m dotenv run -- python -m evals.runner --engine mistral-large-4 --data-terms training_allowed --json evals/results/mistral-large-4.json
+python -m dotenv run -- python -m evals.runner --engine mistral-medium-3-5-reasoning --data-terms training_allowed --first-call-only --json evals/results/mistral-medium-3-5-reasoning.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine mistral-medium-3-5 --data-terms training_allowed --json evals/results/mistral-medium-3-5.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine mistral-medium-3-5-reasoning --data-terms training_allowed --json evals/results/mistral-medium-3-5-reasoning.json
 ```
 
 For Gemini, twenty requests a day are exactly one full run (twenty cases
@@ -252,13 +282,13 @@ Pacific days**. On each day, declare once, before its first request, the
 requests already used that day as AI Studio shows them (`0` on a fresh day):
 
 ```bash
-python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms unknown --gemini-requests-used-today 0 --first-call-only --json evals/results/gemini-3.8-flash.json
+python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms contractual --gemini-requests-used-today 0 --first-call-only --json evals/results/gemini-3.8-flash.json
 ```
 
 and, another day:
 
 ```bash
-python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms unknown --gemini-requests-used-today 0 --json evals/results/gemini-3.8-flash.json
+python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms contractual --gemini-requests-used-today 0 --json evals/results/gemini-3.8-flash.json
 ```
 
 **Gemini's daily quota.** Kept in `~/.resolve-billing/quota-<project>.json`,

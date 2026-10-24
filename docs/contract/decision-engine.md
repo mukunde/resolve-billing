@@ -56,9 +56,10 @@ tiers (below).
 
 ## The engines evaluated on free tiers
 
-`gemini-3.8-flash` (Google's Gemini API), `mistral-large-4` and `zai-glm-5-3`
-(Mistral's API; GLM 5.3 is Z.ai's model, served by Mistral), each a closed
-configuration in `app/decision/hosted.py`: the exact model, the endpoint, the
+`gemini-3.8-flash` (Google's Gemini API), `mistral-medium-3-5` and
+`mistral-medium-3-5-reasoning` (Mistral's API: one model, Mistral Medium 3.5,
+at reasoning effort `none` and `high`, equal in everything else), each a
+closed configuration in `app/decision/hosted.py`: the exact model, the endpoint, the
 key's variable, every request parameter, the limits, the prices and their
 source.
 
@@ -68,9 +69,9 @@ source.
   filtered, empty or out of the closed sets goes to a person. Their version
   is `<configuration>/decision_v3`.
 - **One request, the SDK's retries off.** Attempts are the runner's to
-  count. Reasoning is pinned at its lowest setting (none for Large 4; low
-  for Gemini and GLM, which cannot turn it off); thinking text is dropped,
-  never kept.
+  count. Reasoning is pinned per configuration (`low` for Gemini, the
+  lowest it allows; `none` and `high` for the two Medium 3.5); thinking
+  text is dropped, never kept.
 - **Failures by kind, as above.** Rate limiting, server errors and transport
   failures are `EngineUnavailable` by category, with the wait the vendor
   asked for when it sent one; anything else the vendor refuses is

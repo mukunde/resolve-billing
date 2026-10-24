@@ -70,9 +70,9 @@ exam is unnamed is comparable to nothing. It was found by hitting it.
 
 ## The engines on free tiers, listed apart
 
-Runs of `gemini-3.8-flash`, `mistral-large-4` and `zai-glm-5-3`
-(specs/004-second-engines) are not rows of the table above, and none is
-stored yet. When they are, each file is one run, named by its start time,
+Runs of `gemini-3.8-flash`, `mistral-medium-3-5` and
+`mistral-medium-3-5-reasoning` (specs/004-second-engines) are not rows of
+the table above. Each file is one run, named by its start time,
 and carries beyond the usual fields: the configuration (vendor, developer,
 model, every parameter, the limits, the prices and their source), the model
 versions the vendor reported, `complete` and, if not, where and why it
@@ -87,7 +87,14 @@ scored, and it is never read as a score over 34.
 
 | file | configuration | ran at | complete | fully correct |
 |---|---|---|---|---|
-| -- | none yet | | | |
+| `mistral-large-4-20261024T132525Z.json` | `mistral-large-4` (since removed) | 2026-10-24 13:25 UTC | no: first call refused, HTTP 403 | -- |
+| `zai-glm-5-3-20261024T135710Z.json` | `zai-glm-5-3` (since removed) | 2026-10-24 13:57 UTC | no: first call refused, HTTP 403 | -- |
+
+The two refusals are evidence of access, not measurements: each is a smoke
+test whose single request Mistral refused (the runner recorded the status
+and settled it at zero locally; the maintainer's own call outside the runner
+returned `tier_not_allowed`). They are why the Mistral configurations became
+the two Medium 3.5 (`docs/operations.md`).
 
 ## What they contain
 
