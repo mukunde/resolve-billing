@@ -82,7 +82,7 @@ class FirstCalls:
             held["first_calls"][config.name] = {
                 "accepted_at": datetime.now(UTC).isoformat(),
                 "model_version": model_version,
-                "result": str(result),
+                "result": str(Path(result).resolve()),
                 "result_sha256": hashlib.sha256(Path(result).read_bytes()).hexdigest(),
                 "account": account(config),
                 "fingerprint": fingerprint(config),
@@ -110,6 +110,8 @@ class FirstCalls:
                 missing.append(f"{one.name} (changed since its first call)")
             elif record["account"] != account(one):
                 missing.append(f"{one.name} (first call on another key or project)")
+            elif not _evidence_holds(record):
+                missing.append(f"{one.name} (its first call's result is missing or changed)")
         if missing:
             raise FirstCallsRefused(
                 "a full run needs an accepted first call (--first-call-only) for: "
@@ -144,6 +146,15 @@ class FirstCalls:
                 yield
             finally:
                 state.unlock(lock)
+
+
+def _evidence_holds(record: dict) -> bool:
+    """The first call's result still where it was written, unchanged."""
+    path = Path(record["result"])
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest() == record["result_sha256"]
+    except OSError:
+        return False
 
 
 _FIELDS = {"accepted_at", "model_version", "result", "result_sha256", "account", "fingerprint"}

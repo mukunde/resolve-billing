@@ -217,6 +217,22 @@ class TestTheGate:
         with pytest.raises(FirstCallsRefused):
             book.admit_full_run(config)
 
+    @pytest.mark.parametrize("evidence", ["deleted", "modified"])
+    def test_a_full_run_needs_its_first_call_s_evidence_intact(self, evidence):
+        config = configuration("gemini-3.8-flash")
+        result = _a_result()
+        book = FirstCalls()
+        book.record(config, "m-1", result)
+        book.admit_full_run(config)
+
+        if evidence == "deleted":
+            result.unlink()
+        else:
+            result.write_text('{"edited": true}', encoding="utf-8")
+
+        with pytest.raises(FirstCallsRefused, match="missing or changed"):
+            book.admit_full_run(config)
+
     def test_the_key_never_reaches_the_state(self):
         FirstCalls().record(configuration("gemini-3.8-flash"), "m-1", _a_result())
 
