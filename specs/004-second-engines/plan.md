@@ -17,8 +17,11 @@ complete. The Claude engine, the service and the policies do not change.
 
 Python 3.12 (CI), 3.13 locally. New optional extra `engines` pinning the
 vendors' SDKs (`google-genai`, `mistralai`) at versions at least two weeks
-old, chosen in T010; CI does not install it: the clients are tested on stubs
-shaped like the SDKs, as the Stripe client is. No storage change.
+old, chosen in T010. The clients are tested on stubs shaped like the SDKs;
+and, without network, against the pinned SDKs themselves (signatures,
+request construction, representative responses and exceptions): CI
+installs the extra for those checks, makes no call, and the gates do not
+change. Storage: a git-ignored Mistral envelope ledger (section 6).
 
 ## Constitution Check
 
@@ -55,15 +58,20 @@ subset, reasoning/thinking settings, safety settings, usage fields
 error classes and status codes, retry options to disable; Mistral: the chat
 completions call, `response_format` with a JSON schema, `reasoning_effort`
 for `zai-glm-5-3`, the block-list `content`, usage fields, errors; each
-model's official price for the envelope. Anything the docs do not settle is
-listed, never assumed.
+model's official price for the envelope; how many tokens a request
+can count at most (a vendor token count, or a justified bound), and whether
+reasoning is capped by the output limit. A point the docs do not settle
+**blocks the client it concerns** until settled; it is never assumed.
 
 ### 3. The shared core (`app/decision/hosted.py`)
 
 - Pure helpers extracted from `claude.py` into `app/decision/verdict.py`:
   the verdict model (`_ModelVerdict`) and its JSON schema, and the
-  escalation built when an answer is invalid. `claude.py` imports them; its
-  behaviour and tests are unchanged.
+  escalation built when an answer is invalid. `claude.py` imports them. A
+  test written **before** the extraction pins, on a fake client, the exact
+  request Claude sends and the decisions it returns for a valid, an invalid
+  and a truncated answer; it passes unchanged after (the mock baseline does
+  not cover Claude).
 - `HostedEngine` (base): `decide()` does what Claude's does -- `anonymise`,
   `mask_message`, one request built from the v3 prompt and the same
   `<customer_message>` / `<billing_context>` user payload, local validation,
@@ -110,27 +118,43 @@ listed, never assumed.
 
 ### 6. Limits, envelope and outcomes (`evals/limits.py`, `evals/runner.py`)
 
-- Per configuration, a limiter for tokens/min and requests/s. Each request
-  reserves a conservative token count: input estimated from its characters
-  (documented ratio, checked against the usage each answer reports -- a
-  report above the reservation stops the run), plus maximum output, plus the
-  reasoning allowance. A request whose reservation exceeds the per-minute
-  quota alone is not sent; its case is marked `not_sent_oversized`.
+- Limiters: per configuration (tokens/min, requests/s) and, for Mistral,
+  one shared across its two models -- the shared ceiling the maintainer
+  confirms in T071, and until then, conservatively, the smaller per-model
+  limit applied to both together.
+- Each request reserves an upper bound of its tokens: the vendor's own count
+  of the whole request (system prompt, user payload, schema) where T010
+  finds one; otherwise the request's UTF-8 byte count -- a token covers at
+  least one byte -- plus the overhead the vendor documents; plus the maximum
+  output; plus reasoning when the output limit does not cap it. If reasoning
+  has no demonstrable cap, no guaranteed maximum is claimed: the cost is
+  then an estimate, said so. The usage each answer reports is checked
+  against the reservation: above it, or absent, the run stops. (Prompt v3 is
+  5.3 kB; the byte bound keeps a request under the 20,000 tokens/min of the
+  Mistral models.)
+- A request whose reservation exceeds a per-minute quota on its own is not
+  sent; its case is `not_sent_oversized`, never counted as a decision of the
+  model.
 - Attempts per case bounded (3), waits honouring `Retry-After`, a run
   deadline; SDK retries disabled and our attempts counted; durable
   exhaustion (a quota-exhausted error, or rate limiting persisting past the
   attempts) stops the run.
-- Mistral envelope: `--mistral-envelope-usd` required for a Mistral
-  configuration (the remaining allowance the maintainer declares); each
-  attempt is charged its reserved maximum cost before it is sent; an attempt
-  that would exceed it is not sent and the run stops. One envelope per run;
-  a second run declares what remains.
+- Mistral envelope: one ledger for the month, persisted in a git-ignored
+  file (`evals/.mistral-envelope.json`), shared by both Mistral models and
+  every run. The maintainer declares the month's allowance once
+  (`--mistral-allowance-usd`, refused if the month's ledger already holds
+  one); each attempt is charged its reserved maximum before it is sent, and
+  an attempt that would exceed what remains is not sent and stops the run.
+  Switching model or starting a new run never resets it; a new month starts
+  a new ledger, since the allowance resets on the 1st.
 - Per case, a status: `decided`, `abstained`, `invalid`, `unavailable`,
   `not_sent_oversized`, `not_attempted`; attempts; total, limiter-wait and
   network times.
-- A run stopped before its end is written with `complete: false`, the cases
-  attempted and not attempted, the stop reason, and exits non-zero; its
-  totals are never presented over 34. The mock's and Claude's runs and
+- A run stopped before its end -- exhaustion, the envelope, the deadline,
+  an interruption (`KeyboardInterrupt`, cancellation) -- is written with
+  `complete: false`, the cases attempted and not attempted, the stop reason,
+  and exits non-zero; its totals are never presented over 34. A result file
+  never overwrites an earlier one: each run's file carries its start time. The mock's and Claude's runs and
   their outputs are unchanged (the new fields appear only for the three).
 
 ### 7. Results (`evals/results/`)
@@ -138,10 +162,12 @@ listed, never assumed.
 One file per configuration and run, as Claude's, plus: configuration (vendor,
 developer, model, parameters, model version returned), `complete`, the
 statuses, cost (Gemini: "estimated zero under the free quota", source and
-date; Mistral: estimated maximum, envelope declared, and the console's usage
-the maintainer reads after), the privacy setting the maintainer declares
-(`--privacy` required: `opted-out` or `training-allowed`), and "regression
-score on development cases". `evals/results/README.md` lists them apart.
+date; Mistral: estimated maximum -- or estimate, when reasoning is uncapped
+-- the envelope's state, and the console's usage the maintainer reads
+after), the data terms as declared (`--data-terms`: the basis -- the
+contractual EEA terms, an opt-out setting, training allowed -- or
+`unknown`; never forced into one of two values), and "regression score on
+development cases". `evals/results/README.md` lists them apart.
 
 ### 8. Documents
 

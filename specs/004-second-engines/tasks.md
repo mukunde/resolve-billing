@@ -18,15 +18,19 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 ## Phase 2: Research, pinned
 
 - [ ] T010 Plan "Research notes" (plan section 2): SDK versions for the extra
-  `engines`, each vendor's call, parameters, usage, errors and prices, from
-  official docs and SDK sources; what stays unsettled listed. Codex reviews
-  before Phase 3.
-- [ ] T011 `pyproject.toml`: the extra `engines`, pinned.
+  `engines`, each vendor's call, parameters, usage, errors, prices, token
+  counting or bound, and reasoning caps, from official docs and SDK sources.
+  An unsettled point blocks the client it concerns. Codex reviews before
+  Phase 3.
+- [ ] T011 `pyproject.toml`: the extra `engines`, pinned; CI installs it for
+  the network-free SDK checks (no call, gates unchanged).
 
 ## Phase 3: The shared core
 
-- [ ] T020 Test first: the verdict helpers importable from
-  `app/decision/verdict.py`, Claude's tests unchanged and green.
+- [ ] T020 Test first, before the extraction: on a fake client, the exact
+  request Claude sends and its decisions for a valid, an invalid and a
+  truncated answer, pinned; the helpers importable from
+  `app/decision/verdict.py`. Both pass unchanged after T021.
 - [ ] T021 `app/decision/verdict.py`; `claude.py` imports it.
 - [ ] T022 Test first, `tests/unit/test_hosted_engines.py`: `HostedEngine` on a
   fake `_complete`: payload holds the pseudonymised context and masked
@@ -49,23 +53,30 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 - [ ] T040 Test first: Gemini on an SDK-shaped stub -- exact request (model,
   schema, parameters, SDK retries off), usage and model version read,
-  truncated / filtered / empty → invalid, errors by class and status.
+  truncated / filtered / empty → invalid, errors by class and status; and,
+  without network, against the pinned SDK: signatures, request objects
+  built, representative responses and exceptions mapped.
 - [ ] T041 `app/decision/gemini.py`.
 - [ ] T042 Test first: Mistral on a stub -- `mistral-large-4` request and
   parsing; `zai-glm-5-3` with `reasoning_effort` pinned, blocks: final text
-  only, reasoning dropped and never stored, no final text → invalid; errors.
+  only, reasoning dropped and never stored, no final text → invalid; errors;
+  the same network-free checks against the pinned SDK.
 - [ ] T043 `app/decision/mistral.py`.
 
 ## Phase 6: Limits, envelope, outcomes
 
-- [ ] T050 Test first, `tests/unit/test_evaluation_limits.py`: the limiter
-  (tokens/min, req/s); an oversized request not sent; reported usage above
-  the reservation stops the run; attempts bounded, `Retry-After` honoured,
-  durable exhaustion stops; the Mistral envelope charged per attempt before
-  sending, never reset by switching model; an incomplete run written as
-  such, non-zero exit, no total over 34; statuses per case; `--privacy` and
-  `--mistral-envelope-usd` required where they apply; mock and Claude
-  outputs unchanged.
+- [ ] T050 Test first, `tests/unit/test_evaluation_limits.py`: limiters per
+  configuration and shared across Mistral's two models (alternating them);
+  the reservation bound on Unicode text, a request over a quota on its own
+  not sent and never counted as a decision, reported usage above the
+  reservation or absent stops the run; attempts bounded, `Retry-After`
+  honoured, a timeout during a call or a wait, durable exhaustion stops;
+  the Mistral ledger charged per attempt before sending, persisted, shared
+  by both models and runs, never reset by switching model, a new month a
+  new ledger, a second allowance declaration refused; `KeyboardInterrupt`
+  and cancellation write an incomplete result, non-zero exit, no total over
+  34, never overwriting an earlier file; statuses per case; `--data-terms`
+  accepting `unknown`; mock and Claude outputs unchanged.
 - [ ] T051 `evals/limits.py`, `evals/runner.py`.
 
 ## Phase 7: Documents
