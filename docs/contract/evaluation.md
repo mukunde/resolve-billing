@@ -1,9 +1,8 @@
 # Evaluation
 
 How the system is measured, what the measurements may be read for, and what
-CI holds it to. Written on 2026-10-24 from the existing records, as they
-stand, before the first change that touches the capability
-(specs/004-second-engines) is folded in. Reasons are in the constitution
+CI holds it to. Written on 2026-10-24 from the existing records;
+specs/004-second-engines folded in the same day. Reasons are in the constitution
 (VIII, IX), README "Evaluation", `evals/taxonomy.md`, `docs/operations.md`
 ("What CI actually enforces") and `evals/results/README.md`.
 
@@ -28,6 +27,38 @@ stand, before the first change that touches the capability
   to date (`python -m evals.coverage --check`).
 - **Claude, on demand.** A sampling engine: its job fails on an unsafe action
   and carries no floor.
+- **Three engines on free tiers, on the development set alone.**
+  `gemini-3.8-flash`, `mistral-large-4` and `zai-glm-5-3` run from the
+  maintainer's command only, never in CI, refused on any case file but
+  `evals/cases.json` at its committed hash or with extra fixtures, before a
+  case is read or a client built. Each run requires `--data-terms` (what the
+  vendor's data terms rest on, `unknown` accepted) and `--json`; it runs
+  once, with no baseline and no floor. Its score is a **regression score on
+  development cases**, and its result says so.
+- **Held to their limits.** A limiter per configuration, and one Mistral's
+  two models share; each request's tokens reserved before it is sent, as an
+  estimate; a request over a quota on its own is not sent and never scored
+  as a decision; attempts bounded at three, honouring `Retry-After`, under a
+  run deadline. Usage reported above the reservation, or not reported,
+  stops the run.
+- **Mistral's monthly envelope.** One ledger for the month,
+  `evals/.mistral-envelope.json` (git-ignored), shared by both models and
+  every run: the allowance declared once a month
+  (`--mistral-allowance-usd`); each attempt's maximum cost reserved on disk,
+  under a lock, before it is sent, and settled at its reported cost after; a
+  reservation never settled stays spent; an attempt beyond what remains is
+  not sent and stops the run; an unreadable or inconsistent ledger is
+  refused, never reset.
+- **Every case accounted for.** Each case carries a status -- `decided`,
+  `abstained`, `invalid`, `unavailable`, `not_sent_oversized`, or
+  `rules_only` when the rules settled it before any engine -- its attempts,
+  and its limiter and network times. A run stopped before its end (the
+  envelope, the deadline, rate limiting outlasting the attempts, usage, a
+  refusal, an interruption) is written with `complete: false`, where it
+  stopped, why, and the cases not attempted, and exits non-zero; its totals
+  are over the cases scored, never the whole set. A result never overwrites
+  an earlier one: its file is named by its start time. The mock's and
+  Claude's runs and outputs are unchanged.
 - **Stored runs.** A published figure's run is committed in `evals/results/`
   with its model, prompt and case set's hash; `evals/results/README.md` says
   what each can be read for.
@@ -43,10 +74,14 @@ stand, before the first change that touches the capability
 - A blind figure: none is published until the frozen holdout's reference
   run.
 - Calibration: the sets are too small to calibrate a confidence.
+- That a free-tier figure is comparable to Claude's beyond the development
+  set, or that its estimated cost is what the account was billed: the
+  vendor's console is the account's figure.
 
 ## Covered by
 
 `tests/unit/test_eval_baseline.py`, `tests/unit/test_eval_coverage.py`,
 `tests/unit/test_eval_rescore.py`, `tests/unit/test_eval_runner_lifecycle.py`,
-`tests/unit/test_eval_unsafe.py`, `tests/unit/test_eval_variance.py`; the CI
-workflow's evaluation step.
+`tests/unit/test_eval_unsafe.py`, `tests/unit/test_eval_variance.py`,
+`tests/unit/test_evaluation_registry.py`, `tests/unit/test_evaluation_limits.py`;
+the CI workflow's evaluation step.

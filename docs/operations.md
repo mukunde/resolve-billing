@@ -190,6 +190,77 @@ The floor is the mock's measured score, not an aspiration. Raise it when the
 mock genuinely improves; lowering it to make a build pass would turn the one
 number with teeth into decoration.
 
+### The engines evaluated on free tiers
+
+`gemini-3.8-flash`, `mistral-large-4` and `zai-glm-5-3`
+(specs/004-second-engines) run from the evaluation runner, on
+`evals/cases.json` only, never in CI. Install them with the `engines`
+extra:
+
+```bash
+pip install -e ".[engines]"
+```
+
+**Keys.** `GEMINI_API_KEY` (Google AI Studio) and `MISTRAL_API_KEY`
+(Mistral's admin console), created by the maintainer and kept in `.env`.
+Nothing else reads them; the project does not load `.env` by itself.
+
+**Before the first call of each configuration, a documented check** (the
+spec's assumptions), recorded here with its date:
+
+| | gemini-3.8-flash | mistral-large-4 | zai-glm-5-3 |
+|---|---|---|---|
+| usable on the free level (Mistral: what "Activer" requires) | to check | to check | to check |
+| what the quota counts; a ceiling shared with other models | to check | to check | to check |
+| licence; stable or preview | to check | preview (public) | to check |
+| data regime (a preview or third-party regime over the opt-out?) | to check | to check | to check |
+| privacy setting | to check | to check | to check |
+| per-minute limits read in the console | to check | to check | to check |
+
+The limits in `app/decision/hosted.py` are conservative placeholders until
+that check: Gemini's documentation publishes none, and Mistral's two models
+share one limiter set to the smaller of their limits.
+
+**The maintainer's waivers (2026-10-24).** Reservations and costs are
+estimates, never guarantees: Gemini's is Google's count of the request as one
+text plus a 256-token margin and the output cap; Mistral's is the request's
+UTF-8 bytes plus a 512-token margin and the output cap. Each answer's
+reported usage is checked against its reservation, and a run stops when one
+is exceeded or usage is not reported.
+
+**A first minimal call, then the run.** For each configuration:
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms unknown --json evals/results/gemini-3.8-flash.json
+```
+
+`--data-terms` says what the vendor's terms for this run rest on --
+`contractual`, `opted_out`, `training_allowed` or `unknown` -- and is
+required. For Mistral, declare the month's allowance once, on the month's
+first run:
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine mistral-large-4 --data-terms unknown --mistral-allowance-usd 10 --json evals/results/mistral-large-4.json
+```
+
+The ledger, `evals/.mistral-envelope.json`, is git-ignored and shared by both
+Mistral models and every run of the month; a second declaration that month
+is refused, and a new month starts a new ledger, the old one kept beside it.
+Each attempt reserves its maximum cost there before it is sent. If it
+cannot be read, the runner refuses: inspect it, never delete it to get past
+the refusal -- its unsettled reservations are attempts that may have been
+billed.
+
+**Reading a run.** The result is written beside the `--json` path, named by
+the run's start time; nothing earlier is overwritten. `complete: false`
+means the run stopped -- `stop_reason` says why, `stopped_at` where,
+`not_attempted` what was left -- and the exit code is 3. Its totals are over
+the cases it scored: a case whose request was too large for a quota
+(`not_sent_oversized`) or whose engine could not be reached (`unavailable`)
+is listed under `not_scored`, never counted as a decision of the model.
+Mistral's cost in the file is an estimate; the console's usage is the
+account's figure.
+
 ### Reconciling what we estimated against what we were billed
 
 ```bash

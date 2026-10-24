@@ -240,6 +240,15 @@ the mock's measured score (29), and again if any check of any case differs
 from the recorded baseline -- an improvement included, until the baseline is
 regenerated in the same commit.
 
+**Second engines, on free tiers.** Three configurations --
+`gemini-3.8-flash`, `mistral-large-4` and `zai-glm-5-3` -- run the same
+prompt, payload and schema as Claude, from the evaluation runner only and on
+the development cases only, held to their vendors' free limits and, for
+Mistral, a monthly envelope kept on disk. Their scores are regression scores
+on development cases, stored and listed apart
+([`evals/results/README.md`](evals/results/README.md)); none is published
+yet. How to run them: [`docs/operations.md`](docs/operations.md#the-engines-evaluated-on-free-tiers).
+
 **Blind holdout.** A holdout is written by a model of another family than
 the engine, every label adjudicated by hand, never run in CI and never tuned
 against. The first one lived in this repository, where every session working

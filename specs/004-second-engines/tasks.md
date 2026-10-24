@@ -87,7 +87,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 7: Documents
 
-- [ ] T060 The two contracts with the change; ADR-009's model-provider row;
+- [x] T060 The two contracts with the change; ADR-009's model-provider row;
   `docs/operations.md`; `evals/results/README.md`; `.env.example`; README.
 
 ## Phase 8: The maintainer's runs
