@@ -3,7 +3,8 @@
 **Feature Branch**: `004-second-engines`
 
 **Created**: 2026-10-24 · **Revised**: 2026-10-24, after review r153 ·
-**Amended**: 2026-10-24, the daily quota and the first call (below)
+**Amended**: 2026-10-24, the daily quota and the first call; 2026-10-24,
+Mistral Medium 3.5 in place of Large 4 and GLM 5.3 (below)
 
 **Status**: Approved 2026-10-24 (`94cf4ea`); merged (PR 20). The amendment
 below: draft, for the maintainer's approval
@@ -344,4 +345,74 @@ quotas reset at midnight Pacific time.
 **Order of the maintainer's runs.** For each configuration, the first call
 on one occasion, the full run on another; for Gemini, on two different
 Pacific quota days (Mistral has no daily limit).
+
+## Second amendment (2026-10-24): Mistral Medium 3.5 at two reasoning efforts
+
+**Why.** The first-call smoke tests of `mistral-large-4` and `zai-glm-5-3`
+were both refused with HTTP 403 by Mistral (the runner recorded the status
+and settled both attempts at zero locally; results kept in
+`evals/results/`). The maintainer's own diagnostic call, outside the
+runner, returned Mistral's reason for Large 4: "This model is not available
+in your subscription tier" (`tier_not_allowed`). His key works: Mistral's
+model list answers, without Large 4 or any GLM. Pay-As-You-Go stays off:
+the maintainer decided to stay on the free level.
+
+**Established (docs.mistral.ai, read 2026-10-24).** Mistral Medium 3.5 --
+identifier `mistral-medium-3-5`, version 26.04, released 2026-04-28,
+Modified MIT licence, 256k context, structured outputs supported -- is
+listed by the maintainer's key, priced $1.5 input and $7.5 output per
+million tokens, and takes a per-request reasoning effort (`none`, `high`).
+With `none`, Mistral returns no thinking content and thinks minimally; it
+does not promise no reasoning at all. Magistral Medium, which the maintainer
+first named, is deprecated across the board -- its last version retired on
+2026-07-31 -- with Medium 3.5 as Mistral's designated replacement; its
+`-latest` alias, still listed by the key, is documented as pointing to that
+retired version, and what it serves today is unknown.
+
+**The maintainer's decisions (2026-10-24).**
+
+- **Two configurations of one model**, in place of the two refused: Medium
+  3.5 at reasoning effort `none`, and Medium 3.5 at reasoning effort
+  `high` -- the recommendation of the framing (reviewed by Codex, r171),
+  approved in place of Magistral. A comparison of configurations, not of
+  independent models; one pair of runs is exploratory, not a causal
+  estimate of what reasoning brings.
+- **His Mistral waiver extends to both**: the reservation and the cost are
+  estimates; a reasoning effort whose billable tokens no documentation caps
+  is accepted, the monthly envelope bounding the month; each answer's
+  reported usage is still checked and the run stops above the reservation.
+  *(To be confirmed by the maintainer with this amendment.)*
+
+**Requirements.**
+
+- **FR-013**: The configurations `mistral-large-4` and `zai-glm-5-3` MUST
+  leave the evaluation registry, and the runner refuse them as unknown;
+  their refusal (403, 2026-10-24) and GLM's provenance stay recorded in
+  the documents and in their two kept results, never deleted.
+- **FR-014**: Two configurations MUST replace them, closed as FR-003 and
+  FR-006 require: `mistral-medium-3-5` (reasoning effort `none`) and
+  `mistral-medium-3-5-reasoning` (reasoning effort `high`); the same model
+  identifier, `mistral-medium-3-5`; the same output cap (4096 -- a larger
+  one is a decision of its own, after the smoke tests), the same
+  temperature (the vendor's default, recorded), the strict verdict schema;
+  prices 1.5 / 7.5 with source and date; three attempts; the same monthly
+  envelope, the same limiter shared by every configuration of the Mistral
+  account, the same account lock. Their per-minute limits are the ones the
+  maintainer reads in his console before any run.
+- **FR-015**: The thinking content returned at effort `high` MUST never be
+  stored (FR-005), and a verdict cut off because reasoning used the cap is
+  an `invalid` answer, counted as such.
+- **FR-016**: Each configuration's first call (`--first-call-only`) MUST
+  precede its full run; it confirms access on the free level, the strict
+  schema and the reported usage. No full run before both smoke tests and
+  the limits are settled.
+
+**Success criteria.**
+
+- **SC-005**: Tests show: the two old names refused by the runner and
+  absent from the service; the two new configurations closed and refused
+  by the service; their requests carrying the same model, cap and schema
+  and differing only by reasoning effort; thinking chunks dropped at
+  effort `high`; their usage and cost from Medium 3.5's prices; both
+  sharing the Mistral limiter, envelope and lock; Gemini unchanged.
 
