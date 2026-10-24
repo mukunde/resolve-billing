@@ -2,7 +2,7 @@
 
 **Feature Branch**: `004-second-engines`
 
-**Created**: 2026-10-24
+**Created**: 2026-10-24 · **Revised**: 2026-10-24, after review r153
 
 **Status**: Draft -- for the maintainer's approval
 
@@ -13,11 +13,15 @@ worked out with Codex (r149-r152) and approved by the maintainer on
 2026-10-24, is a separate slice: three engine configurations on free
 tiers, measured on the development cases only.
 
-**Behaviour changed**: capability *Decision engine* (no contract yet:
-ADR-002, ADR-006 and ADR-009 are authoritative) -- three engine
-configurations selectable by the **evaluation runner only**. The service,
-its engine choice (`DECISION_ENGINE`), its policies and the Claude engine do
-not change. *Evaluation*: a new published measurement, apart from Claude's.
+**Behaviour changed**: capabilities *Decision engine* and *Evaluation*,
+neither with a contract yet. Following the constitution ("Product
+Contract"), each contract is first written as the capability stands -- from
+ADR-002, ADR-006, ADR-009 and README "Evaluation", `evals/taxonomy.md`,
+`docs/operations.md` -- in a commit of its own, then the change is folded
+in; `docs/contract/README.md` lists both. The change: three engine
+configurations selectable by the **evaluation runner only**, and a new
+published measurement apart from Claude's. The service, its engine choice
+(`DECISION_ENGINE`), its policies and the Claude engine do not change.
 
 **Sensitive change**: yes -- two model providers (Google; Mistral, also
 serving a third-party model) receive masked synthetic data (constitution
@@ -60,7 +64,8 @@ ADR-009's model-provider row amended.
 - Q: Does this close step 4? → A: No. Another engine measures another
   engine: D10 on Claude, the holdout reference run and prompt v4 stay open.
   These results are published apart, from Claude's and from each other.
-- Q: Which configurations? → A: Three, closed: `gemini-3.8-flash` (Google,
+- Q: Which configurations? → A: Three, closed, named in the evaluation
+  registry by their model ids: `gemini-3.8-flash` (Google,
   `GEMINI_API_KEY`), `mistral-large-4` and `zai-glm-5-3` (Mistral,
   `MISTRAL_API_KEY`). Exact ids, no `latest` alias, each bound to its
   endpoint and its key. No fallback between vendors, to another model, or to
@@ -117,12 +122,13 @@ network call is made.
    payload sent holds the pseudonymised context and the masked message only
    (pinned per vendor by a test), and references the engine cites that were
    not issued are dropped.
-2. **Given** `DECISION_ENGINE=gemini`, `mistral` or `glm` (any of the
-   three), **When** the service starts, **Then** it refuses: these engines
-   are not on its path.
-3. **Given** a case file other than the development set, or extra fixtures,
-   **When** the runner is asked for one of the three, **Then** it refuses
-   before reading the file or building a client.
+2. **Given** `DECISION_ENGINE` set to `gemini-3.8-flash`,
+   `mistral-large-4` or `zai-glm-5-3`, **When** the service builds its
+   engine, **Then** it refuses each: these engines are not on its path.
+3. **Given** a case file other than the development set -- another path, a
+   link leading elsewhere, the development file with altered content -- or
+   extra fixtures, **When** the runner is asked for one of the three,
+   **Then** it refuses, and no client is built.
 
 ### User Story 3 - Limits and failures never pass for the model's answers (Priority: P2)
 
@@ -138,6 +144,14 @@ network call is made.
 3. **Given** a truncated, filtered or empty answer, or (GLM) no final text
    block, **When** it arrives, **Then** the case is an invalid answer,
    handed to a person, never a classification.
+4. **Given** GLM 5.3's answer as a list of blocks, reasoning blocks
+   included, **When** it is parsed, **Then** only the final text block is
+   read, and no reasoning is stored anywhere.
+5. **Given** a run stopped before its end -- exhaustion, the Mistral
+   envelope reached, an interruption -- **When** the result is written,
+   **Then** it is marked incomplete, with the cases attempted and not
+   attempted and the reason it stopped, the runner exits non-zero, and no
+   score is presented as one over 34 decisions.
 
 ### Edge Cases
 
@@ -155,9 +169,13 @@ network call is made.
   three configurations, and drive the runner's validation, construction and
   credential check; `app/api/deps.py`'s `ENGINES` MUST stay without them,
   and a test MUST show the service refusing each.
-- **FR-002**: The runner MUST refuse the three on any case file but the
-  development set at its recorded hash, and with extra fixtures configured,
-  before reading cases or building a client.
+- **FR-002**: For the three, the runner MUST first refuse any case path
+  other than the development file's own (resolved, links included) and any
+  extra fixtures configured; then read the development file's bytes once,
+  check them against the recorded hash, and parse those same bytes; any
+  refusal before a client is built. Tests: an external path, a link leading
+  elsewhere, an altered file, extra fixtures -- each refused, no client
+  built.
 - **FR-003**: Each configuration MUST be closed: exact model id, endpoint,
   key variable, vendor, model developer; no alias, no fallback; an
   unsupported parameter MUST be reported.
@@ -179,9 +197,19 @@ network call is made.
 - **FR-008**: Cost: Gemini recorded as "estimated zero under the free
   quota" with source and date, or unknown if the regime applied is not
   shown; Mistral estimated at its maximum (retries and reasoning included)
-  from official prices, before any run, against the shared allowance, kept
-  apart from the allowance and from what is billed. Claude's price table is
-  untouched; never a billed zero.
+  from official prices, before any run, kept apart from the allowance and
+  from what is billed. Claude's price table is untouched; never a billed
+  zero.
+- **FR-008a**: One spending envelope MUST cover both Mistral models: set
+  from the remaining allowance the maintainer declares, it is charged with
+  each attempt's reserved maximum before the attempt is sent; an attempt
+  that would exceed it is not sent and the run stops. Switching model never
+  resets it. Per-model limits and any shared ceiling are kept apart, the
+  latter confirmed by the maintainer.
+- **FR-008b**: A run stopped before its end MUST be written as incomplete:
+  cases attempted and not attempted, the reason it stopped, and a non-zero
+  exit; it never meets SC-001 and never presents a score over 34 decisions.
+  The existing engines' runs behave as today.
 - **FR-009**: Results MUST be stored in `evals/results/` with the
   configuration, the case set's hash, the date, the privacy setting declared
   by the maintainer, and the statement that they are regression scores on
@@ -206,9 +234,13 @@ network call is made.
 
 ## Assumptions
 
-- Before the first Mistral call the maintainer confirms the API is usable
-  on the free level (what "Activer" requires) and what the quota counts; a
-  first minimal call precedes the 34 cases.
+- Before the first call of each configuration, a documented check by the
+  maintainer: the API usable on the free level (for Mistral, what "Activer"
+  requires), what the quota counts and whether a shared ceiling exists, and
+  the model's terms -- licence, stable or preview status, and the data
+  regime that applies (whether a preview or third-party regime overrides
+  the ordinary opt-out, for GLM 5.3 in particular). A first minimal call
+  precedes the 34 cases.
 - Keys are created and kept by the maintainer, in his `.env`; no agent sees
   them.
 - The vendors' terms, models and limits are those observed on 2026-10-24;
