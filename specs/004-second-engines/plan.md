@@ -505,9 +505,9 @@ name and the reasoning effort:
 | reservation, estimator | `estimated`, `utf8-bytes-v1` | `estimated`, `utf8-bytes-v1` |
 
 Their per-minute limits are the ones the maintainer reads in his console
-(T101, before the code is final); until then the tests use the values the
-configurations carry, and no run is possible before the smoke tests
-anyway. `MISTRAL_PRICES` is re-read for Medium 3.5 (pricing page, read
+(T101). T101 comes before T102: the configurations are written with the
+limits read, and no placeholder limit is ever merged -- so no live call,
+smoke test included, can run on an unread limit. `MISTRAL_PRICES` is re-read for Medium 3.5 (pricing page, read
 2026-10-24). The shared limiter, built from the configurations sharing
 `mistral`, takes the smaller of their limits, as today.
 
@@ -526,15 +526,28 @@ FR-016 and FR-012 amended, for every configuration:
 - The first call is **accepted** when the case's status is `decided` or
   `abstained` (a valid verdict) -- the usage check having passed, since a
   missing or excessive usage stops the run before a status is set -- and
-  the returned model version is recorded. Its reason is then `"first call
+  the vendor returned a non-empty model version, recorded. Its reason is then `"first call
   accepted"`; otherwise the reason says why: `"first call not accepted:
   invalid answer"`, an outage, a refusal, `"not sent: oversized"`, or the
   run's stop reason. The result carries `"first_call_accepted": true|false`.
 - An accepted first call is recorded in the accounts' state,
-  `~/.resolve-billing/first-calls.json`: per configuration, the date, the
-  model version returned, and a fingerprint of the configuration (its
-  fields and prompt version, hashed); written atomically under a lock;
-  unreadable or inconsistent, refused, never reset.
+  `~/.resolve-billing/first-calls.json`, **after** its result is written:
+  per configuration, the date, the model version returned, the result
+  file's path and SHA-256, the account identity and the configuration
+  fingerprint; written atomically under a lock; unreadable or inconsistent,
+  refused, never reset. If the result cannot be written, nothing is
+  recorded; an interruption between the two leaves the first call
+  unrecorded, to be run again.
+- **The configuration fingerprint**: SHA-256 of a canonical JSON
+  (`sort_keys`, no whitespace) of the configuration's fields, its prompt
+  version, the verdict schema, the masking version and the estimator. Any
+  change -- a field, the prompt, the schema, the masking -- calls for a new
+  first call.
+- **The account identity**, never a secret: the first 12 hex characters of
+  the SHA-256 of the key the run uses, and for Gemini the declared project
+  id too. A first call accepted on another key or project does not open a
+  full run on this one. That the key belongs to the account remains the
+  maintainer's declaration; the documentation says so.
 - A full run is admitted only if the configuration's own first call is
   recorded with the current fingerprint; for a configuration sharing
   limits (`mistral`), also every other configuration sharing them (both
@@ -555,9 +568,14 @@ listed, read for what they are: 403, settled at zero locally).
 ### B5. Tests
 
 As SC-005 lists them, plus: the gate (a full run refused without its
-accepted first call, without the sibling's for Mistral, after a
-configuration change; admitted otherwise), the first-calls state refused
-when corrupt, and every earlier test moved off the two old names.
+accepted first call, without the sibling's for Mistral, after a change of
+each fingerprinted element -- a field, the prompt version, the schema, the
+masking version, the estimator -- and on another key or project; admitted
+otherwise); acceptance refused without a returned model version; the
+result written before acceptance is recorded, nothing recorded when the
+result cannot be written, an interruption between the two leaving it
+unrecorded; the first-calls state refused when corrupt; every earlier
+test moved off the two old names.
 
 ## Complexity Tracking
 
