@@ -547,7 +547,10 @@ FR-016 and FR-012 amended, for every configuration:
   the SHA-256 of the key the run uses, and for Gemini the declared project
   id too. A first call accepted on another key or project does not open a
   full run on this one. That the key belongs to the account remains the
-  maintainer's declaration; the documentation says so.
+  maintainer's declaration; the documentation says so. The key's
+  fingerprint is a local credential fingerprint, not a verified identity:
+  it stays in the private state, never in logs or in published results;
+  rotating the key calls for new first calls.
 - A full run is admitted only if the configuration's own first call is
   recorded with the current fingerprint; for a configuration sharing
   limits (`mistral`), also every other configuration sharing them (both
