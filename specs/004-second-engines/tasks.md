@@ -22,7 +22,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   counting or bound, and reasoning caps, from official docs and SDK sources.
   An unsettled point blocks the client it concerns. Codex reviews before
   Phase 3.
-- [ ] T011 `pyproject.toml`: the extra `engines`, pinned; CI installs it for
+- [x] T011 `pyproject.toml`: the extra `engines`, pinned; CI installs it for
   the network-free SDK checks (no call, gates unchanged).
 
 ## Phase 3: The shared core
