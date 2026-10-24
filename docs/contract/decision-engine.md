@@ -98,10 +98,10 @@ evaluation runner selects from the same table plus the three configurations
 - Only Claude has been measured among real models, last on the development
   set of its time; the three configurations await their first runs.
 - The three configurations' reservations are estimates (the maintainer's
-  waiver, 2026-10-24): Gemini's count leaves the system instruction and the
-  schema's framing to a margin; Mistral's byte bound rests on an
-  undocumented tokenizer. Each answer's reported usage is checked against
-  them, and a run stops when it exceeds one.
+  waivers, 2026-10-24): the request's UTF-8 bytes plus a margin plus the
+  output cap, for all three, resting on tokenizers neither vendor
+  documents. Each answer's reported usage is checked against them, and a
+  run stops when it exceeds one.
 - Their vendors' terms, limits and models are as read on 2026-10-24, and
   change without notice.
 
