@@ -10,18 +10,23 @@ by the evaluation runner only.
 
 from __future__ import annotations
 
-import json
 import os
 
 from app.decision.base import EngineRejected, EngineUnavailable
-from app.decision.hosted import Answer, Configuration, HostedEngine, unavailable
+from app.decision.hosted import (
+    Answer,
+    Configuration,
+    HostedEngine,
+    estimated_tokens,
+    unavailable,
+)
 from app.decision.verdict import verdict_schema
 
-#: A margin over the counted text for the request's framing -- the system
-#: instruction and the schema sent as fields, not text. An estimate (the
-#: maintainer's waiver, 2026-10-24), checked against the prompt tokens each
-#: answer reports.
-FRAMING_MARGIN = 256
+#: A margin over the request's bytes for its framing -- the system
+#: instruction and the schema travel as fields, and how Google frames them is
+#: not documented. An estimate (the maintainer's waiver, 2026-10-24, amended
+#: for a local estimate the same day), checked against each answer's usage.
+FRAMING_MARGIN = 512
 
 #: How each finish reason reads: anything but a complete stop is unusable.
 _FINISH = {"STOP": "stop", "MAX_TOKENS": "length"}
@@ -29,9 +34,6 @@ _FILTERED = {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", 
 
 
 class GeminiEngine(HostedEngine):
-    #: The reservation is Google's `count_tokens`, a request of its own.
-    counts_remotely = True
-
     def __init__(self, config: Configuration, client=None, invoice_references=None) -> None:
         super().__init__(config, invoice_references)
         self._client = client if client is not None else _default_client(config)
@@ -64,19 +66,9 @@ class GeminiEngine(HostedEngine):
         return _answer(response)
 
     async def reservation(self, system: str, user: str) -> int:
-        """Counted by Google on one text holding everything the request
-        carries, plus the framing margin, plus the output cap."""
-        text = "\n".join((system, user, json.dumps(verdict_schema())))
-        try:
-            counted = await self._client.aio.models.count_tokens(
-                model=self.config.model, contents=text, config=_count_config()
-            )
-        except Exception as error:
-            translated = _translated(error)
-            if translated is None:
-                raise
-            raise translated from None
-        return counted.total_tokens + FRAMING_MARGIN + self.config.max_output_tokens
+        """Estimated locally, never by Google's `count_tokens`: a counting
+        request could spend the day's quota of twenty (spec 004 amendment)."""
+        return estimated_tokens(system, user, FRAMING_MARGIN, self.config.max_output_tokens)
 
 
 def _answer(response) -> Answer:
@@ -120,14 +112,6 @@ def _transport_errors() -> tuple[type[BaseException], ...]:
     except ImportError:
         return errors
     return (*errors, aiohttp.ClientError)
-
-
-def _count_config():
-    from google.genai import types
-
-    return types.CountTokensConfig(
-        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
-    )
 
 
 def _translated(error: Exception) -> Exception | None:

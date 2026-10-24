@@ -92,10 +92,10 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 7a: The daily quota and the first call (amendment, plan A1-A7)
 
-- [ ] T090 Test first: the configurations' new fields and Gemini's real
+- [x] T090 Test first: the configurations' new fields and Gemini's real
   limits; the shared estimator (`utf8-bytes-v1`) on Unicode text; Gemini
   sending no counting request.
-- [ ] T091 `app/decision/hosted.py`, `app/decision/gemini.py`,
+- [x] T091 `app/decision/hosted.py`, `app/decision/gemini.py`,
   `app/decision/mistral.py`.
 - [ ] T092 Test first, `tests/unit/test_daily_quota.py`: the 20th request of
   a day sent, the 21st refused; persistence across restarts and two
