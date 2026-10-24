@@ -393,3 +393,94 @@ class TestAgainstThePinnedSdks:
 
         assert version("google-genai") == "2.29.0"
         assert version("mistralai") == "3.2.0"
+
+
+# -- After review r160 -----------------------------------------------------------
+
+
+class TestPinnedAndHonest:
+    def test_gemini_s_address_and_backend_ignore_the_environment(self, monkeypatch):
+        from app.decision.gemini import _default_client
+
+        monkeypatch.setenv("GEMINI_API_KEY", "set-by-the-test")
+        monkeypatch.setenv("GOOGLE_GEMINI_BASE_URL", "https://elsewhere.example")
+        monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "a-project")
+        monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+
+        api = _default_client(configuration("gemini-3.8-flash"))._api_client
+
+        assert api.vertexai is False
+        assert api._http_options.base_url == "https://generativelanguage.googleapis.com"
+        assert api._http_options.api_version == "v1beta"
+
+    def test_mistral_s_address_is_pinned(self, monkeypatch):
+        from app.decision.mistral import _default_client
+
+        monkeypatch.setenv("MISTRAL_API_KEY", "set-by-the-test")
+
+        client = _default_client(configuration("mistral-large-4"))
+
+        assert client.sdk_configuration.get_server_details()[0] == "https://api.mistral.ai"
+
+    async def test_gemini_counts_without_the_sdk_s_retries(self):
+        engine, models = gemini(gemini_response(json.dumps(VALID_VERDICT)))
+
+        await engine.reservation("system", "user")
+
+        (count,) = models.counts
+        assert count["config"].http_options.retry_options.attempts == 1
+
+    @pytest.mark.parametrize("defect", [TypeError("a bug"), AttributeError("a bug")])
+    async def test_a_defect_in_the_gemini_call_is_not_an_outage(
+        self, context, findings, dispute, defect
+    ):
+        engine, _ = gemini(defect)
+
+        with pytest.raises(type(defect)):
+            await engine.decide(dispute, context, findings)
+
+    @pytest.mark.parametrize("defect", [TypeError("a bug"), AttributeError("a bug")])
+    async def test_a_defect_in_the_mistral_call_is_not_an_outage(
+        self, context, findings, dispute, defect
+    ):
+        engine, _ = mistral("mistral-large-4", defect)
+
+        with pytest.raises(type(defect)):
+            await engine.decide(dispute, context, findings)
+
+    async def test_mistral_s_own_transport_errors_are_outages(self, context, findings, dispute):
+        import httpx2
+
+        engine, _ = mistral("mistral-large-4", httpx2.ConnectError(SENTINEL))
+
+        with pytest.raises(EngineUnavailable, match="^transport$"):
+            await engine.decide(dispute, context, findings)
+
+    async def test_gemini_s_transport_errors_are_outages(self, context, findings, dispute):
+        import httpx
+
+        engine, _ = gemini(httpx.ConnectError(SENTINEL))
+
+        with pytest.raises(EngineUnavailable, match="^transport$"):
+            await engine.decide(dispute, context, findings)
+
+    @pytest.mark.parametrize(
+        ("usage", "expected"),
+        [
+            ({"prompt_token_count": 900, "total_token_count": 1040}, (900, 140)),
+            ({"prompt_token_count": 900, "candidates_token_count": 100}, (900, 100)),
+            ({"prompt_token_count": 900}, (900, None)),
+            ({"prompt_token_count": 900, "thoughts_token_count": 40}, (900, None)),
+        ],
+        ids=["total", "candidates-only", "prompt-only", "thoughts-only"],
+    )
+    def test_gemini_never_takes_an_unreported_count_as_zero(self, usage, expected):
+        from app.decision.gemini import _answer
+
+        response = gemini_response(json.dumps(VALID_VERDICT), usage=False)
+        response.usage_metadata = genai_types.GenerateContentResponseUsageMetadata(**usage)
+
+        answer = _answer(response)
+
+        assert (answer.input_tokens, answer.output_tokens) == expected

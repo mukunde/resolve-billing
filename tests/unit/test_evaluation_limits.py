@@ -14,7 +14,7 @@ import pytest
 
 from app.decision.base import EngineRejected, EngineUnavailable, RecommendedAction
 from app.decision.hosted import Answer, HostedEngine, configuration
-from evals import engines, runner
+from evals import engines, runner, state
 from evals.governed import Governed
 from evals.ledger import Ledger, LedgerRefused
 from evals.limits import Limiter, Oversized, RunStopped, limiters_for
@@ -513,7 +513,7 @@ def run_main(monkeypatch, tmp_path, vendor_factory, *extra):
     return status, json.loads(written.read_text(encoding="utf-8"))
 
 
-async def _no_wait(self, tokens):
+async def _no_wait(self, tokens, remaining=None):
     if tokens > self.tokens_per_minute:
         raise Oversized(str(tokens))
 
@@ -605,3 +605,173 @@ class TestTheHostedRun:
 
         with pytest.raises(SystemExit):
             runner.main()
+
+
+# -- After review r160 -----------------------------------------------------------
+
+
+class TestCountingAndWaiting:
+    async def test_a_hanging_count_stops_the_run_at_the_deadline(self, context, findings, dispute):
+        class HangingCount(Vendor):
+            async def reservation(self, system, user):
+                await asyncio.sleep(10)
+
+        engine = Governed(HangingCount([], name="gemini-3.8-flash"), [], None, deadline=0.05)
+        engine.begin("c1")
+
+        with pytest.raises(RunStopped, match="deadline"):
+            await engine.decide(dispute, context, findings)
+
+    async def test_a_count_outage_is_retried_then_left_unavailable(
+        self, tmp_path, context, findings, dispute
+    ):
+        class FailingCount(Vendor):
+            counts = 0
+
+            async def reservation(self, system, user):
+                self.counts += 1
+                raise EngineUnavailable("transport")
+
+        vendor = FailingCount([], name="gemini-3.8-flash")
+        engine, _ = governed(tmp_path, vendor)
+        engine.begin("c1")
+
+        with pytest.raises(EngineUnavailable):
+            await engine.decide(dispute, context, findings)
+        assert vendor.counts == 3
+        assert vendor.calls == 0
+        assert engine.statuses == {"c1": "unavailable"}
+
+    async def test_a_limiter_wait_past_the_deadline_stops_the_run(self):
+        clock = Clock()
+        limiter = Limiter(1000, 100, clock=clock, sleep=clock.sleep)
+        await limiter.acquire(800)
+
+        with pytest.raises(RunStopped, match="deadline"):
+            await limiter.acquire(800, remaining=lambda: 30.0)
+        assert clock.slept == []
+
+    async def test_network_time_leaves_the_backoff_out(self, tmp_path, context, findings, dispute):
+        engine, _ = governed(tmp_path, Vendor([EngineUnavailable("server_error"), ok()]))
+        engine.begin("c1")
+
+        await engine.decide(dispute, context, findings)
+
+        assert engine.network["c1"] == 0.0
+        assert engine.waits["c1"] >= 2.0
+
+
+class TestTheAccount:
+    def test_the_ledger_lives_with_the_accounts_state(self):
+        assert Ledger().path.parent == state.STATE_DIR
+
+    def test_a_second_run_on_the_same_account_is_refused(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.delenv("RESOLVE_EXTRA_FIXTURES_DIR", raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "set-by-the-test")
+        built = []
+        monkeypatch.setitem(
+            engines.HOSTED_ENGINES, "gemini-3.8-flash", lambda: built.append(1) or Vendor([])
+        )
+        argv = ["runner", "--engine", "gemini-3.8-flash", "--data-terms", "unknown"]
+        monkeypatch.setattr("sys.argv", [*argv, "--json", str(tmp_path / "g.json")])
+
+        with state.AccountRun("google"):
+            assert runner.main() == 2
+
+        assert built == []
+        assert "another run" in capsys.readouterr().err
+        assert list(tmp_path.glob("g*.json")) == []
+
+    def test_a_run_waits_out_the_previous_run_s_minute(self):
+        now = [1000.0]
+        with state.AccountRun("mistral", now=lambda: now[0]) as account:
+            account.record_send()
+        now[0] = 1020.0
+
+        with state.AccountRun("mistral", now=lambda: now[0]) as account:
+            assert account.wait() == pytest.approx(40.0)
+
+    def test_an_unreadable_pace_waits_the_whole_minute(self):
+        state.STATE_DIR.mkdir(parents=True, exist_ok=True)
+        (state.STATE_DIR / "google.pace.json").write_text("{nope", encoding="utf-8")
+
+        with state.AccountRun("google") as account:
+            assert account.wait() == state.WINDOW_SECONDS
+
+    def test_each_request_is_noted_before_it_is_sent(self, tmp_path, monkeypatch):
+        noted = []
+
+        class Noting(Vendor):
+            async def _complete(self, system, user):
+                noted.append((state.STATE_DIR / "google.pace.json").exists())
+                return ok()
+
+        monkeypatch.setattr("evals.limits.Limiter.acquire", _no_wait)
+        run_main(monkeypatch, tmp_path, lambda: Noting([], name="gemini-3.8-flash"))
+
+        assert noted
+        assert all(noted)
+
+
+class TestTheUngovernedPath:
+    @pytest.mark.parametrize("with_cases", [False, True])
+    async def test_the_plain_run_refuses_the_three_before_building_a_client(
+        self, tmp_path, monkeypatch, with_cases
+    ):
+        built = []
+        monkeypatch.setitem(
+            engines.HOSTED_ENGINES, "mistral-large-4", lambda: built.append(1) or Vendor([])
+        )
+        other = tmp_path / "other.json"
+        other.write_text("[]", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="hosted_run"):
+            await runner.run("mistral-large-4", other, [] if with_cases else None)
+        assert built == []
+
+
+class TestTheRecord:
+    def test_the_result_names_the_bytes_run_and_every_version(self, tmp_path, monkeypatch):
+        def no_rereading(*_):
+            raise AssertionError("the case file is read again after the guard")
+
+        monkeypatch.setattr(runner, "_case_set_fingerprint", no_rereading)
+        monkeypatch.setattr("evals.limits.Limiter.acquire", _no_wait)
+        _, result = run_main(
+            monkeypatch, tmp_path, lambda: Vendor([], name="gemini-3.8-flash", reserved=10**9)
+        )
+
+        assert result["cases_sha256"] == engines.DEVELOPMENT_SET_SHA256[:16]
+        assert result["cases_file"] == "cases.json"
+        assert result["configuration"]["api_version"] == "v1beta"
+        assert result["masking_version"] == "masking_v1"
+        assert len(result["schema_sha256"]) == 16
+
+    def test_a_defect_is_written_incomplete_then_raised(self, tmp_path, monkeypatch):
+        class Broken(Vendor):
+            async def _complete(self, system, user):
+                raise TypeError("a bug")
+
+        monkeypatch.setattr("evals.limits.Limiter.acquire", _no_wait)
+        with pytest.raises(TypeError):
+            run_main(monkeypatch, tmp_path, lambda: Broken([], name="gemini-3.8-flash"))
+
+        (written,) = list(tmp_path.glob("gemini-*.json"))
+        result = json.loads(written.read_text(encoding="utf-8"))
+        assert result["complete"] is False
+        assert result["stop_reason"] == "internal error (TypeError)"
+        assert "a bug" not in written.read_text(encoding="utf-8")
+
+    def test_a_count_outage_is_not_scored_as_rules_only(self, tmp_path, monkeypatch):
+        class FailingCount(Vendor):
+            async def reservation(self, system, user):
+                raise EngineUnavailable("transport")
+
+        monkeypatch.setattr("evals.governed.BACKOFF", 0.001)
+        _, result = run_main(
+            monkeypatch, tmp_path, lambda: FailingCount([], name="gemini-3.8-flash")
+        )
+
+        unavailable = [c for c, s in result["statuses"].items() if s == "unavailable"]
+        assert unavailable
+        assert sorted(result["not_scored"]) == sorted(unavailable)

@@ -44,6 +44,9 @@ class Configuration:
     vendor: Literal["google", "mistral"]
     developer: str
     endpoint: str
+    #: The API version the requests go to: set on Google's client; for
+    #: Mistral, the one its SDK's paths carry.
+    api_version: str
     key_variable: str
     model: str
     #: None: the vendor's default, recorded as such.
@@ -77,6 +80,7 @@ CONFIGURATIONS: dict[str, Configuration] = {
             vendor="google",
             developer="Google",
             endpoint="https://generativelanguage.googleapis.com",
+            api_version="v1beta",
             key_variable="GEMINI_API_KEY",
             model="gemini-3.8-flash",
             temperature=None,
@@ -97,6 +101,7 @@ CONFIGURATIONS: dict[str, Configuration] = {
             vendor="mistral",
             developer="Mistral AI",
             endpoint="https://api.mistral.ai",
+            api_version="v1",
             key_variable="MISTRAL_API_KEY",
             model="mistral-large-4",
             temperature=None,
@@ -115,6 +120,7 @@ CONFIGURATIONS: dict[str, Configuration] = {
             vendor="mistral",
             developer="Z.ai",
             endpoint="https://api.mistral.ai",
+            api_version="v1",
             key_variable="MISTRAL_API_KEY",
             model="zai-glm-5-3",
             temperature=None,

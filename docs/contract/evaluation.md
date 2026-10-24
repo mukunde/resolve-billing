@@ -39,11 +39,16 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   two models share; each request's tokens reserved before it is sent, as an
   estimate; a request over a quota on its own is not sent and never scored
   as a decision; attempts bounded at three, honouring `Retry-After`, under a
-  run deadline. Usage reported above the reservation, or not reported,
-  stops the run.
+  run deadline, counting the request's tokens included. Usage reported
+  above the reservation, or not reported, stops the run.
+- **One run per vendor account at a time.** The accounts' state lives
+  outside every checkout, in `~/.resolve-billing/`: a run holds its
+  account's lock (a second is refused, from any worktree), notes each
+  request before sending it, and starts no sooner than a minute after the
+  account's last request.
 - **Mistral's monthly envelope.** One ledger for the month,
-  `evals/.mistral-envelope.json` (git-ignored), shared by both models and
-  every run: the allowance declared once a month
+  `~/.resolve-billing/mistral-envelope.json`, shared by both models, every
+  run and every checkout: the allowance declared once a month
   (`--mistral-allowance-usd`); each attempt's maximum cost reserved on disk,
   under a lock, before it is sent, and settled at its reported cost after; a
   reservation never settled stays spent; an attempt beyond what remains is
@@ -51,13 +56,17 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   refused, never reset.
 - **Every case accounted for.** Each case carries a status -- `decided`,
   `abstained`, `invalid`, `unavailable`, `not_sent_oversized`, or
-  `rules_only` when the rules settled it before any engine -- its attempts,
-  and its limiter and network times. A run stopped before its end (the
+  `rules_only` when the rules settled it and the engine was never entered --
+  its attempts, and its limiter and network times. A case that entered the
+  engine and left without an answer is `unavailable`, never scored. A run stopped before its end (the
   envelope, the deadline, rate limiting outlasting the attempts, usage, a
-  refusal, an interruption) is written with `complete: false`, where it
+  refusal, an interruption, a defect -- recorded by its type alone, then
+  raised as itself) is written with `complete: false`, where it
   stopped, why, and the cases not attempted, and exits non-zero; its totals
   are over the cases scored, never the whole set. A result never overwrites
-  an earlier one: its file is named by its start time. The mock's and
+  an earlier one: its file is named by its start time. It records the hash
+  of the case bytes the guard checked, the configuration with its API
+  version, the masking version and the schema's hash. The mock's and
   Claude's runs and outputs are unchanged.
 - **Stored runs.** A published figure's run is committed in `evals/results/`
   with its model, prompt and case set's hash; `evals/results/README.md` says

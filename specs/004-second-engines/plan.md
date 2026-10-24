@@ -21,7 +21,8 @@ old, chosen in T010. The clients are tested on stubs shaped like the SDKs;
 and, without network, against the pinned SDKs themselves (signatures,
 request construction, representative responses and exceptions): CI
 installs the extra for those checks, makes no call, and the gates do not
-change. Storage: a git-ignored Mistral envelope ledger (section 6).
+change. Storage: the Mistral envelope ledger and the accounts' run state,
+outside the checkout (section 6, amended after review r160).
 
 ## Constitution Check
 
@@ -155,6 +156,21 @@ reasoning is capped by the output limit. A point the docs do not settle
 - Per case, a status: `decided`, `abstained`, `invalid`, `unavailable`,
   `not_sent_oversized`, `not_attempted`; attempts; total, limiter-wait and
   network times.
+- *Amended after review r160 (2026-10-24), each change raised by the
+  review:* the ledger, and per account a run lock and the time of the last
+  request, live in `~/.resolve-billing/`, outside every checkout -- an
+  allowance and a quota belong to an account, and two worktrees on one key
+  must share them; one run per account at a time, starting a minute after
+  the account's last request, which makes the shared Mistral limiter the
+  running process's own. Counting tokens is held to the attempts and the
+  deadline, and so are limiter waits. A case the rules settle without
+  entering the engine is `rules_only` (scored); one that entered and left
+  without an answer is `unavailable` (not scored). A defect is never
+  translated into an outage: it stops the run, recorded by type. The result
+  records the hash of the bytes the guard checked, the API version, the
+  masking version and the schema's hash (FR-006). The ungoverned runner
+  entry point refuses the three. Gemini's client is pinned to the Gemini API
+  at the configured address and version, whatever the environment says.
 - A run stopped before its end -- exhaustion, the envelope, the deadline,
   an interruption (`KeyboardInterrupt`, cancellation) -- is written with
   `complete: false`, the cases attempted and not attempted, the stop reason,

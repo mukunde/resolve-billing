@@ -21,6 +21,7 @@ would do on disputes it has never seen.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import sys
 import time
@@ -30,10 +31,13 @@ from pathlib import Path
 
 from app.decision.base import EngineRejected
 from app.decision.hosted import GEMINI_PRICES, configuration
+from app.decision.masking import MASKING_VERSION
+from app.decision.verdict import verdict_schema
 from evals import engines
 from evals.governed import Governed
 from evals.ledger import Ledger, LedgerRefused
 from evals.limits import RunStopped, limiters_for
+from evals.state import AccountBusy, AccountRun
 
 STATEMENT = (
     "regression score on development cases: these cases shaped the prompt; the score says "
@@ -68,9 +72,11 @@ class HostedRun:
         return [o for o in self.outcomes if self.statuses.get(o.case_id) not in NOT_SCORED]
 
 
-async def run(record: HostedRun, cases: list[dict], ledger: Ledger | None) -> None:
+async def run(
+    record: HostedRun, cases: list[dict], ledger: Ledger | None, account: AccountRun
+) -> None:
     """Run the cases into `record`, which holds what was done whatever stops
-    the run."""
+    the run. `account` is held: no other run shares its quota meanwhile."""
     from app.api.deps import wire
     from app.application.investigate_dispute import DisputeInvestigator
     from app.domain.models import Dispute
@@ -79,11 +85,18 @@ async def run(record: HostedRun, cases: list[dict], ledger: Ledger | None) -> No
 
     config = configuration(record.engine_name)
     provider = FakeBillingProvider()
+    # The previous run on this account may still count against the minute.
+    if (wait := account.wait()) > 0:
+        print(f"waiting {wait:.0f} s for the previous run's quota window", file=sys.stderr)
+        await asyncio.sleep(wait)
     governed = Governed(
         engines.HOSTED_ENGINES[record.engine_name](),
+        # One run per account at a time: the limiter Mistral's models share
+        # is this run's alone.
         limiters_for(config, shared={}),
         ledger,
         run_id=record.started_at.strftime("%Y%m%dT%H%M%S.%fZ"),
+        on_send=account.record_send,
     )
     record.governed = governed
     investigator = DisputeInvestigator(provider=provider, engine=wire(governed, provider))
@@ -112,8 +125,12 @@ async def run(record: HostedRun, cases: list[dict], ledger: Ledger | None) -> No
             except (KeyboardInterrupt, asyncio.CancelledError):
                 record.stop("interrupted", cases, index)
                 raise
+            except Exception as error:
+                # A defect: recorded by its type alone, then raised as itself.
+                record.stop(f"internal error ({type(error).__name__})", cases, index)
+                raise
             record.outcomes.append(runner._evaluate(case, result))
-            # A case the rules settled never reached the engine.
+            # A case the rules settled never entered the engine.
             record.statuses[case["id"]] = governed.statuses.get(case["id"], "rules_only")
         record.complete = True
     finally:
@@ -151,13 +168,27 @@ def main(args, cases: list[dict], parser) -> int:
 
     record = HostedRun(args.engine, datetime.now(UTC), total=len(cases))
     started = time.monotonic()
+    defect = None
     try:
-        asyncio.run(run(record, cases, ledger))
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        record.stop_reason = record.stop_reason or "interrupted"
-        record.complete = False
+        with AccountRun(config.shared_limits or config.vendor) as account:
+            try:
+                asyncio.run(run(record, cases, ledger, account))
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                record.stop_reason = record.stop_reason or "interrupted"
+                record.complete = False
+            except Exception as error:
+                defect_reason = f"internal error ({type(error).__name__})"
+                record.stop_reason = record.stop_reason or defect_reason
+                record.complete = False
+                defect = error
+    except AccountBusy as refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 2
 
-    written = write(record, args, cases, ledger, started)
+    written = write(record, args, ledger, started)
+    if defect is not None:
+        print(f"result written to {written}", file=sys.stderr)
+        raise defect
     print(f"\n{STATEMENT}")
     if not record.complete:
         print(
@@ -174,9 +205,7 @@ def main(args, cases: list[dict], parser) -> int:
     return status if record.complete else 3
 
 
-def write(record: HostedRun, args, cases, ledger: Ledger | None, started: float) -> Path:
-    from evals import runner
-
+def write(record: HostedRun, args, ledger: Ledger | None, started: float) -> Path:
     config = configuration(record.engine_name)
     governed = record.governed
     if config.price_per_mtok is None:
@@ -196,8 +225,10 @@ def write(record: HostedRun, args, cases, ledger: Ledger | None, started: float)
     payload = {
         "engine": record.engine_name,
         "engine_version": config.prompt_version,
-        "cases_file": args.cases.name,
-        "cases_sha256": runner._case_set_fingerprint(args.cases),
+        # The bytes the guard checked and the run executed, not the file as
+        # it may stand by now.
+        "cases_file": engines.DEVELOPMENT_SET.name,
+        "cases_sha256": engines.DEVELOPMENT_SET_SHA256[:16],
         "statement": STATEMENT,
         "ran_at": record.started_at.isoformat(),
         "complete": record.complete,
@@ -208,6 +239,10 @@ def write(record: HostedRun, args, cases, ledger: Ledger | None, started: float)
         "not_attempted": record.not_attempted,
         "not_scored": [o.case_id for o in record.outcomes if o not in record.scored],
         "configuration": asdict(config),
+        "masking_version": MASKING_VERSION,
+        "schema_sha256": hashlib.sha256(
+            json.dumps(verdict_schema(), sort_keys=True).encode("utf-8")
+        ).hexdigest()[:16],
         "model_versions": sorted(set(governed.engine.model_versions)) if governed else [],
         "vendor_notes": sorted(set(governed.engine.notes)) if governed else [],
         "data_terms": args.data_terms,

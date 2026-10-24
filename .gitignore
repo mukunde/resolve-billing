@@ -35,8 +35,3 @@ htmlcov/
 # --- Holdout -----------------------------------------------------------------
 # Blind cases live in a separate private repository, never here.
 evals/holdout_cases.json
-
-# --- The month's Mistral envelope (one maintainer's account) ---------------
-evals/.mistral-envelope*.json
-evals/.mistral-envelope.json.lock
-evals/.envelope-*

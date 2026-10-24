@@ -243,13 +243,21 @@ first run:
 python -m dotenv run -- python -m evals.runner --engine mistral-large-4 --data-terms unknown --mistral-allowance-usd 10 --json evals/results/mistral-large-4.json
 ```
 
-The ledger, `evals/.mistral-envelope.json`, is git-ignored and shared by both
-Mistral models and every run of the month; a second declaration that month
-is refused, and a new month starts a new ledger, the old one kept beside it.
+The ledger, `~/.resolve-billing/mistral-envelope.json`, lives outside every
+checkout, so both Mistral models, every run of the month and every worktree
+share it; a second declaration that month is refused, and a new month starts
+a new ledger, the old one kept beside it.
 Each attempt reserves its maximum cost there before it is sent. If it
 cannot be read, the runner refuses: inspect it, never delete it to get past
 the refusal -- its unsettled reservations are attempts that may have been
 billed.
+
+**One run per account.** The same folder holds, per vendor account
+(`google`, `mistral`), a run lock and the time of the account's last
+request. A second run on an account is refused while one is in progress,
+from this checkout or another; the lock goes with the process if it dies. A
+run starts no sooner than a minute after the account's last request, so a
+previous run's quota window is not counted twice.
 
 **Reading a run.** The result is written beside the `--json` path, named by
 the run's start time; nothing earlier is overwritten. `complete: false`
@@ -257,7 +265,9 @@ means the run stopped -- `stop_reason` says why, `stopped_at` where,
 `not_attempted` what was left -- and the exit code is 3. Its totals are over
 the cases it scored: a case whose request was too large for a quota
 (`not_sent_oversized`) or whose engine could not be reached (`unavailable`)
-is listed under `not_scored`, never counted as a decision of the model.
+is listed under `not_scored`, never counted as a decision of the model. A
+defect in the code stops the run too: the result is written with
+`internal error (<type>)`, then the error is raised as itself.
 Mistral's cost in the file is an estimate; the console's usage is the
 account's figure.
 

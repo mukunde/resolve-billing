@@ -48,6 +48,7 @@ class Governed:
         attempts: int = ATTEMPTS,
         deadline: float = DEADLINE,
         run_id: str = "",
+        on_send: Callable[[], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -62,6 +63,8 @@ class Governed:
         self._attempts = attempts
         self._deadline = deadline
         self._run_id = run_id
+        #: Told of each request to the model before it is sent.
+        self._on_send = on_send
         self._clock = clock
         self._sleep = sleep
         self._started = clock()
@@ -99,26 +102,45 @@ class Governed:
             raise RunStopped(f"the run's deadline of {self._deadline:.0f} s is reached")
 
     async def decide(self, dispute, context, findings) -> Decision:
+        # Until an answer says otherwise: a case that entered here and left
+        # without one is never scored as a decision of the model.
+        self.statuses[self._case] = "unavailable"
         self._check_deadline()
         if self.config.reservation == "uncapped":
             raise RunStopped(f"{self.name}: its reasoning has no billable cap; never sent")
         system, user, names = self.engine.request_texts(dispute, context, findings)
-        reserved = await self.engine.reservation(system, user)
+        # Counting is a call too: held to the same attempts and deadline.
+        reserved, _, _ = await self._attempted(lambda: self.engine.reservation(system, user))
         if any(reserved > limiter.tokens_per_minute for limiter in self._limiters):
             self.statuses[self._case] = "not_sent_oversized"
             self.attempts[self._case] = 0
             return escalation(_no_call(self.config.model, self.version))
+        answer, ticket, latency = await self._attempted(
+            lambda: self.engine._complete(system, user), reserved
+        )
+        self._check_usage(answer, reserved, ticket)
+        decision = self.engine.decision_from(answer, names, int(latency * 1000))
+        self.statuses[self._case] = _status(answer, decision)
+        return decision
 
+    async def _attempted(self, call, reserved: int | None = None):
+        """`call` within the attempts and the deadline: its result, the
+        ledger's ticket, and the seconds it took. With `reserved`, each
+        attempt is a request to the model: paced by the limiters, reserved in
+        the ledger before it is sent, counted."""
         for attempt in range(1, self._attempts + 1):
             self._check_deadline()
-            await self._acquire(reserved)
-            ticket = self._reserve(attempt, reserved)
-            self.attempts[self._case] = attempt
+            ticket = None
+            if reserved is not None:
+                await self._acquire(reserved)
+                ticket = self._reserve(attempt, reserved)
+                self.attempts[self._case] = attempt
+                if self._on_send is not None:
+                    self._on_send()
             started = self._clock()
+            outage = None
             try:
-                answer = await asyncio.wait_for(
-                    self.engine._complete(system, user), timeout=max(self._remaining(), 0.001)
-                )
+                result = await asyncio.wait_for(call(), timeout=max(self._remaining(), 0.001))
             except TimeoutError:
                 # Sent, perhaps processed: the reservation stays spent.
                 raise RunStopped(
@@ -127,41 +149,31 @@ class Governed:
             except EngineRejected:
                 self._settle(ticket, 0.0)
                 raise
-            except EngineUnavailable as outage:
-                if str(outage) == "rate_limited":
-                    # Refused before it was processed: nothing was spent.
-                    self._settle(ticket, 0.0)
-                if attempt == self._attempts:
-                    if str(outage) == "rate_limited":
-                        raise RunStopped(
-                            f"rate limiting persisted past {self._attempts} attempts"
-                        ) from None
-                    self.statuses[self._case] = "unavailable"
-                    raise
-                wait = getattr(outage, "retry_after", None) or BACKOFF * attempt
-                if wait >= self._remaining():
-                    raise RunStopped(
-                        f"the run's deadline of {self._deadline:.0f} s is reached"
-                    ) from None
-                self.waits[self._case] = self.waits.get(self._case, 0.0) + wait
-                await self._sleep(wait)
-                continue
+            except EngineUnavailable as error:
+                outage = error
             finally:
-                self.network[self._case] = (
-                    self.network.get(self._case, 0.0) + self._clock() - started
-                )
-            self._check_usage(answer, reserved, ticket)
-            decision = self.engine.decision_from(
-                answer, names, int((self._clock() - started) * 1000)
-            )
-            self.statuses[self._case] = _status(answer, decision)
-            return decision
+                elapsed = self._clock() - started
+                self.network[self._case] = self.network.get(self._case, 0.0) + elapsed
+            if outage is None:
+                return result, ticket, elapsed
+            if str(outage) == "rate_limited":
+                # Refused before it was processed: nothing was spent.
+                self._settle(ticket, 0.0)
+            if attempt == self._attempts:
+                if str(outage) == "rate_limited":
+                    raise RunStopped(f"rate limiting persisted past {self._attempts} attempts")
+                raise outage
+            wait = getattr(outage, "retry_after", None) or BACKOFF * attempt
+            if wait >= self._remaining():
+                raise RunStopped(f"the run's deadline of {self._deadline:.0f} s is reached")
+            self.waits[self._case] = self.waits.get(self._case, 0.0) + wait
+            await self._sleep(wait)
         raise AssertionError("unreachable")  # pragma: no cover
 
     async def _acquire(self, reserved: int) -> None:
         for limiter in self._limiters:
             before = limiter.waited
-            await limiter.acquire(reserved)
+            await limiter.acquire(reserved, self._remaining)
             self.waits[self._case] = self.waits.get(self._case, 0.0) + limiter.waited - before
         self._check_deadline()
 

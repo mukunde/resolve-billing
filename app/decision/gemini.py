@@ -54,7 +54,10 @@ class GeminiEngine(HostedEngine):
                 model=self.config.model, contents=user, config=self._config(system)
             )
         except Exception as error:
-            raise _translated(error) from None
+            translated = _translated(error)
+            if translated is None:
+                raise
+            raise translated from None
         return _answer(response)
 
     async def reservation(self, system: str, user: str) -> int:
@@ -63,20 +66,19 @@ class GeminiEngine(HostedEngine):
         text = "\n".join((system, user, json.dumps(verdict_schema())))
         try:
             counted = await self._client.aio.models.count_tokens(
-                model=self.config.model, contents=text
+                model=self.config.model, contents=text, config=_count_config()
             )
         except Exception as error:
-            raise _translated(error) from None
+            translated = _translated(error)
+            if translated is None:
+                raise
+            raise translated from None
         return counted.total_tokens + FRAMING_MARGIN + self.config.max_output_tokens
 
 
 def _answer(response) -> Answer:
     candidates = getattr(response, "candidates", None) or []
-    usage = getattr(response, "usage_metadata", None)
-    input_tokens = output_tokens = None
-    if usage is not None and usage.prompt_token_count is not None:
-        input_tokens = usage.prompt_token_count
-        output_tokens = (usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
+    input_tokens, output_tokens = _usage(getattr(response, "usage_metadata", None))
     version = getattr(response, "model_version", None)
     if not candidates:
         return Answer(None, "filtered", input_tokens, output_tokens, version)
@@ -89,8 +91,46 @@ def _answer(response) -> Answer:
     return Answer(text, finish, input_tokens, output_tokens, version)
 
 
-def _translated(error: Exception) -> Exception:
-    """The port's error for Google's, by category: never Google's text."""
+def _usage(usage) -> tuple[int | None, int | None]:
+    """Input and output tokens as reported, or None for what was not.
+
+    Output is the total less the prompt when the total is reported -- it
+    then holds thinking too; otherwise the candidates' count, which must be
+    there, plus thinking. A count never reported is never taken as zero.
+    """
+    if usage is None or usage.prompt_token_count is None:
+        return None, None
+    prompt = usage.prompt_token_count
+    if usage.total_token_count is not None:
+        return prompt, usage.total_token_count - prompt
+    if usage.candidates_token_count is None:
+        return prompt, None
+    return prompt, usage.candidates_token_count + (usage.thoughts_token_count or 0)
+
+
+def _transport_errors() -> tuple[type[BaseException], ...]:
+    import httpx
+
+    errors: tuple[type[BaseException], ...] = (TimeoutError, ConnectionError, httpx.TransportError)
+    try:
+        import aiohttp
+    except ImportError:
+        return errors
+    return (*errors, aiohttp.ClientError)
+
+
+def _count_config():
+    from google.genai import types
+
+    return types.CountTokensConfig(
+        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
+    )
+
+
+def _translated(error: Exception) -> Exception | None:
+    """The port's error for Google's, by category: never Google's text;
+    None for anything neither Google's nor the network's -- a defect, left
+    to fail as itself."""
     from google.genai import errors
 
     if isinstance(error, errors.APIError):
@@ -101,10 +141,19 @@ def _translated(error: Exception) -> Exception:
         if code is not None and code >= 500:
             return unavailable("server_error", response)
         return EngineRejected(str(code))
-    return EngineUnavailable("transport")
+    if isinstance(error, _transport_errors()):
+        return EngineUnavailable("transport")
+    return None
 
 
 def _default_client(config: Configuration):
+    """The Gemini API itself, at the pinned address and version: never Vertex
+    AI, never an address the environment names."""
     from google import genai
+    from google.genai import types
 
-    return genai.Client(api_key=os.environ[config.key_variable])
+    return genai.Client(
+        vertexai=False,
+        api_key=os.environ[config.key_variable],
+        http_options=types.HttpOptions(base_url=config.endpoint, api_version=config.api_version),
+    )

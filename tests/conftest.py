@@ -31,3 +31,12 @@ def fresh_state():
     yield
     for singleton in _SINGLETONS:
         singleton.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def account_state(tmp_path_factory, monkeypatch):
+    """The vendor accounts' state -- run locks, pacing, the Mistral ledger --
+    in a directory of the test's own, never the maintainer's."""
+    from evals import state
+
+    monkeypatch.setattr(state, "STATE_DIR", tmp_path_factory.mktemp("account-state"))

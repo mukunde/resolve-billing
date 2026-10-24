@@ -54,7 +54,10 @@ class MistralEngine(HostedEngine):
         try:
             response = await self._client.chat.complete_async(**request)
         except Exception as error:
-            raise _translated(error) from None
+            translated = _translated(error)
+            if translated is None:
+                raise
+            raise translated from None
         return _answer(response)
 
     async def reservation(self, system: str, user: str) -> int:
@@ -95,8 +98,11 @@ def _final_text(content) -> str | None:
     return texts[-1] if texts else None
 
 
-def _translated(error: Exception) -> Exception:
-    """The port's error for Mistral's, by category: never Mistral's text."""
+def _translated(error: Exception) -> Exception | None:
+    """The port's error for Mistral's, by category: never Mistral's text;
+    None for anything neither Mistral's nor the network's -- a defect, left
+    to fail as itself."""
+    import httpx2
     from mistralai.client import errors
 
     if isinstance(error, errors.NoResponseError):
@@ -109,10 +115,12 @@ def _translated(error: Exception) -> Exception:
         if status >= 500:
             return unavailable("server_error", response)
         return EngineRejected(str(status))
-    return EngineUnavailable("transport")
+    if isinstance(error, TimeoutError | ConnectionError | httpx2.TransportError):
+        return EngineUnavailable("transport")
+    return None
 
 
 def _default_client(config: Configuration):
     from mistralai.client import Mistral
 
-    return Mistral(api_key=os.environ[config.key_variable])
+    return Mistral(api_key=os.environ[config.key_variable], server_url=config.endpoint)

@@ -246,6 +246,10 @@ async def run(
     """
     from app.api.deps import wire
 
+    if engine_name in engines.HOSTED:
+        # Their run is held to the guard, the limits and the envelope:
+        # `evals.hosted_run`, never this path.
+        raise ValueError(f"{engine_name} runs through evals.hosted_run alone")
     available = engines.evaluation_engines()
     if engine_name not in available:
         sys.exit(f"unknown engine {engine_name!r}; available: {sorted(available)}")

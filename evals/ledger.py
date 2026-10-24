@@ -8,6 +8,8 @@ file, then an atomic replace) under a lock held across reading, checking and
 writing; after the answer it is settled at the cost reported. A reservation
 never settled -- a run interrupted mid-call -- stays counted as spent.
 
+The ledger lives with the accounts' state, outside every checkout
+(`evals/state.py`): two worktrees on one key spend one envelope.
 An unreadable or inconsistent ledger is refused, never reset. A new month
 (UTC) starts a new ledger, the old one kept beside it under its month.
 The costs are estimates (the maintainer's waiver, 2026-10-24): the console's
@@ -18,19 +20,17 @@ from __future__ import annotations
 
 import json
 import math
-import os
-import sys
-import tempfile
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from evals import state
 from evals.limits import RunStopped
 
-#: Where the ledger lives. Git-ignored: it describes one maintainer's account.
-ENVELOPE_PATH = Path(__file__).parent / ".mistral-envelope.json"
+#: The ledger's name in the accounts' state directory.
+ENVELOPE_NAME = "mistral-envelope.json"
 
 
 class LedgerRefused(Exception):  # noqa: N818 -- a refusal, not a defect
@@ -40,11 +40,11 @@ class LedgerRefused(Exception):  # noqa: N818 -- a refusal, not a defect
 class Ledger:
     def __init__(
         self,
-        path: Path = ENVELOPE_PATH,
+        path: Path | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         lock_timeout: float = 30.0,
     ) -> None:
-        self.path = path
+        self.path = path if path is not None else state.STATE_DIR / ENVELOPE_NAME
         self._now = now
         self._lock_timeout = lock_timeout
 
@@ -129,16 +129,7 @@ class Ledger:
         return held
 
     def _write(self, held: dict) -> None:
-        handle, temporary = tempfile.mkstemp(dir=self.path.parent, prefix=".envelope-")
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as out:
-                json.dump(held, out, indent=2)
-                out.flush()
-                os.fsync(out.fileno())
-            os.replace(temporary, self.path)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
+        state.write_atomically(self.path, held)
 
     @contextmanager
     def _locked(self) -> Iterator[None]:
@@ -147,14 +138,14 @@ class Ledger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.path.with_name(self.path.name + ".lock"), "a+b") as lock:
             deadline = time.monotonic() + self._lock_timeout
-            while not _try_lock(lock):
+            while not state.try_lock(lock):
                 if time.monotonic() > deadline:
                     raise LedgerRefused(f"the ledger {self.path} is held by another run")
                 time.sleep(0.05)
             try:
                 yield
             finally:
-                _unlock(lock)
+                state.unlock(lock)
 
 
 def _spent(held: dict) -> float:
@@ -188,32 +179,3 @@ def _consistent(held) -> bool:
         ):
             return False
     return True
-
-
-if sys.platform == "win32":
-    import msvcrt
-
-    def _try_lock(lock) -> bool:
-        lock.seek(0)
-        try:
-            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError:
-            return False
-        return True
-
-    def _unlock(lock) -> None:
-        lock.seek(0)
-        msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
-
-else:
-    import fcntl
-
-    def _try_lock(lock) -> bool:
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            return False
-        return True
-
-    def _unlock(lock) -> None:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)

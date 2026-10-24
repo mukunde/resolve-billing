@@ -54,7 +54,9 @@ class Limiter:
         #: Seconds spent waiting on this limiter, across the run.
         self.waited = 0.0
 
-    async def acquire(self, tokens: int) -> None:
+    async def acquire(self, tokens: int, remaining: Callable[[], float] | None = None) -> None:
+        """Wait until the request fits; a wait reaching past what remains of
+        the run (`remaining`, in seconds) stops it instead."""
         if tokens > self.tokens_per_minute:
             raise Oversized(f"{tokens} tokens reserved, {self.tokens_per_minute} per minute")
         while True:
@@ -75,6 +77,8 @@ class Limiter:
                         break
             if wait <= 0:
                 break
+            if remaining is not None and wait >= remaining():
+                raise RunStopped("the run's deadline would pass while waiting on a limiter")
             self.waited += wait
             await self._sleep(wait)
         self._sent.append((now, tokens))
