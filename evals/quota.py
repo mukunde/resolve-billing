@@ -94,6 +94,12 @@ class DailyQuota:
                     f"{counts['declared'] + counts['sent']} are already used"
                 )
 
+    def admit_first_call(self) -> None:
+        """A first call needs one request, on a declared day."""
+        with self._operation() as (held, day):
+            if day not in held["days"]:
+                raise QuotaRefused(f"quota day {day} is not declared")
+
     def take(self) -> None:
         """Count one request before it is sent, or stop the run."""
         with self._operation() as (held, day):

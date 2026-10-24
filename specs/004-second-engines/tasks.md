@@ -107,7 +107,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   stopping the run; `admit_full_run`; Pacific dates converted without the
   system's time zone database (`tzdata`).
 - [x] T093 `evals/quota.py`; `tzdata` in the `engines` extra.
-- [ ] T094 Test first: attempts from the configuration; the order of the
+- [x] T094 Test first: attempts from the configuration; the order of the
   pre-send steps, each refusal sending nothing; `sends`; a Gemini outage
   stopping the run with the later cases not attempted; Mistral unchanged;
   `--first-call-only` (one attempt, at most one send, zero on a refusal
@@ -117,7 +117,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   `GEMINI_QUOTA_PROJECT` required for every Gemini run and its format
   checked; the result's new fields; the investigator reaching the
   instrumented engine exactly 20 times.
-- [ ] T095 `evals/governed.py`, `evals/hosted_run.py`, `evals/runner.py`.
+- [x] T095 `evals/governed.py`, `evals/hosted_run.py`, `evals/runner.py`.
 - [ ] T096 Docs: the evaluation contract, `docs/operations.md` (T071's
   check as read, the Gemini procedure), `.env.example`.
 - [ ] T097 Codex reviews the diff until nothing is left; the maintainer

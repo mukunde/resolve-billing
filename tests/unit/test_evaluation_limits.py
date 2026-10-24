@@ -26,6 +26,16 @@ from tests.unit.test_claude_engine import (  # noqa: F401 -- the fixtures are us
 )
 
 
+@pytest.fixture(autouse=True)
+def gemini_project(monkeypatch):
+    """The maintainer's Gemini project, named as his `.env` names it."""
+    monkeypatch.setenv("GEMINI_QUOTA_PROJECT", "resolve-billing-eval")
+
+
+#: A Gemini run declares its quota day (spec 004 amendment).
+FRESH_DAY = ("--gemini-requests-used-today", "0")
+
+
 class Clock:
     def __init__(self) -> None:
         self.now = 0.0
@@ -391,6 +401,7 @@ class TestTheRunner:
                 "unknown",
                 "--json",
                 str(earlier),
+                *FRESH_DAY,
             ],
         )
 
@@ -507,7 +518,7 @@ def run_main(monkeypatch, tmp_path, vendor_factory, *extra):
     monkeypatch.setitem(engines.HOSTED_ENGINES, "gemini-3.8-flash", vendor_factory)
     target = tmp_path / "gemini.json"
     argv = ["runner", "--engine", "gemini-3.8-flash", "--data-terms", "unknown"]
-    monkeypatch.setattr("sys.argv", [*argv, "--json", str(target), *extra])
+    monkeypatch.setattr("sys.argv", [*argv, "--json", str(target), *FRESH_DAY, *extra])
     status = runner.main()
     (written,) = list(tmp_path.glob("gemini-*.json"))
     return status, json.loads(written.read_text(encoding="utf-8"))
@@ -632,7 +643,7 @@ class TestCountingAndWaiting:
                 self.counts += 1
                 raise EngineUnavailable("transport")
 
-        vendor = FailingCount([], name="gemini-3.8-flash")
+        vendor = FailingCount([])
         engine, _ = governed(tmp_path, vendor)
         engine.begin("c1")
 
@@ -673,7 +684,7 @@ class TestTheAccount:
             engines.HOSTED_ENGINES, "gemini-3.8-flash", lambda: built.append(1) or Vendor([])
         )
         argv = ["runner", "--engine", "gemini-3.8-flash", "--data-terms", "unknown"]
-        monkeypatch.setattr("sys.argv", [*argv, "--json", str(tmp_path / "g.json")])
+        monkeypatch.setattr("sys.argv", [*argv, "--json", str(tmp_path / "g.json"), *FRESH_DAY])
 
         with state.AccountRun("google"):
             assert runner.main() == 2
@@ -772,9 +783,12 @@ class TestTheRecord:
             monkeypatch, tmp_path, lambda: FailingCount([], name="gemini-3.8-flash")
         )
 
-        unavailable = [c for c, s in result["statuses"].items() if s == "unavailable"]
-        assert unavailable
-        assert sorted(result["not_scored"]) == sorted(unavailable)
+        # On Gemini an outage stops the run: the case is not scored, and
+        # never counted as one the rules settled.
+        assert result["stop_reason"] == "outage: transport"
+        assert result["statuses"].get(result["stopped_at"]) is None
+        assert "unavailable" not in result["statuses"].values()
+        assert result["not_scored"] == []
 
 
 # -- After review r161 -----------------------------------------------------------
