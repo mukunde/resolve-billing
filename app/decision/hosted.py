@@ -1,7 +1,8 @@
 """The shared core of the engines evaluated on free tiers.
 
 specs/004-second-engines. Three configurations -- `gemini-3.8-flash`
-(Google), `mistral-large-4` and `zai-glm-5-3` (Mistral) -- decide a dispute
+(Google), `mistral-medium-3-5` and `mistral-medium-3-5-reasoning` (Mistral, one
+model at two reasoning efforts) -- decide a dispute
 exactly as the Claude engine does: the context pseudonymised, the message
 masked (D10), one request with the same prompt and the same payload, the
 answer validated locally against the closed classification, the references
@@ -32,7 +33,10 @@ from app.domain.models import BillingContext, Dispute, RuleFinding
 
 #: Where the limits below were read, and when (T071).
 GEMINI_LIMITS = "AI Studio rate-limit page, project resolve-billing-eval, read 2026-10-24"
-MISTRAL_LIMITS = "Mistral admin console, limits page, read 2026-10-24"
+MISTRAL_LIMITS = (
+    "Mistral admin console, limits page, read 2026-10-24: mistral-medium-latest, "
+    "the only Medium 3.5 name the page lists, taken as mistral-medium-3-5's"
+)
 
 #: The one estimator of a request's tokens: its UTF-8 bytes, a margin, the
 #: output cap (`estimated_tokens`). Named in every result.
@@ -91,86 +95,72 @@ class Configuration:
         return f"{self.name}/{PROMPT_VERSION}"
 
 
+GEMINI = Configuration(
+    name="gemini-3.8-flash",
+    vendor="google",
+    developer="Google",
+    endpoint="https://generativelanguage.googleapis.com",
+    api_version="v1beta",
+    key_variable="GEMINI_API_KEY",
+    model="gemini-3.8-flash",
+    temperature=None,
+    max_output_tokens=4096,
+    reasoning="low",
+    safety="vendor default",
+    # 5 requests a minute, 250,000 tokens a minute, 20 a day: the
+    # day's quota is one full run (20 cases reach the engine), so
+    # one attempt per case, and an outage stops the run.
+    tokens_per_minute=250_000,
+    requests_per_second=5 / 60,
+    requests_per_day=20,
+    quota_timezone="America/Los_Angeles",
+    attempts=1,
+    stop_on_outage=True,
+    limits_source=GEMINI_LIMITS,
+    shared_limits=None,
+    price_per_mtok=None,
+    price_source=GEMINI_PRICES,
+    reservation="estimated",
+    reservation_estimator=ESTIMATOR,
+)
+
 CONFIGURATIONS: dict[str, Configuration] = {
     config.name: config
     for config in (
-        Configuration(
-            name="gemini-3.8-flash",
-            vendor="google",
-            developer="Google",
-            endpoint="https://generativelanguage.googleapis.com",
-            api_version="v1beta",
-            key_variable="GEMINI_API_KEY",
-            model="gemini-3.8-flash",
-            temperature=None,
-            max_output_tokens=4096,
-            reasoning="low",
-            safety="vendor default",
-            # 5 requests a minute, 250,000 tokens a minute, 20 a day: the
-            # day's quota is one full run (20 cases reach the engine), so
-            # one attempt per case, and an outage stops the run.
-            tokens_per_minute=250_000,
-            requests_per_second=5 / 60,
-            requests_per_day=20,
-            quota_timezone="America/Los_Angeles",
-            attempts=1,
-            stop_on_outage=True,
-            limits_source=GEMINI_LIMITS,
-            shared_limits=None,
-            price_per_mtok=None,
-            price_source=GEMINI_PRICES,
-            reservation="estimated",
-            reservation_estimator=ESTIMATOR,
-        ),
-        Configuration(
-            name="mistral-large-4",
-            vendor="mistral",
-            developer="Mistral AI",
-            endpoint="https://api.mistral.ai",
-            api_version="v1",
-            key_variable="MISTRAL_API_KEY",
-            model="mistral-large-4",
-            temperature=None,
-            max_output_tokens=4096,
-            reasoning="none",
-            safety="vendor default",
-            tokens_per_minute=20_000,
-            requests_per_second=0.83,
-            requests_per_day=None,
-            quota_timezone=None,
-            attempts=3,
-            stop_on_outage=False,
-            limits_source=MISTRAL_LIMITS,
-            shared_limits="mistral",
-            price_per_mtok=(1.36, 4.18),
-            price_source=MISTRAL_PRICES,
-            reservation="estimated",
-            reservation_estimator=ESTIMATOR,
-        ),
-        Configuration(
-            name="zai-glm-5-3",
-            vendor="mistral",
-            developer="Z.ai",
-            endpoint="https://api.mistral.ai",
-            api_version="v1",
-            key_variable="MISTRAL_API_KEY",
-            model="zai-glm-5-3",
-            temperature=None,
-            max_output_tokens=4096,
-            reasoning="low",
-            safety="vendor default",
-            tokens_per_minute=20_000,
-            requests_per_second=1.0,
-            requests_per_day=None,
-            quota_timezone=None,
-            attempts=3,
-            stop_on_outage=False,
-            limits_source=MISTRAL_LIMITS,
-            shared_limits="mistral",
-            price_per_mtok=(1.40, 4.40),
-            price_source=MISTRAL_PRICES,
-            reservation="estimated",
-            reservation_estimator=ESTIMATOR,
+        GEMINI,
+        *(
+            Configuration(
+                name=name,
+                vendor="mistral",
+                developer="Mistral AI",
+                endpoint="https://api.mistral.ai",
+                api_version="v1",
+                key_variable="MISTRAL_API_KEY",
+                model="mistral-medium-3-5",
+                temperature=None,
+                max_output_tokens=4096,
+                reasoning=reasoning,
+                safety="vendor default",
+                tokens_per_minute=20_000,
+                requests_per_second=1.0,
+                requests_per_day=None,
+                quota_timezone=None,
+                attempts=3,
+                stop_on_outage=False,
+                limits_source=MISTRAL_LIMITS,
+                shared_limits="mistral",
+                price_per_mtok=(1.5, 7.5),
+                price_source=MISTRAL_PRICES,
+                reservation="estimated",
+                reservation_estimator=ESTIMATOR,
+            )
+            # Two configurations of one model, equal but for the reasoning effort
+            # (spec 004, second amendment): the free level refused Large 4 and
+            # GLM 5.3 (403, tier_not_allowed, 2026-10-24).
+            for name, reasoning in (
+                ("mistral-medium-3-5", "none"),
+                ("mistral-medium-3-5-reasoning", "high"),
+            )
         ),
     )
 }

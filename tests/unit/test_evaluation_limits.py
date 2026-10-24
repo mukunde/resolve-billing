@@ -150,10 +150,10 @@ class TestTheLedger:
 
     def test_both_models_and_every_run_share_it(self, tmp_path):
         ledger(tmp_path).declare(1.0)
-        ledger(tmp_path).reserve("mistral-large-4/case1/1", 0.5)
+        ledger(tmp_path).reserve("mistral-medium-3-5/case1/1", 0.5)
 
         with pytest.raises(RunStopped):
-            ledger(tmp_path).reserve("zai-glm-5-3/case1/1", 0.6)
+            ledger(tmp_path).reserve("mistral-medium-3-5-reasoning/case1/1", 0.6)
 
     def test_without_a_declared_allowance_nothing_is_reserved(self, tmp_path):
         with pytest.raises(LedgerRefused, match="allowance"):
@@ -209,7 +209,7 @@ class TestTheLedger:
 class Vendor(HostedEngine):
     """A hosted engine whose vendor follows a script, one entry per call."""
 
-    def __init__(self, script, name="mistral-large-4", reserved=3000):
+    def __init__(self, script, name="mistral-medium-3-5", reserved=3000):
         super().__init__(configuration(name))
         self.script = list(script)
         self.calls = 0
@@ -439,8 +439,10 @@ class TestMoreLimits:
     async def test_mistral_s_two_models_share_one_limiter(self):
         clock = Clock()
         shared: dict = {}
-        large = limiters_for(configuration("mistral-large-4"), shared, clock, clock.sleep)
-        glm = limiters_for(configuration("zai-glm-5-3"), shared, clock, clock.sleep)
+        large = limiters_for(configuration("mistral-medium-3-5"), shared, clock, clock.sleep)
+        glm = limiters_for(
+            configuration("mistral-medium-3-5-reasoning"), shared, clock, clock.sleep
+        )
 
         assert large[1] is glm[1]
         # Alternating the models: the shared ceiling is the smaller one, for both.
@@ -501,7 +503,7 @@ class TestMoreLimits:
         held = json.loads((tmp_path / "envelope.json").read_text(encoding="utf-8"))
         first, second = held["attempts"].values()
         assert first["settled"] == 0.0
-        assert second["settled"] == pytest.approx((900 * 1.36 + 120 * 4.18) / 1e6, abs=1e-6)
+        assert second["settled"] == pytest.approx((900 * 1.5 + 120 * 7.5) / 1e6, abs=1e-6)
 
     async def test_usage_absent_leaves_the_reservation_spent(
         self, tmp_path, context, findings, dispute
@@ -519,7 +521,7 @@ class TestMoreLimits:
     async def test_the_mistral_reservation_bounds_unicode_by_its_bytes(self):
         from app.decision.mistral import TEMPLATE_MARGIN, MistralEngine
 
-        engine = MistralEngine(configuration("mistral-large-4"), client=object())
+        engine = MistralEngine(configuration("mistral-medium-3-5"), client=object())
         text = "é" * 1000 + "日本" * 500  # 2000 characters, 5000 bytes
 
         reserved = await engine.reservation("", text)
@@ -751,13 +753,13 @@ class TestTheUngovernedPath:
     ):
         built = []
         monkeypatch.setitem(
-            engines.HOSTED_ENGINES, "mistral-large-4", lambda: built.append(1) or Vendor([])
+            engines.HOSTED_ENGINES, "mistral-medium-3-5", lambda: built.append(1) or Vendor([])
         )
         other = tmp_path / "other.json"
         other.write_text("[]", encoding="utf-8")
 
         with pytest.raises(ValueError, match="hosted_run"):
-            await runner.run("mistral-large-4", other, [] if with_cases else None)
+            await runner.run("mistral-medium-3-5", other, [] if with_cases else None)
         assert built == []
 
 
@@ -838,7 +840,9 @@ class TestAfterR161:
             async def reservation(self, system, user):
                 return 3000
 
-        vendor = Counted(configuration("mistral-large-4"), client=type("C", (), {"chat": Chat()})())
+        vendor = Counted(
+            configuration("mistral-medium-3-5"), client=type("C", (), {"chat": Chat()})()
+        )
         engine, _ = governed(tmp_path, vendor)
         engine.begin("c1")
 

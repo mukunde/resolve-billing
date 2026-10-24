@@ -1,13 +1,12 @@
-"""`mistral-large-4` and `zai-glm-5-3`, through Mistral's API
-(specs/004-second-engines).
+"""`mistral-medium-3-5` and `mistral-medium-3-5-reasoning`, through Mistral's
+API (specs/004-second-engines, second amendment).
 
 `mistralai` pinned at 3.2.0: one chat completion with the verdict schema as a
-strict JSON schema, the reasoning effort the configuration pins (`none` for
-Large 4; `low` for GLM 5.3, which cannot turn it off), the output cap at
-4096, and the SDK's retries off (`retries=None`). GLM 5.3 is Z.ai's model,
-served by Mistral on its own infrastructure. The content may come as chunks:
-the final text chunk is the answer, thinking chunks are dropped and never
-kept. Imported by the evaluation runner only.
+strict JSON schema, the reasoning effort the configuration pins (`none`,
+which thinks minimally and returns no thinking; `high`), the output cap at
+4096, and the SDK's retries off (`retries=None`). The content may come as
+chunks: the final text chunk is the answer, thinking chunks are dropped and
+never kept. Imported by the evaluation runner only.
 """
 
 from __future__ import annotations

@@ -168,7 +168,7 @@ class TestTheLimitsAsRead:
         assert "resolve-billing-eval" in config.limits_source
         assert "2026-10-24" in config.limits_source
 
-    @pytest.mark.parametrize("name", ["mistral-large-4", "zai-glm-5-3"])
+    @pytest.mark.parametrize("name", ["mistral-medium-3-5", "mistral-medium-3-5-reasoning"])
     def test_mistral_keeps_its_attempts_and_has_no_daily_quota(self, name):
         config = configuration(name)
 
@@ -178,7 +178,9 @@ class TestTheLimitsAsRead:
         assert config.stop_on_outage is False
         assert "2026-10-24" in config.limits_source
 
-    @pytest.mark.parametrize("name", ["gemini-3.8-flash", "mistral-large-4", "zai-glm-5-3"])
+    @pytest.mark.parametrize(
+        "name", ["gemini-3.8-flash", "mistral-medium-3-5", "mistral-medium-3-5-reasoning"]
+    )
     def test_one_named_estimator_for_all_three(self, name):
         assert configuration(name).reservation_estimator == "utf8-bytes-v1"
 
@@ -194,15 +196,56 @@ class TestTheLimitsAsRead:
         assert estimate == 5000 + schema + 512 + 4096
 
 
+class TestMediumThreeFive:
+    """Two configurations of one model, in place of the two the free tier
+    refused (spec 004, second amendment)."""
+
+    @pytest.mark.parametrize("name", ["mistral-large-4", "zai-glm-5-3"])
+    def test_the_refused_configurations_are_gone(self, name):
+        assert name not in CONFIGURATIONS
+        with pytest.raises(KeyError):
+            configuration(name)
+
+    def test_they_differ_only_by_name_and_reasoning_effort(self):
+        from dataclasses import asdict
+
+        plain = asdict(configuration("mistral-medium-3-5"))
+        reasoning = asdict(configuration("mistral-medium-3-5-reasoning"))
+
+        assert plain.pop("name") == "mistral-medium-3-5"
+        assert reasoning.pop("name") == "mistral-medium-3-5-reasoning"
+        assert plain.pop("reasoning") == "none"
+        assert reasoning.pop("reasoning") == "high"
+        assert plain == reasoning
+
+    def test_as_read_on_2026_10_24(self):
+        config = configuration("mistral-medium-3-5")
+
+        assert config.model == "mistral-medium-3-5"
+        assert config.developer == "Mistral AI"
+        assert config.price_per_mtok == (1.5, 7.5)
+        assert config.max_output_tokens == 4096
+        assert config.temperature is None
+        assert config.tokens_per_minute == 20_000
+        assert config.requests_per_second == 1.0
+        assert config.shared_limits == "mistral"
+        assert "mistral-medium-latest" in config.limits_source
+        assert "2026-10-24" in config.limits_source
+
+
 class TestTheConfigurations:
     def test_exactly_three_closed_configurations(self):
-        assert set(CONFIGURATIONS) == {"gemini-3.8-flash", "mistral-large-4", "zai-glm-5-3"}
+        assert set(CONFIGURATIONS) == {
+            "gemini-3.8-flash",
+            "mistral-medium-3-5",
+            "mistral-medium-3-5-reasoning",
+        }
 
     @pytest.mark.parametrize("name", sorted(CONFIGURATIONS))
     def test_each_is_pinned_to_its_vendor_endpoint_and_key(self, name):
         config = configuration(name)
 
-        assert config.model == name
+        assert config.model in {name, "mistral-medium-3-5"}
         assert "latest" not in config.model
         assert config.endpoint.startswith("https://")
         assert config.key_variable in {"GEMINI_API_KEY", "MISTRAL_API_KEY"}
@@ -211,10 +254,10 @@ class TestTheConfigurations:
     def test_the_vendors_and_their_keys(self):
         assert configuration("gemini-3.8-flash").vendor == "google"
         assert configuration("gemini-3.8-flash").key_variable == "GEMINI_API_KEY"
-        for name in ("mistral-large-4", "zai-glm-5-3"):
+        for name in ("mistral-medium-3-5", "mistral-medium-3-5-reasoning"):
             assert configuration(name).vendor == "mistral"
             assert configuration(name).key_variable == "MISTRAL_API_KEY"
-        assert configuration("zai-glm-5-3").developer == "Z.ai"
+        assert configuration("mistral-medium-3-5-reasoning").developer == "Mistral AI"
 
     def test_an_unknown_name_is_refused(self):
         with pytest.raises(KeyError):

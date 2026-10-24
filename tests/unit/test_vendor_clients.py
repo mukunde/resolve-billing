@@ -203,7 +203,7 @@ class TestGemini:
 # -- Mistral -----------------------------------------------------------------
 
 
-def mistral_response(content, finish="stop", usage=True, model="mistral-large-4"):
+def mistral_response(content, finish="stop", usage=True, model="mistral-medium-3-5"):
     body = {
         "id": "cmpl-1",
         "object": "chat.completion",
@@ -259,13 +259,13 @@ def http_error(status):
 
 
 class TestMistral:
-    async def test_the_large_4_request_as_pinned(self, context, findings, dispute):
-        engine, chat = mistral("mistral-large-4", mistral_response(json.dumps(VALID_VERDICT)))
+    async def test_the_medium_request_as_pinned(self, context, findings, dispute):
+        engine, chat = mistral("mistral-medium-3-5", mistral_response(json.dumps(VALID_VERDICT)))
 
         await engine.decide(dispute, context, findings)
 
         (sent,) = chat.sent
-        assert sent["model"] == "mistral-large-4"
+        assert sent["model"] == "mistral-medium-3-5"
         assert sent["max_tokens"] == 4096
         assert sent["reasoning_effort"] == "none"
         assert sent["retries"] is None
@@ -276,34 +276,50 @@ class TestMistral:
         }
         assert [m["role"] for m in sent["messages"]] == ["system", "user"]
 
-    async def test_the_glm_request_reasons_at_the_lowest_level(self, context, findings, dispute):
+    async def test_the_reasoning_request_reasons_at_effort_high(self, context, findings, dispute):
         response = mistral_response(
-            [thinking("hmm"), answer_chunk(json.dumps(VALID_VERDICT))], model="zai-glm-5-3"
+            [thinking("hmm"), answer_chunk(json.dumps(VALID_VERDICT))], model="mistral-medium-3-5"
         )
-        engine, chat = mistral("zai-glm-5-3", response)
+        engine, chat = mistral("mistral-medium-3-5-reasoning", response)
 
         await engine.decide(dispute, context, findings)
 
-        assert chat.sent[0]["reasoning_effort"] == "low"
+        assert chat.sent[0]["reasoning_effort"] == "high"
+        assert chat.sent[0]["model"] == "mistral-medium-3-5"
 
-    async def test_glm_blocks_only_the_final_text_is_read(self, context, findings, dispute):
+    async def test_the_two_requests_differ_only_by_reasoning_effort(
+        self, context, findings, dispute
+    ):
+        sent = []
+        for name in ("mistral-medium-3-5", "mistral-medium-3-5-reasoning"):
+            engine, chat = mistral(name, mistral_response(json.dumps(VALID_VERDICT)))
+            await engine.decide(dispute, context, findings)
+            sent.append(dict(chat.sent[0]))
+
+        assert sent[0].pop("reasoning_effort") == "none"
+        assert sent[1].pop("reasoning_effort") == "high"
+        assert sent[0] == sent[1]
+
+    async def test_at_effort_high_only_the_final_text_is_read(self, context, findings, dispute):
         response = mistral_response(
             [
                 thinking(json.dumps({**VALID_VERDICT, "classification": "unknown"})),
                 answer_chunk(json.dumps(VALID_VERDICT)),
             ],
-            model="zai-glm-5-3",
+            model="mistral-medium-3-5",
         )
-        engine, _ = mistral("zai-glm-5-3", response)
+        engine, _ = mistral("mistral-medium-3-5-reasoning", response)
 
         decision = await engine.decide(dispute, context, findings)
 
         assert decision.classification is Classification.DUPLICATE_BILLING
         assert "hmm" not in repr(engine.__dict__)
 
-    async def test_glm_without_a_final_text_is_invalid(self, context, findings, dispute):
-        response = mistral_response([thinking(json.dumps(VALID_VERDICT))], model="zai-glm-5-3")
-        engine, _ = mistral("zai-glm-5-3", response)
+    async def test_at_effort_high_without_a_final_text_is_invalid(self, context, findings, dispute):
+        response = mistral_response(
+            [thinking(json.dumps(VALID_VERDICT))], model="mistral-medium-3-5"
+        )
+        engine, _ = mistral("mistral-medium-3-5-reasoning", response)
 
         decision = await engine.decide(dispute, context, findings)
 
@@ -312,7 +328,7 @@ class TestMistral:
     @pytest.mark.parametrize("finish", ["length", "model_length", "error", "tool_calls"])
     async def test_any_finish_but_stop_is_unusable(self, context, findings, dispute, finish):
         engine, _ = mistral(
-            "mistral-large-4", mistral_response(json.dumps(VALID_VERDICT), finish=finish)
+            "mistral-medium-3-5", mistral_response(json.dumps(VALID_VERDICT), finish=finish)
         )
 
         decision = await engine.decide(dispute, context, findings)
@@ -321,7 +337,7 @@ class TestMistral:
 
     async def test_usage_absent_is_told_from_zero(self, context, findings, dispute):
         engine, _ = mistral(
-            "mistral-large-4", mistral_response(json.dumps(VALID_VERDICT), usage=False)
+            "mistral-medium-3-5", mistral_response(json.dumps(VALID_VERDICT), usage=False)
         )
 
         decision = await engine.decide(dispute, context, findings)
@@ -345,7 +361,7 @@ class TestMistral:
     async def test_errors_by_kind_without_vendor_text(
         self, context, findings, dispute, error, kind, category
     ):
-        engine, _ = mistral("mistral-large-4", error)
+        engine, _ = mistral("mistral-medium-3-5", error)
 
         with pytest.raises(kind) as raised:
             await engine.decide(dispute, context, findings)
@@ -354,7 +370,7 @@ class TestMistral:
         assert SENTINEL not in str(raised.value)
 
     async def test_the_reservation_bounds_the_bytes_plus_its_margins(self):
-        engine, _ = mistral("mistral-large-4", mistral_response(json.dumps(VALID_VERDICT)))
+        engine, _ = mistral("mistral-medium-3-5", mistral_response(json.dumps(VALID_VERDICT)))
 
         reserved = await engine.reservation("SYSTÈME", "UTILISATEUR")
 
@@ -382,7 +398,9 @@ class TestAgainstThePinnedSdks:
 
         from mistralai.client.chat import Chat
 
-        engine, chat = mistral("zai-glm-5-3", mistral_response([answer_chunk("{}")]))
+        engine, chat = mistral(
+            "mistral-medium-3-5-reasoning", mistral_response([answer_chunk("{}")])
+        )
         await engine.decide(dispute, context, findings)
 
         parameters = set(inspect.signature(Chat.complete_async).parameters)
@@ -419,7 +437,7 @@ class TestPinnedAndHonest:
 
         monkeypatch.setenv("MISTRAL_API_KEY", "set-by-the-test")
 
-        client = _default_client(configuration("mistral-large-4"))
+        client = _default_client(configuration("mistral-medium-3-5"))
 
         assert client.sdk_configuration.get_server_details()[0] == "https://api.mistral.ai"
 
@@ -445,7 +463,7 @@ class TestPinnedAndHonest:
     async def test_a_defect_in_the_mistral_call_is_not_an_outage(
         self, context, findings, dispute, defect
     ):
-        engine, _ = mistral("mistral-large-4", defect)
+        engine, _ = mistral("mistral-medium-3-5", defect)
 
         with pytest.raises(type(defect)):
             await engine.decide(dispute, context, findings)
@@ -453,7 +471,7 @@ class TestPinnedAndHonest:
     async def test_mistral_s_own_transport_errors_are_outages(self, context, findings, dispute):
         import httpx2
 
-        engine, _ = mistral("mistral-large-4", httpx2.ConnectError(SENTINEL))
+        engine, _ = mistral("mistral-medium-3-5", httpx2.ConnectError(SENTINEL))
 
         with pytest.raises(EngineUnavailable, match="^transport$"):
             await engine.decide(dispute, context, findings)

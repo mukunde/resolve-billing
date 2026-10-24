@@ -11,7 +11,23 @@ import pytest
 from app.api import deps
 from evals import engines, runner
 
-HOSTED = ("gemini-3.8-flash", "mistral-large-4", "zai-glm-5-3")
+HOSTED = ("gemini-3.8-flash", "mistral-medium-3-5", "mistral-medium-3-5-reasoning")
+
+
+class TestTheRefusedConfigurations:
+    @pytest.mark.parametrize("name", ["mistral-large-4", "zai-glm-5-3"])
+    def test_the_runner_and_the_service_refuse_them(self, name, monkeypatch):
+        import asyncio
+
+        assert name not in engines.evaluation_engines()
+        with pytest.raises(SystemExit, match="unknown engine"):
+            asyncio.run(runner.run(name))
+
+        monkeypatch.setenv("DECISION_ENGINE", name)
+        deps.get_engine.cache_clear()
+        with pytest.raises(RuntimeError, match="unknown decision engine"):
+            deps.get_engine()
+        deps.get_engine.cache_clear()
 
 
 class TestTheRegistry:
@@ -32,8 +48,8 @@ class TestTheRegistry:
         ("name", "key"),
         [
             ("gemini-3.8-flash", "GEMINI_API_KEY"),
-            ("mistral-large-4", "MISTRAL_API_KEY"),
-            ("zai-glm-5-3", "MISTRAL_API_KEY"),
+            ("mistral-medium-3-5", "MISTRAL_API_KEY"),
+            ("mistral-medium-3-5-reasoning", "MISTRAL_API_KEY"),
         ],
     )
     def test_a_missing_key_is_named_and_nothing_runs(self, name, key, monkeypatch):

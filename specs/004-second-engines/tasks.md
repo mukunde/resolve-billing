@@ -125,16 +125,16 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 7b: Mistral Medium 3.5 at two reasoning efforts (second amendment, plan B1-B5)
 
-- [ ] T100 Test first: the two old names refused by the runner and absent
+- [x] T100 Test first: the two old names refused by the runner and absent
   from the service; the two new configurations closed, refused by the
   service, their requests equal but for `reasoning_effort`; thinking
   chunks dropped at effort `high`; cost from Medium 3.5's prices; the shared
   Mistral limiter, envelope and lock; earlier tests moved off the old
   names.
-- [ ] T101 **[maintainer]** Read the per-minute limits of
+- [x] T101 **[maintainer]** Read the per-minute limits of
   `mistral-medium-3-5` in the console; recorded in the configurations.
   Before T102: no placeholder limit is merged.
-- [ ] T102 `app/decision/hosted.py`, `app/decision/mistral.py`.
+- [x] T102 `app/decision/hosted.py`, `app/decision/mistral.py`.
 - [ ] T103 Test first: the first call's acceptance and its reasons, for
   every configuration, a returned model version required;
   `first_call_accepted` in the result; the first-calls state (atomic,

@@ -246,7 +246,7 @@ class TestAGeminiRun:
     def test_the_declaration_flag_is_refused_for_mistral(self, tmp_path, monkeypatch):
         monkeypatch.delenv("RESOLVE_EXTRA_FIXTURES_DIR", raising=False)
         monkeypatch.setenv("MISTRAL_API_KEY", "set-by-the-test")
-        argv = ["runner", "--engine", "mistral-large-4", "--data-terms", "unknown"]
+        argv = ["runner", "--engine", "mistral-medium-3-5", "--data-terms", "unknown"]
         extra = ["--json", str(tmp_path / "m.json"), "--gemini-requests-used-today", "0"]
         monkeypatch.setattr("sys.argv", [*argv, *extra])
 
@@ -324,9 +324,9 @@ class TestTheFirstCall:
         vendor = Failing([])
         monkeypatch.delenv("RESOLVE_EXTRA_FIXTURES_DIR", raising=False)
         monkeypatch.setenv("MISTRAL_API_KEY", "set-by-the-test")
-        monkeypatch.setitem(engines.HOSTED_ENGINES, "mistral-large-4", lambda: vendor)
+        monkeypatch.setitem(engines.HOSTED_ENGINES, "mistral-medium-3-5", lambda: vendor)
         monkeypatch.setattr("evals.limits.Limiter.acquire", _no_wait)
-        argv = ["runner", "--engine", "mistral-large-4", "--data-terms", "unknown"]
+        argv = ["runner", "--engine", "mistral-medium-3-5", "--data-terms", "unknown"]
         extra = ["--json", str(tmp_path / "m.json"), "--first-call-only"]
         monkeypatch.setattr("sys.argv", [*argv, *extra, "--mistral-allowance-usd", "10"])
 
