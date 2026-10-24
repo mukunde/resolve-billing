@@ -123,6 +123,28 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 - [ ] T097 Codex reviews the diff until nothing is left; the maintainer
   approves the final diff by its commit; push and pull request.
 
+## Phase 7b: Mistral Medium 3.5 at two reasoning efforts (second amendment, plan B1-B5)
+
+- [ ] T100 Test first: the two old names refused by the runner and absent
+  from the service; the two new configurations closed, refused by the
+  service, their requests equal but for `reasoning_effort`; thinking
+  chunks dropped at effort `high`; cost from Medium 3.5's prices; the shared
+  Mistral limiter, envelope and lock; earlier tests moved off the old
+  names.
+- [ ] T101 **[maintainer]** Read the per-minute limits of
+  `mistral-medium-3-5` in the console; recorded in the configurations.
+- [ ] T102 `app/decision/hosted.py`, `app/decision/mistral.py`.
+- [ ] T103 Test first: the first call's acceptance and its reasons, for
+  every configuration; `first_call_accepted` in the result; the
+  first-calls state (atomic, locked, refused when corrupt); the full-run
+  gate (own acceptance, the sibling's for Mistral, a changed configuration).
+- [ ] T104 `evals/hosted_run.py`, `evals/state.py` (or a small
+  `evals/first_calls.py`).
+- [ ] T105 Docs: the two contracts, ADR-009's row, `docs/operations.md`,
+  `evals/results/README.md`; the two refusal results committed.
+- [ ] T106 Codex reviews the diff until nothing is left; the maintainer
+  approves the final diff by its commit; push and pull request.
+
 ## Phase 8: The maintainer's runs
 
 - [ ] T070 **[maintainer]** Keys: `GEMINI_API_KEY` (AI Studio),
@@ -135,7 +157,8 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 - [ ] T072 **[maintainer]** A first minimal call per configuration
   (`--first-call-only`), then one run of the 34 cases each, on another
   occasion -- for Gemini, another Pacific quota day; results stored
-  (SC-001). After phase 7a.
+  (SC-001). After phases 7a and 7b; for Mistral, the two Medium 3.5
+  configurations, both smoke tests accepted before either full run.
 
 ## Phase 9: Review and delivery
 

@@ -480,6 +480,85 @@ check recorded for both vendors as read on 2026-10-24, the Gemini
 procedure -- declare, first call one Pacific day, full run another --
 `GEMINI_QUOTA_PROJECT`); `.env.example`; ADR-009's row unchanged.
 
+## Second amendment (2026-10-24): Mistral Medium 3.5 at two reasoning efforts
+
+For the spec's second amendment (approved at `518b5a2`, the maintainer's
+waiver confirmed at `133d242`). Branch `004-medium-3-5`, its own pull
+request, before any Mistral run.
+
+### B1. The configurations (`app/decision/hosted.py`)
+
+`mistral-large-4` and `zai-glm-5-3` leave `CONFIGURATIONS`; the
+registry, built from it, then refuses them as unknown (FR-013). Two
+configurations take their place (FR-014), equal in everything but the
+name and the reasoning effort:
+
+| field | `mistral-medium-3-5` | `mistral-medium-3-5-reasoning` |
+|---|---|---|
+| model | `mistral-medium-3-5` | `mistral-medium-3-5` |
+| developer | Mistral AI | Mistral AI |
+| reasoning | `none` | `high` |
+| max_output_tokens, temperature | 4096, vendor default | 4096, vendor default |
+| price_per_mtok | (1.5, 7.5) | (1.5, 7.5) |
+| attempts, stop_on_outage | 3, False | 3, False |
+| shared_limits | `mistral` | `mistral` |
+| reservation, estimator | `estimated`, `utf8-bytes-v1` | `estimated`, `utf8-bytes-v1` |
+
+Their per-minute limits are the ones the maintainer reads in his console
+(T101, before the code is final); until then the tests use the values the
+configurations carry, and no run is possible before the smoke tests
+anyway. `MISTRAL_PRICES` is re-read for Medium 3.5 (pricing page, read
+2026-10-24). The shared limiter, built from the configurations sharing
+`mistral`, takes the smaller of their limits, as today.
+
+### B2. The client (`app/decision/mistral.py`)
+
+Unchanged in shape: the request already carries `reasoning_effort` from
+the configuration, and `_final_text` keeps the last text chunk and drops
+thinking chunks (FR-015). Its docstring loses Large 4 and GLM. Tests pin
+the two requests -- same model, cap, schema, temperature, differing only by
+`reasoning_effort` -- and a chunk list with thinking at effort `high`.
+
+### B3. The smoke test's acceptance (`evals/hosted_run.py`, `evals/state.py`)
+
+FR-016 and FR-012 amended, for every configuration:
+
+- The first call is **accepted** when the case's status is `decided` or
+  `abstained` (a valid verdict) -- the usage check having passed, since a
+  missing or excessive usage stops the run before a status is set -- and
+  the returned model version is recorded. Its reason is then `"first call
+  accepted"`; otherwise the reason says why: `"first call not accepted:
+  invalid answer"`, an outage, a refusal, `"not sent: oversized"`, or the
+  run's stop reason. The result carries `"first_call_accepted": true|false`.
+- An accepted first call is recorded in the accounts' state,
+  `~/.resolve-billing/first-calls.json`: per configuration, the date, the
+  model version returned, and a fingerprint of the configuration (its
+  fields and prompt version, hashed); written atomically under a lock;
+  unreadable or inconsistent, refused, never reset.
+- A full run is admitted only if the configuration's own first call is
+  recorded with the current fingerprint; for a configuration sharing
+  limits (`mistral`), also every other configuration sharing them (both
+  Mistral smoke tests accepted before either full run). Otherwise it is
+  refused before any client is built, naming what is missing. A changed
+  configuration needs a new first call.
+
+### B4. Documents
+
+The contracts (decision engine: the configurations; evaluation: the
+acceptance and the gate); ADR-009's model-provider row (Mistral's model is
+Medium 3.5; GLM's provenance recorded as history, with its refusal);
+`docs/operations.md` (the check for Medium 3.5, the commands, the order:
+both Mistral smoke tests, then the full runs; Gemini's smoke test accepted
+before its full run); `evals/results/README.md` (the two refusal results
+listed, read for what they are: 403, settled at zero locally).
+
+### B5. Tests
+
+As SC-005 lists them, plus: the gate (a full run refused without its
+accepted first call, without the sibling's for Mistral, after a
+configuration change; admitted otherwise), the first-calls state refused
+when corrupt, and every earlier test moved off the two old names.
+
 ## Complexity Tracking
 
 None.
