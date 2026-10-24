@@ -2,9 +2,11 @@
 
 **Feature Branch**: `004-second-engines`
 
-**Created**: 2026-10-24 · **Revised**: 2026-10-24, after review r153
+**Created**: 2026-10-24 · **Revised**: 2026-10-24, after review r153 ·
+**Amended**: 2026-10-24, the daily quota and the first call (below)
 
-**Status**: Draft -- for the maintainer's approval
+**Status**: Approved 2026-10-24 (`94cf4ea`); merged (PR 20). The amendment
+below: draft, for the maintainer's approval
 
 **Input**: The maintainer has no Anthropic API credit, so step 4 (D10
 measured on the Claude engine, the reference run on the frozen holdout,
@@ -245,3 +247,82 @@ network call is made.
   them.
 - The vendors' terms, models and limits are those observed on 2026-10-24;
   they are read again before each measurement and any change is recorded.
+
+## Amendment (2026-10-24): the daily quota and the first call
+
+**Why.** Reading his limits after creating his keys (T070-T071), the
+maintainer found what the specification did not foresee: on his Gemini
+project (`resolve-billing-eval`, free tier, no billing), `gemini-3.8-flash`
+allows **5 requests/min, 250,000 tokens/min and 20 requests/day**. Twenty
+of the 34 development cases reach the engine (the other fourteen are
+settled by the rules), so a full run needs the whole day's quota. And no
+command performs the first minimal call the assumptions require. The
+framing was reviewed by Codex (r164) and approved by the maintainer on
+2026-10-24, with the two decisions recorded below.
+
+**Established.** Mistral's console matches the configurations
+(`mistral-large-4` 20,000 tokens/min and 0.83 req/s; `zai-glm-5-3` 20,000
+tokens/min and 1 req/s), shows no shared ceiling, and includes the free
+level by default: "Activer" enables paid usage beyond the $10 included,
+and stays off. Google documents its limits per project, and its daily
+quotas reset at midnight Pacific time.
+
+**The maintainer's decisions (2026-10-24).**
+
+- **Gemini's reservation is estimated locally**, no longer by Google's
+  `count_tokens`: the UTF-8 bytes of the request's exact material (system
+  instruction, user payload, serialised schema), plus a margin, plus the
+  output cap. A new estimate, not a bound -- Gemini's tokenizer is not
+  documented -- replacing the waiver's counted text for Gemini; each
+  answer's reported usage is still checked against it, and the run stops
+  above it.
+- **One attempt per case for Gemini.** With 20 requests for 20 cases, a
+  retry spends another case's request. An outage stops the run, written
+  incomplete.
+
+**Requirements.**
+
+- **FR-007a**: A configuration MUST be able to carry a daily request limit
+  with its time zone (`gemini-3.8-flash`: 20, `America/Los_Angeles`), and
+  the real per-minute limits read by the maintainer, with source and date.
+- **FR-007b**: The daily count MUST be kept per vendor project in the
+  accounts' state outside every checkout, persisted before each send and
+  never decreased -- a failed, refused, cancelled or timed-out attempt
+  counts. The quota day is re-evaluated at each send; a clock that goes
+  back, or a state that cannot be read, is refused, never reset. A send
+  that would exceed the limit is not sent: the run stops, written
+  incomplete, its reason telling local exhaustion apart from the vendor's
+  429.
+- **FR-007c**: A full run of a configuration with a daily limit MUST start
+  only on a quota day with no request made. A missing count does not prove
+  none was made: on each quota day before the first request, the
+  maintainer declares the requests already used, as he reads them in the
+  vendor's console (`0` on a fresh day).
+- **FR-007d**: Gemini's reservation MUST be computed locally (decision
+  above), its estimator named and versioned in the result; no counting
+  request is sent. Gemini makes one attempt per case.
+- **FR-012**: `--first-call-only` MUST run the development set up to the
+  first case that reaches the engine, make that one attempt, and stop --
+  whether it succeeds or fails, never moving on to another case. Its
+  result is written incomplete, labelled a smoke test, its reason "first
+  call only" on success or the failure's own. It spends one request.
+- **FR-009 (amended)**: The result MUST also record, for a configuration
+  with a daily limit: the limit, its time zone, the count declared at the
+  start of the day, this run's sends, the count at its end, and the
+  accounting assumptions.
+
+**Success criteria.**
+
+- **SC-004**: Tests show: the 20th request of a quota day sent and the 21st
+  refused; the count surviving a restart and shared across worktrees; an
+  interruption right after a count kept counted; the day changing at
+  Pacific midnight, daylight saving included; a clock gone back and an
+  unreadable state refused; no counting request sent for Gemini; one
+  attempt per Gemini case; `--first-call-only` sending at most one request;
+  the instrumented, network-free engine reached exactly 20 times on the
+  development set; Mistral's behaviour unchanged.
+
+**Order of the maintainer's runs.** For each configuration, the first call
+on one occasion, the full run on another; for Gemini, on two different
+Pacific quota days.
+
