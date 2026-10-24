@@ -97,7 +97,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   sending no counting request.
 - [x] T091 `app/decision/hosted.py`, `app/decision/gemini.py`,
   `app/decision/mistral.py`.
-- [ ] T092 Test first, `tests/unit/test_daily_quota.py`: the 20th request of
+- [x] T092 Test first, `tests/unit/test_daily_quota.py`: the 20th request of
   a day sent, the 21st refused; persistence across restarts and two
   checkouts under one lock; an interruption after `take` kept counted; the
   day changing at Pacific midnight, daylight saving included; a clock gone
@@ -106,7 +106,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   declaration initialising its day once, never lowering; an undeclared day
   stopping the run; `admit_full_run`; Pacific dates converted without the
   system's time zone database (`tzdata`).
-- [ ] T093 `evals/quota.py`; `tzdata` in the `engines` extra.
+- [x] T093 `evals/quota.py`; `tzdata` in the `engines` extra.
 - [ ] T094 Test first: attempts from the configuration; the order of the
   pre-send steps, each refusal sending nothing; `sends`; a Gemini outage
   stopping the run with the later cases not attempted; Mistral unchanged;
