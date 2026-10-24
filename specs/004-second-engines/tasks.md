@@ -17,7 +17,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 2: Research, pinned
 
-- [ ] T010 Plan "Research notes" (plan section 2): SDK versions for the extra
+- [x] T010 Plan "Research notes" (plan section 2): SDK versions for the extra
   `engines`, each vendor's call, parameters, usage, errors, prices, token
   counting or bound, and reasoning caps, from official docs and SDK sources.
   An unsettled point blocks the client it concerns. Codex reviews before

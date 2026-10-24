@@ -210,7 +210,109 @@ pyproject.toml (extra `engines`), .env.example, README.md
 
 ## Research notes
 
-To be written in T010.
+Written 2026-10-24 (T010), from the official documentation and the SDK
+sources at the pinned versions. Each point says where it comes from.
+
+### Versions
+
+- `google-genai==2.29.0` (released 2026-10-07) and `mistralai==3.2.0`
+  (2026-10-09), both at least two weeks old (PyPI release history). In
+  `mistralai` 3.x the client lives under `mistralai.client`.
+
+### Google, `gemini-3.8-flash` -- settled
+
+- **Call** (SDK source, `models.py`): `client.aio.models.generate_content(
+  model=..., contents=..., config=types.GenerateContentConfig(...))`. The
+  structured-output docs page now shows the newer Interactions API; the
+  pinned SDK keeps `generate_content`, stable, with every field we need, and
+  it is used here (to revisit when the SDK is upgraded).
+- **Config fields** (SDK `types.py`): `system_instruction`, `temperature`,
+  `max_output_tokens`, `response_mime_type="application/json"`,
+  `response_json_schema` (the verdict schema, as a JSON Schema),
+  `thinking_config=ThinkingConfig(thinking_level=LOW)`, `safety_settings`
+  (left at the vendor's defaults, recorded as such; a safety finish is an
+  invalid answer), `http_options=HttpOptions(retry_options=
+  HttpRetryOptions(attempts=1))` -- no SDK retry.
+- **Schema subset** (structured-output docs): types, `enum`, `properties`,
+  `required`, `additionalProperties`, `items`, `minimum`/`maximum`;
+  `minLength`/`maxLength` accepted but not enforced. The verdict schema
+  (enums, a number, strings, an array of strings, `additionalProperties:
+  false`) fits; its bounds stay enforced on arrival by `_ModelVerdict`.
+- **Thinking** (thinking docs): on by default; `gemini-3.8-flash` takes
+  `low`, `medium` (default) or `high`, cannot be turned off; thought tokens
+  are billed as output, and `max_output_tokens` "sets the maximum number of
+  tokens a response can generate, including thought tokens" -- a cap. A
+  response that reaches it may come back truncated or empty: an invalid
+  answer. Pinned: `low`, `max_output_tokens` 4096.
+- **Input count**: `client.aio.models.count_tokens(model, contents, config)`
+  gives the request's exact input tokens; the reservation is that count plus
+  `max_output_tokens`.
+- **Response** (SDK `types.py`): `usage_metadata.prompt_token_count`,
+  `candidates_token_count`, `thoughts_token_count`, `total_token_count`;
+  `candidates[0].finish_reason` among `STOP`, `MAX_TOKENS`, `SAFETY`,
+  `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII`, `OTHER`...;
+  `model_version`. Anything but `STOP` with a valid verdict is invalid.
+- **Errors** (SDK `errors.py`): `APIError` with `code` (HTTP) and `status`;
+  `ClientError` (4xx), `ServerError` (5xx). 429 (`RESOURCE_EXHAUSTED`) →
+  `rate_limited`; 401/403 → rejected; 5xx and transport → unavailable. A
+  per-minute limit and a daily quota are not told apart by class: rate
+  limiting persisting past the attempts is treated as durable exhaustion.
+- **Cost**: free tier -- "estimated zero under the free quota", with the
+  pricing page and its date.
+
+### Mistral, `mistral-large-4` and `zai-glm-5-3`
+
+- **Call** (SDK source, `client/chat.py`): `client.chat.complete_async(
+  model=..., messages=[system, user], temperature=..., max_tokens=...,
+  response_format={"type": "json_schema", "json_schema": {"name":
+  "verdict", "schema": ..., "strict": True}}, reasoning_effort=...,
+  retries=<no retry>, timeout_ms=...)`.
+- **Content** (SDK models; reasoning docs): `message.content` is a string,
+  or a list of chunks -- `ThinkChunk` (`type: "thinking"`) and `TextChunk`
+  (`type: "text"`). The final text chunk is the answer; thinking chunks are
+  dropped, never logged or stored.
+- **Usage** (SDK `usageinfo.py`): `prompt_tokens`, `completion_tokens`,
+  `total_tokens`; no separate reasoning count.
+- **`mistral-large-4`** (model page): **Public Preview**, API names
+  `mistral-large-4` / `mistral-large-4-0`, 1M context, "structured-outputs"
+  listed; licence not stated ("Open weights: coming soon"). The reasoning
+  docs describe `reasoning_effort` `none` (thinking chunk omitted, content a
+  string) and `high`, without listing this model's values. Pinned: `none`.
+- **`zai-glm-5-3`** (reasoning docs): `reasoning_effort` `low`, `high` or
+  `max` -- not `none`; content always chunks. Pinned: `low`.
+- **Prices** (docs.mistral.ai/inference/pricing, read 2026-10-24), per
+  million tokens: Large 4 $1.36 in, $4.18 out (a 50% launch discount from
+  2026-10-06 for two weeks, likely over -- the regular price is used); GLM
+  5.3 $1.40 in, $4.40 out. Whether reasoning is billed as output is not
+  stated.
+- **Errors** (SDK `client/errors`): `MistralError` with `status_code`,
+  `SDKError`, `HTTPValidationError` (422), `NoResponseError`. 429 →
+  `rate_limited`; 401/403/422 → rejected; 5xx, no response, transport →
+  unavailable.
+
+### Unsettled, and what each blocks
+
+1. **Mistral: does `max_tokens` cap the reasoning, and is it billed within
+   `completion_tokens`?** The API reference defines `max_tokens` as "the
+   maximum number of tokens to generate in the completion", and the
+   thinking chunk is part of the completion -- but no page says so
+   explicitly. Both Mistral configurations stay **blocked** until the
+   maintainer's first minimal call shows it (reasoning on, a small
+   `max_tokens`: `completion_tokens` never above it, and the console's cost
+   consistent with it); the runtime check (usage above the reservation stops
+   the run) stays.
+2. **Mistral: the input bound.** No token-count endpoint for chat; the
+   UTF-8 byte count of the whole request plus a fixed allowance for the
+   chat template's special tokens bounds the input for a byte-level BPE
+   tokenizer (each ordinary token covers at least one byte). Mistral's
+   tokenizer (Tekken) is byte-level; **GLM 5.3's is not confirmed** --
+   `zai-glm-5-3` stays blocked until its tokenizer is shown to be byte-level
+   (model card), or a bound is otherwise justified.
+3. **Terms**: Large 4 is a Public Preview, and GLM 5.3 a third-party model;
+   which data terms apply to each (and whether the opt-out covers them) is
+   the maintainer's documented check (T071).
+
+Gemini has no blocking point.
 
 ## Complexity Tracking
 
