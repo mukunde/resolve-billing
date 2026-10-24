@@ -11,7 +11,6 @@ behind.
 
 from __future__ import annotations
 
-import contextlib
 import os
 import signal
 import socket
@@ -107,8 +106,8 @@ class ServiceProcess:
         raises."""
         for attempt in (1, 2):
             self.port = _free_port()
-            self._spawn()
             try:
+                self._spawn()
                 self._wait_ready()
                 return
             except ServiceFailed as failure:
@@ -200,14 +199,22 @@ class ServiceProcess:
         return self.process is not None and self.process.poll() is not None
 
     def reap(self) -> None:
-        """Whatever state it is in, end it and close its log."""
-        if self.process is not None and self.process.poll() is None:
-            self.process.kill()
-            with contextlib.suppress(subprocess.TimeoutExpired):
-                self.process.wait(STOP_DEADLINE)
-        if self._log is not None:
-            self._log.close()
-            self._log = None
+        """Whatever state it is in, end it and close its log; a child that
+        does not exit within the deadline is reported, never passed over."""
+        try:
+            if self.process is not None and self.process.poll() is None:
+                self.process.kill()
+                try:
+                    self.process.wait(STOP_DEADLINE)
+                except subprocess.TimeoutExpired:
+                    raise ServiceFailed(
+                        f"process {self.process.pid} did not exit within {STOP_DEADLINE} s "
+                        f"of a kill\n{self.output()}"
+                    ) from None
+        finally:
+            if self._log is not None:
+                self._log.close()
+                self._log = None
 
     def output(self, limit: int = 4096) -> str:
         """The last of what the process wrote."""

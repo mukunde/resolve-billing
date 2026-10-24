@@ -41,6 +41,7 @@ def test_a_pending_approval_survives_a_restart(tmp_path, stop):
             queued = http.post("/api/v1/disputes/investigate", json=CASE, headers=SERVICE)
             assert queued.status_code == 200, queued.text
             action_id = queued.json()["action_id"]
+            run_id = queued.json()["run_id"]
             assert action_id, "a credit note should wait for approval"
             before = http.get(f"/api/v1/actions/{action_id}", headers=SERVICE).json()
         assert before["state"] == "pending_approval"
@@ -48,6 +49,8 @@ def test_a_pending_approval_survives_a_restart(tmp_path, stop):
         assert (before["amount_minor"], before["currency"]) == (9900, "EUR")
         assert before["provider_action_id"] is None
         assert before["proposal"]
+        assert before["expires_at"], "a request for approval has a deadline"
+        assert before["run_id"] == run_id
 
         if stop == "graceful":
             first.stop_gracefully()
@@ -66,6 +69,13 @@ def test_a_pending_approval_survives_a_restart(tmp_path, stop):
             assert after["action_id"] == action_id
             assert after["proposal"] == before["proposal"]
             assert after["provider_action_id"] is None
+            # The deadline is the one set at queueing, not reset by the restart.
+            assert after["expires_at"] == before["expires_at"]
+
+            # The run is still there, its action with it.
+            run = http.get(f"/api/v1/runs/{run_id}", headers=SERVICE)
+            assert run.status_code == 200, run.text
+            assert [a["action_id"] for a in run.json()["actions"]] == [action_id]
 
             # Nothing moves before a person decides.
             premature = http.post(f"{url}/execute", headers=SERVICE)
