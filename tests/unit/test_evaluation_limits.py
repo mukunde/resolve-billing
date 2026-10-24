@@ -784,6 +784,7 @@ class TestAfterR161:
     async def test_an_unreadable_mistral_answer_keeps_its_reservation_spent(
         self, tmp_path, context, findings, dispute
     ):
+        pytest.importorskip("mistralai.client", reason="the `engines` extra is not installed")
         import httpx2
         from mistralai.client import errors as mistral_errors
 
@@ -816,6 +817,7 @@ class TestAfterR161:
 
     @pytest.mark.parametrize("status", [200, 302])
     def test_a_status_no_refusal_carries_is_not_a_refusal(self, status):
+        pytest.importorskip("mistralai.client", reason="the `engines` extra is not installed")
         import httpx2
         from mistralai.client import errors as mistral_errors
 
