@@ -35,14 +35,13 @@ from app.decision.hosted import GEMINI_PRICES, configuration
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
 from evals import engines
+from evals.first_calls import QUOTA_PROJECT, FirstCalls, FirstCallsRefused
 from evals.governed import Governed
 from evals.ledger import Ledger, LedgerRefused
 from evals.limits import RunStopped, limiters_for
 from evals.quota import DailyQuota, QuotaRefused
 from evals.state import AccountBusy, AccountRun
 
-#: Where the maintainer names his Gemini project: the key alone does not say.
-QUOTA_PROJECT = "GEMINI_QUOTA_PROJECT"
 QUOTA_ASSUMPTIONS = (
     "dedicated project, no other caller; every attempt counted, never refunded; "
     "the key's project as declared by the maintainer, not verified"
@@ -160,8 +159,11 @@ async def run(
             # A case the rules settled never entered the engine.
             record.statuses[case["id"]] = governed.statuses.get(case["id"], "rules_only")
             if first_call_only and case["id"] in governed.statuses:
+                versions = governed.engine.model_versions
                 record.stop_reason = _first_call_reason(
-                    governed.statuses[case["id"]], governed.outages.get(case["id"])
+                    governed.statuses[case["id"]],
+                    governed.outages.get(case["id"]),
+                    versions[-1] if versions else None,
                 )
                 record.stopped_at = case["id"]
                 return
@@ -171,9 +173,18 @@ async def run(
         await governed.aclose()
 
 
-def _first_call_reason(status: str, outage: str | None) -> str:
-    if status in {"decided", "abstained", "invalid"}:
-        return "first call only"
+#: A first call that opens the way to the full run (FR-016).
+ACCEPTED = "first call accepted"
+
+
+def _first_call_reason(status: str, outage: str | None, model_version: str | None) -> str:
+    """Accepted on a valid verdict -- its usage already checked, since a
+    missing or excessive usage stops the run before a status is set -- with
+    a model version returned; otherwise, why not."""
+    if status in {"decided", "abstained"}:
+        return ACCEPTED if model_version else "first call not accepted: no model version returned"
+    if status == "invalid":
+        return "first call not accepted: invalid answer"
     if status == "not_sent_oversized":
         return "not sent: oversized"
     if outage is not None:
@@ -209,6 +220,14 @@ def main(args, cases: list[dict], parser) -> int:
         parser.error("--gemini-requests-used-today is for a configuration with a daily limit")
     if (missing := runner.missing_credential(args.engine)) is not None:
         raise SystemExit(missing)
+    if not args.first_call_only:
+        # A full run only after an accepted first call -- for Mistral, both
+        # of its configurations' -- before any client is built (FR-016).
+        try:
+            FirstCalls().admit_full_run(config)
+        except FirstCallsRefused as refusal:
+            print(f"refused: {refusal}", file=sys.stderr)
+            return 2
 
     ledger = None
     if config.vendor == "mistral":
@@ -275,6 +294,15 @@ def main(args, cases: list[dict], parser) -> int:
         return 2
 
     written = write(record, args, ledger, started, quota)
+    if args.first_call_only and record.stop_reason == ACCEPTED:
+        # Recorded only once its evidence is on disk; an interruption before
+        # this line leaves the first call to be run again.
+        try:
+            FirstCalls().record(config, record.governed.engine.model_versions[-1], written)
+        except FirstCallsRefused as refusal:
+            print(f"the first call was accepted but not recorded: {refusal}", file=sys.stderr)
+            print(f"result written to {written}", file=sys.stderr)
+            return 3
     if defect is not None:
         print(f"result written to {written}", file=sys.stderr)
         raise defect
@@ -350,6 +378,7 @@ def write(
         "cost": cost,
         "reservation_estimator": config.reservation_estimator,
         "smoke_test": bool(args.first_call_only),
+        "first_call_accepted": (record.stop_reason == ACCEPTED) if args.first_call_only else None,
         "sends": governed.sends if governed else 0,
         "outcomes": [vars(o) for o in record.outcomes],
     }

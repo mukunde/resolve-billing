@@ -29,6 +29,13 @@ def gemini_quota(clock=None, declared=0) -> DailyQuota:
     return book
 
 
+@pytest.fixture(autouse=True)
+def first_calls_accepted(monkeypatch):
+    """The full runs here are not about the first-call gate
+    (`tests/unit/test_first_call_gate.py` is)."""
+    monkeypatch.setattr("evals.first_calls.FirstCalls.admit_full_run", lambda self, config: None)
+
+
 class Recording(Vendor):
     """Notes, at each send, what the quota and the ledger already held."""
 
@@ -246,7 +253,7 @@ class TestAGeminiRun:
     def test_the_declaration_flag_is_refused_for_mistral(self, tmp_path, monkeypatch):
         monkeypatch.delenv("RESOLVE_EXTRA_FIXTURES_DIR", raising=False)
         monkeypatch.setenv("MISTRAL_API_KEY", "set-by-the-test")
-        argv = ["runner", "--engine", "mistral-large-4", "--data-terms", "unknown"]
+        argv = ["runner", "--engine", "mistral-medium-3-5", "--data-terms", "unknown"]
         extra = ["--json", str(tmp_path / "m.json"), "--gemini-requests-used-today", "0"]
         monkeypatch.setattr("sys.argv", [*argv, *extra])
 
@@ -277,7 +284,7 @@ class TestTheFirstCall:
         assert result["smoke_test"] is True
         assert result["complete"] is False
         assert result["sends"] == 1
-        assert result["stop_reason"] == "first call only"
+        assert result["stop_reason"] == "first call accepted"
         assert result["daily_quota"]["run_sends"] == 1
 
     def test_a_failed_first_call_is_not_retried_nor_followed(self, tmp_path, monkeypatch):
@@ -324,9 +331,9 @@ class TestTheFirstCall:
         vendor = Failing([])
         monkeypatch.delenv("RESOLVE_EXTRA_FIXTURES_DIR", raising=False)
         monkeypatch.setenv("MISTRAL_API_KEY", "set-by-the-test")
-        monkeypatch.setitem(engines.HOSTED_ENGINES, "mistral-large-4", lambda: vendor)
+        monkeypatch.setitem(engines.HOSTED_ENGINES, "mistral-medium-3-5", lambda: vendor)
         monkeypatch.setattr("evals.limits.Limiter.acquire", _no_wait)
-        argv = ["runner", "--engine", "mistral-large-4", "--data-terms", "unknown"]
+        argv = ["runner", "--engine", "mistral-medium-3-5", "--data-terms", "unknown"]
         extra = ["--json", str(tmp_path / "m.json"), "--first-call-only"]
         monkeypatch.setattr("sys.argv", [*argv, *extra, "--mistral-allowance-usd", "10"])
 

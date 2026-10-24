@@ -2,7 +2,7 @@
 
 The service's engines (`app/api/deps.py`, `ENGINES`) plus the three
 configurations evaluated on free tiers (specs/004-second-engines):
-`gemini-3.8-flash`, `mistral-large-4`, `zai-glm-5-3`. Those three are not
+`gemini-3.8-flash`, `mistral-medium-3-5`, `mistral-medium-3-5-reasoning`. Those three are not
 the service's to run, and they run here on the development cases only: the
 runner refuses them on any other case file, or with extra fixtures, before
 it reads a case or builds a client.
