@@ -13,7 +13,7 @@ committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 1: The harness
 
-- [ ] T001 `tests/e2e/_service.py`: `ServiceProcess` -- environment built from
+- [x] T001 `tests/e2e/_service.py`: `ServiceProcess` -- environment built from
   scratch (no inherited `.env`, no real key), loopback port, health polling
   with a deadline, liveness and the expected answer, a failed start that
   cleans up itself, graceful stop (POSIX `SIGTERM`, Windows
@@ -21,16 +21,16 @@ committed locally. **[maintainer]** marks his tasks.
   line within its deadline -- never satisfied by a kill -- hard kill,
   reaping with escalation, bounded output on failure; the test's HTTP
   client with `trust_env=False` and explicit timeouts.
-- [ ] T002 The `e2e` marker in `pyproject.toml`; the skip when `uvicorn` is
+- [x] T002 The `e2e` marker in `pyproject.toml`; the skip when `uvicorn` is
   not importable.
 
 ## Phase 2: The scenario
 
-- [ ] T010 `tests/e2e/test_restart_pending_approval.py`, parametrised over
+- [x] T010 `tests/e2e/test_restart_pending_approval.py`, parametrised over
   graceful stop and hard kill: plan section 2, steps 1-8, the two process
   identifiers different, the first process's exit proven before the second
   starts.
-- [ ] T011 By hand, once: a wrong port, a process that cannot start, an
+- [x] T011 By hand, once: a wrong port, a process that cannot start, an
   assertion failing mid-flow -- no process left behind (`tasklist` /
   `ps`), the output reported.
 
