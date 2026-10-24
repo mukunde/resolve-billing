@@ -41,6 +41,7 @@ from app.decision.base import Classification
 from app.domain.enums import SenderStatus
 from app.domain.models import Dispute
 from app.providers.fake.adapter import FakeBillingProvider
+from evals import engines
 
 CASES_PATH = Path(__file__).parent / "cases.json"
 
@@ -63,9 +64,10 @@ NO_MONEY_ON = {Classification.UNKNOWN, Classification.INSUFFICIENT_INFORMATION}
 MONEY_ACTIONS = {"credit_note", "refund"}
 
 #: Engines that cannot run without a credential, and the variables that can
-#: carry it. Checked before the first case rather than discovered on it: the
-#: SDK only raises when a request is built, as a traceback mid-run.
-CREDENTIALS = {"claude": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+#: carry it, from the evaluation registry. Checked before the first case
+#: rather than discovered on it: an SDK only raises when a request is built,
+#: as a traceback mid-run.
+CREDENTIALS = engines.CREDENTIALS
 
 
 def missing_credential(engine_name: str) -> str | None:
@@ -226,7 +228,9 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
     )
 
 
-async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[CaseOutcome], str]:
+async def run(
+    engine_name: str, cases_path: Path = CASES_PATH, cases: list[dict] | None = None
+) -> tuple[list[CaseOutcome], str]:
     """Run the case set, and report which engine version produced it.
 
     The version travels back with the outcomes because a stored result whose
@@ -234,14 +238,16 @@ async def run(engine_name: str, cases_path: Path = CASES_PATH) -> tuple[list[Cas
     carries `prompt_version` next to the model id. A file saying only "claude"
     cannot be held against a later run.
     """
-    from app.api.deps import ENGINES, wire
+    from app.api.deps import wire
 
-    if engine_name not in ENGINES:
-        sys.exit(f"unknown engine {engine_name!r}; available: {sorted(ENGINES)}")
+    available = engines.evaluation_engines()
+    if engine_name not in available:
+        sys.exit(f"unknown engine {engine_name!r}; available: {sorted(available)}")
 
-    cases = json.loads(cases_path.read_text(encoding="utf-8"))
+    if cases is None:
+        cases = json.loads(cases_path.read_text(encoding="utf-8"))
     provider = FakeBillingProvider()
-    engine = wire(ENGINES[engine_name](), provider)
+    engine = wire(available[engine_name](), provider)
     investigator = DisputeInvestigator(provider=provider, engine=engine)
 
     outcomes = []
@@ -515,6 +521,13 @@ def main() -> int:
         from evals import check
 
         return check.check(args.cases)
+    # The engines evaluated on free tiers run on the development cases alone:
+    # refused here, before a case is read beyond them or a client is built.
+    try:
+        guarded = engines.guard(args.engine, args.cases)
+    except engines.OffTheDevelopmentSet as refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 2
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
 
@@ -524,7 +537,7 @@ def main() -> int:
     for index in range(args.runs):
         ran_at = datetime.now(UTC).isoformat()
         try:
-            outcomes, engine_version = asyncio.run(run(args.engine, args.cases))
+            outcomes, engine_version = asyncio.run(run(args.engine, args.cases, guarded))
         except EngineRejected as refusal:
             # A configuration or account problem, not a result: the series
             # stops whole and nothing is written -- earlier complete runs

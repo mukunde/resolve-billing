@@ -41,13 +41,13 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 4: Registry and guards
 
-- [ ] T030 Test first, `tests/unit/test_evaluation_registry.py`: the runner
+- [x] T030 Test first, `tests/unit/test_evaluation_registry.py`: the runner
   builds through `EVALUATION_ENGINES`; the service refuses
   `gemini-3.8-flash`, `mistral-large-4`, `zai-glm-5-3`; missing key named, no
   call; dev guard refuses an external path, a link elsewhere, an altered
   file and extra fixtures before any client; the hash constant equals the
   committed file's.
-- [ ] T031 `evals/engines.py`, `evals/runner.py`.
+- [x] T031 `evals/engines.py`, `evals/runner.py`.
 
 ## Phase 5: The clients
 
