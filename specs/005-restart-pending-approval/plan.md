@@ -51,11 +51,21 @@ A small context manager, `ServiceProcess`, used only by tests:
   port in use, one new port is tried, then the test fails naming why (the
   race is narrow and reported, never silent).
 - **Ready**: polls `GET /health` every 0.1 s up to a 20 s deadline, checking
-  `poll()` each time; a process that exits, or a deadline passed, fails the
-  test with the last 4 KB of its output.
+  `poll()` each time and that the answer is the expected one (the mock
+  engine, the fake platform); a process that exits, or a deadline passed,
+  fails the test with the last 4 KB of its output. **A failed start cleans
+  up itself**: the start method kills and reaps its own child before
+  raising -- on a deadline, an exit, or the port retry -- since `__exit__`
+  never runs when `__enter__` raises.
 - **Graceful stop**: on POSIX, `SIGTERM`; on Windows, the process is started
   with `CREATE_NEW_PROCESS_GROUP` and sent `CTRL_BREAK_EVENT`, which uvicorn
-  handles as a shutdown. Then `wait(10)`.
+  handles as `SIGBREAK`. It **must complete within 10 s with evidence of a
+  shutdown** -- uvicorn's "Finished server process" line in the output --
+  or the graceful variant fails; a kill after that deadline is cleanup
+  only, never what satisfies it. The exit code is not required to be zero
+  (uvicorn may re-raise the signal after shutting down). If console events
+  cannot be delivered in the test's environment, the variant fails saying
+  so -- it is not silently turned into a kill.
 - **Hard kill**: `kill()` (`SIGKILL` / `TerminateProcess`), then `wait(10)`.
 - **Always reaped**: `__exit__` stops whatever is still running, escalating
   to `kill()` after the deadline, and closes the log; a test's failure never
@@ -66,7 +76,9 @@ A small context manager, `ServiceProcess`, used only by tests:
 ### 2. The test (`tests/e2e/test_restart_pending_approval.py`)
 
 Parametrised over `stop` in (`graceful`, `kill`); one temporary database per
-case; every request over HTTP with `httpx.Client`:
+case; every request over HTTP with `httpx.Client(trust_env=False,
+timeout=10)` -- no proxy or other setting inherited from the environment can
+route a request outside localhost:
 
 1. Process 1 starts. `POST /api/v1/disputes/investigate` with the service key
    and the synthetic case (`alice@acme.fr`, `inv_002`, the integration
@@ -78,8 +90,8 @@ case; every request over HTTP with `httpx.Client`:
    same `action_id`, same `proposal`, same state, still no reference.
 4. `POST /actions/{id}/execute` with the service key -> 409, and a `GET`
    shows the action unmoved.
-5. `POST /actions/{id}/approve` with no credentials -> 401 (or the API's
-   refusal status for an unauthenticated approver), action still pending.
+5. `POST /actions/{id}/approve` with no credentials -> 401, the action
+   still pending.
 6. `POST /actions/{id}/approve` as `m.dupont@acme.fr` with the kept
    `proposal` -> `approved`, `approved_by` the authenticated name.
 7. `POST /actions/{id}/execute` with the service key -> `executed`, a
@@ -110,9 +122,11 @@ run alone (`pytest -m e2e`).
   orchestrator's workflow nor executes anything; what to do for each state
   points to the approval-and-execution contract.
 - `docs/contract/approval-and-execution.md`: a line under "What the system
-  relies on" -- a pending action, its fingerprint and its deadline live in
-  the service's database and survive a restart of the service; the new
-  test under "Covered by"; the limits (FR-007) under "Not guaranteed today".
+  relies on" -- a pending action and its deadline live in the service's
+  database and survive a restart of the service; its review fingerprint,
+  computed from the stored action and the invoice as the platform holds it,
+  stays equal while neither changes; the new test under "Covered by"; the
+  limits (FR-007) under "Not guaranteed today".
 
 ## Tests
 

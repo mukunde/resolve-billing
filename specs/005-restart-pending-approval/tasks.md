@@ -15,9 +15,12 @@ committed locally. **[maintainer]** marks his tasks.
 
 - [ ] T001 `tests/e2e/_service.py`: `ServiceProcess` -- environment built from
   scratch (no inherited `.env`, no real key), loopback port, health polling
-  with a deadline and liveness checks, graceful stop (POSIX `SIGTERM`,
-  Windows `CTRL_BREAK_EVENT` with a new process group), hard kill, reaping
-  with escalation, bounded output on failure.
+  with a deadline, liveness and the expected answer, a failed start that
+  cleans up itself, graceful stop (POSIX `SIGTERM`, Windows
+  `CTRL_BREAK_EVENT` with a new process group) proven by uvicorn's shutdown
+  line within its deadline -- never satisfied by a kill -- hard kill,
+  reaping with escalation, bounded output on failure; the test's HTTP
+  client with `trust_env=False` and explicit timeouts.
 - [ ] T002 The `e2e` marker in `pyproject.toml`; the skip when `uvicorn` is
   not importable.
 
