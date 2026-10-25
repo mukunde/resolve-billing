@@ -165,9 +165,9 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 8: The maintainer's runs
 
-- [ ] T070 **[maintainer]** Keys: `GEMINI_API_KEY` (AI Studio),
+- [x] T070 **[maintainer]** Keys: `GEMINI_API_KEY` (AI Studio),
   `MISTRAL_API_KEY` (Mistral admin), in his `.env`.
-- [ ] T071 **[maintainer]** Per configuration, the documented check (spec,
+- [x] T071 **[maintainer]** Per configuration, the documented check (spec,
   Assumptions): access on the free level (Mistral's "Activer"), what the
   quota counts and any shared ceiling, the model's licence, status and data
   regime (GLM 5.3's in particular), the privacy setting; recorded in
@@ -177,6 +177,10 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   occasion -- for Gemini, another Pacific quota day; results stored
   (SC-001). After phases 7a and 7b; for Mistral, the two Medium 3.5
   configurations, both smoke tests accepted before either full run.
+  *Where it stands (2026-10-25):* `gemini-3.5-flash-lite` done -- first call
+  accepted, full run complete (29/34, 0 unsafe); `gemini-3.8-flash` first
+  call accepted, its full run stopped by a Google server error, to run again
+  on a later day; Mistral blocked (Free plan, API keys not activated).
 
 ## Phase 9: Review and delivery
 
