@@ -27,12 +27,12 @@ committed locally. **[maintainer]** marks his tasks.
   `tests/unit/test_persistent_fake.py` (plan section 4).
 - [x] T021 `tests/e2e/_launcher.py`; a check that the launched service uses
   the persistent fake (a write lands in the ledger).
-- [ ] T022 Codex reviews the persistent fake, the launcher and their tests
+- [x] T022 Codex reviews the persistent fake, the launcher and their tests
   before A4's scenario is written.
 
 ## Phase 4: A4
 
-- [ ] T030 `tests/e2e/test_restart_timeout_after_write.py` (plan section 5).
+- [x] T030 `tests/e2e/test_restart_timeout_after_write.py` (plan section 5).
 
 ## Phase 5: Documents
 
