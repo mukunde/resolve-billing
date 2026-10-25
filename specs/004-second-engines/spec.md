@@ -4,7 +4,8 @@
 
 **Created**: 2026-10-24 · **Revised**: 2026-10-24, after review r153 ·
 **Amended**: 2026-10-24, the daily quota and the first call; 2026-10-24,
-Mistral Medium 3.5 in place of Large 4 and GLM 5.3 (below)
+Mistral Medium 3.5 in place of Large 4 and GLM 5.3; 2026-10-25,
+Gemini 3.5 Flash-Lite (below)
 
 **Status**: Approved 2026-10-24 (`94cf4ea`); merged (PR 20). The amendment
 below: draft, for the maintainer's approval
@@ -434,3 +435,50 @@ retired version, and what it serves today is unknown.
   or invalid answer, or missing usage, for every configuration; Gemini
   otherwise unchanged.
 
+## Third amendment (2026-10-25): Gemini 3.5 Flash-Lite
+
+**Why.** The first full run of `gemini-3.8-flash` (2026-10-25, 13:43 UTC)
+stopped at its first request: Google answered a server error (5xx) after 4 s.
+With 20 requests a day for the 20 cases that reach the engine, one attempt
+per case and a full run only on an untouched day, a single passing error
+costs the whole day. The maintainer decided, the same day, to measure
+**Gemini 3.5 Flash-Lite** now, and to try Flash again later.
+
+**Established (ai.google.dev, read 2026-10-25; the maintainer's AI Studio
+on 2026-10-24).** `gemini-3.5-flash-lite` is stable, "our fastest, most
+cost-effective 3.5 model"; on the maintainer's project, **15 requests/min,
+250,000 tokens/min and 500 requests/day**, on the free tier; thinking levels
+`minimal` (its default), `low`, `medium`, `high`, `max_output_tokens`
+including thinking. Google documents its limits per project and model: each
+model has its own daily count.
+
+**Requirements.**
+
+- **FR-017**: A configuration `gemini-3.5-flash-lite` MUST be added, closed
+  as FR-003 and FR-006 require, equal to `gemini-3.8-flash` in everything
+  but: the model (`gemini-3.5-flash-lite`); its limits (15/min, 250,000
+  tokens/min, 500/day, Pacific day, source and date); **three attempts per
+  case**, an outage on the last escalating the case as Mistral's do (not
+  stopping the run) -- the day's quota leaves room for retries; and its
+  thinking level, `low`, Flash's own, so that the two differ by model, not
+  by setting. `gemini-3.8-flash` stays as it is.
+- **FR-007b (amended)**: The daily count MUST be kept per Google project
+  **and model**. The count already held for the project, written while
+  `gemini-3.8-flash` was the only Gemini configuration, is that model's:
+  adopted once as its count, never reset, never given to another model.
+- **FR-007c (amended)**: A full run MUST start only if the day's remaining
+  requests cover the cases that reach the engine (20, the pinned count)
+  times the configuration's attempts: for `gemini-3.8-flash` (one attempt,
+  20 a day) that is an untouched day, as before; for `gemini-3.5-flash-lite`
+  (three attempts, 500 a day), at least 60 remaining.
+- Flash-Lite's first call (`--first-call-only`) MUST be accepted before its
+  full run (FR-016), on its own account identity and fingerprint.
+
+**Success criteria.**
+
+- **SC-006**: Tests show: the new configuration closed and its request equal
+  to Flash's but for the model; two models of one project counting apart;
+  the legacy count adopted once by `gemini-3.8-flash` and no other; the
+  admission rule for both; three attempts and an outage escalating for
+  Flash-Lite, one attempt and an outage stopping the run for Flash; Mistral
+  and Flash otherwise unchanged.

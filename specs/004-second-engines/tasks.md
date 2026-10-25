@@ -148,6 +148,18 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 - [ ] T106 Codex reviews the diff until nothing is left; the maintainer
   approves the final diff by its commit; push and pull request.
 
+## Phase 7c: Gemini 3.5 Flash-Lite (third amendment, plan C1-C4)
+
+- [ ] T110 Test first: the configuration (equal to Flash's but for the model,
+  limits, attempts, outage policy); per-model counts; the legacy adoption,
+  once, by `gemini-3.8-flash` only; the admission rule for both models;
+  Flash-Lite's outage escalating after three attempts.
+- [ ] T111 `app/decision/hosted.py`, `evals/quota.py`, `evals/hosted_run.py`.
+- [ ] T112 Docs: `docs/operations.md`, the two contracts, `evals/results/README.md`.
+- [ ] T113 Codex reviews the diff until nothing is left; the maintainer
+  approves the final diff by its commit; push, pull request, merge -- then
+  Flash-Lite's first call and full run.
+
 ## Phase 8: The maintainer's runs
 
 - [ ] T070 **[maintainer]** Keys: `GEMINI_API_KEY` (AI Studio),

@@ -580,6 +580,46 @@ result cannot be written, an interruption between the two leaving it
 unrecorded; the first-calls state refused when corrupt; every earlier
 test moved off the two old names.
 
+## Third amendment (2026-10-25): Gemini 3.5 Flash-Lite
+
+For the spec's third amendment. Branch `004-flash-lite`, its own pull request,
+before Flash-Lite's runs.
+
+### C1. The configuration (`app/decision/hosted.py`)
+
+`GEMINI` becomes a function of the model, its limits, attempts, outage
+policy and limits source, so that both Gemini configurations are built from
+one definition and differ only where FR-017 says. No new field on
+`Configuration`: `gemini-3.8-flash`'s fields, and so its fingerprint, do not
+change. `gemini-3.5-flash-lite`: `requests_per_second = 15 / 60`,
+`tokens_per_minute = 250_000`, `requests_per_day = 500`, `attempts = 3`,
+`stop_on_outage = False`, `reasoning = "low"`, the same prices row (free),
+`limits_source` naming AI Studio, the project and the date.
+
+### C2. The daily count per model (`evals/quota.py`)
+
+`DailyQuota(project, model, limit, timezone)`: its state in
+`quota-<project>-<model>.json`, its lock beside it; the project id and the
+model id both checked before they name a file. **Adoption**: when the
+model is `gemini-3.8-flash` and its file does not exist while the legacy
+`quota-<project>.json` does, the legacy file is renamed to it, under the
+legacy lock, once; never for another model; an inconsistent legacy file is
+refused, never reset.
+
+### C3. Admission (`evals/quota.py`, `evals/hosted_run.py`)
+
+`admit_full_run(requests_needed)`: refused unless the day is declared and
+`limit - (declared + sent) >= requests_needed`, with `requests_needed =
+ENGINE_CASES * config.attempts`, `ENGINE_CASES = 20` pinned beside the test
+that counts them. For Flash, 20 x 1 against 20: the untouched day, as today.
+
+### C4. Documents and tests
+
+`docs/operations.md` (the check for Flash-Lite, its commands, the per-model
+count, the admission rule), the evaluation and decision-engine contracts,
+`evals/results/README.md`. Tests as SC-006 lists them; earlier quota tests
+moved to the per-model signature.
+
 ## Complexity Tracking
 
 None.
