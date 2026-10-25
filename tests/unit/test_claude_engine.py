@@ -184,7 +184,9 @@ class TestPseudonymisation:
         listed = [i["ref"] for i in payload["invoices"]]
         assert disputed in listed
 
-    async def test_the_request_carries_no_real_identifier(self, context, findings, dispute):
+    async def test_the_request_carries_no_real_identifier(
+        self, context, findings, dispute
+    ):
         engine, client = engine_with(reply(VALID_VERDICT))
         await engine.decide(dispute, context, findings)
 
@@ -194,7 +196,9 @@ class TestPseudonymisation:
 
 
 class TestProseIsReadable:
-    async def test_aliases_are_put_back_into_the_explanation(self, context, findings, dispute):
+    async def test_aliases_are_put_back_into_the_explanation(
+        self, context, findings, dispute
+    ):
         """The explanation is what a human reads -- audit row, email,
         approval page. Mapping only evidence_refs back left a billing manager
         told that "INVOICE_1 and INVOICE_2 cover the same period", with no way
@@ -251,7 +255,9 @@ class TestNonConformingOutput:
             (reply(VALID_VERDICT, stop_reason="refusal"), "declined"),
         ],
     )
-    async def test_escalates_instead_of_guessing(self, context, findings, dispute, outcome, why):
+    async def test_escalates_instead_of_guessing(
+        self, context, findings, dispute, outcome, why
+    ):
         engine, _ = engine_with(outcome)
 
         decision = await engine.decide(dispute, context, findings)
@@ -292,7 +298,9 @@ class TestDecisionAndTelemetry:
 
         assert decision.confidence_kind == "self_reported"
 
-    async def test_telemetry_carries_what_the_audit_row_needs(self, context, findings, dispute):
+    async def test_telemetry_carries_what_the_audit_row_needs(
+        self, context, findings, dispute
+    ):
         engine, _ = engine_with(reply(VALID_VERDICT))
 
         telemetry = (await engine.decide(dispute, context, findings)).telemetry
@@ -342,7 +350,9 @@ class TestCost:
 
         assert telemetry.pricing_as_of == PRICING_AS_OF
 
-    async def test_a_model_priced_later_carries_its_own_date(self, context, findings, dispute):
+    async def test_a_model_priced_later_carries_its_own_date(
+        self, context, findings, dispute
+    ):
         """Haiku 5.5 was priced on 2026-10-07, after the rest of the table.
         Stamping the table's date on its cost would cite a price list that
         never contained it."""
@@ -385,7 +395,9 @@ class TestRequestShape:
         assert "unknown" in enum
         assert schema["additionalProperties"] is False
 
-    async def test_the_customer_message_is_fenced_as_data(self, context, findings, dispute):
+    async def test_the_customer_message_is_fenced_as_data(
+        self, context, findings, dispute
+    ):
         engine, client = engine_with(reply(VALID_VERDICT))
         await engine.decide(dispute, context, findings)
 

@@ -187,26 +187,11 @@ class TestReadingOurOwnLedger:
         path = tmp_path / "audit.db"
         repository = SqliteAuditRepository(path)
         connection = sqlite3.connect(path)
-
         def row(run_id, created_at, model_id, cost_micros):
             return (
-                run_id,
-                created_at,
-                "fake",
-                "claude",
-                "claude/decision_v3",
-                "msg",
-                "valid_invoice",
-                0.9,
-                "self_reported",
-                "explication",
-                "[]",
-                "reply",
-                "auto",
-                "rien a autoriser",
-                0,
-                model_id,
-                cost_micros,
+                run_id, created_at, "fake", "claude", "claude/decision_v3", "msg",
+                "valid_invoice", 0.9, "self_reported", "explication", "[]",
+                "reply", "auto", "rien a autoriser", 0, model_id, cost_micros,
             )
 
         connection.executemany(
@@ -265,9 +250,9 @@ class TestTheFileAdapter:
     def test_the_committed_fixture_says_it_is_synthetic(self):
         """It is shaped like a bill and must never be mistaken for one."""
         payload = json.loads(
-            (__import__("pathlib").Path("fixtures/cost_report_synthetic.json")).read_text(
-                encoding="utf-8"
-            )
+            (
+                __import__("pathlib").Path("fixtures/cost_report_synthetic.json")
+            ).read_text(encoding="utf-8")
         )
 
         assert "SYNTHETIC" in payload["_note"]

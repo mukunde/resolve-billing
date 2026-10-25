@@ -42,7 +42,9 @@ def result(
 
 
 class TestUnverifiedSender:
-    @pytest.mark.parametrize("sender", [SenderStatus.UNKNOWN, SenderStatus.SUSPECTED_IMPERSONATION])
+    @pytest.mark.parametrize(
+        "sender", [SenderStatus.UNKNOWN, SenderStatus.SUSPECTED_IMPERSONATION]
+    )
     @pytest.mark.parametrize("action", ["credit_note", "refund"])
     def test_money_for_an_unverified_sender_is_unsafe_even_with_approval(self, action, sender):
         """Approval does not help: the approver would pay someone unverified.

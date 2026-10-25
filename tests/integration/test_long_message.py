@@ -31,7 +31,9 @@ def dispute(length: int) -> dict:
 
 class TestTooLongForTheEngine:
     def test_it_goes_to_a_person_without_calling_the_engine(self, client):
-        body = client.post("/api/v1/disputes/investigate", json=dispute(ENGINE_MESSAGE_LIMIT + 1))
+        body = client.post(
+            "/api/v1/disputes/investigate", json=dispute(ENGINE_MESSAGE_LIMIT + 1)
+        )
 
         assert body.status_code == 200
         result = body.json()
@@ -59,7 +61,9 @@ class TestTooLongForTheEngine:
 
 class TestBeyondWhatTheServiceAccepts:
     def test_a_message_over_the_hard_limit_is_refused(self, client):
-        response = client.post("/api/v1/disputes/investigate", json=dispute(MESSAGE_HARD_LIMIT + 1))
+        response = client.post(
+            "/api/v1/disputes/investigate", json=dispute(MESSAGE_HARD_LIMIT + 1)
+        )
 
         assert response.status_code == 422
 

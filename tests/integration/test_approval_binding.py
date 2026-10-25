@@ -34,9 +34,9 @@ def client() -> TestClient:
 
 @pytest.fixture
 def action_id(client) -> str:
-    return client.post("/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE).json()[
-        "action_id"
-    ]
+    return client.post(
+        "/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE
+    ).json()["action_id"]
 
 
 def page_proposal(client, action_id) -> str:
@@ -59,7 +59,9 @@ class TestTheDecisionNamesWhatWasShown:
         assert form.status_code == 422
         assert get_actions().get(action_id).state.value == "pending_approval"
 
-    def test_an_invoice_changed_while_the_page_was_open_expires_the_action(self, client, action_id):
+    def test_an_invoice_changed_while_the_page_was_open_expires_the_action(
+        self, client, action_id
+    ):
         proposal = page_proposal(client, action_id)
         get_provider().change_invoice("inv_002", total_minor=4900)
 
@@ -90,9 +92,9 @@ class TestARequestHasADeadline:
     @pytest.fixture
     def overdue(self, client, monkeypatch) -> str:
         monkeypatch.setenv("RESOLVE_APPROVAL_TTL_HOURS", "-1")
-        return client.post("/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE).json()[
-            "action_id"
-        ]
+        return client.post(
+            "/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE
+        ).json()["action_id"]
 
     def test_the_action_reports_its_deadline(self, client, action_id):
         assert client.get(f"/api/v1/actions/{action_id}").json()["expires_at"]
@@ -105,7 +107,9 @@ class TestARequestHasADeadline:
         assert get_actions().get(overdue).state.value == "expired"
 
     def test_an_overdue_request_cannot_be_approved(self, client, overdue):
-        response = client.post(f"/api/v1/actions/{overdue}/approve", json={"proposal": "anything"})
+        response = client.post(
+            f"/api/v1/actions/{overdue}/approve", json={"proposal": "anything"}
+        )
 
         assert response.status_code == 409
         assert get_actions().get(overdue).state.value == "expired"

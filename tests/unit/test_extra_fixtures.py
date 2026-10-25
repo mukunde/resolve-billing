@@ -194,11 +194,8 @@ class TestCheckOnly:
             case(invoice_id="inv_001"),
             case(expect_findings=["UNKNOWN_INVOICE"]),
             case(expect_sender="unknown"),
-            case(
-                customer_email="nobody@elsewhere.test",
-                expect_sender="suspected_impersonation",
-                invoice_id=None,
-            ),
+            case(customer_email="nobody@elsewhere.test", expect_sender="suspected_impersonation",
+                 invoice_id=None),
             case(customer_email="nobody@elsewhere.test", expect_sender="unknown"),
         ],
         ids=[
@@ -313,16 +310,8 @@ class TestCheckOnly:
         out_json = tmp_path / "out.json"
         monkeypatch.setattr(
             "sys.argv",
-            [
-                "runner",
-                "--engine",
-                "claude",
-                "--check-only",
-                "--cases",
-                str(path),
-                "--json",
-                str(out_json),
-            ],
+            ["runner", "--engine", "claude", "--check-only", "--cases", str(path),
+             "--json", str(out_json)],
         )
         assert runner.main() == 0
         assert not out_json.exists()

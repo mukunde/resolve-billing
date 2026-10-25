@@ -169,7 +169,9 @@ class TestNonActionableClassifications:
     )
     def test_money_is_never_moved_on_an_unqualified_dispute(self, policy, classification):
         """Even if the engine asks for a credit note, and an amount exists."""
-        auth = policy.evaluate(decision(classification=classification), [], NINETY_NINE)
+        auth = policy.evaluate(
+            decision(classification=classification), [], NINETY_NINE
+        )
         assert auth.verdict is Verdict.HUMAN_REVIEW
 
 
@@ -198,7 +200,9 @@ class TestAutonomyThresholds:
         """What the evaluation suite would eventually buy."""
         enabled = ActionPolicy(AutonomyPolicy(enabled=True))
 
-        auth = enabled.evaluate(decision(confidence=0.99, confidence_kind="calibrated"), [], SMALL)
+        auth = enabled.evaluate(
+            decision(confidence=0.99, confidence_kind="calibrated"), [], SMALL
+        )
 
         assert auth.verdict is Verdict.AUTO
 
@@ -214,7 +218,9 @@ class TestAutonomyThresholds:
     def test_low_confidence_still_needs_a_human_even_when_calibrated(self):
         enabled = ActionPolicy(AutonomyPolicy(enabled=True))
 
-        auth = enabled.evaluate(decision(confidence=0.60, confidence_kind="calibrated"), [], SMALL)
+        auth = enabled.evaluate(
+            decision(confidence=0.60, confidence_kind="calibrated"), [], SMALL
+        )
 
         # Below the confidence floor, not even an approval is proposed: a
         # person reviews the case itself (taxonomy S8).
