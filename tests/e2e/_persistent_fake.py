@@ -11,7 +11,11 @@ the platform wrote, the service never heard.
 
 Every call that reads or writes corrections reloads the ledger under its lock,
 and rebuilds what each invoice has given back from the writes themselves. A
-ledger that cannot be read is refused, never reset.
+ledger that cannot be read, or holds what this platform could not have
+written, is refused, never reset. Its surface is the platform's calls; the
+ordinary fake's test helpers that change state (`plant_action`,
+`set_status`, `change_invoice`) are refused, since their effects would not
+outlive the process.
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from app.providers.base import Allocation, ProviderAction
+from app.providers.base import ALLOCATIONS, Allocation, ProviderAction
 from app.providers.fake.adapter import FakeBillingProvider
 from evals import state
 
@@ -112,9 +116,43 @@ class PersistentFake(FakeBillingProvider):
                 f"the platform's ledger {self.ledger} cannot be used ({type(error).__name__}); "
                 "it is never reset"
             ) from None
-        if len({write.idempotency_key for write in writes}) != len(writes):
-            raise LedgerRefused(f"the platform's ledger {self.ledger} holds a key twice")
+        problem = self._inconsistency(writes)
+        if problem is not None:
+            raise LedgerRefused(f"the platform's ledger {self.ledger} is inconsistent: {problem}")
         return writes, held["fault_spent"]
+
+    def _inconsistency(self, writes: list[ProviderAction]) -> str | None:
+        """What makes the ledger impossible for this platform, if anything:
+        a key or a reference twice, an amount that is not positive, another
+        provider, a live write, an allocation the instrument cannot take, an
+        invoice the fixtures do not hold or in another currency."""
+        if len({write.idempotency_key for write in writes}) != len(writes):
+            return "a key twice"
+        if len({write.provider_action_id for write in writes}) != len(writes):
+            return "a reference twice"
+        invoices = {invoice.id: invoice for invoice in self._invoices}
+        for write in writes:
+            invoice = invoices.get(write.invoice_id)
+            if write.amount_minor <= 0:
+                return f"{write.provider_action_id}: an amount that is not positive"
+            if write.provider != self.name or not write.test_mode:
+                return f"{write.provider_action_id}: not this test platform's"
+            if write.allocation not in ALLOCATIONS[write.action_type]:
+                return f"{write.provider_action_id}: an allocation the instrument cannot take"
+            if invoice is None or invoice.total.currency != write.currency:
+                return f"{write.provider_action_id}: an invoice the fixtures do not hold"
+        return None
+
+    # -- what this double does not keep -------------------------------------
+
+    def plant_action(self, action: ProviderAction) -> None:
+        raise NotImplementedError("the persistent fake keeps its own writes only")
+
+    def set_status(self, provider_action_id: str, status: str) -> None:
+        raise NotImplementedError("the persistent fake does not change a write's status")
+
+    def change_invoice(self, invoice_id: str, **changes):
+        raise NotImplementedError("the persistent fake does not change invoices")
 
     def _commit(self) -> None:
         state.write_atomically(
