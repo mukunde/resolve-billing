@@ -299,9 +299,7 @@ class TestUsageIsReadForTheLinesPeriod:
         context, findings, asked = await self.load([self.line(period=self.AUGUST)])
         assert asked == [("sub_88", self.AUGUST)]
         assert context.usage is None
-        assert findings[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == [
-            "api_call_blocks_100"
-        ]
+        assert findings[RuleCode.USAGE_UNAVAILABLE].evidence["metrics"] == ["api_call_blocks_100"]
 
     async def test_lines_on_distinct_periods_ask_for_nothing(self):
         """No line is picked: the September line, which the September record
@@ -503,4 +501,3 @@ def test_usage_counts_only_for_exactly_the_lines_period(line_start, line_end):
     found = lines.findings([line], september)
     assert RuleCode.USAGE_UNAVAILABLE in found
     assert RuleCode.SUSPICIOUS_USAGE_DELTA not in found
-

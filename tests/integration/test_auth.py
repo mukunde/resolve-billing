@@ -37,9 +37,7 @@ def anonymous() -> TestClient:
 
 @pytest.fixture
 def action_id() -> str:
-    body = TestClient(app, headers=SERVICE).post(
-        "/api/v1/disputes/investigate", json=CASE_A
-    ).json()
+    body = TestClient(app, headers=SERVICE).post("/api/v1/disputes/investigate", json=CASE_A).json()
     return body["action_id"]
 
 

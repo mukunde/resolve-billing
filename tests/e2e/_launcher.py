@@ -3,7 +3,8 @@
 `python -m tests.e2e._launcher --port <port>`, never in production.
 
 It builds one `PersistentFake` from its own environment -- `E2E_FAKE_LEDGER`,
-the ledger's path, and `E2E_FAULT`, the one fault armed, if any -- and makes
+the ledger's path, `E2E_FAULT`, the one fault armed, if any, and
+`E2E_FAKE_CALLS`, where its calls are noted, if anywhere -- and makes
 every use of the billing provider reach it: `app.api.deps.get_provider` and
 `app.api.health.get_provider` are replaced by name, since `get_engine`,
 `get_approvals`, `get_investigator` and the health route call it directly,
@@ -31,8 +32,11 @@ def main() -> None:
     parser.add_argument("--port", type=int, required=True)
     port = parser.parse_args().port
 
+    calls = os.environ.get("E2E_FAKE_CALLS")
     platform = PersistentFake(
-        Path(os.environ["E2E_FAKE_LEDGER"]), fault=os.environ.get("E2E_FAULT") or None
+        Path(os.environ["E2E_FAKE_LEDGER"]),
+        fault=os.environ.get("E2E_FAULT") or None,
+        calls=Path(calls) if calls else None,
     )
     original = deps.get_provider
     deps.get_provider = lambda: platform

@@ -56,9 +56,7 @@ def exporter() -> InMemorySpanExporter:
 @pytest.fixture
 async def spans(exporter):
     exporter.clear()
-    investigator = DisputeInvestigator(
-        provider=FakeBillingProvider(), engine=MockDecisionEngine()
-    )
+    investigator = DisputeInvestigator(provider=FakeBillingProvider(), engine=MockDecisionEngine())
     await investigator.investigate(CASE_A)
     return exporter.get_finished_spans()
 
@@ -169,4 +167,3 @@ def test_an_exception_leaves_its_type_not_its_text(exporter):
     assert "SECRET-TOKEN" not in everything
     assert span.status.status_code is trace.StatusCode.ERROR
     assert not span.status.description
-

@@ -21,6 +21,7 @@ outlive the process.
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -34,16 +35,39 @@ from evals import state
 TIMEOUT_AFTER_WRITE_ONCE = "timeout_after_write_once"
 
 
+def _key(args: tuple, kwargs: dict) -> str:
+    """The idempotency key of a write call, positional or named."""
+    return kwargs["idempotency_key"] if "idempotency_key" in kwargs else args[4]
+
+
+def read_calls(journal: Path) -> list[tuple[int, str, str]]:
+    """The calls noted in a journal: (process, call, key), in order."""
+    if not journal.exists():
+        return []
+    return [
+        (int(pid), call, key)
+        for pid, call, key in (
+            line.split(" ", 2) for line in journal.read_text(encoding="utf-8").splitlines()
+        )
+    ]
+
+
 class LedgerRefused(Exception):  # noqa: N818 -- a refusal, not a defect
     """The platform's ledger cannot be used as it stands; it is left as it is."""
 
 
 class PersistentFake(FakeBillingProvider):
-    def __init__(self, ledger: Path, *, fault: str | None = None) -> None:
+    def __init__(
+        self, ledger: Path, *, fault: str | None = None, calls: Path | None = None
+    ) -> None:
         super().__init__()
         if fault not in (None, TIMEOUT_AFTER_WRITE_ONCE):
             raise ValueError(f"unknown fault {fault!r}")
         self.ledger = ledger
+        #: Where each write and each lookup is noted, one line per call
+        #: (process, call, key): what a test reads to tell a reconciliation
+        #: from a resend, which the ledger alone cannot.
+        self.calls = calls
         self._fault_armed = fault == TIMEOUT_AFTER_WRITE_ONCE
         self._fault_spent = False
         with self._locked():
@@ -57,15 +81,23 @@ class PersistentFake(FakeBillingProvider):
         return await super().plan_write(invoice_id, action_type)
 
     async def find_action(self, idempotency_key: str, invoice_id: str) -> list[ProviderAction]:
+        self._note("find_action", idempotency_key)
         with self._locked():
             self._reload()
         return await super().find_action(idempotency_key, invoice_id)
 
     async def create_credit_note(self, *args, **kwargs) -> ProviderAction:
+        self._note("create_credit_note", _key(args, kwargs))
         return await self._write(super().create_credit_note, *args, **kwargs)
 
     async def create_refund(self, *args, **kwargs) -> ProviderAction:
+        self._note("create_refund", _key(args, kwargs))
         return await self._write(super().create_refund, *args, **kwargs)
+
+    def _note(self, call: str, key: str) -> None:
+        if self.calls is not None:
+            with open(self.calls, "a", encoding="utf-8") as journal:
+                journal.write(f"{os.getpid()} {call} {key}\n")
 
     async def _write(self, call, *args, **kwargs) -> ProviderAction:
         """Reload, write, and commit a new write -- and the fault's spending,

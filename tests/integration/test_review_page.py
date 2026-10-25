@@ -27,9 +27,7 @@ def client() -> TestClient:
 
 @pytest.fixture
 def action_id(client) -> str:
-    body = client.post(
-        "/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE
-    ).json()
+    body = client.post("/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE).json()
     return body["action_id"]
 
 
@@ -89,9 +87,7 @@ class TestGetMovesNothing:
         assert get_actions().get(action_id).state.value == "pending_approval"
         assert len(get_provider().executed_actions) == before
 
-    def test_the_page_can_be_reloaded_without_losing_the_callback(
-        self, client, action_id
-    ):
+    def test_the_page_can_be_reloaded_without_losing_the_callback(self, client, action_id):
         callback = "http://orchestrator.test/webhook-waiting/1?signature=ab12"
         review(client, action_id, resume=callback)
         review(client, action_id)
@@ -151,9 +147,7 @@ class TestDeciding:
         assert response.status_code == 422
         assert get_actions().get(action_id).state.value == "pending_approval"
 
-    def test_deciding_twice_shows_the_outcome_instead_of_failing(
-        self, client, action_id
-    ):
+    def test_deciding_twice_shows_the_outcome_instead_of_failing(self, client, action_id):
         """A reviewer double-checking, or a second approver arriving late, is
         not an error worth a stack trace."""
         client.post(
@@ -184,9 +178,7 @@ class TestDeciding:
 
 
 class TestTheOrchestratorIsNotLoadBearing:
-    def test_a_decision_survives_an_unreachable_orchestrator(
-        self, client, action_id, monkeypatch
-    ):
+    def test_a_decision_survives_an_unreachable_orchestrator(self, client, action_id, monkeypatch):
         """The whole reason the state does not live in n8n.
 
         The callback points nowhere; the human's click must still count.

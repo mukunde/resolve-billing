@@ -96,7 +96,7 @@ class TestCodesNotEvidence:
         customer_message = "$('Extraction deterministe').first().json.message"
         for start in range(len(text)):
             if text.startswith(customer_message, start):
-                after = text[start + len(customer_message):]
+                after = text[start + len(customer_message) :]
                 assert after.startswith(" || '').length"), after[:40]
 
 
@@ -124,4 +124,3 @@ class TestErrorsDoNotReflectInput:
         assert response.status_code == 422
         assert "SENTINEL" not in response.text
         assert all("msg" not in problem for problem in response.json()["detail"])
-

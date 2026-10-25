@@ -30,9 +30,9 @@ def client() -> TestClient:
 
 @pytest.fixture
 def action_id(client) -> str:
-    return client.post(
-        "/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE
-    ).json()["action_id"]
+    return client.post("/api/v1/disputes/investigate", json=CASE_A, headers=SERVICE).json()[
+        "action_id"
+    ]
 
 
 @pytest.fixture

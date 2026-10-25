@@ -23,7 +23,11 @@ from tests.integration._auth import APPROVER, SERVICE
 
 pytest.importorskip("uvicorn", reason="the `api` extra is not installed")
 
-from tests.e2e._persistent_fake import TIMEOUT_AFTER_WRITE_ONCE, PersistentFake  # noqa: E402
+from tests.e2e._persistent_fake import (  # noqa: E402
+    TIMEOUT_AFTER_WRITE_ONCE,
+    PersistentFake,
+    read_calls,
+)
 from tests.e2e._service import ServiceProcess, client  # noqa: E402
 
 pytestmark = pytest.mark.e2e
@@ -37,7 +41,12 @@ CASE = {
 
 def test_a_timeout_after_a_write_is_reconciled_after_a_restart(tmp_path):
     database, ledger = tmp_path / "audit.db", tmp_path / "platform.json"
-    platform = {"E2E_FAKE_LEDGER": str(ledger), "E2E_FAULT": TIMEOUT_AFTER_WRITE_ONCE}
+    journal = tmp_path / "platform-calls.txt"
+    platform = {
+        "E2E_FAKE_LEDGER": str(ledger),
+        "E2E_FAULT": TIMEOUT_AFTER_WRITE_ONCE,
+        "E2E_FAKE_CALLS": str(journal),
+    }
 
     def service(log: str) -> ServiceProcess:
         return ServiceProcess(
@@ -76,10 +85,21 @@ def test_a_timeout_after_a_write_is_reconciled_after_a_restart(tmp_path):
         assert reconciled.status_code == 200, reconciled.text
         assert reconciled.json()["state"] == "executed"
         assert reconciled.json()["provider_action_id"] == written.provider_action_id
+        assert "reconciled" in reconciled.json()["resolution"]
 
         again = http.post(f"{url}/execute", headers=SERVICE)
         assert again.status_code == 200, again.text
         assert again.json()["provider_action_id"] == written.provider_action_id
+        second_pid = second.pid
+
+    # Recovered by asking the platform, not by sending the write again: the
+    # new process looked the write up and made no write call at all.
+    calls = read_calls(journal)
+    first_calls = [call for pid, call, _ in calls if pid == first_pid]
+    second_calls = [call for pid, call, _ in calls if pid == second_pid]
+    assert first_calls.count("create_credit_note") == 1
+    assert "find_action" in second_calls
+    assert not any(call.startswith("create_") for call in second_calls), second_calls
 
     # The platform's own count: still the one write.
     assert PersistentFake(ledger).writes() == [written]
