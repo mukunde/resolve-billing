@@ -559,10 +559,32 @@ a pending one is decided on its review page; an approved or failed one is
 executed by the orchestrator, `execute()` reconciling first; an unknown
 outcome or one left executing is reconciled before anything is written.
 
-What this covers, and what it does not: the service boundary, with no write
-before the restart. A crash inside a database transaction, the orchestrator's
-own resumption, and a write in flight at the moment of the crash are the next
-slices (specs/005, "Context").
+What an operator sees after a restart, by case (each driven by a test in
+`tests/e2e/`, the service a real process stopped and started again):
+
+- **An approval past its deadline** reads `expired`, with the deadline it was
+  given; approving it -- through the API or the review page -- and executing
+  it are refused (409). It is final. Investigating the same dispute again
+  does **not** reopen it: the queue finds the correction by its economic key
+  (invoice, type, amount, currency) whatever its state, and returns the
+  expired action. A person reassesses it -- a known limitation, not a
+  recovery procedure (`test_restart_expired_approval.py`).
+- **The same dispute delivered again** is a new investigation, with its own
+  run and trace, and the same action, already waiting: one approval, one
+  write (`test_restart_repeated_delivery.py`).
+- **An unknown outcome** -- the platform wrote, its answer was lost -- is
+  settled by the next execution, which asks the platform what it holds
+  before writing anything, finds the write and records it; never a second
+  write (`test_restart_timeout_after_write.py`, on a fake platform that
+  outlives the service).
+
+What this covers, and what it does not: the four milestone failures at the
+service boundary (stage A of specs/005 and specs/006), on the fake platform.
+Not yet: the same through the orchestrator (n8n and Mailpit), on Stripe in
+test mode, a crash mid-flight leaving an action `executing` (reconciled only
+after five minutes), a crash inside a database transaction, and the
+milestone's other conditions -- the support tool, monitoring, a real
+platform.
 
 ---
 
