@@ -43,7 +43,12 @@ def fresh_quota(config):
         return None
     from evals.quota import DailyQuota
 
-    book = DailyQuota("resolve-billing-eval", config.requests_per_day, config.quota_timezone)
+    book = DailyQuota(
+        "resolve-billing-eval",
+        config.requests_per_day,
+        config.quota_timezone,
+        model=config.model,
+    )
     book.declare(0)
     return book
 

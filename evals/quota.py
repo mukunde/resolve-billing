@@ -42,6 +42,12 @@ from evals.limits import RunStopped
 #: A Google Cloud project id: 6 to 30 lowercase letters, digits and hyphens,
 #: starting with a letter, not ending with a hyphen. It names a file.
 PROJECT_ID = re.compile(r"[a-z][a-z0-9-]{4,28}[a-z0-9]")
+#: A model id, as the vendor names it: it names a file too.
+MODEL_ID = re.compile(r"[a-z0-9][a-z0-9.-]{0,62}")
+
+#: The model that counted in the project's own file before each model had
+#: one: it keeps that file, unmoved (spec 004, third amendment).
+FIRST_MODEL = "gemini-3.8-flash"
 
 
 class QuotaRefused(Exception):  # noqa: N818 -- a refusal, not a defect
@@ -54,12 +60,17 @@ class DailyQuota:
         project: str,
         limit: int,
         timezone: str,
+        *,
+        model: str,
         now: Callable[[], float] = time.time,
         lock_timeout: float = 30.0,
     ) -> None:
         if not PROJECT_ID.fullmatch(project or ""):
             raise QuotaRefused(f"{project!r} is not a Google Cloud project id")
+        if not MODEL_ID.fullmatch(model or ""):
+            raise QuotaRefused(f"{model!r} is not a model id that can name a file")
         self.project = project
+        self.model = model
         self.limit = limit
         self.timezone = timezone
         self._zone = ZoneInfo(timezone)
@@ -67,8 +78,16 @@ class DailyQuota:
         self._lock_timeout = lock_timeout
 
     @property
+    def _stem(self) -> str:
+        """Google counts per project and model; the first model keeps the
+        project's own file, every other model counts in one of its own."""
+        if self.model == FIRST_MODEL:
+            return f"quota-{self.project}"
+        return f"quota-{self.project}-{self.model}"
+
+    @property
     def path(self) -> Path:
-        return state.STATE_DIR / f"quota-{self.project}.json"
+        return state.STATE_DIR / f"{self._stem}.json"
 
     def declare(self, used: int) -> None:
         """Today's requests already used, as the console shows them."""
@@ -82,16 +101,18 @@ class DailyQuota:
                 )
             held["days"][day] = {"declared": used, "sent": 0}
 
-    def admit_full_run(self) -> None:
-        """A full run needs the whole day: refused if anything was used."""
+    def admit_full_run(self, requests_needed: int) -> None:
+        """A full run needs what its cases and attempts may use: refused if
+        the day's remaining requests do not cover it."""
         with self._operation() as (held, day):
             counts = held["days"].get(day)
             if counts is None:
                 raise QuotaRefused(f"quota day {day} is not declared")
-            if counts["declared"] + counts["sent"]:
+            used = counts["declared"] + counts["sent"]
+            if self.limit - used < requests_needed:
                 raise QuotaRefused(
-                    f"a full run needs all {self.limit} requests of quota day {day}; "
-                    f"{counts['declared'] + counts['sent']} are already used"
+                    f"a full run needs {requests_needed} of the {self.limit} requests of "
+                    f"quota day {day}; {used} are already used"
                 )
 
     def admit_first_call(self) -> None:
@@ -175,7 +196,7 @@ class DailyQuota:
     @contextmanager
     def _locked(self) -> Iterator[None]:
         state.STATE_DIR.mkdir(parents=True, exist_ok=True)
-        with open(state.STATE_DIR / f"quota-{self.project}.lock", "a+b") as lock:
+        with open(state.STATE_DIR / f"{self._stem}.lock", "a+b") as lock:
             deadline = time.monotonic() + self._lock_timeout
             while not state.try_lock(lock):
                 if time.monotonic() > deadline:

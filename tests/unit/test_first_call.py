@@ -23,7 +23,13 @@ PROJECT = "resolve-billing-eval"
 
 
 def gemini_quota(clock=None, declared=0) -> DailyQuota:
-    book = DailyQuota(PROJECT, 20, "America/Los_Angeles", now=clock or (lambda: 1_792_872_000.0))
+    book = DailyQuota(
+        PROJECT,
+        20,
+        "America/Los_Angeles",
+        model="gemini-3.8-flash",
+        now=clock or (lambda: 1_792_872_000.0),
+    )
     if declared is not None:
         book.declare(declared)
     return book
@@ -220,14 +226,14 @@ class TestAGeminiRun:
         assert "not declared" in capsys.readouterr().err
 
     def test_a_day_declared_earlier_needs_no_flag(self, tmp_path, monkeypatch):
-        DailyQuota(PROJECT, 20, "America/Los_Angeles").declare(0)
+        DailyQuota(PROJECT, 20, "America/Los_Angeles", model="gemini-3.8-flash").declare(0)
 
         status, result = run_gemini(monkeypatch, tmp_path, always)
 
         assert result["complete"] is True
 
     def test_the_flag_on_a_declared_day_is_refused(self, tmp_path, monkeypatch, capsys):
-        DailyQuota(PROJECT, 20, "America/Los_Angeles").declare(0)
+        DailyQuota(PROJECT, 20, "America/Los_Angeles", model="gemini-3.8-flash").declare(0)
 
         status, _ = run_gemini(monkeypatch, tmp_path, always, "--gemini-requests-used-today", "0")
 
@@ -414,7 +420,7 @@ class TestTheDevelopmentSet:
 
         asyncio.run(run_all())
 
-        assert len(reached) == 20
+        assert len(reached) == engines.ENGINE_CASES == 20
 
 
 def test_the_state_folder_is_the_test_s_own():

@@ -240,9 +240,10 @@ the mock's measured score (29), and again if any check of any case differs
 from the recorded baseline -- an improvement included, until the baseline is
 regenerated in the same commit.
 
-**Second engines, on free tiers.** Three configurations --
-`gemini-3.8-flash`, `mistral-medium-3-5` and `mistral-medium-3-5-reasoning`
-(one Mistral model at two reasoning efforts) -- run the same
+**Second engines, on free tiers.** Four configurations --
+`gemini-3.8-flash`, `gemini-3.5-flash-lite`, `mistral-medium-3-5` and
+`mistral-medium-3-5-reasoning` (one Mistral model at two reasoning
+efforts) -- run the same
 prompt, payload and schema as Claude, from the evaluation runner only and on
 the development cases only, held to their vendors' free limits and, for
 Mistral, a monthly envelope kept on disk. Their scores are regression scores

@@ -234,9 +234,10 @@ class TestMediumThreeFive:
 
 
 class TestTheConfigurations:
-    def test_exactly_three_closed_configurations(self):
+    def test_exactly_four_closed_configurations(self):
         assert set(CONFIGURATIONS) == {
             "gemini-3.8-flash",
+            "gemini-3.5-flash-lite",
             "mistral-medium-3-5",
             "mistral-medium-3-5-reasoning",
         }

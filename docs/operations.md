@@ -192,8 +192,8 @@ number with teeth into decoration.
 
 ### The engines evaluated on free tiers
 
-`gemini-3.8-flash`, `mistral-medium-3-5` and `mistral-medium-3-5-reasoning`
-(specs/004-second-engines) run from the evaluation runner, on
+`gemini-3.8-flash`, `gemini-3.5-flash-lite`, `mistral-medium-3-5` and
+`mistral-medium-3-5-reasoning` (specs/004-second-engines) run from the evaluation runner, on
 `evals/cases.json` only, never in CI. Install them with the `engines`
 extra:
 
@@ -230,7 +230,7 @@ subscription tier" (`tier_not_allowed`). Their two results are kept in
 version on 2026-07-31); Medium 3.5 is Mistral's designated replacement.
 
 **The maintainer's waivers (2026-10-24).** Reservations and costs are
-estimates, never guarantees: for all three, the request's UTF-8 bytes plus a
+estimates, never guarantees: for all four, the request's UTF-8 bytes plus a
 512-token margin plus the output cap (`utf8-bytes-v1`). Gemini's was first
 Google's count of the request; it became local the same day, since a counting
 request could spend the day's quota. For the two Medium 3.5, a reasoning
@@ -293,14 +293,36 @@ and, another day:
 python -m dotenv run -- python -m evals.runner --engine gemini-3.8-flash --data-terms contractual --gemini-requests-used-today 0 --json evals/results/gemini-3.8-flash.json
 ```
 
-**Gemini's daily quota.** Kept in `~/.resolve-billing/quota-<project>.json`,
-under a lock every checkout of the project shares. A day is declared once,
-never lowered; each request is counted before it is sent and never refunded,
-failed ones included. A full run starts only on a day with nothing used; a
-request that would pass twenty is not sent and the run stops ("daily quota
-exhausted (local count)"), as it does on reaching a day not declared -- a run
-crossing Pacific midnight -- and on a clock gone back. Gemini makes one
-attempt per case, and an outage stops the run. The project is assumed
+Flash's first full run (2026-10-25) stopped at its first request on a Google
+server error: with no room for a retry, a passing error costs the day.
+**`gemini-3.5-flash-lite`** (spec 004, third amendment) allows 500 requests a
+day and 15 a minute on the same project, so it makes three attempts per
+case and an outage escalates the case instead of stopping the run; its
+smoke test and its full run can share a day. Its first call, then its run
+(declare the day once, as AI Studio shows Flash-Lite's own count):
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gemini-3.5-flash-lite --data-terms contractual --gemini-requests-used-today 0 --first-call-only --json evals/results/gemini-3.5-flash-lite.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gemini-3.5-flash-lite --data-terms contractual --json evals/results/gemini-3.5-flash-lite.json
+```
+
+**Gemini's daily quota.** Google counts per project and model, and so
+does the runner: `gemini-3.8-flash` in `~/.resolve-billing/quota-<project>.json`
+(the file it used first, unmoved), every other model in
+`quota-<project>-<model>.json`, each under a lock every checkout of the
+project shares. A day is declared once per model, never lowered; each
+request is counted before it is sent and never refunded, failed ones
+included. A full run starts only if the day's remaining requests cover the
+20 cases that reach the engine times the configuration's attempts -- for
+Flash, an untouched day; for Flash-Lite, 60 remaining. A request that would
+pass the limit is not sent and the run stops ("daily quota exhausted (local
+count)"), as it does on reaching a day not declared -- a run crossing Pacific
+midnight -- and on a clock gone back. Flash makes one attempt per case and
+an outage stops the run; Flash-Lite makes three, and an outage escalates
+the case. The project is assumed
 dedicated, with no other caller: neither the console nor this count can see
 one.
 

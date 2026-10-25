@@ -1,8 +1,9 @@
 """The engines the evaluation runner may use, and where it may use them.
 
-The service's engines (`app/api/deps.py`, `ENGINES`) plus the three
+The service's engines (`app/api/deps.py`, `ENGINES`) plus the four
 configurations evaluated on free tiers (specs/004-second-engines):
-`gemini-3.8-flash`, `mistral-medium-3-5`, `mistral-medium-3-5-reasoning`. Those three are not
+`gemini-3.8-flash`, `gemini-3.5-flash-lite`, `mistral-medium-3-5`,
+`mistral-medium-3-5-reasoning`. Those four are not
 the service's to run, and they run here on the development cases only: the
 runner refuses them on any other case file, or with extra fixtures, before
 it reads a case or builds a client.
@@ -25,6 +26,11 @@ from app.providers.fake.fixtures import EXTRA_FIXTURES_ENV
 #: update of this constant; a test holds them together.
 DEVELOPMENT_SET = Path(__file__).parent / "cases.json"
 DEVELOPMENT_SET_SHA256 = "4dc2740be58d04b73bde24d903ab76f5997f9701157ab7c0d64a9a31c71e9c99"
+
+#: How many development cases reach the engine (the others are settled by
+#: the rules first): a run's daily quota is sized on it. Pinned by a test
+#: that counts them; a change of the development set updates both.
+ENGINE_CASES = 20
 
 #: The engines evaluated on free tiers.
 HOSTED = frozenset(CONFIGURATIONS)
@@ -52,7 +58,7 @@ HOSTED_ENGINES: dict[str, Callable[[], object]] = {name: _hosted(name) for name 
 
 def evaluation_engines() -> dict[str, Callable[[], object]]:
     """Every engine the runner may build, by name: the service's table, read
-    when asked, and the three."""
+    when asked, and the four."""
     return {**deps.ENGINES, **HOSTED_ENGINES}
 
 
@@ -62,7 +68,7 @@ class OffTheDevelopmentSet(Exception):  # noqa: N818 -- a refusal, not a defect
 
 
 def guard(engine_name: str, cases_path: Path) -> list[dict] | None:
-    """For the three, the development cases -- read once, checked, parsed
+    """For the four, the development cases -- read once, checked, parsed
     from those same bytes; for any other engine, None (no restriction)."""
     if engine_name not in HOSTED:
         return None

@@ -27,9 +27,9 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   to date (`python -m evals.coverage --check`).
 - **Claude, on demand.** A sampling engine: its job fails on an unsafe action
   and carries no floor.
-- **Three engines on free tiers, on the development set alone.**
-  `gemini-3.8-flash`, `mistral-medium-3-5` and `mistral-medium-3-5-reasoning`
-  run from the
+- **Four engines on free tiers, on the development set alone.**
+  `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `mistral-medium-3-5` and
+  `mistral-medium-3-5-reasoning` run from the
   maintainer's command only, never in CI, refused on any case file but
   `evals/cases.json` at its committed hash or with extra fixtures, before a
   case is read or a client built. Each run requires `--data-terms` (what the
@@ -45,17 +45,18 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   An answer the vendor's SDK cannot read keeps its reservation spent and
   stops the run; only a 4xx status is a refusal. Usage reported
   above the reservation, or not reported, stops the run.
-- **Gemini's daily quota** (spec 004 amendment). Twenty requests a day
-  per Google project, reset at midnight Pacific -- one full run, since
-  twenty development cases reach the engine. The count is the project's,
-  named by `GEMINI_QUOTA_PROJECT`, kept outside every checkout under one
-  lock: the maintainer declares each day once, before its first request,
-  as the console shows it; each request is counted before it is sent,
-  never refunded. A full run starts only on a day with nothing used;
-  passing the limit, reaching an undeclared day or a clock gone back stops
-  the run before sending. Gemini makes one attempt per case, and an outage
-  stops the run; its reservation is estimated locally, never by a counting
-  request.
+- **Gemini's daily quota** (spec 004 amendments). Counted per Google
+  project, named by `GEMINI_QUOTA_PROJECT`, and per model, reset at
+  midnight Pacific: Flash 20 a day, Flash-Lite 500. Kept outside every
+  checkout under one lock per model: the maintainer declares each day
+  once, before its first request, as the console shows it; each request is
+  counted before it is sent, never refunded. A full run starts only if the
+  day's remaining requests cover the 20 cases that reach the engine times
+  the configuration's attempts; passing the limit, reaching an undeclared
+  day or a clock gone back stops the run before sending. Flash makes one
+  attempt per case and an outage stops the run; Flash-Lite three, and an
+  outage escalates the case. Reservations are estimated locally, never by a
+  counting request.
 - **A first call** (`--first-call-only`, every configuration): one attempt
   on the first case that reaches the engine, then the run stops, written
   incomplete as a smoke test with its sends (0 or 1). It is **accepted** on
