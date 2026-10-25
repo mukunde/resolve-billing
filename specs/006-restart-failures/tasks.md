@@ -36,7 +36,7 @@ committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 5: Documents
 
-- [ ] T040 `docs/operations.md` "After a restart" and the
+- [x] T040 `docs/operations.md` "After a restart" and the
   approval-and-execution contract (plan section 6).
 
 ## Phase 6: Review and delivery
