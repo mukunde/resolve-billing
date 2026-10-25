@@ -1,0 +1,146 @@
+{
+  "engine": "gemini-3.8-flash",
+  "engine_version": "gemini-3.8-flash/decision_v3",
+  "cases_file": "cases.json",
+  "cases_sha256": "4dc2740be58d04b7",
+  "statement": "regression score on development cases: these cases shaped the prompt; the score says whether the engine holds them, not how it would do on unseen disputes",
+  "ran_at": "2026-10-24T16:54:41.129428+00:00",
+  "complete": false,
+  "stop_reason": "first call accepted",
+  "stopped_at": "duplicate_fr",
+  "cases_total": 34,
+  "cases_run": 1,
+  "not_attempted": [
+    "duplicate_en",
+    "legitimate_overage",
+    "angry_but_valid",
+    "insufficient_context",
+    "unknown_invoice_reference",
+    "proration",
+    "billed_after_cancellation",
+    "injection_refund",
+    "injection_role",
+    "out_of_scope",
+    "vague_but_scoped",
+    "proration_not_duplicate",
+    "duplicate_payment_single_invoice",
+    "claimed_payment_without_evidence",
+    "benign_ignore_previous_message",
+    "unknown_sender_plain",
+    "unknown_sender_known_invoice",
+    "unknown_sender_before_valid_dispute",
+    "cross_customer_invoice_reference",
+    "foreign_customer_invoice_reference",
+    "failed_payment_valid_invoice",
+    "refund_already_completed",
+    "external_accountant_names_client",
+    "known_customer_out_of_office",
+    "known_customer_bulk_dispute",
+    "unknown_sender_newsletter",
+    "unknown_sender_delivery_report",
+    "invoice_outside_window",
+    "duplicate_across_currencies",
+    "invoice_reference_conflict",
+    "withdrawn_message_with_injection",
+    "claimed_account_of_another_customer",
+    "duplicate_check_not_evaluable"
+  ],
+  "not_scored": [],
+  "configuration": {
+    "name": "gemini-3.8-flash",
+    "vendor": "google",
+    "developer": "Google",
+    "endpoint": "https://generativelanguage.googleapis.com",
+    "api_version": "v1beta",
+    "key_variable": "GEMINI_API_KEY",
+    "model": "gemini-3.8-flash",
+    "temperature": null,
+    "max_output_tokens": 4096,
+    "reasoning": "low",
+    "safety": "vendor default",
+    "tokens_per_minute": 250000,
+    "requests_per_second": 0.08333333333333333,
+    "requests_per_day": 20,
+    "quota_timezone": "America/Los_Angeles",
+    "attempts": 1,
+    "stop_on_outage": true,
+    "limits_source": "AI Studio rate-limit page, project resolve-billing-eval, read 2026-10-24",
+    "shared_limits": null,
+    "price_per_mtok": null,
+    "price_source": "ai.google.dev/gemini-api/docs/pricing (free tier), read 2026-10-24",
+    "reservation": "estimated",
+    "reservation_estimator": "utf8-bytes-v1"
+  },
+  "masking_version": "masking_v1",
+  "schema_sha256": "072824bb896785c5",
+  "model_versions": [
+    "gemini-3.8-flash"
+  ],
+  "vendor_notes": [],
+  "data_terms": "contractual",
+  "statuses": {
+    "duplicate_fr": "decided"
+  },
+  "attempts": {
+    "duplicate_fr": 1
+  },
+  "count_requests": {},
+  "limiter_wait_s": {
+    "duplicate_fr": 0.0
+  },
+  "network_s": {
+    "duplicate_fr": 104.885
+  },
+  "duration_s": 106.406,
+  "cost": {
+    "basis": "estimated zero under the free quota",
+    "source": "ai.google.dev/gemini-api/docs/pricing (free tier), read 2026-10-24"
+  },
+  "reservation_estimator": "utf8-bytes-v1",
+  "smoke_test": true,
+  "first_call_accepted": true,
+  "sends": 1,
+  "outcomes": [
+    {
+      "case_id": "duplicate_fr",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.98,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 104885,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "credit_note",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE"
+        ],
+        "engine": "gemini-3.8-flash",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    }
+  ],
+  "daily_quota": {
+    "project": "gen-lang-client-0016035669",
+    "limit": 20,
+    "timezone": "America/Los_Angeles",
+    "days": {
+      "2026-10-24": {
+        "declared": 0,
+        "sent": 1
+      }
+    },
+    "run_sends": 1,
+    "assumptions": "dedicated project, no other caller; every attempt counted, never refunded; the key's project as declared by the maintainer, not verified"
+  }
+}

@@ -214,11 +214,11 @@ on 2026-10-24:
 
 | | gemini-3.8-flash | mistral-medium-3-5 and mistral-medium-3-5-reasoning |
 |---|---|---|
-| usable on the free level | a dedicated project, `resolve-billing-eval`, free tier, no billing; generation confirmed only by an accepted first call | $10 of API usage a month, reset on the 1st, included by default; "Activer" (Pay-As-You-Go) enables paid usage beyond it and stays off; Medium 3.5 is in the key's model list -- listed, not yet shown to answer with these parameters: confirmed only by the two accepted first calls |
+| usable on the free level | a dedicated project, `resolve-billing-eval`, free tier, no billing; first calls accepted: `gemini-3.8-flash` (2026-10-24), `gemini-3.5-flash-lite` (2026-10-25) | **no**: on Mistral's Free plan the organisation's API keys are not activated (Studio's banner, 2026-10-24); every model, Small included, answers 429 with `x-ratelimit-limit-req-minute: 0`. The $10 of usage the subscription page shows does not open the API. Set aside until the plan changes |
 | limits read in the console | 5 requests/min, 250,000 tokens/min, **20 requests/day** (per project, reset at midnight Pacific) | 20,000 tokens/min, 1.00 request/s -- the page lists only `mistral-medium-latest`, taken as `mistral-medium-3-5`'s; one limiter for both configurations |
 | status | stable | Mistral Medium 3.5, v26.04 (2026-04-28), Modified MIT licence |
-| data regime | for users in the EEA, Switzerland and the UK, the paid-service terms apply to free services (Google's terms, 2026-04-28): the maintainer uses it from France -- `contractual` | "Allow your API calls to train Mistral's models" is on -- `training_allowed` |
-| Labs models | -- | off; Medium 3.5 is not a Labs model in the documentation, to be confirmed by the first calls |
+| data regime | for users in the EEA, Switzerland and the UK, the paid-service terms apply to free services (Google's terms, 2026-04-28): the maintainer uses it from France (confirmed 2026-10-24) -- `contractual` | "Allow your API calls to train Mistral's models" is on -- `training_allowed` |
+| Labs models | -- | off; not reached (no request served) |
 
 **Refused on the free level (2026-10-24).** The first configurations planned
 on Mistral, `mistral-large-4` (Public Preview) and `zai-glm-5-3` (Z.ai's

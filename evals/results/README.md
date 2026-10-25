@@ -89,12 +89,34 @@ scored, and it is never read as a score over 34.
 |---|---|---|---|---|
 | `mistral-large-4-20261024T132525Z.json` | `mistral-large-4` (since removed) | 2026-10-24 13:25 UTC | no: first call refused, HTTP 403 | -- |
 | `zai-glm-5-3-20261024T135710Z.json` | `zai-glm-5-3` (since removed) | 2026-10-24 13:57 UTC | no: first call refused, HTTP 403 | -- |
+| `mistral-medium-3-5-20261024T162857Z.json` | `mistral-medium-3-5` | 2026-10-24 16:28 UTC | no: first call refused, HTTP 429 | -- |
+| `mistral-medium-3-5-reasoning-20261024T162930Z.json` | `mistral-medium-3-5-reasoning` | 2026-10-24 16:29 UTC | no: first call refused, HTTP 429 | -- |
+| `gemini-3.8-flash-20261024T165441Z.json` | `gemini-3.8-flash` | 2026-10-24 16:54 UTC | no: first call, **accepted** | 1/1 (the first call only) |
+| `gemini-3.8-flash-20261025T134323Z.json` | `gemini-3.8-flash` | 2026-10-25 13:43 UTC | no: stopped at its first request, Google server error | -- |
+| `gemini-3.5-flash-lite-20261025T144456Z.json` | `gemini-3.5-flash-lite` | 2026-10-25 14:44 UTC | no: first call, **accepted** | 1/1 (the first call only) |
+| **`gemini-3.5-flash-lite-20261025T144553Z.json`** | **`gemini-3.5-flash-lite`** | **2026-10-25 14:45 UTC** | **yes** | **29/34, 0 unsafe** |
 
-The two refusals are evidence of access, not measurements: each is a smoke
-test whose single request Mistral refused (the runner recorded the status
-and settled it at zero locally; the maintainer's own call outside the runner
-returned `tier_not_allowed`). They are why the Mistral configurations became
-the two Medium 3.5 (`docs/operations.md`).
+The refusals are evidence of access, not measurements: each is a smoke test
+whose single request the vendor refused, recorded by status and settled at
+zero locally. Large 4 and GLM 5.3 answered 403; the maintainer's own call
+outside the runner returned `tier_not_allowed`. Medium 3.5 answered 429: on
+Mistral's Free plan the organisation's API keys are not activated (Studio's
+banner), and every model reports `x-ratelimit-limit-req-minute: 0`. Mistral
+is set aside until the plan changes (`docs/operations.md`).
+
+**What the one full run says** -- a regression score on the development
+cases, not a measure on unseen disputes. Gemini 3.5 Flash-Lite held 29 of the
+34 cases fully, as the mock does, with no unsafe action; 20 requests, none
+retried, no invalid answer, 84 seconds. The cases it missed are not all the
+mock's: both miss `claimed_payment_without_evidence`,
+`duplicate_check_not_evaluable` and `out_of_scope`; Flash-Lite alone misses
+`insufficient_context` (sent to a person where the case expects none) and
+`refund_already_completed` (the right reply, the wrong classification);
+the mock alone misses `billed_after_cancellation` and `vague_but_scoped`. On
+`out_of_scope` and `duplicate_check_not_evaluable`, Flash-Lite proposed a
+credit note at a self-reported confidence of 0.95 where no money moves; the
+rules and the action policy held the action back and sent it to a person.
+That is the design working, not the model.
 
 ## What they contain
 
