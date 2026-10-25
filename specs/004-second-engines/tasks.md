@@ -158,7 +158,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   existing file, Flash-Lite's apart; the admission rule for both models;
   Flash-Lite's outage escalating after three attempts.
 - [x] T111 `app/decision/hosted.py`, `evals/quota.py`, `evals/hosted_run.py`.
-- [ ] T112 Docs: `docs/operations.md`, the two contracts, `evals/results/README.md`.
+- [x] T112 Docs: `docs/operations.md`, the two contracts, `evals/results/README.md`.
 - [ ] T113 Codex reviews the diff until nothing is left; the maintainer
   approves the final diff by its commit; push, pull request, merge -- then
   Flash-Lite's first call and full run.

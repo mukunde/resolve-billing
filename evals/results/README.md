@@ -70,8 +70,8 @@ exam is unnamed is comparable to nothing. It was found by hitting it.
 
 ## The engines on free tiers, listed apart
 
-Runs of `gemini-3.8-flash`, `mistral-medium-3-5` and
-`mistral-medium-3-5-reasoning` (specs/004-second-engines) are not rows of
+Runs of `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `mistral-medium-3-5`
+and `mistral-medium-3-5-reasoning` (specs/004-second-engines) are not rows of
 the table above. Each file is one run, named by its start time,
 and carries beyond the usual fields: the configuration (vendor, developer,
 model, every parameter, the limits, the prices and their source), the model

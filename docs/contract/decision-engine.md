@@ -56,7 +56,9 @@ tiers (below).
 
 ## The engines evaluated on free tiers
 
-`gemini-3.8-flash` (Google's Gemini API), `mistral-medium-3-5` and
+`gemini-3.8-flash` and `gemini-3.5-flash-lite` (Google's Gemini API, equal
+but for the model, the limits, the attempts and what an outage does),
+`mistral-medium-3-5` and
 `mistral-medium-3-5-reasoning` (Mistral's API: one model, Mistral Medium 3.5,
 at reasoning effort `none` and `high`, equal in everything else), each a
 closed configuration in `app/decision/hosted.py`: the exact model, the endpoint, the
