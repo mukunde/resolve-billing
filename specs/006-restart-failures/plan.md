@@ -91,8 +91,10 @@ assertions cannot race it, short enough for CI.
 `app.api.health.get_provider` with a function returning it -- so
 `get_engine`, `get_approvals`, `get_investigator` and the health route, which
 call `get_provider()` by name, all get it -- and sets
-`app.dependency_overrides[deps.get_provider]` for any route that depends on
-it; then `uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
+`app.dependency_overrides[original]` for any route that depends on it, where
+`original` is the function saved **before** the replacement (a route declared
+`Depends(get_provider)` holds the original callable); all of it before the
+application serves or any dependency is cached; then `uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
 workers=1, access_log=False)).run()` in the main thread, so the harness's
 graceful stop (`SIGTERM` / `CTRL_BREAK_EVENT`) and uvicorn's shutdown line
 behave as in A1.
@@ -117,12 +119,19 @@ corrupt ledger refused and left as it was.
 
 ### 6. Documents
 
-- `docs/operations.md`, "After a restart": an expired action is final (the
-  dispute is investigated again); a repeated delivery returns the action
-  already waiting; an unknown outcome is settled by the next execution,
+- `docs/operations.md`, "After a restart": an expired action is final; a
+  repeated delivery returns the action already waiting -- **and so does the
+  same dispute investigated again after expiry**: the queue finds the
+  correction by its economic key whatever its state, so investigating again
+  returns the expired action, not a new request for approval. Reinvestigation
+  alone is therefore not a way to recover an expired correction: a person
+  reassesses it. Said as a known limitation (reported to the maintainer as a
+  defect to open on its own), never presented as a recovery procedure, and
+  no new key is invented here; an unknown outcome is settled by the next execution,
   which asks the platform before writing anything.
 - `docs/contract/approval-and-execution.md`: the three guarantees beside A1's;
-  the three tests under "Covered by"; under "Not guaranteed today", stage B,
+  the three tests under "Covered by"; under "Not guaranteed today", the
+  expired correction that reinvestigation does not reopen, stage B,
   stage C, an abandoned claim mid-flight (`STALE_CLAIM`, five minutes), the
   milestone's other conditions.
 
