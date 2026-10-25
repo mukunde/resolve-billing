@@ -27,7 +27,7 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   to date (`python -m evals.coverage --check`).
 - **Claude, on demand.** A sampling engine: its job fails on an unsafe action
   and carries no floor.
-- **Three engines on free tiers, on the development set alone.**
+- **Four engines on free tiers, on the development set alone.**
   `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `mistral-medium-3-5` and
   `mistral-medium-3-5-reasoning` run from the
   maintainer's command only, never in CI, refused on any case file but

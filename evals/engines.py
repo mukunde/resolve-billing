@@ -1,8 +1,9 @@
 """The engines the evaluation runner may use, and where it may use them.
 
-The service's engines (`app/api/deps.py`, `ENGINES`) plus the three
+The service's engines (`app/api/deps.py`, `ENGINES`) plus the four
 configurations evaluated on free tiers (specs/004-second-engines):
-`gemini-3.8-flash`, `mistral-medium-3-5`, `mistral-medium-3-5-reasoning`. Those three are not
+`gemini-3.8-flash`, `gemini-3.5-flash-lite`, `mistral-medium-3-5`,
+`mistral-medium-3-5-reasoning`. Those four are not
 the service's to run, and they run here on the development cases only: the
 runner refuses them on any other case file, or with extra fixtures, before
 it reads a case or builds a client.
@@ -57,7 +58,7 @@ HOSTED_ENGINES: dict[str, Callable[[], object]] = {name: _hosted(name) for name 
 
 def evaluation_engines() -> dict[str, Callable[[], object]]:
     """Every engine the runner may build, by name: the service's table, read
-    when asked, and the three."""
+    when asked, and the four."""
     return {**deps.ENGINES, **HOSTED_ENGINES}
 
 
@@ -67,7 +68,7 @@ class OffTheDevelopmentSet(Exception):  # noqa: N818 -- a refusal, not a defect
 
 
 def guard(engine_name: str, cases_path: Path) -> list[dict] | None:
-    """For the three, the development cases -- read once, checked, parsed
+    """For the four, the development cases -- read once, checked, parsed
     from those same bytes; for any other engine, None (no restriction)."""
     if engine_name not in HOSTED:
         return None

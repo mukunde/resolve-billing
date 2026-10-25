@@ -9,7 +9,7 @@ a deployment choice), ADR-003 (deterministic before probabilistic), ADR-006
 The service runs two engines: the **mock**, deterministic and free, the
 default and what CI and the demo run on; and **Claude**, through the
 Messages API, selected with `DECISION_ENGINE=claude` and an Anthropic key.
-Three more configurations exist for the evaluation runner alone, on free
+Four more configurations exist for the evaluation runner alone, on free
 tiers (below).
 
 ## What the system relies on
@@ -90,7 +90,7 @@ source.
 
 `app/api/deps.py` names the engines the service may run (`ENGINES`: mock,
 claude); `DECISION_ENGINE` chooses one, and an unknown name is refused. The
-evaluation runner selects from the same table plus the three configurations
+evaluation runner selects from the same table plus the four configurations
 (`evals/engines.py`).
 
 ## Not guaranteed today
@@ -99,8 +99,8 @@ evaluation runner selects from the same table plus the three configurations
 - Masking is by pattern: other people's names, free text and unusual formats
   pass (ADR-009).
 - Only Claude has been measured among real models, last on the development
-  set of its time; the three configurations await their first runs.
-- The three configurations' reservations are estimates (the maintainer's
+  set of its time; the four configurations await their first runs.
+- The four configurations' reservations are estimates (the maintainer's
   waivers, 2026-10-24): the request's UTF-8 bytes plus a margin plus the
   output cap, for all three, resting on tokenizers neither vendor
   documents. Each answer's reported usage is checked against them, and a

@@ -1,6 +1,6 @@
 """A run of an engine evaluated on a free tier (specs/004-second-engines).
 
-The runner's path for the three configurations, on the development cases
+The runner's path for the four configurations, on the development cases
 alone (the guard in `evals/engines.py` has already held). What it adds to an
 ordinary run: the engine held to its limits (`evals/governed.py`), the
 Mistral envelope (`evals/ledger.py`), a status per case, and a result that

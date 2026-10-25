@@ -1,8 +1,9 @@
 """The shared core of the engines evaluated on free tiers.
 
-specs/004-second-engines. Three configurations -- `gemini-3.8-flash`
-(Google), `mistral-medium-3-5` and `mistral-medium-3-5-reasoning` (Mistral, one
-model at two reasoning efforts) -- decide a dispute
+specs/004-second-engines. Four configurations -- `gemini-3.8-flash` and
+`gemini-3.5-flash-lite` (Google), `mistral-medium-3-5` and
+`mistral-medium-3-5-reasoning` (Mistral, one model at two reasoning efforts)
+-- decide a dispute
 exactly as the Claude engine does: the context pseudonymised, the message
 masked (D10), one request with the same prompt and the same payload, the
 answer validated locally against the closed classification, the references
