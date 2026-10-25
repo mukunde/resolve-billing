@@ -66,6 +66,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "contract: a property of the billing port, checked against every platform",
+    "e2e: the service run as a real process, stopped and restarted (tests/e2e)",
 ]
 
 [tool.ruff]

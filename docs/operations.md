@@ -530,6 +530,40 @@ here:
 python -m sqlite3 audit.db "SELECT action_id, state, approved_by FROM pending_actions"
 ```
 
+### After a restart
+
+A pending action, its deadline and its run live in the service's database
+(`AUDIT_DB`), not in the process: a restart -- a clean stop or a crash
+between requests -- loses none of them
+(`tests/e2e/test_restart_pending_approval.py` drives exactly that, as a real
+process stopped, then killed, then started again).
+
+To find one action, by its identifier or its run's:
+
+```bash
+curl -H "Authorization: Bearer $RESOLVE_SERVICE_KEY" http://localhost:8000/api/v1/actions/<action_id>
+curl -H "Authorization: Bearer $RESOLVE_SERVICE_KEY" http://localhost:8000/api/v1/runs/<run_id>
+```
+
+To list those waiting for a person or whose outcome needs one, read-only --
+the database opened in read-only mode, so nothing can change by mistake:
+
+```bash
+python -c "import sqlite3; c = sqlite3.connect('file:audit.db?mode=ro', uri=True); [print(r) for r in c.execute(\"SELECT action_id, run_id, state, created_at FROM pending_actions WHERE state IN ('pending_approval','approved','executing','failed','unknown_outcome') ORDER BY created_at\")]"
+```
+
+Finding an action resumes nothing and executes nothing: the orchestrator's
+workflow is not woken, and no write is sent. What is safe for each state is
+in the approval-and-execution contract (`docs/contract/approval-and-execution.md`):
+a pending one is decided on its review page; an approved or failed one is
+executed by the orchestrator, `execute()` reconciling first; an unknown
+outcome or one left executing is reconciled before anything is written.
+
+What this covers, and what it does not: the service boundary, with no write
+before the restart. A crash inside a database transaction, the orchestrator's
+own resumption, and a write in flight at the moment of the crash are the next
+slices (specs/005, "Context").
+
 ---
 
 ## The orchestrator, and what it is not
