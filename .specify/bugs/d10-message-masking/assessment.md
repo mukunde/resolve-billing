@@ -208,22 +208,27 @@ about $0.02 in all):
 | `vague_but_scoped` | refund 10/10 | refund 4/10, credit note 6/10 |
 | `billed_after_cancellation` (control: nothing to mask) | refund 2/10, credit note 8/10 | refund 3/10, credit note 7/10 |
 
-With the first runs: `vague_but_scoped` took a refund 13 times out of 13
-without the masking, 4 out of 13 with it, while the control case, which the
-masking leaves untouched, did not move. **The `vague_but_scoped` change is
-the masking's**: with its invoice reference replaced by the context's alias,
-the case behaves as the control does. What that shows is a weakness of the
-engine, not of the masking: on a cancelled subscription, Haiku 5.5 mostly
-chooses a credit note where `decision_v3` requires a refund (no future
-invoice can absorb a credit note) -- and the raw reference happened to steer
-it right in one case. That belongs to prompt v4. No verdict on these 40 runs
-was unsafe: the action is held for a person either way.
+With the first runs pooled: `vague_but_scoped` took a refund 13 times out
+of 13 without the masking, 4 out of 13 with it; the control, whose message
+the masking leaves unchanged, went from 2 refunds out of 13 to 5. **The
+repeated contrast strongly supports a masking-related effect on this case**;
+the unchanged-message control shows a smaller change in the opposite
+direction. Sequential samples and one control do not establish the cause
+conclusively. With its invoice reference replaced by the context's alias,
+`vague_but_scoped` comes to behave much as the control does: on a cancelled
+subscription, Haiku 5.5 mostly chooses a credit note where `decision_v3`
+requires a refund (no future invoice can absorb a credit note), and the raw
+reference appears to have steered it right in this one case -- an
+interaction of the masking with a weakness the engine shows on both cases,
+which prompt v4 should address. None of these 20 runs (40 case evaluations)
+gave an unsafe verdict: the action is held for a person either way.
 
-**Reading.** A signal, read as such: the masking took nothing measurable from
-the engine overall -- the same total on the development set, and no unsafe
-verdict with it -- and changed one case's instrument, by removing a cue the
-prompt should not need. Not a proof of equivalence: one model, three runs a
-side on 34 cases, ten more on two.
+**Reading.** A signal, read as such: aggregate correctness was unchanged in
+the initial samples (86/102 on both sides), with no unsafe verdict with the
+masking, one case-level regression (`vague_but_scoped`'s instrument) and
+possible improvements elsewhere (`duplicate_check_not_evaluable`). This does
+not establish non-degradation: one model, three runs a side on 34 cases, ten
+more on two, an exploratory follow-up.
 
 ## Acceptance
 
