@@ -192,14 +192,14 @@ def _first_call_reason(status: str, outage: str | None, model_version: str | Non
     return f"first call {status}"
 
 
-def _admitted(quota: DailyQuota, args) -> None:
+def _admitted(quota: DailyQuota, args, config) -> None:
     """Today declared -- already, or by the flag -- and the run admitted."""
     if args.gemini_requests_used_today is not None:
         quota.declare(args.gemini_requests_used_today)
     if args.first_call_only:
         quota.admit_first_call()
     else:
-        quota.admit_full_run()
+        quota.admit_full_run(engines.ENGINE_CASES * config.attempts)
 
 
 def main(args, cases: list[dict], parser) -> int:
@@ -257,12 +257,13 @@ def main(args, cases: list[dict], parser) -> int:
                 os.environ.get(QUOTA_PROJECT, ""),
                 config.requests_per_day,
                 config.quota_timezone,
+                model=config.model,
             )
         except QuotaRefused as refusal:
             print(f"refused: {refusal}; name the project in {QUOTA_PROJECT}", file=sys.stderr)
             return 2
         try:
-            _admitted(quota, args)
+            _admitted(quota, args, config)
         except QuotaRefused as refusal:
             print(
                 f"refused: {refusal}. Declare today's requests already used, as AI Studio "

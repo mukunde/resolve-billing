@@ -11,7 +11,12 @@ import pytest
 from app.api import deps
 from evals import engines, runner
 
-HOSTED = ("gemini-3.8-flash", "mistral-medium-3-5", "mistral-medium-3-5-reasoning")
+HOSTED = (
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "mistral-medium-3-5",
+    "mistral-medium-3-5-reasoning",
+)
 
 
 class TestTheRefusedConfigurations:
@@ -31,7 +36,7 @@ class TestTheRefusedConfigurations:
 
 
 class TestTheRegistry:
-    def test_it_holds_the_services_engines_and_the_three(self):
+    def test_it_holds_the_services_engines_and_the_four(self):
         assert set(engines.evaluation_engines()) == set(deps.ENGINES) | set(HOSTED)
 
     @pytest.mark.parametrize("name", HOSTED)

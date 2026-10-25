@@ -26,6 +26,11 @@ from app.providers.fake.fixtures import EXTRA_FIXTURES_ENV
 DEVELOPMENT_SET = Path(__file__).parent / "cases.json"
 DEVELOPMENT_SET_SHA256 = "4dc2740be58d04b73bde24d903ab76f5997f9701157ab7c0d64a9a31c71e9c99"
 
+#: How many development cases reach the engine (the others are settled by
+#: the rules first): a run's daily quota is sized on it. Pinned by a test
+#: that counts them; a change of the development set updates both.
+ENGINE_CASES = 20
+
 #: The engines evaluated on free tiers.
 HOSTED = frozenset(CONFIGURATIONS)
 

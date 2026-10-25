@@ -32,7 +32,14 @@ class Clock:
 
 
 def quota(clock=None, limit=20, project=PROJECT, timeout=2.0) -> DailyQuota:
-    return DailyQuota(project, limit, PACIFIC, now=clock or Clock(), lock_timeout=timeout)
+    return DailyQuota(
+        project,
+        limit,
+        PACIFIC,
+        model="gemini-3.8-flash",
+        now=clock or Clock(),
+        lock_timeout=timeout,
+    )
 
 
 def held() -> dict:
@@ -158,22 +165,22 @@ class TestTheDeclaration:
     def test_a_full_run_starts_only_on_a_day_with_nothing_used(self):
         book = quota()
         book.declare(0)
-        book.admit_full_run()
+        book.admit_full_run(20)
 
         book.take()
         with pytest.raises(QuotaRefused, match="full run"):
-            book.admit_full_run()
+            book.admit_full_run(20)
 
     def test_a_full_run_is_refused_when_requests_were_already_used(self):
         book = quota()
         book.declare(1)
 
         with pytest.raises(QuotaRefused, match="full run"):
-            book.admit_full_run()
+            book.admit_full_run(20)
 
     def test_a_full_run_is_refused_on_an_undeclared_day(self):
         with pytest.raises(QuotaRefused, match="not declared"):
-            quota().admit_full_run()
+            quota().admit_full_run(20)
 
 
 class TestRefusals:
@@ -196,7 +203,7 @@ class TestRefusals:
         clock.now = NOON - 60
 
         with pytest.raises(QuotaRefused, match="clock"):
-            book.admit_full_run()
+            book.admit_full_run(20)
 
     def test_a_clock_gone_back_refuses_a_declaration(self):
         clock = Clock()
