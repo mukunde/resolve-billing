@@ -23,9 +23,9 @@ committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 3: A4's infrastructure -- checkpoint
 
-- [ ] T020 `tests/e2e/_persistent_fake.py` and its tests,
+- [x] T020 `tests/e2e/_persistent_fake.py` and its tests,
   `tests/unit/test_persistent_fake.py` (plan section 4).
-- [ ] T021 `tests/e2e/_launcher.py`; a check that the launched service uses
+- [x] T021 `tests/e2e/_launcher.py`; a check that the launched service uses
   the persistent fake (a write lands in the ledger).
 - [ ] T022 Codex reviews the persistent fake, the launcher and their tests
   before A4's scenario is written.
