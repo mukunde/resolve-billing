@@ -12,6 +12,8 @@ an assertion, not a result.
 | `claude-haiku-5-5_decision_v3_x5.json` | `decision_v3` | 2026-10-08 17:47 UTC | 14/19 *(worst of 5 runs; Haiku 5.5)* |
 | `claude-haiku-5-5_d10-before_x3.json` | `decision_v3` | 2026-10-25 | 28/34 *(worst of 3; Haiku 5.5, D10 before: `22e5932`)* |
 | `claude-haiku-5-5_d10-after_x3.json` | `decision_v3+masking_v1` | 2026-10-25 | 28/34 *(worst of 3; Haiku 5.5, D10 after: `d60b790`)* |
+| `claude-haiku-5-5_d10-cancellation-before_x10.json` | `decision_v3` | 2026-10-25 | *2 cases x 10 runs; D10 before* |
+| `claude-haiku-5-5_d10-cancellation-after_x10.json` | `decision_v3+masking_v1` | 2026-10-25 | *2 cases x 10 runs; D10 after* |
 
 The two D10 files measure the message masking, not the system's quality:
 the same model, case set and fixtures, on the commit before the masking and

@@ -197,12 +197,33 @@ Every case whose verdict moved, read:
   before, mostly `insufficient_information` after): no verdict gained or
   lost.
 
+**The cancellation cases, re-run (2026-10-25).** To settle
+`vague_but_scoped`, the maintainer had the two cancellation cases run ten
+more times on each side, alone (a two-case file taken from the same case
+set; same model; `claude-haiku-5-5_d10-cancellation-<before|after>_x10.json`,
+about $0.02 in all):
+
+| case | before (no masking) | after (masking) |
+|---|---|---|
+| `vague_but_scoped` | refund 10/10 | refund 4/10, credit note 6/10 |
+| `billed_after_cancellation` (control: nothing to mask) | refund 2/10, credit note 8/10 | refund 3/10, credit note 7/10 |
+
+With the first runs: `vague_but_scoped` took a refund 13 times out of 13
+without the masking, 4 out of 13 with it, while the control case, which the
+masking leaves untouched, did not move. **The `vague_but_scoped` change is
+the masking's**: with its invoice reference replaced by the context's alias,
+the case behaves as the control does. What that shows is a weakness of the
+engine, not of the masking: on a cancelled subscription, Haiku 5.5 mostly
+chooses a credit note where `decision_v3` requires a refund (no future
+invoice can absorb a credit note) -- and the raw reference happened to steer
+it right in one case. That belongs to prompt v4. No verdict on these 40 runs
+was unsafe: the action is held for a person either way.
+
 **Reading.** A signal, read as such: the masking took nothing measurable from
-the engine on the development set -- the same total, and no unsafe verdict
-with it -- while the instrument chosen on `vague_but_scoped` moved in the
-same runs, cause undetermined. Not a proof of equivalence: one model, three
-runs a side, 34 cases. A targeted re-run of the two cancellation cases on
-both sides would settle the `vague_but_scoped` question for a few cents.
+the engine overall -- the same total on the development set, and no unsafe
+verdict with it -- and changed one case's instrument, by removing a cue the
+prompt should not need. Not a proof of equivalence: one model, three runs a
+side on 34 cases, ten more on two.
 
 ## Acceptance
 
