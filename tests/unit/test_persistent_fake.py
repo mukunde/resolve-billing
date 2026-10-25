@@ -57,11 +57,23 @@ async def test_what_an_invoice_gave_back_caps_the_next_write_across_instances(tm
 async def test_two_live_instances_see_each_other_s_writes_before_writing(tmp_path):
     ledger = tmp_path / "ledger.json"
     first, second = PersistentFake(ledger), PersistentFake(ledger)
+    # The second plans before the first writes: only the write's own reload
+    # can show it the first one's credit note.
+    allocation = await second.plan_write(INVOICE, "credit_note")
 
     await credit(first, "key_1", amount=9900)
 
     with pytest.raises(ProviderRejected, match="left to correct"):
-        await credit(second, "key_2", amount=100, action_id="act_2")
+        await second.create_credit_note(
+            INVOICE,
+            100,
+            "EUR",
+            "duplicate",
+            "key_2",
+            action_id="act_2",
+            allocation=allocation,
+            send_by=datetime.now(UTC) + timedelta(hours=1),
+        )
     assert len(PersistentFake(ledger).writes()) == 1
 
 
