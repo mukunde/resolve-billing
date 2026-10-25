@@ -480,7 +480,7 @@ model has its own daily count.
 
 - **SC-006**: Tests show: the new configuration closed and its request equal
   to Flash's but for the model; two models of one project counting apart;
-  the legacy count adopted once by `gemini-3.8-flash` and no other; the
+  `gemini-3.8-flash` keeping its existing count file and lock, unmoved; the
   admission rule for both; three attempts and an outage escalating for
   Flash-Lite, one attempt and an outage stopping the run for Flash; Mistral
   and Flash otherwise unchanged.
