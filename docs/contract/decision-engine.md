@@ -102,7 +102,7 @@ evaluation runner selects from the same table plus the four configurations
   set of its time; the four configurations await their first runs.
 - The four configurations' reservations are estimates (the maintainer's
   waivers, 2026-10-24): the request's UTF-8 bytes plus a margin plus the
-  output cap, for all three, resting on tokenizers neither vendor
+  output cap, for all four, resting on tokenizers neither vendor
   documents. Each answer's reported usage is checked against them, and a
   run stops when it exceeds one.
 - Their vendors' terms, limits and models are as read on 2026-10-24, and

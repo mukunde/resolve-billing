@@ -230,7 +230,7 @@ subscription tier" (`tier_not_allowed`). Their two results are kept in
 version on 2026-07-31); Medium 3.5 is Mistral's designated replacement.
 
 **The maintainer's waivers (2026-10-24).** Reservations and costs are
-estimates, never guarantees: for all three, the request's UTF-8 bytes plus a
+estimates, never guarantees: for all four, the request's UTF-8 bytes plus a
 512-token margin plus the output cap (`utf8-bytes-v1`). Gemini's was first
 Google's count of the request; it became local the same day, since a counting
 request could spend the day's quota. For the two Medium 3.5, a reasoning
