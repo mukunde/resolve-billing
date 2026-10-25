@@ -464,8 +464,10 @@ model has its own daily count.
   by setting. `gemini-3.8-flash` stays as it is.
 - **FR-007b (amended)**: The daily count MUST be kept per Google project
   **and model**. The count already held for the project, written while
-  `gemini-3.8-flash` was the only Gemini configuration, is that model's:
-  adopted once as its count, never reset, never given to another model.
+  `gemini-3.8-flash` was the only Gemini configuration, is that model's and
+  stays where it is: no file is moved or renamed, nothing reset; every other
+  model counts in a file of its own (revised after review r188, which found
+  a migration racy).
 - **FR-007c (amended)**: A full run MUST start only if the day's remaining
   requests cover the cases that reach the engine (20, the pinned count)
   times the configuration's attempts: for `gemini-3.8-flash` (one attempt,

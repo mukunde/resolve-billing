@@ -598,13 +598,13 @@ change. `gemini-3.5-flash-lite`: `requests_per_second = 15 / 60`,
 
 ### C2. The daily count per model (`evals/quota.py`)
 
-`DailyQuota(project, model, limit, timezone)`: its state in
-`quota-<project>-<model>.json`, its lock beside it; the project id and the
-model id both checked before they name a file. **Adoption**: when the
-model is `gemini-3.8-flash` and its file does not exist while the legacy
-`quota-<project>.json` does, the legacy file is renamed to it, under the
-legacy lock, once; never for another model; an inconsistent legacy file is
-refused, never reset.
+`DailyQuota(project, model, limit, timezone)`: `gemini-3.8-flash` keeps
+the file it already counts in, `quota-<project>.json`, and its lock; every
+other model counts in `quota-<project>-<model>.json`, its lock beside it.
+No migration: nothing is moved, renamed or reset, so no race with a
+running or older runner (review r188). The project id and the model id are
+both checked before they name a file. Declarations, counts, `last_seen`,
+the undeclared-day and clock-rollback refusals are unchanged.
 
 ### C3. Admission (`evals/quota.py`, `evals/hosted_run.py`)
 
