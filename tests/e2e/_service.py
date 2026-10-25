@@ -78,9 +78,21 @@ def _environment(database: Path) -> dict[str, str]:
 class ServiceProcess:
     """One run of the service on `database`; a context manager."""
 
-    def __init__(self, database: Path, log: Path) -> None:
+    def __init__(
+        self,
+        database: Path,
+        log: Path,
+        *,
+        launcher: str | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> None:
         self.database = database
         self.log_path = log
+        #: A module run as `python -m <launcher> --port <port>` in place of
+        #: `uvicorn app.main:app`, for a service wired differently by a test.
+        self.launcher = launcher
+        #: Variables added to the environment built from scratch.
+        self.extra_env = dict(extra_env or {})
         self.process: subprocess.Popen | None = None
         self.port: int | None = None
         self._log = None
@@ -126,8 +138,8 @@ class ServiceProcess:
     def _spawn(self) -> None:
         self._log = open(self.log_path, "ab")  # noqa: SIM115 -- closed in reap
         flags = subprocess.CREATE_NEW_PROCESS_GROUP if WINDOWS else 0
-        self.process = subprocess.Popen(
-            [
+        if self.launcher is None:
+            command = [
                 sys.executable,
                 "-m",
                 "uvicorn",
@@ -139,9 +151,13 @@ class ServiceProcess:
                 "--workers",
                 "1",
                 "--no-access-log",
-            ],
+            ]
+        else:
+            command = [sys.executable, "-m", self.launcher, "--port", str(self.port)]
+        self.process = subprocess.Popen(
+            command,
             cwd=REPOSITORY,
-            env=_environment(self.database),
+            env=_environment(self.database) | self.extra_env,
             stdout=self._log,
             stderr=subprocess.STDOUT,
             creationflags=flags,

@@ -13,13 +13,13 @@ committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 1: The harness
 
-- [ ] T001 `tests/e2e/_service.py`: a `launcher` option and `extra_env`,
+- [x] T001 `tests/e2e/_service.py`: a `launcher` option and `extra_env`,
   the A1 behaviour unchanged (A1's tests still pass).
 
 ## Phase 2: A2 and A3
 
-- [ ] T010 `tests/e2e/test_restart_expired_approval.py` (plan section 2).
-- [ ] T011 `tests/e2e/test_restart_repeated_delivery.py` (plan section 3).
+- [x] T010 `tests/e2e/test_restart_expired_approval.py` (plan section 2).
+- [x] T011 `tests/e2e/test_restart_repeated_delivery.py` (plan section 3).
 
 ## Phase 3: A4's infrastructure -- checkpoint
 
