@@ -199,10 +199,14 @@ and amount, never edited) and the attempts.
 - **Reserving**: tokens reserved × the highest rate of the configuration
   (input side or output), on disk under the lock, before sending. An
   attempt beyond what remains stops the run.
-- **Settling**, from `Answer`: when the details are reported, cached
-  tokens at the cached rate, cache writes at their rate, and the rest of
-  `input_tokens` at the input rate; when they are not, all of
-  `input_tokens` at the highest input-side rate (cache write). All of
+- **Settling**, from `Answer`: each input category is priced at its rate
+  only when it is reported -- cached tokens at the cached rate, cache
+  writes at theirs. An absent category is never read as zero. When every
+  priced category is reported, the remainder of `input_tokens` is at the
+  input rate; when any is absent, the unclassified remainder is at the
+  highest input-side rate that may apply (cache write). Categories summing
+  above `input_tokens`, or reasoning above `output_tokens`, make the usage
+  inconsistent: the reservation stays spent and the run stops. All of
   `output_tokens`, reasoning included, at the output rate; reasoning is
   never priced a second time. Missing totals keep the reservation spent.
   Unreadable or inconsistent ledgers are refused, never reset.

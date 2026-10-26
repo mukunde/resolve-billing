@@ -77,7 +77,10 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   from two processes against one remaining balance admit at most what it
   covers; a declaration never lowers the total, never erases spending or
   earlier declarations; settlement by category without double counting,
-  and at the cache-write rate when details are missing; unreadable or
+  at the cache-write rate for the unclassified remainder when any detail is
+  missing (cached reported without cache writes, and the reverse), and an
+  inconsistent breakdown (categories above the input total, reasoning
+  above the output total) keeping the reservation and stopping the run; unreadable or
   inconsistent refused, never reset; two keys and two projects of one
   organisation share one ledger,
   two organisations keep two; USD and EUR apart; the free tier never
