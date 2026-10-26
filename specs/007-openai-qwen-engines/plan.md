@@ -70,8 +70,18 @@ is written:
   `store` false, usage with reasoning). Otherwise the OpenAI client uses
   Responses, still behind the same `_complete` hook.
 
-A point the documentation does not settle **blocks the client it
-concerns**; it is never assumed.
+Two kinds of point:
+
+- **Must be settled** before the client it concerns is written: the call
+  and its parameters, the schema mode, how reasoning is set, usage fields
+  and what totals include, finish reasons and refusals, the returned
+  model string, errors, retries off, the base URL. One left open blocks
+  that client; it is never assumed.
+- **May stay unknown**, as the approved spec allows, recorded as unknown
+  and never claimed: Scaleway's serverless quantisation (FR-003), whether
+  Qwen's reasoning counts toward the cap (FR-006b; the
+  usage-above-reservation stop bounds it), whether the vendor enforces
+  the declared account (section 4).
 
 ### 2. Configurations (`app/decision/hosted.py`)
 
@@ -79,8 +89,8 @@ concerns**; it is never assumed.
 `False`, so that the four existing configurations keep their values:
 
 - `currency` (`"USD"`, `"EUR"`);
-- `input_side_price_per_mtok`, the highest input-side rate (OpenAI's
-  cache-write rate);
+- `cached_input_price_per_mtok` and `cache_write_price_per_mtok`, where
+  the vendor prices them (OpenAI);
 - `processing_location`;
 - `quantisation`;
 - `account_variables`, the non-secret variables naming the account;
@@ -100,8 +110,8 @@ The three new configurations:
 - **`gpt-6-luna` and `gpt-6.1-sol`**: vendor `openai`, developer OpenAI,
   endpoint `https://api.openai.com/v1`, key `OPENAI_API_KEY`, account
   `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, prices in USD (luna 0.10 / 0.50,
-  input side 0.125; sol 2 / 10, input side 2.50), location "global, no
-  regional commitment".
+  cached 0.01, cache write 0.125; sol 2 / 10, cached 0.10, cache write
+  2.50), location "global, no regional commitment".
 - **`qwen3.5-397b-a17b`**: vendor `scaleway`, developer Alibaba (Qwen),
   endpoint per T010, key `SCALEWAY_API_KEY`, account
   `SCALEWAY_ORGANIZATION_ID` (and the project, if the endpoint needs it),
@@ -142,10 +152,22 @@ read. Then:
   reservation and stops the run).
 
 The client is built with the key, the base URL and, for OpenAI, the
-declared organisation and project. A key that does not belong to them is
-refused by the vendor: the declaration is checked, not assumed (T010
-confirms the behaviour). `app/decision/vendors.py` routes `openai` and
+declared organisation and project, sent as the SDK's organisation and
+project headers. A test proves the headers are sent; whether OpenAI
+refuses a key that does not belong to them is a server behaviour T010
+looks for in the documentation. If it is documented, the declaration is
+said to be checked by the vendor; if not, it is recorded as the
+maintainer's declaration, as Gemini's project is today. Scaleway's key
+belongs to one project of one organisation; the declared organisation id
+is the maintainer's declaration, bound to the key by no request field
+unless T010 finds one. `app/decision/vendors.py` routes `openai` and
 `scaleway` to it.
+
+`Answer` gains optional usage details, `None` unless a client sets them,
+so the existing clients are unchanged: `cached_input_tokens`,
+`cache_write_tokens` (both included in `input_tokens`, as OpenAI reports
+them) and `reasoning_tokens` (included in `output_tokens`). They are
+recorded, never added a second time.
 
 ### 4. Account identity (`evals/accounts.py`, used by first calls, locks and ledgers)
 
@@ -177,12 +199,13 @@ and amount, never edited) and the attempts.
 - **Reserving**: tokens reserved × the highest rate of the configuration
   (input side or output), on disk under the lock, before sending. An
   attempt beyond what remains stops the run.
-- **Settling**: prompt tokens at the input rate, cached ones at the cached
-  rate only when reported as such, cache writes at their rate, and any
-  input not broken down at the input-side rate; completion tokens,
-  reasoning included, at the output rate. Missing usage keeps the
-  reservation spent. Unreadable or inconsistent ledgers are refused, never
-  reset.
+- **Settling**, from `Answer`: when the details are reported, cached
+  tokens at the cached rate, cache writes at their rate, and the rest of
+  `input_tokens` at the input rate; when they are not, all of
+  `input_tokens` at the highest input-side rate (cache write). All of
+  `output_tokens`, reasoning included, at the output rate; reasoning is
+  never priced a second time. Missing totals keep the reservation spent.
+  Unreadable or inconsistent ledgers are refused, never reset.
 - **Scaleway's free million tokens** is never deducted.
 
 `Governed` takes either ledger through one small interface (reserve,
