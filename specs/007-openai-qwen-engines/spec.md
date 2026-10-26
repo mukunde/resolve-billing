@@ -79,7 +79,7 @@ the maintainer; ADR-009's model-provider row amended.
   - Structured outputs with a JSON schema are offered for every model in
     the library; "accuracy may vary between models".
   - Data: a zero-data-retention policy by default. Full request content
-    is kept "for up to two weeks" when a request triggers an HTTP 500 or
+    may be retained "for up to two weeks" when a request triggers an HTTP 500 or
     harms the service, and when traffic may be malicious (no duration
     given). Inputs are not used to train base models, and are not
     accessible to the models' creators. Prompt caching is automatic,
@@ -228,9 +228,10 @@ end written incomplete with a non-zero exit.
   region, API, key variable, temperature (the vendor's default, recorded),
   output cap, reasoning setting, the strict verdict schema, `store` false
   for OpenAI, prices with source and date, limits with source and date,
-  attempts, and quantisation as the host's catalogue lists it for the
-  serverless configuration (`int4` for `qwen3.5-397b-a17b`; unknown where
-  not listed). No alias, no fallback.
+  attempts, and quantisation only where the plan's documentation check
+  finds it stated for the serverless configuration (the catalogue lists
+  `int4` for `qwen3.5-397b-a17b`); otherwise recorded as unknown. No
+  alias, no fallback.
 - **FR-004**: The shared core MUST be reused as it stands: `anonymise`,
   `mask_message`, local validation against the closed classification,
   references mapped back and those not issued dropped, an unusable answer
@@ -256,12 +257,15 @@ end written incomplete with a non-zero exit.
   The envelope is admission accounting, not a billing cap: the vendor's
   prepaid credit or console is the account's figure.
 - **FR-006a**: Each vendor account MUST be named by a stable, non-secret
-  identity the maintainer declares -- the OpenAI organisation and project
-  ids, the Scaleway organisation id -- in the way `GEMINI_QUOTA_PROJECT`
-  names a Google project. The envelope, the account lock, the pacing and
-  the first-call acceptance are kept per declared account, never per key:
-  rotating or adding a key never replenishes an envelope. Tests: two keys
-  of one account spend one envelope; two accounts keep two.
+  identity the maintainer declares, in the way `GEMINI_QUOTA_PROJECT`
+  names a Google project: the billing organisation (OpenAI's organisation
+  id, Scaleway's organisation id), and for OpenAI the project the key
+  belongs to. The envelope and the account lock are kept per billing
+  organisation, the one that holds the prepaid balance; the pacing and the
+  first-call acceptance per project where the vendor scopes limits to
+  projects. Never per key: rotating or adding a key never replenishes an
+  envelope. Tests: two keys of one organisation, and two projects of one
+  organisation, spend one envelope; two organisations keep two.
 - **FR-006b**: Reservations and costs MUST be estimates, under the
   maintainer's explicit acceptance given with this specification,
   extending his spec 004 waiver to these two vendors: no vendor documents
