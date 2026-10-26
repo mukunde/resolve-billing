@@ -8,7 +8,7 @@ import pytest
 
 from app.api import deps
 from app.decision.hosted import CONFIGURATIONS, Configuration, configuration
-from evals import first_calls, state
+from evals import state
 from evals.first_calls import FirstCalls, fingerprint
 
 #: The four existing configurations' fingerprints, computed on `main`
@@ -52,6 +52,21 @@ SPEC_004_FIELDS = {
 
 NEW = ("gpt-6-luna", "gpt-6.1-sol", "qwen3.5-397b-a17b")
 
+KEYS = {"gemini": "gemini-key-set-by-the-test", "mistral": "mistral-key-set-by-the-test"}
+
+
+def legacy_identity(name: str) -> dict:
+    """An account identity as spec 004 wrote it -- the first 12 hex digits
+    of the key's SHA-256, and the Gemini project -- built here, not by the
+    code under test."""
+    import hashlib
+
+    vendor = name.split("-")[0]
+    identity = {"key": hashlib.sha256(KEYS[vendor].encode("utf-8")).hexdigest()[:12]}
+    if vendor == "gemini":
+        identity["project"] = "resolve-billing-eval"
+    return identity
+
 
 class TestTheExistingFourDoNotMove:
     @pytest.mark.parametrize("name", sorted(PINNED))
@@ -83,13 +98,12 @@ class TestTheExistingFourDoNotMove:
         for name, value in PINNED.items():
             evidence = tmp_path / f"{name}.json"
             evidence.write_text("{}", encoding="utf-8")
-            config = configuration(name)
             records[name] = {
                 "accepted_at": "2026-10-25T00:00:00+00:00",
                 "model_version": "v",
                 "result": str(evidence.resolve()),
                 "result_sha256": __import__("hashlib").sha256(b"{}").hexdigest(),
-                "account": first_calls.account(config),
+                "account": legacy_identity(name),
                 "fingerprint": value,
             }
         state.STATE_DIR.mkdir(parents=True, exist_ok=True)

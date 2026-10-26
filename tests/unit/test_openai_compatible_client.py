@@ -304,6 +304,34 @@ class TestTheAnswer:
 
         assert decision.recommended_action.value == "escalate"
 
+    async def test_a_200_that_is_not_json_is_unreadable(self):
+        luna, _ = engine(
+            "gpt-6-luna",
+            httpx2.Response(
+                200,
+                content=f"{{not json {SENTINEL}".encode(),
+                headers={"content-type": "application/json"},
+            ),
+        )
+
+        answer = await luna._complete("s", "u")
+
+        assert answer.finish == "other"
+        assert "response_unreadable" in answer.notes
+        assert SENTINEL not in repr(answer)
+
+    async def test_no_choices_keeps_the_usage_and_its_details(self):
+        body = completion()
+        body["choices"] = []
+        luna, _ = engine("gpt-6-luna", body)
+
+        answer = await luna._complete("s", "u")
+
+        assert answer.finish == "other"
+        assert (answer.input_tokens, answer.output_tokens) == (900, 140)
+        assert (answer.cached_input_tokens, answer.cache_write_tokens) == (100, 50)
+        assert answer.reasoning_tokens == 40
+
     async def test_a_malformed_200_is_unreadable_its_text_not_kept(self):
         luna, _ = engine("gpt-6-luna", httpx2.Response(200, json={"choices": SENTINEL, "model": 3}))
 
@@ -362,8 +390,9 @@ class TestErrors:
 
 
 class TestNothingLeaks:
-    async def test_no_key_vendor_text_or_reasoning_in_the_logs(self, caplog):
-        caplog.set_level(logging.DEBUG)
+    async def test_no_key_vendor_text_or_reasoning_in_logs_or_output(self, caplog, capsys):
+        for name in ("openai", "httpx2", "httpx", ""):
+            caplog.set_level(logging.DEBUG, logger=name)
         qwen, _ = engine(
             "qwen3.5-397b-a17b",
             completion(model="qwen3.5-397b-a17b", reasoning_content=REASONING),
@@ -372,9 +401,19 @@ class TestNothingLeaks:
         rejected, _ = engine("gpt-6-luna", httpx2.Response(400, json={"error": SENTINEL}))
         with pytest.raises(EngineRejected):
             await rejected._complete("s", "u")
+        unreadable, _ = engine(
+            "gpt-6-luna", httpx2.Response(200, json={"choices": SENTINEL, "error": REASONING})
+        )
+        await unreadable._complete("s", "u")
 
+        # A positive control: the SDK's own debug records were captured.
+        assert any(
+            r.name.startswith("openai") and r.levelno == logging.DEBUG for r in caplog.records
+        )
+        out = capsys.readouterr()
         for secret in (KEY, SENTINEL, REASONING):
             assert secret not in caplog.text
+            assert secret not in out.out + out.err
 
 
 class TestThePinnedSdk:

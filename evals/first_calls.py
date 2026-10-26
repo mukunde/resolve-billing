@@ -28,7 +28,7 @@ import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import MISSING, asdict, fields
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -58,16 +58,35 @@ def fingerprint(config: Configuration) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+#: The fields added after spec 004, with the value the spec 004
+#: configurations hold. Fixed here, not read from the dataclass: a later
+#: change of a default must move a fingerprint, never pass unseen.
+ADDED_SINCE_SPEC_004 = {
+    "currency": None,
+    "cached_input_price_per_mtok": None,
+    "cache_write_price_per_mtok": None,
+    "processing_location": None,
+    "quantisation": None,
+    "reasoning_note": None,
+    "account_variables": [],
+    "store": None,
+    "check_identity": False,
+}
+
+
 def _shaping(config: Configuration) -> dict:
-    """The configuration's fields, leaving out those that hold their default:
-    only fields added after spec 004 have one, so the four configurations
-    of spec 004 keep the fingerprint their first calls were accepted on."""
-    defaults = {f.name: f.default for f in fields(config) if f.default is not MISSING}
+    """The configuration's fields, leaving out a field added after spec 004
+    while it holds the value spec 004's configurations have: those four
+    keep the fingerprint their first calls were accepted on."""
     return {
         name: value
         for name, value in asdict(config).items()
-        if name not in defaults or value != defaults[name]
+        if name not in ADDED_SINCE_SPEC_004 or _listed(value) != ADDED_SINCE_SPEC_004[name]
     }
+
+
+def _listed(value):
+    return list(value) if isinstance(value, tuple) else value
 
 
 def account(config: Configuration) -> dict:

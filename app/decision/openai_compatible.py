@@ -23,6 +23,7 @@ never read. Imported by the evaluation runner only.
 
 from __future__ import annotations
 
+import json
 import os
 
 from app.decision.base import EngineRejected, EngineUnavailable
@@ -122,16 +123,16 @@ def _answer(response) -> Answer:
         written = _detail(usage, "prompt_tokens_details", "cache_write_tokens")
         reasoning = _detail(usage, "completion_tokens_details", "reasoning_tokens")
     version = getattr(response, "model", None)
-    choices = getattr(response, "choices", None) or []
-    if not choices:
-        return Answer(None, "other", input_tokens, output_tokens, version)
-    choice = choices[0]
-    message = choice.message
     details = {
         "cached_input_tokens": cached,
         "cache_write_tokens": written,
         "reasoning_tokens": reasoning,
     }
+    choices = getattr(response, "choices", None) or []
+    if not choices:
+        return Answer(None, "other", input_tokens, output_tokens, version, **details)
+    choice = choices[0]
+    message = choice.message
     if getattr(message, "refusal", None):
         # The model declined: unusable, and its words are not kept.
         return Answer(None, "filtered", input_tokens, output_tokens, version, **details)
@@ -165,9 +166,11 @@ def _translated(error: Exception) -> Exception | None:
 
 
 def _unreadable(error: Exception) -> bool:
+    """A response the SDK could not read: not of its types (strict
+    validation), or not JSON at all where JSON was announced."""
     import openai
 
-    return isinstance(error, openai.APIResponseValidationError)
+    return isinstance(error, openai.APIResponseValidationError | json.JSONDecodeError)
 
 
 def build_client(config: Configuration, http_client=None):
