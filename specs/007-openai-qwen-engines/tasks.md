@@ -44,8 +44,15 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 - [ ] T030 Test first, `tests/unit/test_vendor_clients.py`: on SDK-shaped
   stubs, per vendor, the exact request (model, messages from the shared
   core, strict schema, reasoning effort, cap parameter, `store` false for
-  OpenAI and absent for Scaleway, retries off, organisation and project for
-  OpenAI); the final content read, reasoning content dropped and never
+  OpenAI and absent for Scaleway, `strict` in OpenAI's `json_schema` and
+  absent from Scaleway's, retries off, strict response validation on,
+  organisation and project for OpenAI); `OPENAI_CUSTOM_HEADERS` and
+  `OPENAI_LOG` refused before any client; on a network-free transport, for
+  both vendors, the headers actually sent: the configured key alone as
+  authorisation, no OpenAI account header (any case) on Scaleway's
+  requests, no arbitrary header from the environment; a malformed HTTP-200
+  body through the real SDK read as unreadable, reservation kept, no vendor
+  text kept; the final content read, reasoning content dropped and never
   kept; refusal, `length`, filter and empty answers unusable; usage read
   only from fields set, with its details; the returned model recorded;
   errors by category (429 and 5xx with `Retry-After`, other 4xx as status
@@ -115,6 +122,10 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   and the remaining credit or free-tier balance; put keys and account ids
   in his `.env`. The limits are pinned in the configurations with source
   and date, in a commit of their own, reviewed.
+- [ ] T060a **[maintainer]** Decide whether to add a payment method to the
+  Scaleway account (its base rate limits apply with one; billing beyond the
+  free million tokens is automatic). Without it, the Scaleway first call
+  waits; OpenAI goes on.
 - [ ] T061 **[maintainer]** One first call per configuration
   (`--first-call-only`, `--data-terms contractual`, `--envelope` on the
   account's first run: $5 OpenAI, €2 Scaleway). A first call not accepted

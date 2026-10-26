@@ -279,7 +279,19 @@ Read 2026-10-26 from the official pages named, the pinned SDK's sources
     OpenAI headers (`default_headers` with `Omit()` for
     `OpenAI-Organization` and `OpenAI-Project`); otherwise OpenAI's ids
     would reach Scaleway. A test pins it on a network-free transport.
+  - It also reads `OPENAI_CUSTOM_HEADERS` (headers merged into every
+    request, able to override authentication or the account headers) and
+    `OPENAI_LOG` (debug logging of requests). The runner refuses to build
+    either client while either variable is set, before any client is
+    built; a test sets each and checks the refusal.
   - Retries are off with `max_retries=0`.
+  - Responses are read permissively by default
+    (`_strict_response_validation=False`): a malformed HTTP-200 body would
+    be accepted. The client passes `_strict_response_validation=True`, so
+    a body not matching the SDK's types raises
+    `APIResponseValidationError`. That error is an unreadable answer: the
+    reservation stays spent, the run stops, and no vendor text is kept.
+    Tested through the real SDK on a network-free transport.
   - Errors: `APIStatusError` (`status_code`, `response`; subclasses
     include `RateLimitError` and `AuthenticationError`), `APIConnectionError`
     and its `APITimeoutError` subclass, and `APIResponseValidationError` for
@@ -311,11 +323,16 @@ Read 2026-10-26 from the official pages named, the pinned SDK's sources
   - Base URL `https://api.scaleway.ai/{project_id}/v1`. The project id is
     optional ("your default Project" otherwise) and is sent explicitly
     from `SCALEWAY_PROJECT_ID`. Bearer secret key.
-  - Parameters `max_completion_tokens` (`max_tokens` deprecated),
+  - Parameters `max_completion_tokens` (`max_tokens` deprecated) and
     `reasoning_effort` (`none`, `low`, `medium`, `high`; default
-    `medium`), and `response_format` `json_schema` with `strict`, "only
-    `true` is supported". `store` is listed as **not supported**, so it is
-    not sent.
+    `medium`). For chat completions, `response_format` `{"type":
+    "json_schema", "json_schema": {...}}` "enables the model to output only
+    a valid JSON following the provided schema"; the structured-outputs
+    how-to passes `name` and `schema` inside `json_schema`, with no `strict`
+    flag. Scaleway's request therefore carries `name` and `schema` only.
+    The "only `true` is supported" text belongs to the Responses format,
+    not to chat completions. `store` is listed as **not supported**, so it
+    is not sent.
   - Response: `message.content` and `message.reasoning_content` (dropped,
     never kept), `finish_reason` among `stop`, `length`, `tool_calls`, and
     `model`.
@@ -326,7 +343,8 @@ Read 2026-10-26 from the official pages named, the pinned SDK's sources
     listed, so all input is priced at the input rate.
   - **For `qwen3.5-397b-a17b`, "`low` and `high` values are similar to
     `medium`"**: the configuration sends `low` as the spec says, and
-    records that the host treats it as `medium`.
+    records the requested value with the host's qualification, quoted. It
+    does not claim that `low` is mapped exactly to `medium`.
   - Rate limits are per organisation, shared by all projects. They apply
     "once you have a valid payment method", and the figures are on the
     organisation's quotas page (T060). An exceeded limit returns
@@ -351,6 +369,9 @@ Read 2026-10-26 from the official pages named, the pinned SDK's sources
 
 ### For the maintainer (T060)
 
-Scaleway applies its rate limits only with a valid payment method on the
-account. The free tier and the €2 envelope both assume one. Adding it is
-his decision, made in his console, before the first call.
+Scaleway's documentation says its base rate limits apply "once you have
+a valid payment method"; it does not say that no access exists without
+one. Approving the €2 envelope (accounting) is not approving a payment
+method or automatic billing beyond the free tier. Before Scaleway's
+first call, the maintainer decides whether to add a payment method, in
+his console (T060a). If he declines, the Scaleway configuration waits.
