@@ -246,10 +246,15 @@ regenerated in the same commit.
 efforts) -- run the same
 prompt, payload and schema as Claude, from the evaluation runner only and on
 the development cases only, held to their vendors' free limits and, for
-Mistral, a monthly envelope kept on disk. Their scores are regression scores
+Mistral, a monthly envelope kept on disk. Three more -- `gpt-6-luna` and
+`gpt-6.1-sol` (OpenAI), `qwen3.5-397b-a17b` (Alibaba's model, served by
+Scaleway in Paris) -- run the same way on prepaid accounts, each held to
+an envelope per billing organisation and to its model's identity on every
+answer; their runs are integration runs, before the choice of a deployment
+model. Their scores are regression scores
 on development cases, stored and listed apart
-([`evals/results/README.md`](evals/results/README.md)); none is published
-yet. How to run them: [`docs/operations.md`](docs/operations.md#the-engines-evaluated-on-free-tiers).
+([`evals/results/README.md`](evals/results/README.md)). How to run them:
+[`docs/operations.md`](docs/operations.md#the-engines-evaluated-on-free-tiers).
 
 **Blind holdout.** A holdout is written by a model of another family than
 the engine, every label adjudicated by hand, never run in CI and never tuned

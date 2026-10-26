@@ -354,6 +354,84 @@ defect in the code stops the run too: the result is written with
 Mistral's cost in the file is an estimate; the console's usage is the
 account's figure.
 
+### The engines on prepaid accounts
+
+`gpt-6-luna`, `gpt-6.1-sol` (OpenAI) and `qwen3.5-397b-a17b` (Scaleway,
+Paris) (specs/007-openai-qwen-engines) run like the free-tier engines above
+-- the runner only, `evals/cases.json` only, never in CI, the same
+`engines` extra, a first call before the full run, `--data-terms` required
+-- with three differences.
+
+**The account is declared.** Besides the key, `.env` names the account by
+its non-secret ids: `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`;
+`SCALEWAY_ORGANIZATION_ID` and `SCALEWAY_PROJECT_ID` (Scaleway's project
+goes in the request's address). The run lock and the envelope belong to the
+billing organisation, a first call's acceptance to the project; a key
+changes none of them, so rotating a key never refills an envelope. Whether
+the vendor checks these ids against the key is not documented: they are
+the maintainer's declaration. The runner refuses to start while
+`OPENAI_CUSTOM_HEADERS` or `OPENAI_LOG` is set (the SDK would apply them to
+every request).
+
+**An envelope per billing organisation**, in its currency, in
+`~/.resolve-billing/envelope-<vendor>-<organisation>.json`. Declared on the
+account's first run with `--envelope` (dollars for OpenAI, euros for
+Scaleway); a later `--envelope` only raises it, recorded beside the earlier
+figure. Each attempt reserves its maximum cost before it is sent -- every
+reserved token at the highest rate that may apply -- and is settled at its
+reported usage, category by category: cached and cache-write tokens at
+their rates when reported, the rest of the input at the input rate (at the
+cache-write rate when a priced detail is missing), output with reasoning at
+the output rate. An attempt the envelope cannot cover is not sent and stops
+the run. Scaleway's free million tokens is never deducted: its console is
+the account's figure. These costs are estimates, under the maintainer's
+waiver extended to these vendors (spec 007, FR-006b).
+
+**The model's identity on every answer.** An answer that names another
+model, or none, stops the run after its cost is settled; it is never
+scored, and the name it gave is recorded if it reads as a model id.
+
+Before the first call, the maintainer reads each account's limits in its
+console and pins them in the configurations (they are provisional until
+then), and decides whether to add a payment method to Scaleway: its base
+rate limits apply with one, and billing beyond the free tier is automatic.
+OpenAI's first calls, then the full runs:
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --data-terms contractual --envelope 5 --first-call-only --json evals/results/gpt-6-luna.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gpt-6.1-sol --data-terms contractual --first-call-only --json evals/results/gpt-6.1-sol.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --data-terms contractual --json evals/results/gpt-6-luna.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gpt-6.1-sol --data-terms contractual --json evals/results/gpt-6.1-sol.json
+```
+
+Scaleway's:
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine qwen3.5-397b-a17b --data-terms contractual --envelope 2 --first-call-only --json evals/results/qwen3.5-397b-a17b.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine qwen3.5-397b-a17b --data-terms contractual --json evals/results/qwen3.5-397b-a17b.json
+```
+
+**Reading one.** Beyond the free-tier fields, the result carries the
+declared account ids (never a key or its fingerprint), each attempt's
+reported usage with its details, and a cost block: the settled amount and
+its currency, and apart from it the attempts whose cost is unknown (an
+answer without usage, an interruption) at their reserved maximum -- the
+run's cost is complete only when there are none. It is labelled an
+**integration run**: spec 008's comparison uses fresh runs under a
+protocol declared before them.
+
 ### Reconciling what we estimated against what we were billed
 
 ```bash

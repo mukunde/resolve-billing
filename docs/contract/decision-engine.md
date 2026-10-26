@@ -2,7 +2,8 @@
 
 What any engine behind the `DecisionEngine` port must do, and what the rest of
 the system may rely on. Written on 2026-10-24 from the existing records;
-specs/004-second-engines folded in the same day. Reasons are in ADR-002 (the engine is
+specs/004-second-engines folded in the same day, and
+specs/007-openai-qwen-engines on 2026-10-26. Reasons are in ADR-002 (the engine is
 a deployment choice), ADR-003 (deterministic before probabilistic), ADR-006
 (no agent loop) and ADR-009 (what a model provider receives).
 
@@ -10,7 +11,7 @@ The service runs two engines: the **mock**, deterministic and free, the
 default and what CI and the demo run on; and **Claude**, through the
 Messages API, selected with `DECISION_ENGINE=claude` and an Anthropic key.
 Four more configurations exist for the evaluation runner alone, on free
-tiers (below).
+tiers, and three on prepaid accounts (below).
 
 ## What the system relies on
 
@@ -86,11 +87,39 @@ source.
   but `evals/cases.json` at its committed hash, or with extra fixtures
   configured (contract: evaluation).
 
+## The engines evaluated on prepaid accounts
+
+`gpt-6-luna` and `gpt-6.1-sol` (OpenAI's API), and `qwen3.5-397b-a17b`
+(a model Alibaba developed, served by Scaleway's OpenAI-compatible API in
+Paris), closed configurations in `app/decision/hosted.py` like the four
+above, through one client, `app/decision/openai_compatible.py`, with what
+differs by vendor kept there.
+
+- **What the free-tier engines guarantee, they guarantee**, with reasoning
+  at `low` for all three (the same label, not a proven equal budget;
+  Scaleway documents that for this Qwen `low` is "similar to `medium`",
+  recorded with the configuration) and the output cap sent as
+  `max_completion_tokens`.
+- **Every setting passed, none left to the environment.** The address, the
+  key and the declared account are passed to the SDK; OpenAI's requests
+  carry the declared organisation and project and ask not to be stored
+  (`store` false); Scaleway's carry its project in the address and never
+  OpenAI's account headers. Extra headers or request logging from the
+  environment (`OPENAI_CUSTOM_HEADERS`, `OPENAI_LOG`) are refused before a
+  client is built.
+- **Read strictly.** A response that does not match the SDK's types, or is
+  not JSON, is an unreadable answer: no verdict, its usage unknown. A
+  refusal's text and reasoning text are never read or kept.
+- **Usage with its details.** Cached, cache-write and reasoning tokens are
+  read when reported, as parts of the totals, never added to them; a detail
+  not reported stays missing.
+- **Failures by kind, as above.**
+
 ## Selection
 
 `app/api/deps.py` names the engines the service may run (`ENGINES`: mock,
 claude); `DECISION_ENGINE` chooses one, and an unknown name is refused. The
-evaluation runner selects from the same table plus the four configurations
+evaluation runner selects from the same table plus the seven configurations
 (`evals/engines.py`).
 
 ## Not guaranteed today
@@ -98,15 +127,24 @@ evaluation runner selects from the same table plus the four configurations
 - That a self-reported confidence means anything: no engine is calibrated.
 - Masking is by pattern: other people's names, free text and unusual formats
   pass (ADR-009).
-- Only Claude has been measured among real models, last on the development
-  set of its time; the four configurations await their first runs.
-- The four configurations' reservations are estimates (the maintainer's
-  waivers, 2026-10-24): the request's UTF-8 bytes plus a margin plus the
-  output cap, for all four, resting on tokenizers neither vendor
-  documents. Each answer's reported usage is checked against them, and a
+- Real models measured on the development set: Claude, and Gemini 3.5
+  Flash-Lite (one full run, 2026-10-25, `evals/results/README.md`);
+  Flash's full run and the three prepaid configurations' runs are still to
+  come.
+- The seven configurations' reservations are estimates (the maintainer's
+  waivers, 2026-10-24, extended to the prepaid vendors on 2026-10-26): the
+  request's UTF-8 bytes plus a margin plus the output cap, resting on
+  tokenizers no vendor documents. Each answer's reported usage is checked against them, and a
   run stops when it exceeds one.
-- Their vendors' terms, limits and models are as read on 2026-10-24, and
-  change without notice.
+- Their vendors' terms, limits and models are as read on 2026-10-24
+  (2026-10-26 for OpenAI and Scaleway), and change without notice.
+- For the three on prepaid accounts: whether the vendor honours a
+  requested setting (reasoning, `store`, the schema) is often not
+  observable in the answer; whether it checks the declared account against
+  the key is not documented; the served quantisation is as Scaleway's
+  catalogue lists it; whether Qwen's reasoning counts toward the output cap
+  is not documented. Their limits are provisional until the maintainer
+  reads his consoles.
 
 ## Covered by
 
@@ -114,4 +152,6 @@ evaluation runner selects from the same table plus the four configurations
 `tests/unit/test_claude_refusal.py`, `tests/unit/test_engine_refusal.py`,
 `tests/unit/test_masking.py`, `tests/unit/test_action_policy.py`,
 `tests/unit/test_verdict.py`, `tests/unit/test_claude_pinned.py`,
-`tests/unit/test_hosted_engines.py`, `tests/unit/test_vendor_clients.py`.
+`tests/unit/test_hosted_engines.py`, `tests/unit/test_vendor_clients.py`,
+`tests/unit/test_openai_compatible_configurations.py`,
+`tests/unit/test_openai_compatible_client.py`.

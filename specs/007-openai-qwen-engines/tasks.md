@@ -12,7 +12,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 1: Research, pinned
 
-- [ ] T010 Plan "Research notes" (plan section 1): both vendors' chat
+- [x] T010 Plan "Research notes" (plan section 1): both vendors' chat
   completions on the three models, the pinned SDK's request and response
   shapes, usage and its details, finish reasons and refusals, the returned
   model string, errors, retries off, OpenAI's organisation and project
@@ -20,12 +20,12 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   and whether reasoning counts toward the output cap. An unsettled point
   blocks the client it concerns, except the approved unknowns (plan
   section 1), recorded as unknown. Codex reviews before Phase 3.
-- [ ] T011 `pyproject.toml`: `openai==3.29.0` in the extra `engines`; CI
+- [x] T011 `pyproject.toml`: `openai==3.29.0` in the extra `engines`; CI
   already installs it (no call, gates unchanged).
 
 ## Phase 2: Configurations and fingerprints
 
-- [ ] T020 Test first, `tests/unit/test_hosted_engines.py`: the four existing
+- [x] T020 Test first, `tests/unit/test_hosted_engines.py`: the four existing
   configurations' fingerprints pinned to their values on `main`; the three
   new configurations closed (exact ids, vendor, developer, endpoint, key and
   account variables, currency, prices with source and date, reasoning
@@ -35,13 +35,14 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   evidence files still admit the four existing configurations' full runs,
   Mistral's sibling requirement included; Mistral's existing ledger file
   still reads.
-- [ ] T021 `app/decision/hosted.py` (fields defaulted, three
+  *(Written in `tests/unit/test_openai_compatible_configurations.py`.)*
+- [x] T021 `app/decision/hosted.py` (fields defaulted, three
   configurations), `evals/first_calls.py` (defaults left out of the
   fingerprint).
 
 ## Phase 3: The client
 
-- [ ] T030 Test first, `tests/unit/test_vendor_clients.py`: on SDK-shaped
+- [x] T030 Test first, `tests/unit/test_vendor_clients.py`: on SDK-shaped
   stubs, per vendor, the exact request (model, messages from the shared
   core, strict schema, reasoning effort, cap parameter, `store` false for
   OpenAI and absent for Scaleway, `strict` in OpenAI's `json_schema` and
@@ -64,18 +65,20 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   refusal, on an unreadable response and on a cancelled run. Without
   network, against the pinned SDK: the client built, the request object
   constructed, representative responses and exceptions mapped.
-- [ ] T031 `app/decision/openai_compatible.py`, `app/decision/vendors.py`.
+  *(Written in `tests/unit/test_openai_compatible_client.py`, on the real SDK
+  with an in-memory transport.)*
+- [x] T031 `app/decision/openai_compatible.py`, `app/decision/vendors.py`.
 
 ## Phase 4: Accounts, envelopes, identity
 
-- [ ] T040 Test first, `tests/unit/test_accounts.py`: the identity of an
+- [x] T040 Test first, `tests/unit/test_accounts.py`: the identity of an
   existing configuration unchanged; a new one's from its declared variables,
   a missing one refused before any client; the run lock per billing
   organisation; first-call acceptance per project; no key or key hash in
   the new identity.
-- [ ] T041 `evals/accounts.py`; `evals/first_calls.py` and
+- [x] T041 `evals/accounts.py`; `evals/first_calls.py` and
   `evals/hosted_run.py` use it.
-- [ ] T042 Test first, `tests/unit/test_prepaid_ledger.py`: declare, raise,
+- [x] T042 Test first, `tests/unit/test_prepaid_ledger.py`: declare, raise,
   never below spent; reserve before send at the highest rate; refusal
   beyond what remains stops the run; settle by category (cached and
   cache-write only when reported, undivided input at the input-side rate,
@@ -92,18 +95,19 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   organisation share one ledger,
   two organisations keep two; USD and EUR apart; the free tier never
   deducted; Mistral's ledger file and behaviour unchanged.
-- [ ] T043 `evals/ledger.py` (`PrepaidLedger`), `evals/governed.py` (one
+- [x] T043 `evals/ledger.py` (`PrepaidLedger`), `evals/governed.py` (one
   ledger interface).
-- [ ] T044 Test first, `tests/unit/test_evaluation_limits.py`: identity
+- [x] T044 Test first, `tests/unit/test_evaluation_limits.py`: identity
   checked on every response of a `check_identity` configuration -- a
   mismatch or a missing identity stops the run after settling, case not
   scored, result incomplete; the first call not accepted on a mismatch;
   existing configurations unaffected.
-- [ ] T045 `evals/governed.py`, `evals/hosted_run.py` (first-call reason).
+  *(Written in `tests/unit/test_prepaid_runs.py`.)*
+- [x] T045 `evals/governed.py`, `evals/hosted_run.py` (first-call reason).
 
 ## Phase 5: Runner and results
 
-- [ ] T050 Test first, `tests/unit/test_first_call_gate.py` and
+- [x] T050 Test first, `tests/unit/test_first_call_gate.py` and
   `tests/unit/test_evaluation_registry.py`: `--envelope` required on a
   first run of a new account, refused for Gemini and Mistral; the old
   flags refused for the new vendors; missing account variable named, no
@@ -112,7 +116,8 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   the three; one run per organisation at a time; an unreadable response
   and a cancellation still writing an incomplete result with their
   reservations kept.
-- [ ] T051 `evals/hosted_run.py`, `evals/runner.py`, `evals/engines.py`.
+  *(Written in `tests/unit/test_prepaid_runner.py`.)*
+- [x] T051 `evals/hosted_run.py`, `evals/runner.py`, `evals/engines.py`.
 
 ## Phase 6: The maintainer's settings and first calls
 
@@ -136,9 +141,9 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 7: Documents
 
-- [ ] T070 `docs/contract/decision-engine.md`, `docs/contract/evaluation.md`
+- [x] T070 `docs/contract/decision-engine.md`, `docs/contract/evaluation.md`
   amended (plan section 8).
-- [ ] T071 ADR-009's model-provider row; `docs/operations.md`;
+- [x] T071 ADR-009's model-provider row; `docs/operations.md`;
   `.env.example`; README where it lists the evaluation engines.
 - [ ] T072 Final review by Codex on a read-only checkout of the final
   commit; the maintainer approves the final diff by its commit (sensitive
