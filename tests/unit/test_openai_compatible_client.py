@@ -415,6 +415,20 @@ class TestNothingLeaks:
             assert secret not in caplog.text
             assert secret not in out.out + out.err
 
+    async def test_a_cancelled_call_propagates_and_leaks_nothing(self, caplog, capsys):
+        import asyncio
+
+        caplog.set_level(logging.DEBUG, logger="openai")
+        luna, _ = engine("gpt-6-luna", asyncio.CancelledError(SENTINEL))
+
+        with pytest.raises(asyncio.CancelledError):
+            await luna._complete("s", "u")
+
+        out = capsys.readouterr()
+        for secret in (KEY, SENTINEL):
+            assert secret not in caplog.text
+            assert secret not in out.out + out.err
+
 
 class TestThePinnedSdk:
     def test_the_pinned_version(self):
