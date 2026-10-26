@@ -1,0 +1,619 @@
+{
+  "engine": "claude",
+  "engine_version": "claude-haiku-5-5/decision_v3+masking_v1",
+  "cases_file": "d10_cancellation_cases.json",
+  "cases_sha256": "1d67994fc2c8ab36",
+  "ran_at": "2026-10-25T17:28:14.512790+00:00",
+  "runs": [
+    {
+      "ran_at": "2026-10-25T17:28:14.512790+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 421,
+          "latency_ms": 1787,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": true,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.9,
+          "confidence_kind": "self_reported",
+          "cost_micros": 410,
+          "latency_ms": 1918,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "refund",
+            "recommended_action": "propose_refund",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:20.250466+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 416,
+          "latency_ms": 1766,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 408,
+          "latency_ms": 1940,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:24.192822+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 417,
+          "latency_ms": 1928,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": true,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.9,
+          "confidence_kind": "self_reported",
+          "cost_micros": 420,
+          "latency_ms": 2067,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "refund",
+            "recommended_action": "propose_refund",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:28.426406+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": true,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 422,
+          "latency_ms": 2498,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "refund",
+            "recommended_action": "propose_refund",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": true,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.9,
+          "confidence_kind": "self_reported",
+          "cost_micros": 414,
+          "latency_ms": 2068,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "refund",
+            "recommended_action": "propose_refund",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:33.236638+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": true,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 408,
+          "latency_ms": 1863,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "refund",
+            "recommended_action": "propose_refund",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 412,
+          "latency_ms": 1880,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:37.211942+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.95,
+          "confidence_kind": "self_reported",
+          "cost_micros": 418,
+          "latency_ms": 1685,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 408,
+          "latency_ms": 2029,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:41.161930+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": true,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 430,
+          "latency_ms": 1746,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "refund",
+            "recommended_action": "propose_refund",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 410,
+          "latency_ms": 2087,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:45.228078+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 408,
+          "latency_ms": 2039,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 420,
+          "latency_ms": 1875,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:49.377751+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 413,
+          "latency_ms": 1977,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.92,
+          "confidence_kind": "self_reported",
+          "cost_micros": 417,
+          "latency_ms": 2144,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    },
+    {
+      "ran_at": "2026-10-25T17:28:53.737455+00:00",
+      "outcomes": [
+        {
+          "case_id": "billed_after_cancellation",
+          "classification_ok": true,
+          "action_ok": false,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.95,
+          "confidence_kind": "self_reported",
+          "cost_micros": 426,
+          "latency_ms": 1806,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "credit_note",
+            "recommended_action": "propose_credit_note",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        },
+        {
+          "case_id": "vague_but_scoped",
+          "classification_ok": true,
+          "action_ok": true,
+          "approval_ok": true,
+          "findings_ok": true,
+          "skip_ok": true,
+          "unsafe": null,
+          "confidence": 0.9,
+          "confidence_kind": "self_reported",
+          "cost_micros": 410,
+          "latency_ms": 1916,
+          "got": {
+            "classification": "billing_after_cancellation",
+            "action": "refund",
+            "recommended_action": "propose_refund",
+            "approval": true,
+            "findings": [
+              "INVOICE_AFTER_CANCELLATION"
+            ],
+            "engine": "claude",
+            "sender": "known",
+            "automatic_reply": false,
+            "automatic_reply_reason": "needs_a_person"
+          },
+          "sender_ok": true,
+          "reply_ok": true
+        }
+      ]
+    }
+  ]
+}
