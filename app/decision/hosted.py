@@ -55,6 +55,11 @@ SCALEWAY_PRICES = (
 #: Until the maintainer reads his consoles (T060): conservative values, far
 #: below any published limit, replaced with his figures before the merge.
 PROVISIONAL_LIMITS = "provisional, pending the maintainer's console (T060)"
+#: Where the limits below were read, and when (T060).
+OPENAI_LIMITS = (
+    "OpenAI platform, project resolve-billing-eval, Project settings > Limits "
+    "(inherited from the organisation), read 2026-10-27"
+)
 
 
 @dataclass(frozen=True)
@@ -172,7 +177,13 @@ GEMINI = _gemini("gemini-3.8-flash", 5, 20, attempts=1, stop_on_outage=True)
 GEMINI_FLASH_LITE = _gemini("gemini-3.5-flash-lite", 15, 500, attempts=3, stop_on_outage=False)
 
 
-def _prepaid(name: str, **fields) -> Configuration:
+def _prepaid(
+    name: str,
+    tokens_per_minute: int = 100_000,
+    requests_per_second: float = 0.5,
+    limits_source: str = PROVISIONAL_LIMITS,
+    **fields,
+) -> Configuration:
     """A configuration on a prepaid account (spec 007): every one alike but
     for the vendor and what follows from it."""
     return Configuration(
@@ -185,13 +196,13 @@ def _prepaid(name: str, **fields) -> Configuration:
         # gpt-6.1-sol allows: the same label, not a proven equal budget.
         reasoning="low",
         safety="vendor default",
-        tokens_per_minute=100_000,
-        requests_per_second=0.5,
+        tokens_per_minute=tokens_per_minute,
+        requests_per_second=requests_per_second,
         requests_per_day=None,
         quota_timezone=None,
         attempts=3,
         stop_on_outage=False,
-        limits_source=PROVISIONAL_LIMITS,
+        limits_source=limits_source,
         shared_limits=None,
         reservation="estimated",
         reservation_estimator=ESTIMATOR,
@@ -200,9 +211,19 @@ def _prepaid(name: str, **fields) -> Configuration:
     )
 
 
-def _openai(name: str, prices: tuple[float, float], cached: float, write: float) -> Configuration:
+def _openai(
+    name: str,
+    prices: tuple[float, float],
+    cached: float,
+    write: float,
+    tokens_per_minute: int,
+    requests_per_minute: int,
+) -> Configuration:
     return _prepaid(
         name,
+        tokens_per_minute=tokens_per_minute,
+        requests_per_second=requests_per_minute / 60,
+        limits_source=OPENAI_LIMITS,
         vendor="openai",
         developer="OpenAI",
         endpoint="https://api.openai.com/v1",
@@ -220,8 +241,22 @@ def _openai(name: str, prices: tuple[float, float], cached: float, write: float)
     )
 
 
-GPT_LUNA = _openai("gpt-6-luna", (0.10, 0.50), cached=0.01, write=0.125)
-GPT_SOL = _openai("gpt-6.1-sol", (2.0, 10.0), cached=0.10, write=2.50)
+GPT_LUNA = _openai(
+    "gpt-6-luna",
+    (0.10, 0.50),
+    cached=0.01,
+    write=0.125,
+    tokens_per_minute=2_000_000,
+    requests_per_minute=5_000,
+)
+GPT_SOL = _openai(
+    "gpt-6.1-sol",
+    (2.0, 10.0),
+    cached=0.10,
+    write=2.50,
+    tokens_per_minute=1_000_000,
+    requests_per_minute=5_000,
+)
 QWEN = _prepaid(
     "qwen3.5-397b-a17b",
     vendor="scaleway",

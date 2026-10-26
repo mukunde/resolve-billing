@@ -146,6 +146,15 @@ class TestTheNewConfigurations:
         assert config.store is False
         assert config.processing_location == "global, no regional commitment"
 
+    def test_openai_limits_as_the_maintainer_read_them(self):
+        luna, sol = CONFIGURATIONS["gpt-6-luna"], CONFIGURATIONS["gpt-6.1-sol"]
+
+        assert (luna.tokens_per_minute, luna.requests_per_second) == (2_000_000, 5_000 / 60)
+        assert (sol.tokens_per_minute, sol.requests_per_second) == (1_000_000, 5_000 / 60)
+        for config in (luna, sol):
+            assert "read 2026-10-27" in config.limits_source
+            assert "provisional" not in config.limits_source
+
     def test_openai_prices(self):
         luna, sol = CONFIGURATIONS["gpt-6-luna"], CONFIGURATIONS["gpt-6.1-sol"]
 
