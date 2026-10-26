@@ -92,6 +92,12 @@ class Governed:
         self.sends = 0
         #: Per case, the category of an outage the case was left with.
         self.outages: dict[str, str] = {}
+        #: Per case, each answered attempt's usage as the vendor reported it
+        #: (a count it did not send stays None).
+        self.usage: dict[str, list[dict]] = {}
+        #: Reservations made and not settled: their cost is unknown -- an
+        #: answer without usage, an interruption, a deadline.
+        self.open_reservations: dict[str, float] = {}
 
     # The provider hands the engine how invoice references are written (D10).
     @property
@@ -216,15 +222,30 @@ class Governed:
         if self._ledger is None:
             return None
         ticket = f"{self._run_id}/{self.name}/{self._case}/{attempt}"
-        self._ledger.reserve(ticket, reservation_cost(reserved, self.config))
+        amount = reservation_cost(reserved, self.config)
+        self._ledger.reserve(ticket, amount)
+        self.open_reservations[ticket] = amount
         return ticket
 
     def _settle(self, ticket: str | None, amount: float) -> None:
         if ticket is not None:
             self._ledger.settle(ticket, amount)
+            self.open_reservations.pop(ticket, None)
             self.cost += amount
 
     def _check_usage(self, answer: Answer, reserved: int, ticket: str | None) -> None:
+        self.usage.setdefault(self._case, []).append(
+            {
+                field: value if _count(value) else None
+                for field, value in (
+                    ("input_tokens", answer.input_tokens),
+                    ("output_tokens", answer.output_tokens),
+                    ("cached_input_tokens", answer.cached_input_tokens),
+                    ("cache_write_tokens", answer.cache_write_tokens),
+                    ("reasoning_tokens", answer.reasoning_tokens),
+                )
+            }
+        )
         if answer.input_tokens is None or answer.output_tokens is None:
             # The cost cannot be known: the reservation stays spent.
             raise RunStopped(f"{self.name}: an answer came without its usage; the run stops")

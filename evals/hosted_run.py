@@ -234,7 +234,7 @@ def main(args, cases: list[dict], parser) -> int:
         # of its configurations' -- before any client is built (FR-016).
         try:
             FirstCalls().admit_full_run(config)
-        except FirstCallsRefused as refusal:
+        except (FirstCallsRefused, AccountRefused) as refusal:
             print(f"refused: {refusal}", file=sys.stderr)
             return 2
 
@@ -354,10 +354,17 @@ def write(
     if config.price_per_mtok is None:
         cost = {"basis": "estimated zero under the free quota", "source": GEMINI_PRICES}
     elif config.currency is not None:
+        unknown = governed.open_reservations if governed else {}
         cost = {
             "basis": "estimated from the reported usage at list prices, by category",
-            "amount": round(governed.cost, 6) if governed else 0.0,
             "currency": config.currency,
+            # What the settled attempts cost; the attempts whose cost is
+            # unknown are counted apart, at their reserved maximum: the run's
+            # cost is complete only when there are none.
+            "settled_amount": round(governed.cost, 6) if governed else 0.0,
+            "unknown_cost_attempts": len(unknown),
+            "unknown_cost_reserved": round(sum(unknown.values()), 6),
+            "complete": not unknown,
             "source": config.price_source,
             "free_allowance": "never deducted",
         }
@@ -417,6 +424,7 @@ def write(
     if config.account_variables:
         # Declared ids only: never a key, never a key's fingerprint.
         payload["account"] = accounts.identity(config)
+        payload["usage"] = governed.usage if governed else {}
         payload["run_kind"] = "integration run"
         payload["run_kind_statement"] = INTEGRATION_RUN
     if quota is not None:

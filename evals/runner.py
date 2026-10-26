@@ -88,7 +88,11 @@ def _account_refusal(engine_name: str) -> str | None:
     from app.decision.openai_compatible import ambient_refusal
     from evals import accounts
 
-    return accounts.missing(config) or ambient_refusal()
+    try:
+        accounts.declared(config)
+    except accounts.AccountRefused as refusal:
+        return str(refusal)
+    return ambient_refusal()
 
 
 def missing_credential(engine_name: str) -> str | None:

@@ -52,9 +52,15 @@ def accounts(monkeypatch):
     monkeypatch.setattr("evals.state.AccountRun.wait", lambda self: 0.0)
 
 
-def run(monkeypatch, tmp_path, name, *flags, outcome=None, vendor=None):
+def run(monkeypatch, tmp_path, name, *flags, outcome=None, vendor=None, refused=False):
     vendor = vendor or Scripted(name, outcome)
-    monkeypatch.setitem(engines.HOSTED_ENGINES, name, lambda: vendor)
+
+    def build():
+        # A refusal comes before any client is built.
+        assert not refused, "a client was built on a run that should be refused"
+        return vendor
+
+    monkeypatch.setitem(engines.HOSTED_ENGINES, name, build)
     target = tmp_path / f"{name}.json"
     before = set(tmp_path.glob(f"{name}-*.json"))
     argv = ["runner", "--engine", name, "--data-terms", "contractual", "--json", str(target)]
@@ -73,7 +79,9 @@ class TestTheEnvelopeFlag:
     def test_a_first_run_without_an_envelope_is_refused_before_any_call(
         self, tmp_path, monkeypatch, capsys
     ):
-        status, result, vendor = run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only")
+        status, result, vendor = run(
+            monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", refused=True
+        )
 
         assert status == 2
         assert result is None
@@ -109,16 +117,50 @@ class TestTheAccount:
         assert missing in runner.missing_credential("gpt-6-luna")
 
     @pytest.mark.parametrize("variable", ["OPENAI_CUSTOM_HEADERS", "OPENAI_LOG"])
-    def test_an_ambient_sdk_setting_is_refused_before_any_client(self, variable, monkeypatch):
+    def test_an_ambient_sdk_setting_is_refused_before_any_client(
+        self, variable, tmp_path, monkeypatch
+    ):
         monkeypatch.setenv(variable, "debug")
 
         assert variable in runner.missing_credential("qwen3.5-397b-a17b")
+        with pytest.raises(SystemExit, match=variable):
+            run(
+                monkeypatch,
+                tmp_path,
+                "qwen3.5-397b-a17b",
+                "--first-call-only",
+                "--envelope",
+                "2",
+                refused=True,
+            )
+
+    def test_a_missing_account_variable_refuses_the_run_before_any_client(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("OPENAI_ORG_ID")
+
+        with pytest.raises(SystemExit, match="OPENAI_ORG_ID"):
+            run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", refused=True)
+
+    def test_a_malformed_account_id_is_refused_cleanly(self, tmp_path, monkeypatch):
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+        monkeypatch.setenv("OPENAI_PROJECT_ID", "../elsewhere")
+
+        with pytest.raises(SystemExit, match="OPENAI_PROJECT_ID"):
+            run(monkeypatch, tmp_path, "gpt-6-luna", refused=True)
+
+    def test_a_full_run_without_its_first_call_builds_no_client(self, tmp_path, monkeypatch):
+        status, _, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--envelope", "5", refused=True)
+
+        assert status == 2
 
     def test_one_run_per_billing_organisation_at_a_time(self, tmp_path, monkeypatch, capsys):
         run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
 
         with state.AccountRun("openai-org-test"):
-            status, _, vendor = run(monkeypatch, tmp_path, "gpt-6.1-sol", "--first-call-only")
+            status, _, vendor = run(
+                monkeypatch, tmp_path, "gpt-6.1-sol", "--first-call-only", refused=True
+            )
 
         assert status == 2
         assert vendor.calls == 0
@@ -137,8 +179,20 @@ class TestTheResult:
         assert result["configuration"]["processing_location"] == "global, no regional commitment"
         assert result["configuration"]["store"] is False
         assert result["cost"]["currency"] == "USD"
-        assert result["cost"]["amount"] > 0
+        assert result["cost"]["settled_amount"] > 0
+        assert result["cost"]["complete"] is True
+        assert result["cost"]["unknown_cost_attempts"] == 0
         assert result["cost"]["envelope"]["total"] == 5.0
+        (attempts,) = result["usage"].values()
+        assert attempts == [
+            {
+                "input_tokens": 900,
+                "output_tokens": 120,
+                "cached_input_tokens": None,
+                "cache_write_tokens": None,
+                "reasoning_tokens": None,
+            }
+        ]
         out = capsys.readouterr()
         text = json.dumps(result) + out.out + out.err
         assert KEY not in text
@@ -220,6 +274,9 @@ class TestIncompleteRuns:
         assert result["complete"] is False
         assert "usage" in result["stop_reason"]
         assert sum(a["settled"] is None for a in envelope()["attempts"].values()) == 1
+        assert result["cost"]["complete"] is False
+        assert result["cost"]["unknown_cost_attempts"] == 1
+        assert result["cost"]["unknown_cost_reserved"] > 0
         assert status != 0
 
     def test_a_cancelled_run_is_written_incomplete_its_reservation_kept(
@@ -238,4 +295,38 @@ class TestIncompleteRuns:
         assert result["complete"] is False
         assert result["stop_reason"] == "interrupted"
         assert sum(a["settled"] is None for a in envelope()["attempts"].values()) == 1
+        assert result["cost"]["unknown_cost_attempts"] == 1
         assert status != 0
+
+    def test_a_substitute_model_s_usage_is_kept(self, tmp_path, monkeypatch):
+        _, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            "gpt-6-luna",
+            "--first-call-only",
+            "--envelope",
+            "5",
+            outcome=Answer(
+                json.dumps(VALID_VERDICT),
+                "stop",
+                700,
+                90,
+                "gpt-6-astra",
+                cached_input_tokens=100,
+                cache_write_tokens=20,
+                reasoning_tokens=30,
+            ),
+        )
+
+        (attempts,) = result["usage"].values()
+        assert attempts == [
+            {
+                "input_tokens": 700,
+                "output_tokens": 90,
+                "cached_input_tokens": 100,
+                "cache_write_tokens": 20,
+                "reasoning_tokens": 30,
+            }
+        ]
+        assert result["cost"]["complete"] is True
+        assert "gpt-6-astra" in result["model_versions"]
