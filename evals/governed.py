@@ -54,8 +54,8 @@ class Governed:
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
-        if engine.config.vendor == "mistral" and ledger is None:
-            raise ValueError("a Mistral configuration runs against the envelope's ledger")
+        if engine.config.price_per_mtok is not None and ledger is None:
+            raise ValueError(f"{engine.name} runs against its envelope's ledger")
         if engine.config.requests_per_day is not None and quota is None:
             raise ValueError(f"{engine.name} runs against its daily quota")
         self.engine = engine
@@ -84,9 +84,9 @@ class Governed:
         self.counts: dict[str, int] = {}
         self.waits: dict[str, float] = {}
         self.network: dict[str, float] = {}
-        #: The reported cost of the run's attempts, in dollars (priced
-        #: configurations only).
-        self.cost_usd = 0.0
+        #: The reported cost of the run's attempts, in the configuration's
+        #: currency (priced configurations only).
+        self.cost = 0.0
         #: Requests actually handed to the vendor, across the run.
         self.sends = 0
         #: Per case, the category of an outage the case was left with.
@@ -215,29 +215,78 @@ class Governed:
         if self._ledger is None:
             return None
         ticket = f"{self._run_id}/{self.name}/{self._case}/{attempt}"
-        # The reservation covers input and output: priced at the dearer rate.
-        self._ledger.reserve(ticket, reserved * max(self.config.price_per_mtok) / 1e6)
+        self._ledger.reserve(ticket, reservation_cost(reserved, self.config))
         return ticket
 
-    def _settle(self, ticket: str | None, usd: float) -> None:
+    def _settle(self, ticket: str | None, amount: float) -> None:
         if ticket is not None:
-            self._ledger.settle(ticket, usd)
-            self.cost_usd += usd
+            self._ledger.settle(ticket, amount)
+            self.cost += amount
 
     def _check_usage(self, answer: Answer, reserved: int, ticket: str | None) -> None:
         if answer.input_tokens is None or answer.output_tokens is None:
             # The cost cannot be known: the reservation stays spent.
             raise RunStopped(f"{self.name}: an answer came without its usage; the run stops")
         if self.config.price_per_mtok is not None:
-            price_in, price_out = self.config.price_per_mtok
-            self._settle(
-                ticket, (answer.input_tokens * price_in + answer.output_tokens * price_out) / 1e6
-            )
+            try:
+                cost = attempt_cost(answer, self.config)
+            except InconsistentUsage as error:
+                # Not settled: the reservation stays spent.
+                raise RunStopped(f"{self.name}: {error}; the run stops") from None
+            self._settle(ticket, cost)
         used = answer.input_tokens + answer.output_tokens
         if used > reserved:
             raise RunStopped(
                 f"{self.name}: usage above the reservation ({used} tokens, {reserved} reserved)"
             )
+        if self.config.check_identity and answer.model_version != self.config.model:
+            # Settled first: what the substitute cost is kept. Its answer is
+            # never scored, and the name it gave is recorded.
+            if answer.model_version:
+                self.engine.model_versions.append(answer.model_version)
+            raise RunStopped(
+                f"{self.name}: answered by another model ({answer.model_version or 'none named'})"
+            )
+
+
+class InconsistentUsage(Exception):  # noqa: N818 -- a refusal, not a defect
+    """Reported usage whose details do not fit its totals."""
+
+
+def reservation_cost(reserved: int, config) -> float:
+    """An attempt's maximum cost: every reserved token at the highest rate
+    that may apply -- output, input, or a cache write (spec 007, FR-006b)."""
+    rates = [*config.price_per_mtok]
+    if config.cache_write_price_per_mtok is not None:
+        rates.append(config.cache_write_price_per_mtok)
+    return reserved * max(rates) / 1e6
+
+
+def attempt_cost(answer: Answer, config) -> float:
+    """An attempt's cost from its reported usage, category by category
+    (spec 007, FR-006b). A category is priced at its rate only when it is
+    reported, never read as zero when absent; when every priced category is
+    reported, the rest of the input is at the input rate, otherwise at the
+    highest input-side rate. Output, reasoning included, at the output rate:
+    reasoning is part of the output total, never priced twice."""
+    price_in, price_out = config.price_per_mtok
+    priced = {
+        "cached_input_tokens": config.cached_input_price_per_mtok,
+        "cache_write_tokens": config.cache_write_price_per_mtok,
+    }
+    priced = {category: rate for category, rate in priced.items() if rate is not None}
+    reported = {category: getattr(answer, category) for category in priced}
+    classified = sum(count for count in reported.values() if count is not None)
+    if classified > answer.input_tokens:
+        raise InconsistentUsage("usage details above the input total (inconsistent)")
+    if (answer.reasoning_tokens or 0) > answer.output_tokens:
+        raise InconsistentUsage("reasoning above the output total (inconsistent)")
+    complete = all(count is not None for count in reported.values())
+    remainder_rate = price_in if complete else max([price_in, *priced.values()])
+    cost = sum(count * priced[category] for category, count in reported.items() if count)
+    cost += (answer.input_tokens - classified) * remainder_rate
+    cost += answer.output_tokens * price_out
+    return cost / 1e6
 
 
 def _status(answer: Answer, decision: Decision) -> str:

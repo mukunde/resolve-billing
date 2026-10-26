@@ -35,7 +35,8 @@ from app.decision.hosted import GEMINI_PRICES, configuration
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
 from evals import engines
-from evals.first_calls import QUOTA_PROJECT, FirstCalls, FirstCallsRefused
+from evals.accounts import QUOTA_PROJECT
+from evals.first_calls import FirstCalls, FirstCallsRefused
 from evals.governed import Governed
 from evals.ledger import Ledger, LedgerRefused
 from evals.limits import RunStopped, limiters_for
@@ -337,7 +338,7 @@ def write(
     else:
         cost = {
             "basis": "estimated from the reported usage at list prices",
-            "usd": round(governed.cost_usd, 6) if governed else 0.0,
+            "usd": round(governed.cost, 6) if governed else 0.0,
             "source": config.price_source,
         }
         if ledger is not None:

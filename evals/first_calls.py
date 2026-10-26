@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -35,10 +34,7 @@ from pathlib import Path
 from app.decision.hosted import CONFIGURATIONS, Configuration
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
-from evals import state
-
-#: Where a Gemini run names its project (`evals/hosted_run.py` reads it too).
-QUOTA_PROJECT = "GEMINI_QUOTA_PROJECT"
+from evals import accounts, state
 
 
 class FirstCallsRefused(Exception):  # noqa: N818 -- a refusal, not a defect
@@ -90,12 +86,10 @@ def _listed(value):
 
 
 def account(config: Configuration) -> dict:
-    """The account a run uses, by a non-secret identity."""
-    key = os.environ.get(config.key_variable, "")
-    identity = {"key": hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]}
-    if config.requests_per_day is not None:
-        identity["project"] = os.environ.get(QUOTA_PROJECT, "")
-    return identity
+    """The account a run uses, by a non-secret identity (`evals/accounts.py`):
+    spec 004's key fingerprint and Gemini project; for a prepaid account,
+    its declared organisation and project, never the key."""
+    return accounts.identity(config)
 
 
 class FirstCalls:
