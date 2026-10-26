@@ -309,6 +309,12 @@ class Answer:
     output_tokens: int | None
     model_version: str | None
     notes: tuple[str, ...] = ()
+    #: Usage details, None unless the vendor reported them (spec 007):
+    #: cached and cache-write tokens are part of `input_tokens`, reasoning
+    #: tokens part of `output_tokens` -- recorded, never added twice.
+    cached_input_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    reasoning_tokens: int | None = None
 
 
 class HostedEngine:

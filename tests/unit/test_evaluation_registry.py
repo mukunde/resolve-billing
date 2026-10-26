@@ -150,7 +150,11 @@ def test_the_vendors_sdks_are_imported_only_by_their_clients():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
-    allowed = {"app/decision/gemini.py", "app/decision/mistral.py"}
+    allowed = {
+        "app/decision/gemini.py",
+        "app/decision/mistral.py",
+        "app/decision/openai_compatible.py",
+    }
     offenders = []
     for directory in ("app", "evals", "scripts"):
         for path in (root / directory).rglob("*.py"):
@@ -163,6 +167,7 @@ def test_the_vendors_sdks_are_imported_only_by_their_clients():
                     modules = [alias.name for alias in node.names]
                 elif isinstance(node, ast.ImportFrom) and node.level == 0:
                     modules = [node.module or ""]
-                if any(m.startswith(("google.genai", "google", "mistralai")) for m in modules):
+                vendors = ("google.genai", "google", "mistralai", "openai")
+                if any(m.startswith(vendors) for m in modules):
                     offenders.append(name)
     assert offenders == []

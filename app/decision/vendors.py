@@ -1,5 +1,6 @@
-"""Builds the client of an engine evaluated on a free tier, by its vendor
-(specs/004-second-engines). Used by the evaluation registry alone."""
+"""Builds the client of an engine evaluated outside the service, by its vendor
+(specs/004-second-engines, specs/007-openai-qwen-engines). Used by the
+evaluation registry alone."""
 
 from __future__ import annotations
 
@@ -15,4 +16,8 @@ def client_for(config: Configuration) -> HostedEngine:
         from app.decision.mistral import MistralEngine
 
         return MistralEngine(config)
+    if config.vendor in {"openai", "scaleway"}:
+        from app.decision.openai_compatible import OpenAICompatibleEngine
+
+        return OpenAICompatibleEngine(config)
     raise KeyError(config.vendor)
