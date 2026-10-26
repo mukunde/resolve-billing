@@ -114,7 +114,7 @@ The three new configurations:
   2.50), location "global, no regional commitment".
 - **`qwen3.5-397b-a17b`**: vendor `scaleway`, developer Alibaba (Qwen),
   endpoint per T010, key `SCALEWAY_API_KEY`, account
-  `SCALEWAY_ORGANIZATION_ID` (and the project, if the endpoint needs it),
+  `SCALEWAY_ORGANIZATION_ID` and `SCALEWAY_PROJECT_ID` (in the base URL),
   prices in EUR (0.60 / 3.60), location Paris, France, quantisation per
   T010.
 
@@ -247,8 +247,7 @@ configurations are unaffected.
 - `docs/operations.md` (the engines section): commands, envelopes,
   account variables.
 - `.env.example`: `OPENAI_API_KEY`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`,
-  `SCALEWAY_API_KEY`, `SCALEWAY_ORGANIZATION_ID` (and the project if
-  needed), all empty.
+  `SCALEWAY_API_KEY`, `SCALEWAY_ORGANIZATION_ID`, `SCALEWAY_PROJECT_ID`, all empty.
 - `evals/results/README.md`: a section for integration runs.
 - README's mention of the evaluation engines, if it lists them.
 
@@ -266,4 +265,92 @@ configurations are unaffected.
 
 ## Research notes
 
-*(T010: filled before any client is written, reviewed by Codex.)*
+Read 2026-10-26 from the official pages named, the pinned SDK's sources
+(`openai` 3.29.0) and Scaleway's published OpenAPI schema
+(`scaleway.com/en/developers/api/generative-apis/v1/schema.yml`).
+
+### Settled
+
+- **SDK `openai==3.29.0`** (published 2026-10-11). `AsyncOpenAI(api_key,
+  base_url, organization, project, max_retries, default_headers)`.
+  - With `None`, the client falls back to the environment:
+    `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID` and `OPENAI_BASE_URL`. So the
+    Scaleway client must pass `base_url` explicitly and remove the two
+    OpenAI headers (`default_headers` with `Omit()` for
+    `OpenAI-Organization` and `OpenAI-Project`); otherwise OpenAI's ids
+    would reach Scaleway. A test pins it on a network-free transport.
+  - Retries are off with `max_retries=0`.
+  - Errors: `APIStatusError` (`status_code`, `response`; subclasses
+    include `RateLimitError` and `AuthenticationError`), `APIConnectionError`
+    and its `APITimeoutError` subclass, and `APIResponseValidationError` for
+    an unreadable response.
+- **OpenAI chat completions** (`developers.openai.com`, chat create
+  reference, structured outputs, reasoning and models pages): chat
+  completions are supported on `gpt-6-luna` and `gpt-6.1-sol`, structured
+  outputs included.
+  - `max_completion_tokens` is "an upper bound … including visible output
+    tokens and reasoning tokens". `max_tokens` is deprecated and not
+    compatible with reasoning models.
+  - `reasoning_effort` takes `low` on both models.
+  - `response_format` `{"type": "json_schema", "json_schema": {name,
+    schema, strict: true}}` uses a strict subset: `additionalProperties`
+    false and every property required, as `verdict_schema()` already is
+    for Mistral's strict mode.
+  - `store` is "whether or not to store the output … for use in our model
+    distillation or evals products". Its default is not stated, so it is
+    sent `false` explicitly.
+  - Response: `message.content`, `message.refusal` (a refusal is
+    unusable), `finish_reason` among `stop`, `length`, `content_filter`,
+    `tool_calls`, `function_call` (all but `stop` unusable), and `model`,
+    "the model used".
+  - Usage: `prompt_tokens`, `completion_tokens`;
+    `prompt_tokens_details.cached_tokens` and `.cache_write_tokens`;
+    `completion_tokens_details.reasoning_tokens`. Reasoning is included in
+    `completion_tokens`; cached tokens are included in `prompt_tokens`.
+- **Scaleway chat completions** (OpenAPI schema, API overview):
+  - Base URL `https://api.scaleway.ai/{project_id}/v1`. The project id is
+    optional ("your default Project" otherwise) and is sent explicitly
+    from `SCALEWAY_PROJECT_ID`. Bearer secret key.
+  - Parameters `max_completion_tokens` (`max_tokens` deprecated),
+    `reasoning_effort` (`none`, `low`, `medium`, `high`; default
+    `medium`), and `response_format` `json_schema` with `strict`, "only
+    `true` is supported". `store` is listed as **not supported**, so it is
+    not sent.
+  - Response: `message.content` and `message.reasoning_content` (dropped,
+    never kept), `finish_reason` among `stop`, `length`, `tool_calls`, and
+    `model`.
+  - Usage: `prompt_tokens`, `completion_tokens`,
+    `completion_tokens_details.reasoning_tokens`,
+    `prompt_tokens_details.cached_tokens`. Scaleway prices cached input
+    only for some models; for `qwen3.5-397b-a17b` no cached rate is
+    listed, so all input is priced at the input rate.
+  - **For `qwen3.5-397b-a17b`, "`low` and `high` values are similar to
+    `medium`"**: the configuration sends `low` as the spec says, and
+    records that the host treats it as `medium`.
+  - Rate limits are per organisation, shared by all projects. They apply
+    "once you have a valid payment method", and the figures are on the
+    organisation's quotas page (T060). An exceeded limit returns
+    `x-ratelimit-*` headers; the status code is not stated, so 429 is
+    handled as for the others, and any other 4xx is a refusal.
+
+### Approved unknowns, recorded as unknown
+
+- Whether OpenAI refuses a key outside the declared organisation or
+  project: the authentication overview says the headers choose where a
+  request runs and where usage counts, not what a mismatch does. Recorded
+  as the maintainer's declaration.
+- Whether Scaleway refuses a key outside the declared project: IAM
+  "allows to limit access", not stated for every key. Recorded as the
+  maintainer's declaration.
+- Whether Qwen's reasoning counts toward `max_completion_tokens` on
+  Scaleway: the cap's description does not say. FR-006b's
+  usage-above-reservation stop bounds it.
+- Serverless quantisation of `qwen3.5-397b-a17b`: the catalogue lists
+  `int4` in its serverless table. Recorded as "int4 (catalogue,
+  serverless table)", the source named.
+
+### For the maintainer (T060)
+
+Scaleway applies its rate limits only with a valid payment method on the
+account. The free tier and the €2 envelope both assume one. Adding it is
+his decision, made in his console, before the first call.

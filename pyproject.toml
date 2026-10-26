@@ -30,6 +30,8 @@ stripe = [
 engines = [
     "google-genai==2.29.0",
     "mistralai==3.2.0",
+    # OpenAI, and Scaleway through its OpenAI-compatible API (specs/007-openai-qwen-engines).
+    "openai==3.29.0",
     # The IANA time zones for the daily quota's Pacific day: Windows has none.
     "tzdata==2026.4",
 ]
