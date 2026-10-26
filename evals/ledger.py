@@ -205,6 +205,7 @@ class PrepaidLedger(Ledger):
     def reserve(self, attempt: str, amount: float) -> None:
         """Reserve an attempt's maximum cost, on disk, before it is sent; an
         attempt that would exceed what remains stops the run."""
+        _refuse_amount(amount)
         with self._locked():
             held = self._current()
             if attempt in held["attempts"]:
@@ -217,6 +218,11 @@ class PrepaidLedger(Ledger):
                 )
             held["attempts"][attempt] = {"reserved": round(amount, 6), "settled": None}
             self._write(held)
+
+    def settle(self, attempt: str, amount: float) -> None:
+        """The attempt's cost as reported, replacing its reservation."""
+        _refuse_amount(amount)
+        super().settle(attempt, amount)
 
     def state(self) -> dict:
         """The total, its declarations, what is spent and what is left."""
@@ -262,7 +268,9 @@ class PrepaidLedger(Ledger):
             "attempts",
         }:
             return False
-        if not (isinstance(held["account"], str) and held["currency"] in {"USD", "EUR"}):
+        if not isinstance(held["account"], str) or not isinstance(held["currency"], str):
+            return False
+        if held["currency"] not in {"USD", "EUR"}:
             return False
         declarations = held["declarations"]
         if not isinstance(declarations, list) or not declarations:
@@ -273,10 +281,20 @@ class PrepaidLedger(Ledger):
                 return False
             if not (_amount(entry["total"]) and entry["total"] > 0):
                 return False
+            try:
+                datetime.fromisoformat(entry["at"])
+            except (TypeError, ValueError):
+                return False
             totals.append(entry["total"])
         if any(later <= earlier for earlier, later in zip(totals, totals[1:], strict=False)):
             return False
         return _attempts_consistent(held["attempts"])
+
+
+def _refuse_amount(amount) -> None:
+    """An amount is a finite, non-negative number, or nothing is written."""
+    if not (_amount(amount) and amount >= 0):
+        raise LedgerRefused("an amount must be a finite, non-negative number")
 
 
 def _spent(held: dict) -> float:

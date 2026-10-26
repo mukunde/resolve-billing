@@ -17,6 +17,7 @@ the attempts, usage above the reservation or not reported.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections.abc import Awaitable, Callable
 
@@ -241,16 +242,25 @@ class Governed:
             )
         if self.config.check_identity and answer.model_version != self.config.model:
             # Settled first: what the substitute cost is kept. Its answer is
-            # never scored, and the name it gave is recorded.
-            if answer.model_version:
-                self.engine.model_versions.append(answer.model_version)
-            raise RunStopped(
-                f"{self.name}: answered by another model ({answer.model_version or 'none named'})"
-            )
+            # never scored; the name it gave is recorded only if it reads as
+            # a model id, never as free text.
+            named = answer.model_version
+            if named and MODEL_ID.fullmatch(named):
+                self.engine.model_versions.append(named)
+                raise RunStopped(f"{self.name}: answered by another model ({named})")
+            raise RunStopped(f"{self.name}: answered by another model (no valid model id)")
+
+
+#: What a returned model name must look like to be recorded.
+MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
 
 
 class InconsistentUsage(Exception):  # noqa: N818 -- a refusal, not a defect
     """Reported usage whose details do not fit its totals."""
+
+
+def _count(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def reservation_cost(reserved: int, config) -> float:
@@ -269,6 +279,17 @@ def attempt_cost(answer: Answer, config) -> float:
     reported, the rest of the input is at the input rate, otherwise at the
     highest input-side rate. Output, reasoning included, at the output rate:
     reasoning is part of the output total, never priced twice."""
+    # Every count the vendor sent is checked, priced or not.
+    details = (answer.cached_input_tokens, answer.cache_write_tokens, answer.reasoning_tokens)
+    if not all(_count(n) for n in (answer.input_tokens, answer.output_tokens)):
+        raise InconsistentUsage("usage totals that are not counts (inconsistent)")
+    if not all(_count(n) for n in details if n is not None):
+        raise InconsistentUsage("usage details that are not counts (inconsistent)")
+    input_details = [n for n in details[:2] if n is not None]
+    if sum(input_details) > answer.input_tokens:
+        raise InconsistentUsage("usage details above the input total (inconsistent)")
+    if (answer.reasoning_tokens or 0) > answer.output_tokens:
+        raise InconsistentUsage("reasoning above the output total (inconsistent)")
     price_in, price_out = config.price_per_mtok
     priced = {
         "cached_input_tokens": config.cached_input_price_per_mtok,
@@ -277,10 +298,6 @@ def attempt_cost(answer: Answer, config) -> float:
     priced = {category: rate for category, rate in priced.items() if rate is not None}
     reported = {category: getattr(answer, category) for category in priced}
     classified = sum(count for count in reported.values() if count is not None)
-    if classified > answer.input_tokens:
-        raise InconsistentUsage("usage details above the input total (inconsistent)")
-    if (answer.reasoning_tokens or 0) > answer.output_tokens:
-        raise InconsistentUsage("reasoning above the output total (inconsistent)")
     complete = all(count is not None for count in reported.values())
     remainder_rate = price_in if complete else max([price_in, *priced.values()])
     cost = sum(count * priced[category] for category, count in reported.items() if count)

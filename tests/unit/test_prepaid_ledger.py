@@ -101,13 +101,18 @@ class TestReserving:
             ledger.reserve("a", 0.1)
 
 
-def _reserve_in_another_process(path: str, attempt: str, amount: float) -> bool:
+def _reserve_in_another_process(
+    path: str, attempt: str, amount: float, lock_timeout: float = 30.0
+) -> str | bool:
     from pathlib import Path
 
     try:
-        PrepaidLedger("openai-org-test", "USD", path=Path(path)).reserve(attempt, amount)
+        ledger = PrepaidLedger("openai-org-test", "USD", path=Path(path), lock_timeout=lock_timeout)
+        ledger.reserve(attempt, amount)
     except RunStopped:
         return False
+    except LedgerRefused as refusal:
+        return str(refusal)
     return True
 
 
@@ -128,6 +133,38 @@ class TestConcurrency:
 
         assert sum(admitted) == 3
         assert ledger.state()["spent"] == pytest.approx(0.9)
+
+    def test_a_held_lock_keeps_another_process_out_until_released(self, tmp_path):
+        ledger = book(tmp_path)
+        ledger.declare(1.0)
+        before = ledger.path.read_bytes()
+
+        with ledger._locked(), ProcessPoolExecutor(max_workers=1) as pool:
+            refused = pool.submit(
+                _reserve_in_another_process, str(ledger.path), "a", 0.1, 0.5
+            ).result()
+            unchanged = ledger.path.read_bytes()
+        with ProcessPoolExecutor(max_workers=1) as pool:
+            admitted = pool.submit(_reserve_in_another_process, str(ledger.path), "a", 0.1).result()
+
+        assert "held by another run" in refused
+        assert unchanged == before
+        assert admitted is True
+        assert ledger.state()["spent"] == pytest.approx(0.1)
+
+    @pytest.mark.parametrize("amount", [-0.1, float("nan"), float("inf"), "0.1", True])
+    def test_an_invalid_amount_writes_nothing(self, tmp_path, amount):
+        ledger = book(tmp_path)
+        ledger.declare(1.0)
+        ledger.reserve("a", 0.1)
+        before = ledger.path.read_bytes()
+
+        with pytest.raises(LedgerRefused):
+            ledger.reserve("b", amount)
+        with pytest.raises(LedgerRefused):
+            ledger.settle("a", amount)
+
+        assert ledger.path.read_bytes() == before
 
 
 class TestWhatIsKeptApart:
@@ -178,7 +215,15 @@ class TestRefusedNeverReset:
                 {
                     "account": "openai-org-test",
                     "currency": "USD",
-                    "declarations": [{"at": "x", "total": -1}],
+                    "declarations": [{"at": "2026-10-26T00:00:00+00:00", "total": -1}],
+                    "attempts": {},
+                }
+            ),
+            json.dumps(
+                {
+                    "account": "openai-org-test",
+                    "currency": ["USD"],
+                    "declarations": [{"at": "2026-10-26T00:00:00+00:00", "total": 5}],
                     "attempts": {},
                 }
             ),
@@ -186,7 +231,18 @@ class TestRefusedNeverReset:
                 {
                     "account": "openai-org-test",
                     "currency": "USD",
-                    "declarations": [{"at": "x", "total": 5}, {"at": "y", "total": 3}],
+                    "declarations": [{"at": "not a date", "total": 5}],
+                    "attempts": {},
+                }
+            ),
+            json.dumps(
+                {
+                    "account": "openai-org-test",
+                    "currency": "USD",
+                    "declarations": [
+                        {"at": "2026-10-26T00:00:00+00:00", "total": 5},
+                        {"at": "2026-10-26T01:00:00+00:00", "total": 3},
+                    ],
                     "attempts": {},
                 }
             ),
@@ -266,6 +322,27 @@ class TestSettlementByCategory:
     def test_an_inconsistent_breakdown_is_refused(self, kwargs):
         with pytest.raises(InconsistentUsage):
             attempt_cost(answer(**kwargs), SOL)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"written": -1000},
+            {"cached": -1},
+            {"reasoning": -5},
+            {"input_tokens": -1},
+            {"output_tokens": -1},
+            {"cached": True},
+        ],
+    )
+    def test_counts_that_are_not_counts_are_refused(self, kwargs):
+        with pytest.raises(InconsistentUsage):
+            attempt_cost(answer(**kwargs), SOL)
+
+    def test_an_impossible_unpriced_category_is_refused(self):
+        qwen = configuration("qwen3.5-397b-a17b")
+
+        with pytest.raises(InconsistentUsage):
+            attempt_cost(answer(cached=5000), qwen)
 
     def test_a_vendor_without_priced_categories_prices_input_at_its_rate(self):
         qwen = configuration("qwen3.5-397b-a17b")  # 0.60 / 3.60, no cached rate

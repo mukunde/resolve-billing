@@ -103,6 +103,20 @@ class TestTheModelsIdentity:
         if model is not None:
             assert model in engine.engine.model_versions
 
+    async def test_a_model_name_that_is_not_an_id_is_never_recorded(
+        self, tmp_path, context, findings, dispute
+    ):
+        prose = "SENTINEL vendor prose\nwith a newline"
+        vendor = Vendor([answered(model=prose)], name="gpt-6-luna")
+        engine, _ = prepaid(tmp_path, vendor)
+
+        with pytest.raises(RunStopped) as stopped:
+            await engine.decide(dispute, context, findings)
+
+        assert "SENTINEL" not in str(stopped.value)
+        assert "no valid model id" in str(stopped.value)
+        assert engine.engine.model_versions == []
+
     async def test_spec_004_configurations_are_not_held_to_it(
         self, tmp_path, context, findings, dispute
     ):
