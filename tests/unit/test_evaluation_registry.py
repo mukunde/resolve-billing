@@ -16,6 +16,10 @@ HOSTED = (
     "gemini-3.5-flash-lite",
     "mistral-medium-3-5",
     "mistral-medium-3-5-reasoning",
+    # specs/007-openai-qwen-engines
+    "gpt-6-luna",
+    "gpt-6.1-sol",
+    "qwen3.5-397b-a17b",
 )
 
 
@@ -36,7 +40,7 @@ class TestTheRefusedConfigurations:
 
 
 class TestTheRegistry:
-    def test_it_holds_the_services_engines_and_the_four(self):
+    def test_it_holds_the_services_engines_and_the_hosted_ones(self):
         assert set(engines.evaluation_engines()) == set(deps.ENGINES) | set(HOSTED)
 
     @pytest.mark.parametrize("name", HOSTED)

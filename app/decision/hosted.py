@@ -1,9 +1,11 @@
-"""The shared core of the engines evaluated on free tiers.
+"""The shared core of the engines evaluated outside the service.
 
 specs/004-second-engines. Four configurations -- `gemini-3.8-flash` and
 `gemini-3.5-flash-lite` (Google), `mistral-medium-3-5` and
 `mistral-medium-3-5-reasoning` (Mistral, one model at two reasoning efforts)
--- decide a dispute
+-- and, from specs/007-openai-qwen-engines, three on prepaid accounts --
+`gpt-6-luna` and `gpt-6.1-sol` (OpenAI), `qwen3.5-397b-a17b` (Alibaba's
+model, served by Scaleway) -- decide a dispute
 exactly as the Claude engine does: the context pseudonymised, the message
 masked (D10), one request with the same prompt and the same payload, the
 answer validated locally against the closed classification, the references
@@ -46,6 +48,13 @@ ESTIMATOR = "utf8-bytes-v1"
 #: Where the prices below were read, and when.
 MISTRAL_PRICES = "docs.mistral.ai/inference/pricing, read 2026-10-24"
 GEMINI_PRICES = "ai.google.dev/gemini-api/docs/pricing (free tier), read 2026-10-24"
+OPENAI_PRICES = "developers.openai.com/api/docs/pricing (standard tier), read 2026-10-26"
+SCALEWAY_PRICES = (
+    "scaleway.com/en/pricing/model-as-a-service (serverless, Paris, before VAT), read 2026-10-26"
+)
+#: Until the maintainer reads his consoles (T060): conservative values, far
+#: below any published limit, replaced with his figures before the merge.
+PROVISIONAL_LIMITS = "provisional, pending the maintainer's console (T060)"
 
 
 @dataclass(frozen=True)
@@ -54,7 +63,7 @@ class Configuration:
     reached, with which key, and every parameter the request carries."""
 
     name: str
-    vendor: Literal["google", "mistral"]
+    vendor: Literal["google", "mistral", "openai", "scaleway"]
     developer: str
     endpoint: str
     #: The API version the requests go to: set on Google's client; for
@@ -90,6 +99,27 @@ class Configuration:
     #: cap at all, which the evaluation runner never sends.
     reservation: Literal["estimated", "uncapped"]
     reservation_estimator: str
+    # Fields added by spec 007. Each keeps its default on the four spec 004
+    # configurations, and a field holding its default is left out of their
+    # fingerprint (`evals/first_calls.py`): their accepted first calls hold.
+    #: The currency the prices are in; None reads as USD (spec 004's).
+    currency: Literal["USD", "EUR"] | None = None
+    #: Per million tokens, where the vendor prices them apart.
+    cached_input_price_per_mtok: float | None = None
+    cache_write_price_per_mtok: float | None = None
+    #: Where the vendor processes a request, as documented.
+    processing_location: str | None = None
+    #: The served weights' quantisation, as the host documents it.
+    quantisation: str | None = None
+    #: The host's own qualification of the reasoning setting, quoted.
+    reasoning_note: str | None = None
+    #: The non-secret variables naming the vendor account, billing
+    #: organisation first.
+    account_variables: tuple[str, ...] = ()
+    #: Whether the request asks the vendor to store it; None: not sent.
+    store: bool | None = None
+    #: Whether every answer must name the configured model.
+    check_identity: bool = False
 
     @property
     def prompt_version(self) -> str:
@@ -141,6 +171,76 @@ GEMINI = _gemini("gemini-3.8-flash", 5, 20, attempts=1, stop_on_outage=True)
 # case (spec 004, third amendment).
 GEMINI_FLASH_LITE = _gemini("gemini-3.5-flash-lite", 15, 500, attempts=3, stop_on_outage=False)
 
+
+def _prepaid(name: str, **fields) -> Configuration:
+    """A configuration on a prepaid account (spec 007): every one alike but
+    for the vendor and what follows from it."""
+    return Configuration(
+        name=name,
+        model=name,
+        api_version="v1",
+        temperature=None,
+        max_output_tokens=4096,
+        # The setting Claude's engine and Gemini use, and the lowest
+        # gpt-6.1-sol allows: the same label, not a proven equal budget.
+        reasoning="low",
+        safety="vendor default",
+        tokens_per_minute=100_000,
+        requests_per_second=0.5,
+        requests_per_day=None,
+        quota_timezone=None,
+        attempts=3,
+        stop_on_outage=False,
+        limits_source=PROVISIONAL_LIMITS,
+        shared_limits=None,
+        reservation="estimated",
+        reservation_estimator=ESTIMATOR,
+        check_identity=True,
+        **fields,
+    )
+
+
+def _openai(name: str, prices: tuple[float, float], cached: float, write: float) -> Configuration:
+    return _prepaid(
+        name,
+        vendor="openai",
+        developer="OpenAI",
+        endpoint="https://api.openai.com/v1",
+        key_variable="OPENAI_API_KEY",
+        price_per_mtok=prices,
+        price_source=OPENAI_PRICES,
+        currency="USD",
+        cached_input_price_per_mtok=cached,
+        cache_write_price_per_mtok=write,
+        # EU residency needs a retention arrangement the maintainer does not
+        # have; without it no region is committed.
+        processing_location="global, no regional commitment",
+        account_variables=("OPENAI_ORG_ID", "OPENAI_PROJECT_ID"),
+        store=False,
+    )
+
+
+GPT_LUNA = _openai("gpt-6-luna", (0.10, 0.50), cached=0.01, write=0.125)
+GPT_SOL = _openai("gpt-6.1-sol", (2.0, 10.0), cached=0.10, write=2.50)
+QWEN = _prepaid(
+    "qwen3.5-397b-a17b",
+    vendor="scaleway",
+    developer="Alibaba (Qwen)",
+    # The project the key belongs to goes in the path (Scaleway's schema).
+    endpoint="https://api.scaleway.ai/{project}/v1",
+    key_variable="SCALEWAY_API_KEY",
+    price_per_mtok=(0.60, 3.60),
+    price_source=SCALEWAY_PRICES,
+    currency="EUR",
+    processing_location="Paris, France",
+    quantisation="int4 (catalogue, serverless table)",
+    reasoning_note=(
+        "Scaleway's API schema: for qwen3.5-397b-a17b, `low` and `high` values are "
+        "similar to `medium`"
+    ),
+    account_variables=("SCALEWAY_ORGANIZATION_ID", "SCALEWAY_PROJECT_ID"),
+)
+
 CONFIGURATIONS: dict[str, Configuration] = {
     config.name: config
     for config in (
@@ -180,6 +280,9 @@ CONFIGURATIONS: dict[str, Configuration] = {
                 ("mistral-medium-3-5-reasoning", "high"),
             )
         ),
+        GPT_LUNA,
+        GPT_SOL,
+        QWEN,
     )
 }
 

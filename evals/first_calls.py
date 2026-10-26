@@ -28,7 +28,7 @@ import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import MISSING, asdict, fields
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -48,7 +48,7 @@ class FirstCallsRefused(Exception):  # noqa: N818 -- a refusal, not a defect
 def fingerprint(config: Configuration) -> str:
     """SHA-256 of everything that shapes a request and its reading."""
     whole = {
-        "configuration": asdict(config),
+        "configuration": _shaping(config),
         "prompt_version": config.prompt_version,
         "schema": verdict_schema(),
         "masking_version": MASKING_VERSION,
@@ -56,6 +56,18 @@ def fingerprint(config: Configuration) -> str:
     }
     canonical = json.dumps(whole, sort_keys=True, separators=(",", ":"), default=list)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _shaping(config: Configuration) -> dict:
+    """The configuration's fields, leaving out those that hold their default:
+    only fields added after spec 004 have one, so the four configurations
+    of spec 004 keep the fingerprint their first calls were accepted on."""
+    defaults = {f.name: f.default for f in fields(config) if f.default is not MISSING}
+    return {
+        name: value
+        for name, value in asdict(config).items()
+        if name not in defaults or value != defaults[name]
+    }
 
 
 def account(config: Configuration) -> dict:
