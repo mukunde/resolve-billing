@@ -4,7 +4,9 @@
 
 **Created**: 2026-10-26
 
-**Status**: Draft, for the maintainer's approval
+**Status**: Approved 2026-10-26 (`4118da6`), with `qwen3.5-397b-a17b`,
+the estimated reservations of FR-006b accepted, and the Scaleway envelope
+set at €2
 
 **Input**: Step 4 of the roadmap needs a deployment model. The framing
 reviewed with Codex (r205-r206) screened Claude's three current models on the
