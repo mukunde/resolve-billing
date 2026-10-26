@@ -59,24 +59,32 @@ the maintainer; ADR-009's model-provider row amended.
     logs are kept up to 30 days. A Responses request with `store` unset
     keeps its state at least 30 days, so `store` must be false. EU data
     residency (`eu.api.openai.com`) requires an approved retention
-    arrangement the maintainer does not have: processing is in the United
-    States.
+    arrangement the maintainer does not have. Without it, no regional
+    processing is committed: the location is recorded as "global, no
+    regional commitment", not as a country.
+  - Pricing has more categories than input and output: cached input, and
+    cache writes ($0.125 for `gpt-6-luna`, $2.50 for `gpt-6.1-sol`).
 - **Scaleway Generative APIs** (`scaleway.com`, pricing, supported models,
   structured outputs and data-privacy pages, read 2026-10-26).
   - Serverless, Paris region, OpenAI-compatible.
-  - Qwen models served: `qwen3.6-35b-a3b` (bf16/fp8, reasoning `none` to
-    `high`, €0.25 / €1.50), `qwen3.8-27b` (quantisation not given, €0.60 /
-    €3.30), `qwen3.5-397b-a17b` (int4, reasoning `none` to `high`, 16k
-    output, €0.60 / €3.60), `qwen3-235b-a22b-instruct-2507` (€0.75 /
-    €2.25). Prices are per million tokens, before VAT.
+  - Qwen models served, as the catalogue lists them for serverless:
+    `qwen3.6-35b-a3b` (bf16/fp8, reasoning `none` to `high`, €0.25 /
+    €1.50), `qwen3.8-27b` (quantisation not given, €0.60 / €3.30),
+    `qwen3.5-397b-a17b` (int4, reasoning `none` to `high`, 16k output,
+    €0.60 / €3.60), `qwen3-235b-a22b-instruct-2507` (€0.75 / €2.25).
+    Prices are per million tokens, before VAT. Whether the reasoning
+    tokens count toward the output cap is not documented.
   - The first million tokens are free per organisation. Beyond that, usage
     is billed automatically.
   - Structured outputs with a JSON schema are offered for every model in
     the library; "accuracy may vary between models".
-  - Data: a zero-data-retention policy. Content may be kept temporarily
-    when traffic harms operations or looks malicious. Inputs are not used
-    to train base models, and are not accessible to the models' creators.
-    Prompt caching is automatic and keeps no prompt text.
+  - Data: a zero-data-retention policy by default. Full request content
+    is kept "for up to two weeks" when a request triggers an HTTP 500 or
+    harms the service, and when traffic may be malicious (no duration
+    given). Inputs are not used to train base models, and are not
+    accessible to the models' creators. Prompt caching is automatic,
+    isolated per project, ephemeral, and keeps no prompt text. Personal
+    data "may be stored" in Paris, France.
 - **Cost of one development run** (20 of the 34 cases reach an engine; an
   estimated 100,000-180,000 input tokens and a few thousand output tokens,
   more with reasoning): `gpt-6-luna` about $0.01-0.02; `gpt-6.1-sol` about
@@ -147,7 +155,7 @@ network call is made.
 3. **Given** a missing key or no envelope declared, **When** the runner
    starts, **Then** it says which is missing and calls nothing.
 
-### User Story 2 - Nothing leaves that should not, and nothing is kept (Priority: P1)
+### User Story 2 - Nothing leaves that should not, and storage is declined by request (Priority: P1)
 
 **Acceptance Scenarios**:
 
@@ -156,7 +164,9 @@ network call is made.
    (pinned per vendor by a test), and references the engine cites that were
    not issued are dropped.
 2. **Given** an OpenAI request, **When** it is built, **Then** it asks the
-   vendor not to store the response (`store` false), pinned by a test.
+   vendor not to store the response (`store` false), pinned by a test. The
+   test proves the request; what the vendor keeps rests on its terms
+   (abuse monitoring included), recorded in ADR-009.
 3. **Given** `DECISION_ENGINE` set to any of the three, **When** the service
    builds its engine, **Then** it refuses it.
 4. **Given** a case file other than the development set, or extra fixtures,
@@ -192,11 +202,15 @@ end written incomplete with a non-zero exit.
 - Scaleway's free tier is organisation-wide and its remaining balance is
   not visible to the runner: the envelope estimates every token at list
   price; the console is the account's figure.
-- A vendor ignoring a requested parameter (reasoning, `store`, the schema)
-  is signalled, never dropped silently.
+- A requested parameter the vendor may not honour (reasoning, `store`,
+  the schema): each is used only where documented, pinned in the exact
+  request by a test, and an explicit refusal by the vendor is a refusal.
+  Whether it was honoured is often not observable in the answer; that is
+  recorded as a limitation, never claimed.
 - A model id answered under another name, or routed elsewhere (Scaleway
-  documents routing for retired models): recorded as returned. A first call
-  whose returned identity is not the configured model is not accepted.
+  documents routing for retired models): on any response, first call or
+  full run, the run stops (FR-008). An unchanged name still does not prove
+  unchanged weights.
 - Scaleway fails the documentation check or its first call (structured
   output unusable, terms not as read): Qwen moves to OVHcloud by an
   amendment of this specification, not silently.
@@ -214,8 +228,9 @@ end written incomplete with a non-zero exit.
   region, API, key variable, temperature (the vendor's default, recorded),
   output cap, reasoning setting, the strict verdict schema, `store` false
   for OpenAI, prices with source and date, limits with source and date,
-  attempts, and quantisation where the host discloses it (`int4` for
-  `qwen3.5-397b-a17b`, unknown where not). No alias, no fallback.
+  attempts, and quantisation as the host's catalogue lists it for the
+  serverless configuration (`int4` for `qwen3.5-397b-a17b`; unknown where
+  not listed). No alias, no fallback.
 - **FR-004**: The shared core MUST be reused as it stands: `anonymise`,
   `mask_message`, local validation against the closed classification,
   references mapped back and those not issued dropped, an unusable answer
@@ -240,6 +255,26 @@ end written incomplete with a non-zero exit.
 
   The envelope is admission accounting, not a billing cap: the vendor's
   prepaid credit or console is the account's figure.
+- **FR-006a**: Each vendor account MUST be named by a stable, non-secret
+  identity the maintainer declares -- the OpenAI organisation and project
+  ids, the Scaleway organisation id -- in the way `GEMINI_QUOTA_PROJECT`
+  names a Google project. The envelope, the account lock, the pacing and
+  the first-call acceptance are kept per declared account, never per key:
+  rotating or adding a key never replenishes an envelope. Tests: two keys
+  of one account spend one envelope; two accounts keep two.
+- **FR-006b**: Reservations and costs MUST be estimates, under the
+  maintainer's explicit acceptance given with this specification,
+  extending his spec 004 waiver to these two vendors: no vendor documents
+  a bound on the tokens of a request. Each reservation:
+  - prices input at the highest input-side rate that may apply (the
+    cache-write rate for OpenAI), and output at the output rate over the
+    whole output cap, reasoning included;
+  - for Qwen, whose reasoning may not count toward the cap, is checked
+    against the reported usage after each answer, and an excess stops the
+    run;
+  - is settled from the reported usage by billing category. Missing usage
+    keeps the full reservation spent; an excess records the estimated
+    actual cost, then stops the run.
 - **FR-007**: Limits as spec 004 requires (FR-007): per-account pacing from
   the limits the maintainer reads in his console, token reservations with
   the `utf8-bytes-v1` estimator, bounded attempts and run duration, the
@@ -249,11 +284,14 @@ end written incomplete with a non-zero exit.
   configuration's full run, and is accepted only as FR-016 of spec 004
   says. It MUST also show the returned model identity equal to the
   configured id. Each configuration's own accepted first call opens its
-  full run, on its own fingerprint and account identity.
+  full run, on its own fingerprint and declared account identity. During a
+  full run, every response's returned identity MUST equal the configured
+  id; a mismatch stops the run, written incomplete, its usage and cost
+  kept, and the substitute's answer is never scored.
 - **FR-009**: Each run MUST record `--data-terms` as declared by the
-  maintainer (`contractual` expected for both vendors), the region of
-  processing as documented (United States for OpenAI; France for
-  Scaleway), and the statement that the score is a regression score on
+  maintainer (`contractual` expected for both vendors), the processing
+  location as documented ("global, no regional commitment" for OpenAI;
+  Paris, France, for Scaleway), and the statement that the score is a regression score on
   development cases. Results are stored in `evals/results/` and listed in
   `evals/results/README.md` apart from the others.
 - **FR-010**: CI MUST make no real call; the network-free tests of the
@@ -271,14 +309,17 @@ end written incomplete with a non-zero exit.
 ## Success Criteria *(mandatory)*
 
 - **SC-001**: For each configuration whose access is confirmed, an accepted
-  first call, then at least one full run of the 34 development cases by the
+  first call, then one full run of the 34 development cases by the
   maintainer, stored and listed, with unsafe actions, abstentions, invalid
-  answers, unavailability and estimated cost counted. The number of runs
-  per configuration for spec 008's comparison is fixed there, before any
-  score is read.
+  answers, unavailability and estimated cost counted. These are
+  **integration runs**: they show the configuration works end to end and
+  give its real usage. Spec 008's comparison uses fresh runs under a
+  protocol declared before any of them (runs per candidate, criteria, tie
+  handling); 007's runs never count toward it.
 - **SC-002**: No case leaves the development set, no new engine reaches the
   service, no vendor receives more than the masked, pseudonymised payload,
-  and no OpenAI response is stored by request -- each shown by a test.
+  and every OpenAI request asks for no storage (`store` false) -- each
+  shown by a test.
 - **SC-003**: Tests show the envelopes: the reservation before sending, the
   refusal beyond the remaining amount, two OpenAI configurations sharing
   one envelope, a reservation kept after an interruption, an unreadable
@@ -289,6 +330,8 @@ end written incomplete with a non-zero exit.
 
 ## Assumptions
 
+- With his approval of this specification, the maintainer accepts the
+  estimated reservations of FR-006b and sets the Scaleway envelope.
 - Before each configuration's first call, the maintainer checks in his
   console: the limits of his account, the credit available, and for
   Scaleway the free-tier balance and the payment requirements. Each first
