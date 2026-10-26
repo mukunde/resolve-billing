@@ -133,9 +133,10 @@ evaluation runner selects from the same table plus the seven configurations
   come.
 - The seven configurations' reservations are estimates (the maintainer's
   waivers, 2026-10-24, extended to the prepaid vendors on 2026-10-26): the
-  request's UTF-8 bytes plus a margin plus the output cap, resting on
-  tokenizers no vendor documents. Each answer's reported usage is checked against them, and a
-  run stops when it exceeds one.
+  request's UTF-8 bytes plus a margin plus the output cap. The estimator
+  is not established as an upper bound for the served request, its
+  framing and its reasoning included. Each answer's reported usage is
+  checked against it, and a run stops when it exceeds one.
 - Their vendors' terms, limits and models are as read on 2026-10-24
   (2026-10-26 for OpenAI and Scaleway), and change without notice.
 - For the three on prepaid accounts: whether the vendor honours a

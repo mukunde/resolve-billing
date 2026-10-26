@@ -109,7 +109,8 @@ specs/007-openai-qwen-engines on 2026-10-26. Reasons are in the constitution
   - **a prepaid envelope per billing organisation**, in its currency,
     `~/.resolve-billing/envelope-<vendor>-<organisation>.json`: declared
     once with `--envelope`, only ever raised, each declaration kept; each
-    attempt reserved before it is sent at the highest rate that may apply,
+    attempt reserved before it is sent at the highest rate that may apply
+    (an estimate, not a bound),
     settled from its reported usage category by category (an absent
     category never read as zero; details above their totals, or counts
     that are not counts, keep the reservation spent and stop the run); an

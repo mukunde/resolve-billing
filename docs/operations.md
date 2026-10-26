@@ -377,8 +377,10 @@ every request).
 `~/.resolve-billing/envelope-<vendor>-<organisation>.json`. Declared on the
 account's first run with `--envelope` (dollars for OpenAI, euros for
 Scaleway); a later `--envelope` only raises it, recorded beside the earlier
-figure. Each attempt reserves its maximum cost before it is sent -- every
-reserved token at the highest rate that may apply -- and is settled at its
+figure. Each attempt reserves an estimated cost before it is sent -- every
+reserved token at the highest rate that may apply; an estimate, not a
+bound, since the token estimate is not established as one (Qwen's
+reasoning may not count toward its cap) -- and is settled at its
 reported usage, category by category: cached and cache-write tokens at
 their rates when reported, the rest of the input at the input rate (at the
 cache-write rate when a priced detail is missing), output with reasoning at
@@ -427,8 +429,9 @@ python -m dotenv run -- python -m evals.runner --engine qwen3.5-397b-a17b --data
 declared account ids (never a key or its fingerprint), each attempt's
 reported usage with its details, and a cost block: the settled amount and
 its currency, and apart from it the attempts whose cost is unknown (an
-answer without usage, an interruption) at their reserved maximum -- the
-run's cost is complete only when there are none. It is labelled an
+answer without usage, an interruption) at their estimated reservation,
+which their actual cost may exceed -- the run's cost is complete only when
+there are none. It is labelled an
 **integration run**: spec 008's comparison uses fresh runs under a
 protocol declared before them.
 
