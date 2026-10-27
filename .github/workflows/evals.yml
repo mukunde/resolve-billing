@@ -45,7 +45,7 @@ jobs:
       - name: Install
         # `engines`: the free-tier engines' SDKs, for their network-free checks;
         # no test calls a vendor (specs/004-second-engines).
-        run: pip install -e ".[api,dev,mcp,otel,engines]"
+        run: pip install -e ".[api,dev,mcp,otel,engines,claude]"
 
       - name: Lint
         run: ruff check .

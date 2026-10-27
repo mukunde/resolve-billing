@@ -7,6 +7,7 @@ import json
 
 import pytest
 
+from app.decision.base import EngineRejected
 from app.decision.hosted import Answer
 from evals import engines, runner, state
 from tests.unit.test_claude_engine import VALID_VERDICT
@@ -45,6 +46,10 @@ def accounts(monkeypatch):
     monkeypatch.setenv("SCALEWAY_API_KEY", SCW_KEY)
     monkeypatch.setenv("SCALEWAY_ORGANIZATION_ID", "scw-org")
     monkeypatch.setenv("SCALEWAY_PROJECT_ID", "scw-project")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-SENTINEL-KEY")
+    monkeypatch.setenv("RESOLVE_ANTHROPIC_ORG_ID", "anth-org")
+    for variable in ("ANTHROPIC_CUSTOM_HEADERS", "ANTHROPIC_LOG"):
+        monkeypatch.delenv(variable, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "gemini-key-set-by-the-test")
     monkeypatch.setenv("MISTRAL_API_KEY", "mistral-key-set-by-the-test")
     monkeypatch.setenv("GEMINI_QUOTA_PROJECT", "resolve-billing-eval")
@@ -330,3 +335,314 @@ class TestIncompleteRuns:
         ]
         assert result["cost"]["complete"] is True
         assert "gpt-6-astra" in result["model_versions"]
+
+
+class TestClaudeOnTheGovernedPath:
+    """specs/008-deployment-model-choice, T022: Haiku held to what the other
+    vendors' configurations are held to."""
+
+    HAIKU = "claude-haiku-5-5"
+
+    def test_a_first_call_reserves_in_the_anthropic_envelope(self, tmp_path, monkeypatch):
+        status, result, vendor = run(
+            monkeypatch, tmp_path, self.HAIKU, "--first-call-only", "--envelope", "1"
+        )
+
+        assert result["first_call_accepted"] is True
+        assert result["account"] == {"organisation": "anth-org"}
+        held = envelope("anthropic-anth-org")
+        assert held["currency"] == "USD"
+        assert held["declarations"][-1]["total"] == 1.0
+        assert all(a["settled"] is not None for a in held["attempts"].values())
+        assert "sk-ant-SENTINEL-KEY" not in json.dumps(result)
+
+    def test_the_reservation_is_on_disk_before_the_call(self, tmp_path, monkeypatch):
+        seen = []
+
+        class Watching(Scripted):
+            async def _complete(self, system, user):
+                held = envelope("anthropic-anth-org")
+                seen.append(sum(a["settled"] is None for a in held["attempts"].values()))
+                return await super()._complete(system, user)
+
+        run(
+            monkeypatch,
+            tmp_path,
+            self.HAIKU,
+            "--first-call-only",
+            "--envelope",
+            "1",
+            vendor=Watching(self.HAIKU),
+        )
+
+        assert seen == [1]
+
+    def test_an_inconsistent_usage_keeps_the_reservation(self, tmp_path, monkeypatch):
+        inconsistent = Answer(
+            json.dumps(VALID_VERDICT), "stop", 100, 50, self.HAIKU, cached_input_tokens=500
+        )
+        status, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            self.HAIKU,
+            "--first-call-only",
+            "--envelope",
+            "1",
+            outcome=inconsistent,
+        )
+
+        assert result["complete"] is False
+        assert "inconsistent" in result["stop_reason"]
+        held = envelope("anthropic-anth-org")
+        assert sum(a["settled"] is None for a in held["attempts"].values()) == 1
+
+    def test_an_attempt_the_envelope_cannot_cover_is_not_sent(self, tmp_path, monkeypatch):
+        status, result, vendor = run(
+            monkeypatch, tmp_path, self.HAIKU, "--first-call-only", "--envelope", "0.000001"
+        )
+
+        assert vendor.calls == 0
+        assert result["complete"] is False
+        assert "envelope" in result["stop_reason"]
+
+    def test_missing_usage_keeps_the_reservation_and_stops(self, tmp_path, monkeypatch):
+        no_usage = Answer(json.dumps(VALID_VERDICT), "stop", None, None, self.HAIKU)
+        status, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            self.HAIKU,
+            "--first-call-only",
+            "--envelope",
+            "1",
+            outcome=no_usage,
+        )
+
+        assert result["complete"] is False
+        assert result["cost"]["unknown_cost_attempts"] == 1
+        held = envelope("anthropic-anth-org")
+        assert sum(a["settled"] is None for a in held["attempts"].values()) == 1
+
+    @pytest.mark.parametrize(
+        ("outcome", "reason"),
+        [
+            (asyncio.CancelledError(), "interrupted"),
+            (EngineRejected("400"), "refused"),
+        ],
+    )
+    def test_an_interrupted_or_refused_run_is_still_written(
+        self, outcome, reason, tmp_path, monkeypatch
+    ):
+        status, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            self.HAIKU,
+            "--first-call-only",
+            "--envelope",
+            "1",
+            outcome=outcome,
+        )
+
+        assert result is not None
+        assert result["complete"] is False
+        assert reason in result["stop_reason"]
+        assert status != 0
+
+    def test_the_first_call_opens_the_full_run(self, tmp_path, monkeypatch):
+        run(monkeypatch, tmp_path, self.HAIKU, "--first-call-only", "--envelope", "1")
+
+        status, result, vendor = run(monkeypatch, tmp_path, self.HAIKU)
+
+        assert result["complete"] is True
+        assert vendor.calls == engines.ENGINE_CASES
+
+    def test_an_ambient_anthropic_setting_refuses_the_run(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_LOG", "debug")
+
+        with pytest.raises(SystemExit, match="ANTHROPIC_LOG"):
+            run(monkeypatch, tmp_path, self.HAIKU, "--first-call-only", refused=True)
+
+    def test_openai_s_run_is_unchanged(self, tmp_path, monkeypatch):
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        status, result, _ = run(monkeypatch, tmp_path, "gpt-6-luna")
+
+        assert result["complete"] is True
+        assert result["account"] == {"organisation": "org-test", "project": "proj_test"}
+
+
+class TestSlotsOnTheRunner:
+    """specs/008-deployment-model-choice, T040: what every result records, and
+    a counted run bound to its slot at launch."""
+
+    def manifest(self, tmp_path, monkeypatch):
+        from evals import campaign
+        from tests.unit.test_campaign import manifest
+
+        path = manifest(tmp_path, rounds=[["gpt-6-luna"]] * 3)
+        monkeypatch.setattr(campaign, "MANIFEST", path)
+        monkeypatch.setattr(campaign, "RESULTS_DIR", tmp_path)
+        monkeypatch.setattr(
+            campaign, "git_state", lambda root=None: {"commit": "c0ffee", "clean_tree": True}
+        )
+        monkeypatch.setattr(campaign, "manifest_commit", lambda p, root=None: "c0ffee")
+        return path
+
+    def test_every_result_records_its_commit_and_tree(self, tmp_path, monkeypatch):
+        _, result, _ = run(
+            monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5"
+        )
+
+        assert result["commit"]
+        assert "clean_tree" in result
+        assert result["configuration_fingerprint"]
+        assert result["prompt_version"] == "decision_v3"
+        assert "slot" not in result
+
+    def test_a_slot_run_is_bound_and_logged(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        status, result, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna")
+
+        assert result["campaign"] == "008"
+        assert (result["slot"], result["attempt"]) == ("r1-gpt-6-luna", 1)
+        assert result["stop_kind"] is None
+        log = (tmp_path / "campaign-008.jsonl").read_text(encoding="utf-8")
+        assert '"r1-gpt-6-luna"' in log
+        # The per-case record is gone once the result is written.
+        assert not list((tmp_path / "campaign-008-cases").glob("*"))
+
+    @pytest.mark.parametrize("slot", ["r9-gpt-6-luna", "r2-gpt-6-luna"])
+    def test_a_slot_out_of_turn_builds_no_client(self, slot, tmp_path, monkeypatch, capsys):
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        status, _, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--slot", slot, refused=True)
+
+        assert status == 2
+        assert "refused" in capsys.readouterr().err
+
+    def test_a_dirty_tree_builds_no_client(self, tmp_path, monkeypatch):
+        from evals import campaign
+
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+        monkeypatch.setattr(
+            campaign, "git_state", lambda root=None: {"commit": "c0ffee", "clean_tree": False}
+        )
+
+        status, _, _ = run(
+            monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna", refused=True
+        )
+
+        assert status == 2
+
+    def test_a_first_call_takes_no_slot(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+
+        with pytest.raises(SystemExit):
+            run(
+                monkeypatch,
+                tmp_path,
+                "gpt-6-luna",
+                "--first-call-only",
+                "--envelope",
+                "5",
+                "--slot",
+                "r1-gpt-6-luna",
+                refused=True,
+            )
+
+    def test_an_interrupted_slot_run_is_written_and_replaceable(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        _, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            "gpt-6-luna",
+            "--slot",
+            "r1-gpt-6-luna",
+            outcome=asyncio.CancelledError(),
+        )
+        _, replacement, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna")
+
+        assert result["stop_kind"] == "qualifying"
+        assert replacement["attempt"] == 2
+        assert replacement["complete"] is True
+
+    def test_a_slot_run_writes_only_to_the_campaign_s_folder(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        status, result, _ = run(
+            monkeypatch, elsewhere, "gpt-6-luna", "--slot", "r1-gpt-6-luna", refused=True
+        )
+
+        assert status == 2
+        assert result is None
+        assert not (elsewhere / "campaign-008.jsonl").exists()
+
+    def test_a_busy_account_releases_the_slot_and_is_replaceable(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        with state.AccountRun("openai-org-test"):
+            status, busy, _ = run(
+                monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna", refused=True
+            )
+        _, replacement, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna")
+
+        assert status == 2
+        assert busy["stop_kind"] == "qualifying"
+        assert replacement["attempt"] == 2 and replacement["complete"] is True
+
+    def test_an_outage_leaving_cases_unscored_is_a_replaceable_stop(self, tmp_path, monkeypatch):
+        from app.decision.base import EngineUnavailable
+
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+        monkeypatch.setattr("evals.governed.BACKOFF", 0.0)
+
+        _, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            "gpt-6-luna",
+            "--slot",
+            "r1-gpt-6-luna",
+            outcome=EngineUnavailable("server_error"),
+        )
+
+        assert result["complete"] is False
+        assert result["stop_reason"].startswith("outage:")
+        assert result["stop_kind"] == "qualifying"
+
+    def test_an_oversized_case_takes_precedence_over_an_outage(self):
+        from datetime import UTC, datetime
+
+        from evals.hosted_run import HostedRun, _unscored_stops
+
+        record = HostedRun("gpt-6-luna", datetime.now(UTC), total=2, complete=True)
+        record.statuses = {"a": "unavailable", "b": "not_sent_oversized"}
+
+        _unscored_stops(record)
+
+        assert record.complete is False
+        assert record.stop_reason.startswith("not sent:")
+
+    def test_an_oversized_case_is_not_replaceable_even_after_an_early_stop(self):
+        from datetime import UTC, datetime
+
+        from evals import campaign
+        from evals.hosted_run import HostedRun, _unscored_stops
+
+        record = HostedRun("gpt-6-luna", datetime.now(UTC), total=2)
+        record.statuses = {"a": "not_sent_oversized"}
+        record.stop_reason = "the run's deadline of 3600 s is reached"
+
+        _unscored_stops(record)
+
+        assert record.stop_reason.startswith("not sent:")
+        assert campaign.stop_kind(record.stop_reason) == "other"

@@ -13,8 +13,10 @@ api = [
     "uvicorn[standard]>=0.32",
     "python-multipart>=0.0.9",
 ]
+# Pinned exactly (specs/008-deployment-model-choice): the service engine and the
+# evaluation adapter are checked against this release without network in CI.
 claude = [
-    "anthropic>=0.40",
+    "anthropic==0.105.2",
 ]
 # Stripe as a billing platform, read-only (specs/001-stripe-read-adapter).
 # Pinned exactly: the adapter pins the API version this release targets

@@ -122,7 +122,8 @@ class TestTheNewConfigurations:
 
         assert config.name == config.model == name
         assert config.reasoning == "low"
-        assert config.max_output_tokens == 4096
+        # 4,096 for OpenAI; the 397B's raised for spec 008.
+        assert config.max_output_tokens == (16_384 if name == "qwen3.5-397b-a17b" else 4096)
         assert config.temperature is None
         assert config.attempts == 3
         assert config.stop_on_outage is False
@@ -167,6 +168,12 @@ class TestTheNewConfigurations:
 
         assert all(c.limits_source != PROVISIONAL_LIMITS for c in CONFIGURATIONS.values())
 
+    def test_haiku_s_limits_as_the_maintainer_read_them(self):
+        haiku = CONFIGURATIONS["claude-haiku-5-5"]
+
+        assert (haiku.tokens_per_minute, haiku.requests_per_second) == (2_000_000, 10_000 / 60)
+        assert "read 2026-10-27" in haiku.limits_source
+
     def test_openai_prices(self):
         luna, sol = CONFIGURATIONS["gpt-6-luna"], CONFIGURATIONS["gpt-6.1-sol"]
 
@@ -192,6 +199,58 @@ class TestTheNewConfigurations:
         assert config.processing_location == "Paris, France"
         assert config.quantisation == "int4 (catalogue, serverless table)"
         assert "similar to `medium`" in config.reasoning_note
+
+    def test_the_397b_s_cap_raised_for_spec_008(self):
+        config = CONFIGURATIONS["qwen3.5-397b-a17b"]
+
+        assert config.max_output_tokens == 16_384
+        assert config.reasoning == "low"
+
+    def test_qwen_3_6_35b_on_scaleway(self):
+        config = CONFIGURATIONS["qwen3.6-35b-a3b"]
+
+        assert config.vendor == "scaleway"
+        assert config.developer == "Alibaba (Qwen)"
+        assert config.model == "qwen3.6-35b-a3b"
+        assert config.endpoint == "https://api.scaleway.ai/{project}/v1"
+        assert config.account_variables == ("SCALEWAY_ORGANIZATION_ID", "SCALEWAY_PROJECT_ID")
+        assert config.reasoning == "low"
+        assert config.max_output_tokens == 16_384
+        assert config.currency == "EUR"
+        assert config.price_per_mtok == (0.25, 1.50)
+        assert config.cached_input_price_per_mtok is None
+        assert config.store is None
+        assert config.quantisation == "bf16 or fp8 (catalogue, serverless table)"
+        assert "similar to `medium`" in config.reasoning_note
+        assert (config.tokens_per_minute, config.requests_per_second) == (200_000, 300 / 60)
+        assert config.check_identity is True
+
+    def test_deepseek_v4_1_flash_on_scaleway(self):
+        config = CONFIGURATIONS["deepseek-v4.1-flash"]
+
+        assert config.vendor == "scaleway"
+        assert config.developer == "DeepSeek"
+        assert config.model == "deepseek-v4.1-flash"
+        assert config.reasoning == "low"
+        assert config.max_output_tokens == 16_384
+        assert config.currency == "EUR"
+        assert config.price_per_mtok == (0.60, 1.80)
+        assert config.cached_input_price_per_mtok == 0.12
+        assert config.quantisation == "not stated by Scaleway"
+        assert config.release_status == "preview"
+        assert (config.tokens_per_minute, config.requests_per_second) == (200_000, 300 / 60)
+        assert config.processing_location == "Paris, France"
+        assert config.check_identity is True
+
+    @pytest.mark.parametrize("name", ["qwen3.6-35b-a3b", "deepseek-v4.1-flash"])
+    def test_the_service_refuses_the_two_new_ones(self, name, monkeypatch):
+        monkeypatch.setenv("DECISION_ENGINE", name)
+        deps.get_engine.cache_clear()
+
+        with pytest.raises(RuntimeError, match="unknown decision engine"):
+            deps.get_engine()
+
+        deps.get_engine.cache_clear()
 
     @pytest.mark.parametrize("name", NEW)
     def test_the_service_refuses_each(self, name, monkeypatch):

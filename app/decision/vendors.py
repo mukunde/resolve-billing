@@ -16,6 +16,10 @@ def client_for(config: Configuration) -> HostedEngine:
         from app.decision.mistral import MistralEngine
 
         return MistralEngine(config)
+    if config.vendor == "anthropic":
+        from app.decision.anthropic_eval import AnthropicEvaluationEngine
+
+        return AnthropicEvaluationEngine(config)
     if config.vendor in {"openai", "scaleway"}:
         from app.decision.openai_compatible import OpenAICompatibleEngine
 

@@ -21,6 +21,7 @@ would do on disputes it has never seen.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
@@ -31,12 +32,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.decision.base import EngineRejected
+from app.decision.claude import PROMPT_VERSION
 from app.decision.hosted import GEMINI_PRICES, configuration
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
-from evals import accounts, engines
+from evals import accounts, campaign, engines
 from evals.accounts import QUOTA_PROJECT, AccountRefused
-from evals.first_calls import FirstCalls, FirstCallsRefused
+from evals.first_calls import FirstCalls, FirstCallsRefused, fingerprint
 from evals.governed import Governed
 from evals.ledger import Ledger, LedgerRefused, PrepaidLedger
 from evals.limits import RunStopped, limiters_for
@@ -76,6 +78,9 @@ class HostedRun:
     not_attempted: list[str] = field(default_factory=list)
     governed: Governed | None = None
     finished: float | None = None
+    #: The comparison's slot and attempt, for a counted run.
+    slot: str | None = None
+    attempt: int | None = None
 
     def stop(self, reason: str, cases: list[dict], index: int) -> None:
         self.stop_reason = self.stop_reason or reason
@@ -94,11 +99,14 @@ async def run(
     account: AccountRun,
     quota: DailyQuota | None = None,
     first_call_only: bool = False,
+    admission: campaign.Admission | None = None,
 ) -> None:
     """Run the cases into `record`, which holds what was done whatever stops
     the run. `account` is held: no other run shares its quota meanwhile. With
     `first_call_only`, a smoke test: one attempt on the first case that
-    reaches the engine, then the run stops, whatever came of it."""
+    reaches the engine, then the run stops, whatever came of it. With an
+    `admission` (a slot of the comparison), each case is recorded on disk as
+    it is decided, so a lost process can be recovered."""
     from app.api.deps import wire
     from app.application.investigate_dispute import DisputeInvestigator
     from app.domain.models import Dispute
@@ -165,6 +173,19 @@ async def run(
             record.outcomes.append(runner._evaluate(case, result))
             # A case the rules settled never entered the engine.
             record.statuses[case["id"]] = governed.statuses.get(case["id"], "rules_only")
+            if admission is not None:
+                admission.record_case(
+                    case["id"],
+                    vars(record.outcomes[-1]),
+                    record.statuses[case["id"]],
+                    {
+                        "sends": governed.sends,
+                        "cost": governed.cost,
+                        "unknown_cost_attempts": len(governed.open_reservations),
+                        "unknown_cost_reserved": sum(governed.open_reservations.values()),
+                        "usage": governed.usage.get(case["id"]),
+                    },
+                )
             if first_call_only and case["id"] in governed.statuses:
                 versions = governed.engine.model_versions
                 record.stop_reason = _first_call_reason(
@@ -178,6 +199,27 @@ async def run(
     finally:
         record.finished = time.monotonic()
         await governed.aclose()
+
+
+def _unscored_stops(record: HostedRun) -> None:
+    """A counted run is complete only if every case that entered the engine
+    was scored: a case left unavailable by an outage makes it an outage stop
+    (replaceable); a case too large to send, a stop of its own kind."""
+    unavailable = [c for c, s in record.statuses.items() if s == "unavailable"]
+    oversized = [c for c, s in record.statuses.items() if s == "not_sent_oversized"]
+    # A case too large to send would be too large again: that stop takes
+    # precedence over an outage or an early stop, which a replacement could
+    # repair -- also when the run stopped afterwards for another reason.
+    if oversized:
+        earlier = f" (then: {record.stop_reason})" if record.stop_reason else ""
+        record.complete = False
+        record.stop_reason = f"not sent: {len(oversized)} cases too large for the quota{earlier}"
+        return
+    if not record.complete:
+        return
+    if unavailable:
+        record.complete = False
+        record.stop_reason = f"outage: {len(unavailable)} cases left unscored"
 
 
 #: A first call that opens the way to the full run (FR-016).
@@ -225,6 +267,8 @@ def main(args, cases: list[dict], parser) -> int:
         parser.error("--mistral-allowance-usd is for the Mistral configurations")
     if config.currency is None and args.envelope is not None:
         parser.error("--envelope is for the configurations on prepaid accounts")
+    if args.slot is not None and args.first_call_only:
+        parser.error("--slot is for a counted run; a first call takes no slot")
     if config.requests_per_day is None and args.gemini_requests_used_today is not None:
         parser.error("--gemini-requests-used-today is for a configuration with a daily limit")
     if (missing := runner.missing_credential(args.engine)) is not None:
@@ -297,23 +341,54 @@ def main(args, cases: list[dict], parser) -> int:
             print(f"result written to {written}", file=sys.stderr)
             return 3
     defect = None
-    try:
-        with AccountRun(accounts.billing_account(config)) as account:
-            try:
-                asyncio.run(run(record, cases, ledger, account, quota, args.first_call_only))
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                record.stop_reason = record.stop_reason or "interrupted"
-                record.complete = False
-            except Exception as error:
-                defect_reason = f"internal error ({type(error).__name__})"
-                record.stop_reason = record.stop_reason or defect_reason
-                record.complete = False
-                defect = error
-    except AccountBusy as refusal:
-        print(f"refused: {refusal}", file=sys.stderr)
+    if args.slot is not None and args.json.parent.resolve() != campaign.RESULTS_DIR.resolve():
+        # One folder holds the campaign's results and its log: another would
+        # start an empty history.
+        print(
+            f"refused: a slot's result goes to {campaign.RESULTS_DIR}, not {args.json.parent}",
+            file=sys.stderr,
+        )
         return 2
-
-    written = write(record, args, ledger, started, quota)
+    # Everything held -- the slot, the account -- is released on every exit,
+    # once the result is written.
+    with contextlib.ExitStack() as held:
+        admission = None
+        if args.slot is not None:
+            try:
+                admission = held.enter_context(
+                    campaign.Campaign().admit(
+                        args.engine,
+                        args.slot,
+                        run_id=record.started_at.strftime("%Y%m%dT%H%M%S.%fZ"),
+                    )
+                )
+            except campaign.CampaignRefused as refusal:
+                print(f"refused: {refusal}", file=sys.stderr)
+                return 2
+            record.slot, record.attempt = admission.slot, admission.attempt
+        try:
+            account = held.enter_context(AccountRun(accounts.billing_account(config)))
+        except AccountBusy as refusal:
+            print(f"refused: {refusal}", file=sys.stderr)
+            if admission is not None:
+                # Admitted and logged, but nothing sent: the attempt is
+                # written, stopped for a reason outside the model's answers.
+                record.stop_reason = "interrupted: the vendor account was busy"
+                write(record, args, ledger, started, quota)
+            return 2
+        try:
+            asyncio.run(run(record, cases, ledger, account, quota, args.first_call_only, admission))
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            record.stop_reason = record.stop_reason or "interrupted"
+            record.complete = False
+        except Exception as error:
+            defect_reason = f"internal error ({type(error).__name__})"
+            record.stop_reason = record.stop_reason or defect_reason
+            record.complete = False
+            defect = error
+        if admission is not None:
+            _unscored_stops(record)
+        written = write(record, args, ledger, started, quota)
     if args.first_call_only and record.stop_reason == ACCEPTED:
         # Recorded only once its evidence is on disk; an interruption before
         # this line leaves the first call to be run again.
@@ -384,6 +459,7 @@ def write(
             except LedgerRefused as refusal:
                 cost["envelope"] = f"unreadable: {refusal}"
     finished = record.finished or time.monotonic()
+    repo = campaign.git_state()
     payload = {
         "engine": record.engine_name,
         "engine_version": config.prompt_version,
@@ -420,7 +496,19 @@ def write(
         "first_call_accepted": (record.stop_reason == ACCEPTED) if args.first_call_only else None,
         "sends": governed.sends if governed else 0,
         "outcomes": [vars(o) for o in record.outcomes],
+        # specs/008-deployment-model-choice: what the comparison checks.
+        "commit": repo["commit"],
+        "clean_tree": repo["clean_tree"],
+        "configuration_fingerprint": fingerprint(config),
+        "prompt_version": PROMPT_VERSION,
     }
+    if record.slot is not None:
+        payload |= {
+            "campaign": campaign.NAME,
+            "slot": record.slot,
+            "attempt": record.attempt,
+            "stop_kind": campaign.stop_kind(record.stop_reason) if not record.complete else None,
+        }
     if config.account_variables:
         # Declared ids only: never a key, never a key's fingerprint.
         payload["account"] = accounts.identity(config)

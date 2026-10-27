@@ -57,8 +57,12 @@ def declared(config: Configuration) -> dict[str, str]:
 def identity(config: Configuration) -> dict:
     """The account a run uses, by a non-secret identity."""
     if config.account_variables:
-        organisation, project = declared(config).values()
-        return {"organisation": organisation, "project": project}
+        # The billing organisation first; a project where the vendor has one.
+        values = list(declared(config).values())
+        identity = {"organisation": values[0]}
+        if len(values) > 1:
+            identity["project"] = values[1]
+        return identity
     key = os.environ.get(config.key_variable, "")
     legacy = {"key": hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]}
     if config.requests_per_day is not None:

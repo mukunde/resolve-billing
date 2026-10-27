@@ -32,6 +32,7 @@ from app.decision.hosted import (
     Configuration,
     HostedEngine,
     estimated_tokens,
+    silence_request_logging,
     unavailable,
 )
 from app.decision.verdict import verdict_schema
@@ -183,6 +184,8 @@ def build_client(config: Configuration, http_client=None):
     missing = [name for name in config.account_variables if not os.environ.get(name)]
     if missing:
         raise AmbientSettingRefused(f"{', '.join(missing)} not set: the account is not named")
+    # The SDK logs each request's options, payload included, at DEBUG.
+    silence_request_logging("openai._base_client")
     settings = {
         "api_key": os.environ[config.key_variable],
         "max_retries": 0,

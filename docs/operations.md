@@ -440,6 +440,44 @@ there are none. It is labelled an
 **integration run**: spec 008's comparison uses fresh runs under a
 protocol declared before them.
 
+### The comparison that chooses the deployment model
+
+Spec 008 compares five candidates -- `claude-haiku-5-5`, `gpt-6-luna`,
+`qwen3.5-397b-a17b`, `qwen3.6-35b-a3b`, `deepseek-v4.1-flash` -- with
+Gemini 3.5 Flash-Lite as a comparison point, three runs each, by rules
+declared before any run.
+
+1. **The manifest**, `evals/comparisons/008/manifest.json`, comes in its
+   own pull request the maintainer approves: his eligibility declaration,
+   the date of round 1, the exchange rate, the evidence, the slots in
+   order. Everything that follows runs on that commit, on a clean tree.
+2. **First calls** for the configurations new or changed since their last
+   one: `claude-haiku-5-5` (declare the Anthropic envelope, `--envelope 1`,
+   and set `RESOLVE_ANTHROPIC_ORG_ID`), `qwen3.6-35b-a3b`,
+   `deepseek-v4.1-flash` and `qwen3.5-397b-a17b` (its cap changed). A first
+   call takes no slot.
+3. **The rounds**, one slot at a time, in the manifest's order, each run
+   with its slot and its result in `evals/results/`:
+
+   ```bash
+   python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --data-terms contractual --slot r1-gpt-6-luna --json evals/results/gpt-6-luna.json
+   ```
+
+   The runner refuses a slot out of turn, a dirty tree, a checkout off the
+   manifest's commit, provisional limits, or another results folder. A
+   run interrupted for a reason outside the model's answers is replaced
+   once, by running the same slot again, next. Flash-Lite declares its
+   Pacific day once, before its first request.
+4. **The comparison**:
+
+   ```bash
+   python -m evals.compare evals/comparisons/008/manifest.json
+   ```
+
+   It writes `comparison.md` and `comparison.json` beside the manifest,
+   or says why it refuses. The results, the campaign log and the
+   comparison go in a results pull request; the decision record follows.
+
 ### Reconciling what we estimated against what we were billed
 
 ```bash

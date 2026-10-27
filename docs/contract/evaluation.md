@@ -2,8 +2,9 @@
 
 How the system is measured, what the measurements may be read for, and what
 CI holds it to. Written on 2026-10-24 from the existing records;
-specs/004-second-engines folded in the same day, and
-specs/007-openai-qwen-engines on 2026-10-26. Reasons are in the constitution
+specs/004-second-engines folded in the same day,
+specs/007-openai-qwen-engines on 2026-10-26, and
+specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
 (VIII, IX), README "Evaluation", `evals/taxonomy.md`, `docs/operations.md`
 ("What CI actually enforces") and `evals/results/README.md`.
 
@@ -125,6 +126,38 @@ specs/007-openai-qwen-engines on 2026-10-26. Reasons are in the constitution
     attempt's reported usage, the settled cost apart from the attempts of
     unknown cost, and the label **integration run** -- spec 008's
     comparison uses fresh runs under a protocol declared before them.
+- **The comparison that chooses the deployment model** (spec 008). Five
+  candidates -- `claude-haiku-5-5`, `gpt-6-luna`, `qwen3.5-397b-a17b`,
+  `qwen3.6-35b-a3b`, `deepseek-v4.1-flash` -- and Gemini 3.5 Flash-Lite as
+  a comparison point, three runs each, under rules declared before any:
+  - **a manifest**, `evals/comparisons/008/manifest.json`, committed in its
+    own approved change: the configurations and their fingerprints, the
+    maintainer's eligibility declaration, the evidence every result must
+    carry (cases, prompt, schema, masking), the rounds, the exchange rate.
+    The runs execute on its commit;
+  - **slots bound at launch** (`--slot`): a slot is admitted only in turn
+    -- rounds in order, a qualifying interruption replaced once, next, in
+    its round -- on a clean tree at the manifest's commit, with the
+    configuration's limits read (never provisional), under one lock for
+    the whole campaign, its line written to the campaign log
+    (`evals/results/campaign-008.jsonl`, committed with the results) and
+    synced before anything is sent. A candidate stopped by anything else
+    (another model answering, usage missing or inconsistent, a refusal, an
+    envelope that cannot admit, an oversized case) stops completing, its
+    remaining slots retired. Every counted result goes to `evals/results/`;
+  - **a lost process recovered**: each case is recorded as it is decided,
+    with the run's accounting so far; a run that dies before its result is
+    rebuilt at the next admission from that record and the run's own
+    metadata, its unsafe detections counted and its in-flight costs read
+    from its account's ledger; an unreadable record makes the attempt lost
+    and the candidate not completing, never replaced;
+  - **the comparison** (`python -m evals.compare`), from the result files
+    alone: it refuses any file the manifest did not declare or the log does
+    not hold in order, then applies eligibility, unsafe actions in every
+    attempt, the mean of fully correct cases, a one-case tie band, and in
+    turn invalid answers, automatic replies on missed cases, cost per
+    dispute and median latency, the campaign's spend reported apart. The
+    maintainer chooses among the candidates left.
 - **Stored runs.** A published figure's run is committed in `evals/results/`
   with its model, prompt and case set's hash; `evals/results/README.md` says
   what each can be read for.
@@ -151,5 +184,6 @@ specs/007-openai-qwen-engines on 2026-10-26. Reasons are in the constitution
 `tests/unit/test_eval_unsafe.py`, `tests/unit/test_eval_variance.py`,
 `tests/unit/test_evaluation_registry.py`, `tests/unit/test_evaluation_limits.py`,
 `tests/unit/test_accounts.py`, `tests/unit/test_prepaid_ledger.py`,
-`tests/unit/test_prepaid_runs.py`, `tests/unit/test_prepaid_runner.py`;
+`tests/unit/test_prepaid_runs.py`, `tests/unit/test_prepaid_runner.py`,
+`tests/unit/test_campaign.py`, `tests/unit/test_compare.py`;
 the CI workflow's evaluation step.

@@ -21,6 +21,7 @@ runner refuses them anywhere else (`evals/engines.py`).
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from typing import Literal
@@ -52,9 +53,21 @@ OPENAI_PRICES = "developers.openai.com/api/docs/pricing (standard tier), read 20
 SCALEWAY_PRICES = (
     "scaleway.com/en/pricing/model-as-a-service (serverless, Paris, before VAT), read 2026-10-26"
 )
+SCALEWAY_PRICES_008 = (
+    "scaleway.com/en/pricing/model-as-a-service (serverless, Paris, before VAT), read 2026-10-27"
+)
 #: Until the maintainer reads his consoles (T060): conservative values, far
 #: below any published limit, replaced with his figures before the merge.
 PROVISIONAL_LIMITS = "provisional, pending the maintainer's console (T060)"
+ANTHROPIC_PRICES = "platform.claude.com/docs/en/about-claude/pricing, read 2026-10-27"
+#: Read by the maintainer in his console (spec 008, T011): 10.0M input tokens
+#: (cache reads excluded), 2.0M output tokens and 10,000 requests a minute.
+#: The limiter counts input and output together: it takes the lower, 2.0M.
+ANTHROPIC_LIMITS = (
+    "Claude Console, Usage > Limits, Claude Haiku 5.5 (all workspaces), read 2026-10-27: "
+    "10.0M input and 2.0M output tokens and 10k requests a minute; the lower token "
+    "figure applied to input and output together"
+)
 #: Where the limits below were read, and when (T060).
 OPENAI_LIMITS = (
     "OpenAI platform, project resolve-billing-eval, Project settings > Limits "
@@ -77,7 +90,7 @@ class Configuration:
     reached, with which key, and every parameter the request carries."""
 
     name: str
-    vendor: Literal["google", "mistral", "openai", "scaleway"]
+    vendor: Literal["google", "mistral", "openai", "scaleway", "anthropic"]
     developer: str
     endpoint: str
     #: The API version the requests go to: set on Google's client; for
@@ -134,6 +147,8 @@ class Configuration:
     store: bool | None = None
     #: Whether every answer must name the configured model.
     check_identity: bool = False
+    #: The host's release status for the model, when not generally available.
+    release_status: str | None = None
 
     @property
     def prompt_version(self) -> str:
@@ -191,6 +206,8 @@ def _prepaid(
     tokens_per_minute: int = 100_000,
     requests_per_second: float = 0.5,
     limits_source: str = PROVISIONAL_LIMITS,
+    max_output_tokens: int = 4096,
+    api_version: str = "v1",
     **fields,
 ) -> Configuration:
     """A configuration on a prepaid account (spec 007): every one alike but
@@ -198,9 +215,9 @@ def _prepaid(
     return Configuration(
         name=name,
         model=name,
-        api_version="v1",
+        api_version=api_version,
         temperature=None,
-        max_output_tokens=4096,
+        max_output_tokens=max_output_tokens,
         # The setting Claude's engine and Gemini use, and the lowest
         # gpt-6.1-sol allows: the same label, not a proven equal budget.
         reasoning="low",
@@ -266,26 +283,90 @@ GPT_SOL = _openai(
     tokens_per_minute=1_000_000,
     requests_per_minute=5_000,
 )
-QWEN = _prepaid(
+#: Claude Haiku 5.5, measured as the service would run it
+#: (specs/008-deployment-model-choice): the request is the service engine's,
+#: pinned by tests (`app/decision/anthropic_eval.py`).
+CLAUDE_HAIKU = _prepaid(
+    "claude-haiku-5-5",
+    tokens_per_minute=2_000_000,
+    requests_per_second=10_000 / 60,
+    limits_source=ANTHROPIC_LIMITS,
+    vendor="anthropic",
+    developer="Anthropic",
+    endpoint="https://api.anthropic.com",
+    key_variable="ANTHROPIC_API_KEY",
+    # The `anthropic-version` header the requests send, set explicitly.
+    api_version="2023-06-01",
+    # The service engine's own output cap.
+    max_output_tokens=8192,
+    # Rates for prompts up to 100,000 tokens; every prompt here is a few
+    # thousand.
+    price_per_mtok=(0.10, 0.50),
+    price_source=ANTHROPIC_PRICES,
+    currency="USD",
+    cached_input_price_per_mtok=0.01,
+    cache_write_price_per_mtok=0.125,
+    # Anthropic's default routing is global; no regional commitment is made.
+    processing_location="global (default routing), no regional commitment",
+    # Not ANTHROPIC_ORGANIZATION_ID: the SDK's credential chain reads that one.
+    account_variables=("RESOLVE_ANTHROPIC_ORG_ID",),
+)
+
+
+def _scaleway(name: str, developer: str, **fields) -> Configuration:
+    """A configuration on the Scaleway account: every one alike but for the
+    model and what follows from it."""
+    return _prepaid(
+        name,
+        tokens_per_minute=200_000,
+        requests_per_second=300 / 60,
+        limits_source=SCALEWAY_LIMITS,
+        vendor="scaleway",
+        developer=developer,
+        # The project the key belongs to goes in the path (Scaleway's schema).
+        endpoint="https://api.scaleway.ai/{project}/v1",
+        key_variable="SCALEWAY_API_KEY",
+        currency="EUR",
+        processing_location="Paris, France",
+        account_variables=("SCALEWAY_ORGANIZATION_ID", "SCALEWAY_PROJECT_ID"),
+        **fields,
+    )
+
+
+def _qwen_note(name: str) -> str:
+    return f"Scaleway's API schema: for {name}, `low` and `high` values are similar to `medium`"
+
+
+QWEN = _scaleway(
     "qwen3.5-397b-a17b",
-    tokens_per_minute=200_000,
-    requests_per_second=300 / 60,
-    limits_source=SCALEWAY_LIMITS,
-    vendor="scaleway",
-    developer="Alibaba (Qwen)",
-    # The project the key belongs to goes in the path (Scaleway's schema).
-    endpoint="https://api.scaleway.ai/{project}/v1",
-    key_variable="SCALEWAY_API_KEY",
+    "Alibaba (Qwen)",
+    # Raised from 4,096 for spec 008: five answers stopped at that cap. The
+    # catalogue's serverless maximum is "16k"; the first call settles 16,384.
+    max_output_tokens=16_384,
     price_per_mtok=(0.60, 3.60),
     price_source=SCALEWAY_PRICES,
-    currency="EUR",
-    processing_location="Paris, France",
     quantisation="int4 (catalogue, serverless table)",
-    reasoning_note=(
-        "Scaleway's API schema: for qwen3.5-397b-a17b, `low` and `high` values are "
-        "similar to `medium`"
-    ),
-    account_variables=("SCALEWAY_ORGANIZATION_ID", "SCALEWAY_PROJECT_ID"),
+    reasoning_note=_qwen_note("qwen3.5-397b-a17b"),
+)
+# specs/008-deployment-model-choice: two more on the same account.
+QWEN_35B = _scaleway(
+    "qwen3.6-35b-a3b",
+    "Alibaba (Qwen)",
+    max_output_tokens=16_384,
+    price_per_mtok=(0.25, 1.50),
+    price_source=SCALEWAY_PRICES_008,
+    quantisation="bf16 or fp8 (catalogue, serverless table)",
+    reasoning_note=_qwen_note("qwen3.6-35b-a3b"),
+)
+DEEPSEEK = _scaleway(
+    "deepseek-v4.1-flash",
+    "DeepSeek",
+    max_output_tokens=16_384,
+    price_per_mtok=(0.60, 1.80),
+    price_source=SCALEWAY_PRICES_008,
+    cached_input_price_per_mtok=0.12,
+    quantisation="not stated by Scaleway",
+    release_status="preview",
 )
 
 CONFIGURATIONS: dict[str, Configuration] = {
@@ -330,6 +411,9 @@ CONFIGURATIONS: dict[str, Configuration] = {
         GPT_LUNA,
         GPT_SOL,
         QWEN,
+        CLAUDE_HAIKU,
+        QWEN_35B,
+        DEEPSEEK,
     )
 }
 
@@ -467,6 +551,24 @@ def _user_payload(message: str, payload: dict) -> str:
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
         "</billing_context>"
     )
+
+
+class _BelowInfoDropped(logging.Filter):
+    """Drops a logger's records below INFO, whatever level the application
+    configures: the vendors' SDKs log each request's options, payload
+    included, at DEBUG."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= logging.INFO
+
+
+def silence_request_logging(logger_name: str) -> None:
+    """Keep an SDK's request logging out of every log, once per logger. A
+    filter acts on the records of the logger it is attached to, not on its
+    children's, so it is attached to the logger that writes them."""
+    logger = logging.getLogger(logger_name)
+    if not any(isinstance(f, _BelowInfoDropped) for f in logger.filters):
+        logger.addFilter(_BelowInfoDropped())
 
 
 def estimated_tokens(system: str, user: str, margin: int, max_output: int) -> int:

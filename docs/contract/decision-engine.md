@@ -2,8 +2,9 @@
 
 What any engine behind the `DecisionEngine` port must do, and what the rest of
 the system may rely on. Written on 2026-10-24 from the existing records;
-specs/004-second-engines folded in the same day, and
-specs/007-openai-qwen-engines on 2026-10-26. Reasons are in ADR-002 (the engine is
+specs/004-second-engines folded in the same day,
+specs/007-openai-qwen-engines on 2026-10-26, and
+specs/008-deployment-model-choice on 2026-10-27. Reasons are in ADR-002 (the engine is
 a deployment choice), ADR-003 (deterministic before probabilistic), ADR-006
 (no agent loop) and ADR-009 (what a model provider receives).
 
@@ -89,17 +90,33 @@ source.
 
 ## The engines evaluated on prepaid accounts
 
-`gpt-6-luna` and `gpt-6.1-sol` (OpenAI's API), and `qwen3.5-397b-a17b`
-(a model Alibaba developed, served by Scaleway's OpenAI-compatible API in
-Paris), closed configurations in `app/decision/hosted.py` like the four
+`gpt-6-luna` and `gpt-6.1-sol` (OpenAI's API), and, on Scaleway's
+OpenAI-compatible API in Paris, `qwen3.5-397b-a17b` and `qwen3.6-35b-a3b`
+(models Alibaba developed) and `deepseek-v4.1-flash` (DeepSeek's, in
+preview), closed configurations in `app/decision/hosted.py` like the four
 above, through one client, `app/decision/openai_compatible.py`, with what
-differs by vendor kept there.
+differs by vendor kept there. The three on Scaleway cap their output at
+16,384 tokens (spec 008), the two OpenAI ones at 4,096.
+
+`claude-haiku-5-5` (spec 008) is Claude Haiku 5.5 measured as the service
+would run it: an evaluation-only adapter, `app/decision/anthropic_eval.py`,
+sends the request the service engine sends -- same model, cap, system
+prompt, effort, schema and payload -- and reads the answer as the service
+engine's parser does; tests hold the two engines' requests and decisions
+equal. Only retries differ: the SDK's are off, the runner counts attempts.
+Its account is the organisation the maintainer declares in
+`RESOLVE_ANTHROPIC_ORG_ID`, a name the SDK does not read.
 
 - **What the free-tier engines guarantee, they guarantee**, with reasoning
-  at `low` for all three (the same label, not a proven equal budget;
-  Scaleway documents that for this Qwen `low` is "similar to `medium`",
-  recorded with the configuration) and the output cap sent as
-  `max_completion_tokens`.
+  at `low` for every one (the same label, not a proven equal budget;
+  Scaleway documents that for its two Qwen `low` is "similar to `medium`",
+  recorded with their configurations) and the output cap sent as
+  `max_completion_tokens` (`max_tokens` for Claude).
+- **The SDKs' request records are dropped.** The OpenAI and Anthropic SDKs
+  log each request's options at DEBUG on their `_base_client` loggers (the
+  Anthropic SDK's include the payload); a filter on those two loggers drops
+  their records below INFO, whatever level the application sets. Other
+  loggers -- the HTTP library's, for instance -- are not filtered.
 - **Every setting passed, none left to the environment.** The address, the
   key and the declared account are passed to the SDK; OpenAI's requests
   carry the declared organisation and project and ask not to be stored
@@ -112,15 +129,17 @@ differs by vendor kept there.
   refusal's text and reasoning text are never read or kept.
 - **Usage with its details.** Cached, cache-write and reasoning tokens are
   read when reported, as parts of the totals, never added to them; a detail
-  not reported stays missing.
+  not reported stays missing. OpenAI and Scaleway count cached tokens inside
+  their input total; Anthropic counts cache reads and writes apart, so the
+  Claude adapter adds them to the input total and keeps them as details.
 - **Failures by kind, as above.**
 
 ## Selection
 
 `app/api/deps.py` names the engines the service may run (`ENGINES`: mock,
 claude); `DECISION_ENGINE` chooses one, and an unknown name is refused. The
-evaluation runner selects from the same table plus the seven configurations
-(`evals/engines.py`).
+evaluation runner selects from the same table plus the ten configurations
+evaluated outside the service (`evals/engines.py`).
 
 ## Not guaranteed today
 
@@ -129,17 +148,19 @@ evaluation runner selects from the same table plus the seven configurations
   pass (ADR-009).
 - Real models measured on the development set: Claude, and Gemini 3.5
   Flash-Lite (one full run, 2026-10-25, `evals/results/README.md`);
-  Flash's full run and the three prepaid configurations' runs are still to
-  come.
-- The seven configurations' reservations are estimates (the maintainer's
-  waivers, 2026-10-24, extended to the prepaid vendors on 2026-10-26): the
+  Flash's full run is still to come; the prepaid configurations have
+  integration runs (spec 007) and the comparison of spec 008 is to come.
+- The ten configurations' reservations are estimates (the maintainer's
+  waivers, 2026-10-24, extended to the prepaid vendors on 2026-10-26 and
+  2026-10-27): the
   request's UTF-8 bytes plus a margin plus the output cap. The estimator
   is not established as an upper bound for the served request, its
   framing and its reasoning included. Each answer's reported usage is
   checked against it, and a run stops when it exceeds one.
 - Their vendors' terms, limits and models are as read on 2026-10-24
-  (2026-10-26 for OpenAI and Scaleway), and change without notice.
-- For the three on prepaid accounts: whether the vendor honours a
+  (2026-10-26 and 2026-10-27 for OpenAI, Scaleway and Anthropic), and
+  change without notice.
+- For the configurations on prepaid accounts: whether the vendor honours a
   requested setting (reasoning, `store`, the schema) is often not
   observable in the answer; whether it checks the declared account against
   the key is not documented; the served quantisation is as Scaleway's
@@ -148,7 +169,9 @@ evaluation runner selects from the same table plus the seven configurations
   console (2026-10-27); Scaleway's are its documented level for an
   account with a validated payment method, an assumption the maintainer
   accepted: his console listed no Generative APIs quota on 2026-10-27, for
-  a reason unknown.
+  a reason unknown. Claude Haiku's are those the maintainer read in his
+  console (2026-10-27), the lower token figure (2.0M output a minute)
+  applied to input and output together.
 
 ## Covered by
 
@@ -158,4 +181,5 @@ evaluation runner selects from the same table plus the seven configurations
 `tests/unit/test_verdict.py`, `tests/unit/test_claude_pinned.py`,
 `tests/unit/test_hosted_engines.py`, `tests/unit/test_vendor_clients.py`,
 `tests/unit/test_openai_compatible_configurations.py`,
-`tests/unit/test_openai_compatible_client.py`.
+`tests/unit/test_openai_compatible_client.py`,
+`tests/unit/test_anthropic_evaluation.py`.

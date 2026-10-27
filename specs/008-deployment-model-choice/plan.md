@@ -1,0 +1,390 @@
+# Implementation Plan: The choice of the deployment model
+
+**Branch**: `008-deployment-model-choice` | **Date**: 2026-10-27 | **Spec**: [spec.md](spec.md), approved by the maintainer at commit `f68b9ea`
+
+## Summary
+
+Make the five candidates and the comparison point runnable under one
+discipline, then compare them from their result files alone:
+
+- Claude Haiku 5.5 joins the governed evaluation path, with the envelope,
+  the first call and the per-case statuses the other vendors already have.
+  It does so through an evaluation-only configuration whose request is the
+  service engine's own, pinned by a test;
+- two Scaleway configurations are added: `qwen3.6-35b-a3b` and
+  `deepseek-v4.1-flash`;
+- the 397B's output cap is raised;
+- every result records the commit it ran on and whether the tree was clean;
+- a comparison script applies the spec's criteria to the files listed by a
+  run manifest.
+
+The service and its Claude engine do not change.
+
+## Technical Context
+
+Python 3.12 (CI), 3.13 locally. No new dependency: `anthropic` (the
+`claude` extra) and `openai==3.29.0` (the `engines` extra) are already
+pinned. CI installs both extras for the network-free checks, and makes no
+paid call. State stays in `~/.resolve-billing/`.
+
+## Constitution Check
+
+| Principle | How this plan meets it |
+|---|---|
+| II | Unchanged: no engine reaches the service; policies, approval and execution untouched. |
+| III | Vendors are named only in configurations, their clients, `vendors.py`, the registry and tests. |
+| V | ADR-006 holds: one request per case, no loop, no tool. |
+| VI | Each result names configuration, prompt, masking, model returned, commit and clean-tree flag, account ids, cost. |
+| VII | The same pseudonymised payload and masked message. Claude's evaluation request is pinned equal to the service engine's. |
+| VIII | The evidence for a deployment decision: rules declared before runs, a manifest, a script that refuses undeclared files. |
+| IX | The holdout is untouched; the development-set guard applies to every configuration. |
+| Sensitive | Final-diff approval; the decision record (FR-007) is the maintainer's. |
+
+## Design
+
+### 1. Research pinned before code (T010)
+
+Read from official pages and the pinned SDKs, recorded in "Research
+notes", reviewed by Codex before any client changes. Two kinds of point,
+as in spec 007.
+
+**Must be settled:**
+- **Scaleway, for each of `qwen3.6-35b-a3b`, `deepseek-v4.1-flash` and
+  `qwen3.5-397b-a17b`:**
+  - the exact serverless output maximum: the catalogue's "16k" and "32k"
+    in tokens; whether 16,384 is accepted;
+  - the `reasoning_effort` values accepted, and where reasoning text
+    arrives (to be dropped);
+  - structured outputs on chat completions;
+  - the usage fields (DeepSeek prices cached input apart: €0.12);
+  - the returned `model` string;
+  - prices and documented limits.
+- **Anthropic, for `claude-haiku-5-5`:**
+  - the Messages API request the service engine sends;
+  - `stop_reason` values;
+  - usage fields (`input_tokens`, `output_tokens`,
+    `cache_read_input_tokens`, `cache_creation_input_tokens`) and whether
+    cached tokens are inside `input_tokens`;
+  - the returned `model` string;
+  - error classes and statuses, and how to turn SDK retries off;
+  - Haiku 5.5's cache-read and cache-write prices;
+  - the account's rate limits, read by the maintainer in his console;
+  - the non-secret organisation id the console shows.
+
+**May stay unknown**, recorded as unknown: quantisation where not stated
+(DeepSeek), and whether a vendor checks the declared account against the
+key.
+
+A first call that the vendor refuses for a parameter (an output cap above
+the maximum, say) is not a counted run: the configuration is corrected
+before round 1, never after a score is seen.
+
+### 2. Claude on the governed path (FR-005, FR-005b)
+
+The service engine `ClaudeDecisionEngine` stays as it is. A new
+evaluation-only `AnthropicEvaluationEngine(HostedEngine)`, in
+`app/decision/anthropic_eval.py`:
+
+- **`_complete(system, user)`** sends one Messages request with the
+  service engine's exact parameters: model, `max_tokens` 8,192, the same
+  system prompt, `output_config={"effort": "low", "format": ...}`, and one
+  user message built from the shared core's payload. SDK retries are off.
+  It maps, as the service engine's parser decides:
+  - `stop_reason` `max_tokens` → `length` and `refusal` → `filtered`
+    (both unusable); every other stop reason → `stop`, its text then
+    validated like any answer;
+  - the text block → the answer;
+  - the usage, with `cache_read_input_tokens` and
+    `cache_creation_input_tokens` as details;
+  - `response.model` → the returned model.
+
+  Errors go through the Claude engine's own `_outage` and `_refusal`
+  helpers, by category, without the vendor's text. An unreadable response
+  is unusable, its usage unknown.
+- **Parity tests**, with each engine on a stub client and the same
+  dispute:
+  - **request parity**: the two requests are equal, field for field;
+  - **decision parity**: for a valid answer, a malformed one, a refusal, a
+    truncated one and an answer under another stop reason, both engines
+    return the same decision, the restored references and explanation
+    included.
+
+  So what is measured is what the service would send and decide.
+- **What differs, documented:** outages and retries. The service engine
+  keeps its own client settings. On the governed path, SDK retries are off
+  and the runner counts attempts, three per case, as for the other
+  vendors.
+- **A configuration `claude-haiku-5-5`** (vendor `anthropic`, developer
+  Anthropic):
+  - key `ANTHROPIC_API_KEY`, account variable `RESOLVE_ANTHROPIC_ORG_ID`
+    (the organisation alone). `evals/accounts.py` accepts a configuration
+    with no project; existing identities and locks stay as they are, by
+    test;
+  - prices in USD with cache-read and cache-write rates from T010;
+  - effort `low`, cap 8,192, `check_identity`;
+  - limits as the maintainer reads them.
+- **It runs through `evals/hosted_run.py`**, like the others: one run per
+  invocation, a result file written even when the run stops, per-case
+  statuses, a first call before the full run, the prepaid envelope
+  (`--envelope 1` on the first run, in dollars). The older `--engine
+  claude` path stays for the service's own checks and the live-engine CI
+  job, unchanged.
+
+As a consequence, every configuration in the comparison writes **one
+result shape**. The comparison script does not need to read the older
+Claude shape.
+
+### 3. Two Scaleway configurations and the 397B's cap (FR-002, FR-003)
+
+- `qwen3.6-35b-a3b` and `deepseek-v4.1-flash` are built with the existing
+  `_prepaid` helper on the Scaleway account: reasoning `low`, cap 16,384,
+  Scaleway's documented limits (the maintainer's accepted assumption), and
+  prices with source and date (DeepSeek's cached rate included).
+  - The developer is recorded apart from the host: Alibaba (Qwen) and
+    DeepSeek.
+  - DeepSeek's preview status and unknown quantisation are recorded in the
+    configuration.
+- `qwen3.5-397b-a17b`'s cap becomes 16,384, or the maximum T010 finds.
+  Its fingerprint changes, so its first call is needed again.
+- The two new configurations are checked in the existing Scaleway client
+  for any field they return differently (T010). A difference found is
+  mapped in the client, with a test.
+
+### 4. The commit and the clean tree in every result (FR-005a)
+
+`evals/hosted_run.py` records `commit` (`git rev-parse HEAD`) and
+`clean_tree` in every result. Git is asked about the checkout the runner's
+own code lives in, whatever the invocation directory. A tree is clean when
+no tracked file is modified, nothing is staged, and no untracked file
+exists outside `evals/results/`, where runs write. The runner refuses to
+start a slot of this comparison on a dirty tree. Outside a git checkout,
+it records `unknown` and the comparison refuses the file.
+
+### 5. The run manifest (FR-006)
+
+`evals/comparisons/008/manifest.json`, committed **after** this
+implementation merges, in its own small pull request the maintainer
+approves. It holds:
+
+- the five candidates and the comparison point, with their configuration
+  fingerprints;
+- the case-set hash, the prompt version, the schema's hash and the
+  masking version every result must carry;
+- the maintainer's eligibility declaration for each;
+- the slots in their global order: round r, configuration c, each with
+  its command and its slot id, plus the one replacement each slot may
+  take. Flash-Lite's commands carry its quota project and declare the
+  Pacific day once, before its first request; a day already declared is
+  not declared again;
+- the envelopes;
+- the date of round 1;
+- the exchange rate's source and date.
+
+The runs execute on the commit of the approved manifest revision. The
+script finds it with git (the last commit touching the manifest) and
+requires every result to carry it. A later edit of the manifest makes
+every earlier result refused, by test.
+
+This is a clarification of the spec's "committed with this
+specification's implementation": a file cannot name the commit that
+contains it. The plan's approval includes it.
+
+### 6. The comparison script (FR-004)
+
+`python -m evals.compare evals/comparisons/008/manifest.json`. It reads
+only the result files.
+
+**It refuses a file** whose commit, clean-tree flag, case-set hash,
+prompt, schema, masking or configuration fingerprint differs from the
+manifest's, or that fills an undeclared slot, or a slot already filled
+except by the replacement the rules allow. Each refusal is tested.
+
+**Slots are bound at launch, not inferred.** Each run of the comparison
+is launched with `--slot <id>`. The runner refuses an id the manifest does
+not declare, and an attempt the slot cannot take: a replacement whose
+first attempt did not stop for a qualifying reason, a third attempt, a
+slot of a later round started before every slot of the earlier one. It
+records the slot and attempt in the result.
+
+**One campaign, one lock, one log.** Admitting a slot takes a
+campaign-wide lock (in the private state), held for the whole run,
+whatever the vendor: two runs never claim slots at once. Under it, before
+sending anything, the runner appends one line to the campaign log, flushed
+and synced to disk before the first request,
+`evals/results/campaign-008.jsonl`: the slot, the attempt, the start time
+and the result's file name. The log is committed with the results, so the
+comparison is reproducible from committed evidence alone.
+
+- **Each case's outcome is persisted as it is decided**, in a per-attempt
+  sidecar beside the result (flushed and synced), so a run killed before
+  writing its result can be recovered.
+- **An attempt logged without a result** blocks admission. The next launch
+  rebuilds its result, marked incomplete, from the sidecar. Its unsafe
+  detections count. It is then an operator interruption, and a qualifying
+  one. If the sidecar cannot be read, the attempt is recorded as "lost"
+  and the candidate as "not completing": an attempt whose evidence is gone
+  is never replaced.
+- **A candidate that becomes "not completing"** has its remaining slots
+  recorded as "retired" in the log.
+- **A round is over** when each of its slots is complete or retired. A
+  replacement is taken next, inside its round, before the round can end.
+  The next round's first slot is refused until then.
+
+**The script checks the log against the files**, from the repository
+alone, without the private state. Every logged attempt has its result
+file, except those the log records as "lost" or as "retired" slots;
+every file is logged. Rounds come in order; each
+replacement is linked to its first attempt; smoke tests (`--first-call-only`)
+take no slot. A missing, extra or out-of-order attempt is refused, by
+test. A qualifying interruption opens exactly one replacement; a second
+one, or any other stop, marks the candidate "not completing".
+
+**It computes, in order:**
+- eligibility;
+- unsafe actions across every attempt;
+- per run fully correct, the mean, the worst run, the changing and
+  always-missed cases;
+- the tie band (best eligible mean − 1.0);
+- the tie-breaks: invalid answers, automatic replies on missed cases
+  (a reply the case expects does not count), cost per dispute (complete
+  runs' estimated cost ÷ 102, unknown-cost attempts at their reservation,
+  euros at the manifest's rate), median latency of engine calls.
+
+**It reports apart** the whole campaign's spend, and the candidates the
+rules leave.
+
+**Output:** a Markdown table in the criteria's order and a JSON copy, both
+written beside the manifest.
+
+### 7. Documents
+
+- The evaluation contract: the comparison, the manifest and the script.
+- The decision-engine contract: the Claude evaluation configuration and
+  the two Scaleway configurations.
+- ADR-009's model-provider row: DeepSeek as developer, Scaleway as
+  processor.
+- `docs/operations.md`: the comparison's commands.
+- `.env.example`: `RESOLVE_ANTHROPIC_ORG_ID`.
+
+## Amendments to the approved spec (covered by this plan's approval)
+
+- **FR-004/FR-005 — one result shape.** Claude is measured through the
+  governed path, so every configuration of the comparison writes the
+  hosted result shape, and the script reads that one shape. The older
+  `--engine claude` path and its results stay unchanged, outside the
+  comparison.
+- **FR-006 — the manifest after the implementation.** It is committed in
+  its own pull request after this implementation merges; the runs execute
+  on its approved revision's commit.
+
+## After the merge (the maintainer's, with me where he asks)
+
+1. The manifest PR: his eligibility declaration and the date of round 1.
+2. First calls for the configurations whose fingerprint is new or changed:
+   `claude-haiku-5-5`, `qwen3.6-35b-a3b`, `deepseek-v4.1-flash` and
+   `qwen3.5-397b-a17b`. `gpt-6-luna` and Flash-Lite keep theirs.
+3. Rounds 1 to 3 on the manifest's commit, Flash-Lite's on one Pacific day.
+4. `python -m evals.compare`, the results PR, then the decision record
+   (FR-007).
+
+## Risks
+
+- **The parity test cannot cover the server.** Two equal requests may
+  still be served differently over time. Its value is that the measured
+  configuration is the deployed one at the request level.
+- **A preview model (DeepSeek) may change or be withdrawn mid-campaign.**
+  The candidate is then "not completing"; the list is not reopened.
+- **Envelope admission can refuse a run** whose actual cost would have
+  fitted. That candidate is "not completing" unless the maintainer raises
+  the envelope before round 1. Raising it after a score is seen is not
+  allowed.
+
+## Research notes
+
+Read 2026-10-27 from Scaleway's catalogue (supported models) and published
+API schema, Anthropic's pricing page, and the SDKs: `openai` 3.29.0
+(pinned) and `anthropic` 0.105.2, installed but not pinned (`anthropic>=0.40`
+in the `claude` extra). **T012 pins `anthropic==0.105.2`** (published
+2026-05-29), the version this research and the D10 runs used, and adds the
+`claude` extra to CI's network-free job, so the adapter's SDK checks run
+there. The service's Claude engine then runs the same pinned SDK.
+
+### Settled
+
+- **Scaleway, serverless output maxima** (catalogue):
+  - `qwen3.5-397b-a17b` "16k", model string `qwen/qwen3.5-397b-a17b:int4`;
+  - `qwen3.6-35b-a3b` "32k", `qwen/qwen3.6-35b-a3b:bf16` and `:fp8`;
+  - `deepseek-v4.1-flash` "32k", no model string listed.
+
+  "k" is not defined. 16,384 is within 32k for the two others. For the
+  397B it is the maximum if "16k" means 16,384, which the first call
+  settles: a refusal there is not a counted run, and the cap then becomes
+  16,000 before round 1.
+- **Scaleway, reasoning and structured outputs**: structured outputs and
+  function calling are listed for all three.
+  - `reasoning_effort` takes `none`, `low`, `medium`, `high` for the two
+    Qwen; for both, the schema says "`low` and `high` values are similar
+    to `medium`".
+  - It takes `none`, `low`, `high`, `max` for DeepSeek; no note on `low`.
+  - Reasoning text arrives in `message.reasoning_content`, the one field
+    the schema defines for it, dropped by the existing client.
+  - Usage fields as for the 397B: `prompt_tokens`, `completion_tokens`,
+    `completion_tokens_details.reasoning_tokens`,
+    `prompt_tokens_details.cached_tokens`.
+  - DeepSeek prices cached input apart (€0.12 per million); the two Qwen
+    list no cached rate.
+  - Limits: the documented level for a validated payment method,
+    200,000 tokens and 300 requests a minute, for each.
+- **Anthropic, the request**: the service engine sends `model`,
+  `max_tokens`, `system`, `output_config={"effort", "format"}` and one user
+  message built from the pseudonymised payload. The adapter sends exactly
+  that, pinned by the parity tests.
+- **Anthropic, the response**: `stop_reason` among `end_turn`,
+  `max_tokens`, `stop_sequence`, `tool_use`, `pause_turn`, `refusal` (the
+  pinned SDK's type). The service parser sends `refusal` and `max_tokens`
+  to a person and validates the text for every other stop reason; the
+  adapter does the same. `response.model` is the returned model.
+- **The returned model's identity**: no page states the exact string
+  Scaleway or Anthropic returns in `model` (a catalogue's deployment name,
+  such as `qwen/qwen3.6-35b-a3b:fp8`, is not that evidence). Each
+  configuration keeps its strict identity check; each first call shows the
+  string. A first call answered under another form is not accepted, and
+  the accepted form is then recorded in the configuration, reviewed,
+  before round 1. Never relaxed after a score is seen.
+- **Anthropic, usage**: `input_tokens`, `output_tokens`,
+  `cache_read_input_tokens`, `cache_creation_input_tokens`, and
+  `output_tokens_details.thinking_tokens`, recorded as the reasoning
+  detail, part of `output_tokens`, never added to it. Anthropic counts
+  cache reads and writes **apart** from `input_tokens`. So the adapter
+  reports `input_tokens` as the sum of the three, with the cache reads and
+  writes as details, matching `Answer`'s meaning ("part of
+  `input_tokens`"). No request sets a cache breakpoint, so both are
+  expected to be zero.
+- **Anthropic, prices** (pricing page): Haiku 5.5, for prompts up to
+  100,000 tokens: $0.10 input, $0.125 for 5-minute cache writes, $0.01
+  for cache hits, $0.50 output. Above 100,000 tokens the prices are
+  higher; every prompt here is a few thousand tokens.
+- **Anthropic, errors**: `APIStatusError` (status code) and
+  `APIConnectionError` (timeouts included). 429 is a rate limit, 408, 409
+  and 5xx are outages, as the service engine's `_TRANSIENT` says. A refusal
+  is a non-transient 4xx only, carrying its code alone, settled at zero.
+  Any other status (an unexpected 2xx or 3xx raised as an error) is an
+  unknown outcome: an outage whose reservation stays spent, tested. An
+  unreadable response (strict validation) is an unusable answer.
+- **Anthropic SDK settings**: `max_retries=0`; the key and the base URL
+  are passed explicitly. With an explicit key, the SDK consults no
+  credential variable. It still reads `ANTHROPIC_CUSTOM_HEADERS` (headers
+  on every request) and `ANTHROPIC_LOG` (request logging): the runner
+  refuses both, as it refuses OpenAI's.
+- **The account variable**: the SDK's credential chain reads
+  `ANTHROPIC_ORGANIZATION_ID` for workload identity. To leave the service
+  engine's client untouched by a variable it could read, the account id is
+  named `RESOLVE_ANTHROPIC_ORG_ID` instead of the plan's first name.
+
+### Approved unknowns, recorded as unknown
+
+- DeepSeek's served quantisation.
+- Whether "16k" is 16,384 for the 397B, until its first call.
+- Whether a vendor checks the declared account against the key.
+- The Anthropic account's rate limits, until the maintainer reads them
+  (T011).
