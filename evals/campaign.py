@@ -28,7 +28,7 @@ import os
 import subprocess
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -55,7 +55,13 @@ QUALIFYING = (
     "the run's deadline",
     "rate limiting persisted",
     "outage:",
+    "the quota refused",
     "process lost",
+)
+
+#: The statuses a recorded case may carry.
+STATUSES = frozenset(
+    {"decided", "abstained", "invalid", "unavailable", "not_sent_oversized", "rules_only"}
 )
 
 REBUILT_REASON = "process lost; rebuilt from its per-case record"
@@ -115,6 +121,21 @@ def git_state(root: Path = REPO) -> dict:
     except (OSError, subprocess.CalledProcessError):
         return {"commit": "unknown", "clean_tree": "unknown"}
     return {"commit": commit, "clean_tree": clean_from_porcelain(status)}
+
+
+def manifest_commit(path: Path, root: Path = REPO) -> str | None:
+    """The last commit that touched the manifest: the commit the runs execute
+    on. None outside git, or for a manifest never committed."""
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(root), "log", "-1", "--format=%H", "--", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return commit or None
 
 
 def load_manifest(path: Path) -> dict:
@@ -269,6 +290,14 @@ class Campaign:
         if repo["clean_tree"] is not True:
             raise CampaignRefused("the source tree is not clean: commit or remove the changes")
         with self._locked(lock_timeout):
+            if self.manifest.get("evidence") != current_evidence():
+                raise CampaignRefused(
+                    "the code's evidence (cases, prompt, schema, masking) is not the manifest's"
+                )
+            if repo["commit"] != manifest_commit(self.manifest_path):
+                raise CampaignRefused(
+                    "the checkout is not at the approved manifest revision's commit"
+                )
             self._recover()
             self._retire()
             held = self.state()
@@ -289,6 +318,17 @@ class Campaign:
                 }
             )
             admitted = Admission(self, slot, attempt, engine_name)
+            # What the run is, fixed at its start, for a recovery to rebuild
+            # a result as it would have been written.
+            admitted.write_meta(
+                {
+                    "engine": engine_name,
+                    "commit": repo["commit"],
+                    "configuration": asdict(config),
+                    "configuration_fingerprint": fingerprint(config),
+                }
+                | current_evidence()
+            )
             try:
                 yield admitted
             finally:
@@ -309,34 +349,66 @@ class Campaign:
             key = (line["slot"], line["attempt"])
             if key in results or key in lost:
                 continue
-            cases = self.cases_path(*key)
             try:
-                recorded = [
-                    json.loads(row)
-                    for row in cases.read_text(encoding="utf-8").splitlines()
-                    if row.strip()
-                ]
-                if not all(isinstance(r, dict) and "case_id" in r for r in recorded):
-                    raise ValueError
-            except (OSError, ValueError):
+                meta, recorded = self._read_record(*key)
+            except (OSError, ValueError, KeyError, TypeError):
                 self._append({"type": "lost", "slot": key[0], "attempt": key[1]})
                 continue
+            last = recorded[-1]["accounting"] if recorded else {}
             rebuilt = {
                 "campaign": NAME,
                 "slot": key[0],
                 "attempt": key[1],
-                "engine": line["engine"],
+                "engine": meta["engine"],
                 "rebuilt": True,
                 "complete": False,
                 "stop_reason": REBUILT_REASON,
                 "stop_kind": "qualifying",
-                "commit": line["commit"],
+                "commit": meta["commit"],
                 "clean_tree": True,
+                "configuration": meta["configuration"],
+                "configuration_fingerprint": meta["configuration_fingerprint"],
                 "outcomes": [r["outcome"] for r in recorded],
                 "statuses": {r["case_id"]: r["status"] for r in recorded},
-            } | current_evidence()
-            target = self.results_dir / f"{line['engine']}-{key[0]}-a{key[1]}-rebuilt.json"
+                "usage": {r["case_id"]: r["accounting"].get("usage") for r in recorded},
+                "sends": last.get("sends", 0),
+                "cost": {
+                    "settled_amount": last.get("cost", 0.0),
+                    "currency": meta["configuration"].get("currency"),
+                    "unknown_cost_attempts": last.get("unknown_cost_attempts", 0),
+                    "unknown_cost_reserved": last.get("unknown_cost_reserved", 0.0),
+                    # The attempt in flight when the process died is not in the
+                    # record; the account's ledger holds its reservation.
+                    "complete": False,
+                },
+            } | {k: meta[k] for k in current_evidence()}
+            target = self.results_dir / f"{meta['engine']}-{key[0]}-a{key[1]}-rebuilt.json"
             state.write_atomically(target, rebuilt)
+
+    def _read_record(self, slot: str, attempt: int) -> tuple[dict, list[dict]]:
+        """The run's metadata and its recorded cases, each checked; any flaw
+        raises, and the attempt is then lost."""
+        meta = json.loads(self.meta_path(slot, attempt).read_text(encoding="utf-8"))
+        required = {"engine", "commit", "configuration", "configuration_fingerprint"}
+        if not isinstance(meta, dict) or not (required | set(current_evidence())) <= set(meta):
+            raise ValueError("incomplete metadata")
+        rows = self.cases_path(slot, attempt).read_text(encoding="utf-8").splitlines()
+        recorded = [json.loads(row) for row in rows if row.strip()]
+        known = {case["id"] for case in json.loads(engines.DEVELOPMENT_SET.read_bytes())}
+        seen = set()
+        for r in recorded:
+            if not (
+                isinstance(r, dict)
+                and set(r) == {"case_id", "outcome", "status", "accounting"}
+                and r["case_id"] in known
+                and r["case_id"] not in seen
+                and isinstance(r["outcome"], dict)
+                and r["status"] in STATUSES
+                and isinstance(r["accounting"], dict)
+            ):
+                raise ValueError("a malformed case record")
+            seen.add(r["case_id"])
+        return meta, recorded
 
     def _retire(self) -> None:
         held = self.state()
@@ -353,6 +425,9 @@ class Campaign:
 
     def cases_path(self, slot: str, attempt: int) -> Path:
         return self.results_dir / CASES_DIR / f"{slot}-a{attempt}.jsonl"
+
+    def meta_path(self, slot: str, attempt: int) -> Path:
+        return self.results_dir / CASES_DIR / f"{slot}-a{attempt}.meta.json"
 
     @contextmanager
     def _locked(self, timeout: float):
@@ -379,14 +454,26 @@ class Admission:
         self.attempt = attempt
         self.engine = engine
 
-    def record_case(self, case_id: str, outcome: dict, status: str) -> None:
-        """One decided case, on disk before the run goes on."""
+    def write_meta(self, meta: dict) -> None:
+        path = self.campaign.meta_path(self.slot, self.attempt)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        state.write_atomically(path, meta)
+
+    def record_case(
+        self, case_id: str, outcome: dict, status: str, accounting: dict | None = None
+    ) -> None:
+        """One decided case, with the run's accounting so far, on disk before
+        the run goes on."""
         path = self.campaign.cases_path(self.slot, self.attempt)
         path.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "case_id": case_id,
+            "outcome": outcome,
+            "status": status,
+            "accounting": accounting or {},
+        }
         with open(path, "a", encoding="utf-8") as cases:
-            cases.write(
-                json.dumps({"case_id": case_id, "outcome": outcome, "status": status}) + "\n"
-            )
+            cases.write(json.dumps(row) + "\n")
             cases.flush()
             os.fsync(cases.fileno())
 
@@ -395,3 +482,4 @@ class Admission:
         needed; without a result it stays, for recovery."""
         if (self.slot, self.attempt) in self.campaign.results():
             self.campaign.cases_path(self.slot, self.attempt).unlink(missing_ok=True)
+            self.campaign.meta_path(self.slot, self.attempt).unlink(missing_ok=True)

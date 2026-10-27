@@ -175,7 +175,16 @@ async def run(
             record.statuses[case["id"]] = governed.statuses.get(case["id"], "rules_only")
             if admission is not None:
                 admission.record_case(
-                    case["id"], vars(record.outcomes[-1]), record.statuses[case["id"]]
+                    case["id"],
+                    vars(record.outcomes[-1]),
+                    record.statuses[case["id"]],
+                    {
+                        "sends": governed.sends,
+                        "cost": governed.cost,
+                        "unknown_cost_attempts": len(governed.open_reservations),
+                        "unknown_cost_reserved": sum(governed.open_reservations.values()),
+                        "usage": governed.usage.get(case["id"]),
+                    },
                 )
             if first_call_only and case["id"] in governed.statuses:
                 versions = governed.engine.model_versions
@@ -190,6 +199,22 @@ async def run(
     finally:
         record.finished = time.monotonic()
         await governed.aclose()
+
+
+def _unscored_stops(record: HostedRun) -> None:
+    """A counted run is complete only if every case that entered the engine
+    was scored: a case left unavailable by an outage makes it an outage stop
+    (replaceable); a case too large to send, a stop of its own kind."""
+    if not record.complete:
+        return
+    unavailable = [c for c, s in record.statuses.items() if s == "unavailable"]
+    oversized = [c for c, s in record.statuses.items() if s == "not_sent_oversized"]
+    if unavailable:
+        record.complete = False
+        record.stop_reason = f"outage: {len(unavailable)} cases left unscored"
+    elif oversized:
+        record.complete = False
+        record.stop_reason = f"not sent: {len(oversized)} cases too large for the quota"
 
 
 #: A first call that opens the way to the full run (FR-016).
@@ -311,47 +336,48 @@ def main(args, cases: list[dict], parser) -> int:
             print(f"result written to {written}", file=sys.stderr)
             return 3
     defect = None
-    admitted = contextlib.nullcontext()
-    if args.slot is not None:
-        try:
-            # The log lives with the results the slot's run will write.
-            admitted = campaign.Campaign(results_dir=args.json.parent).admit(args.engine, args.slot)
-            admission = admitted.__enter__()
-        except campaign.CampaignRefused as refusal:
-            print(f"refused: {refusal}", file=sys.stderr)
-            return 2
-        record.slot, record.attempt = admission.slot, admission.attempt
-    else:
-        admission = None
-    try:
-        with AccountRun(accounts.billing_account(config)) as account:
-            try:
-                asyncio.run(
-                    run(record, cases, ledger, account, quota, args.first_call_only, admission)
-                )
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                record.stop_reason = record.stop_reason or "interrupted"
-                record.complete = False
-            except Exception as error:
-                defect_reason = f"internal error ({type(error).__name__})"
-                record.stop_reason = record.stop_reason or defect_reason
-                record.complete = False
-                defect = error
-    except AccountBusy as refusal:
-        print(f"refused: {refusal}", file=sys.stderr)
-        if admission is not None:
-            # Admitted and logged, but nothing sent: the attempt is written,
-            # stopped for a reason outside the model's answers.
-            record.stop_reason = "interrupted: the vendor account was busy"
-            written = write(record, args, ledger, started, quota)
-            admitted.__exit__(None, None, None)
+    if args.slot is not None and args.json.parent.resolve() != campaign.RESULTS_DIR.resolve():
+        # One folder holds the campaign's results and its log: another would
+        # start an empty history.
+        print(
+            f"refused: a slot's result goes to {campaign.RESULTS_DIR}, not {args.json.parent}",
+            file=sys.stderr,
+        )
         return 2
-
-    try:
-        written = write(record, args, ledger, started, quota)
-    finally:
+    # Everything held -- the slot, the account -- is released on every exit,
+    # once the result is written.
+    with contextlib.ExitStack() as held:
+        admission = None
+        if args.slot is not None:
+            try:
+                admission = held.enter_context(campaign.Campaign().admit(args.engine, args.slot))
+            except campaign.CampaignRefused as refusal:
+                print(f"refused: {refusal}", file=sys.stderr)
+                return 2
+            record.slot, record.attempt = admission.slot, admission.attempt
+        try:
+            account = held.enter_context(AccountRun(accounts.billing_account(config)))
+        except AccountBusy as refusal:
+            print(f"refused: {refusal}", file=sys.stderr)
+            if admission is not None:
+                # Admitted and logged, but nothing sent: the attempt is
+                # written, stopped for a reason outside the model's answers.
+                record.stop_reason = "interrupted: the vendor account was busy"
+                write(record, args, ledger, started, quota)
+            return 2
+        try:
+            asyncio.run(run(record, cases, ledger, account, quota, args.first_call_only, admission))
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            record.stop_reason = record.stop_reason or "interrupted"
+            record.complete = False
+        except Exception as error:
+            defect_reason = f"internal error ({type(error).__name__})"
+            record.stop_reason = record.stop_reason or defect_reason
+            record.complete = False
+            defect = error
         if admission is not None:
-            admitted.__exit__(None, None, None)
+            _unscored_stops(record)
+        written = write(record, args, ledger, started, quota)
     if args.first_call_only and record.stop_reason == ACCEPTED:
         # Recorded only once its evidence is on disk; an interruption before
         # this line leaves the first call to be run again.

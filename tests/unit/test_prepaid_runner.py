@@ -480,9 +480,11 @@ class TestSlotsOnTheRunner:
 
         path = manifest(tmp_path, rounds=[["gpt-6-luna"]] * 3)
         monkeypatch.setattr(campaign, "MANIFEST", path)
+        monkeypatch.setattr(campaign, "RESULTS_DIR", tmp_path)
         monkeypatch.setattr(
             campaign, "git_state", lambda root=None: {"commit": "c0ffee", "clean_tree": True}
         )
+        monkeypatch.setattr(campaign, "manifest_commit", lambda p, root=None: "c0ffee")
         return path
 
     def test_every_result_records_its_commit_and_tree(self, tmp_path, monkeypatch):
@@ -568,3 +570,51 @@ class TestSlotsOnTheRunner:
         assert result["stop_kind"] == "qualifying"
         assert replacement["attempt"] == 2
         assert replacement["complete"] is True
+
+    def test_a_slot_run_writes_only_to_the_campaign_s_folder(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        status, result, _ = run(
+            monkeypatch, elsewhere, "gpt-6-luna", "--slot", "r1-gpt-6-luna", refused=True
+        )
+
+        assert status == 2
+        assert result is None
+        assert not (elsewhere / "campaign-008.jsonl").exists()
+
+    def test_a_busy_account_releases_the_slot_and_is_replaceable(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        with state.AccountRun("openai-org-test"):
+            status, busy, _ = run(
+                monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna", refused=True
+            )
+        _, replacement, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna")
+
+        assert status == 2
+        assert busy["stop_kind"] == "qualifying"
+        assert replacement["attempt"] == 2 and replacement["complete"] is True
+
+    def test_an_outage_leaving_cases_unscored_is_a_replaceable_stop(self, tmp_path, monkeypatch):
+        from app.decision.base import EngineUnavailable
+
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+        monkeypatch.setattr("evals.governed.BACKOFF", 0.0)
+
+        _, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            "gpt-6-luna",
+            "--slot",
+            "r1-gpt-6-luna",
+            outcome=EngineUnavailable("server_error"),
+        )
+
+        assert result["complete"] is False
+        assert result["stop_reason"].startswith("outage:")
+        assert result["stop_kind"] == "qualifying"

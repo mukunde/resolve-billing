@@ -40,6 +40,7 @@ def manifest(tmp_path, rounds=ROUNDS, eligibility=None):
 def clean(monkeypatch):
     state = {"commit": "c0ffee", "clean_tree": True}
     monkeypatch.setattr(campaign, "git_state", lambda root=None: dict(state))
+    monkeypatch.setattr(campaign, "manifest_commit", lambda path, root=None: "c0ffee")
     return state
 
 
@@ -263,6 +264,76 @@ class TestLostRuns:
 
         assert any(line.get("type") == "lost" for line in c.log_lines())
         assert "gpt-6-luna" in c.state().not_completing
+
+
+class TestTheDeclaredEvidence:
+    def test_another_evidence_is_refused(self, tmp_path, clean, monkeypatch):
+        c = make(tmp_path)
+        monkeypatch.setattr(campaign, "current_evidence", lambda: {"cases_sha256": "another"})
+
+        with (
+            pytest.raises(CampaignRefused, match="evidence"),
+            c.admit("gpt-6-luna", "r1-gpt-6-luna"),
+        ):
+            pass
+
+    def test_a_checkout_off_the_manifest_s_commit_is_refused(self, tmp_path, clean):
+        clean["commit"] = "later"
+        c = make(tmp_path)
+
+        with (
+            pytest.raises(CampaignRefused, match="manifest revision"),
+            c.admit("gpt-6-luna", "r1-gpt-6-luna"),
+        ):
+            pass
+
+        assert c.log_lines() == []
+
+
+class TestRecoveryEvidence:
+    def test_the_rebuilt_result_keeps_the_run_s_own_configuration(
+        self, tmp_path, clean, monkeypatch
+    ):
+        c = make(tmp_path)
+        with c.admit("gpt-6-luna", "r1-gpt-6-luna") as admitted:
+            admitted.record_case(
+                "duplicate_fr",
+                {"case_id": "duplicate_fr"},
+                "decided",
+                {"sends": 1, "cost": 0.001, "unknown_cost_attempts": 0, "usage": None},
+            )
+        at_start = fingerprint(configuration("gpt-6-luna"))
+        # The configuration changes afterwards; the rebuilt result must not follow.
+        monkeypatch.setattr(campaign, "fingerprint", lambda config: "changed")
+        monkeypatch.setattr(campaign, "configuration", lambda name: configuration(name))
+
+        c._recover()
+
+        rebuilt = next(r for r in c.results().values() if r.get("rebuilt"))
+        assert rebuilt["configuration_fingerprint"] == at_start
+        assert rebuilt["sends"] == 1
+        assert rebuilt["cost"]["settled_amount"] == 0.001
+        assert rebuilt["cost"]["complete"] is False
+
+    @pytest.mark.parametrize(
+        "row",
+        [
+            {"case_id": "not_a_case", "outcome": {}, "status": "decided", "accounting": {}},
+            {"case_id": "duplicate_fr", "outcome": {}, "status": "weird", "accounting": {}},
+            {"case_id": "duplicate_fr", "status": "decided"},
+        ],
+    )
+    def test_a_malformed_record_is_lost_not_a_crash(self, row, tmp_path, clean):
+        c = make(tmp_path)
+        with c.admit("gpt-6-luna", "r1-gpt-6-luna"):
+            pass
+        path = c.cases_path("r1-gpt-6-luna", 1)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+        c._recover()
+
+        assert any(line.get("type") == "lost" for line in c.log_lines())
 
 
 class TestGitState:
