@@ -301,4 +301,75 @@ written beside the manifest.
 
 ## Research notes
 
-*(T010: filled before any client changes, reviewed by Codex.)*
+Read 2026-10-27 from Scaleway's catalogue (supported models) and published
+API schema, Anthropic's pricing page, and the pinned SDKs (`anthropic`
+0.105.2 as installed, `openai` 3.29.0).
+
+### Settled
+
+- **Scaleway, serverless output maxima** (catalogue):
+  - `qwen3.5-397b-a17b` "16k", model string `qwen/qwen3.5-397b-a17b:int4`;
+  - `qwen3.6-35b-a3b` "32k", `qwen/qwen3.6-35b-a3b:bf16` and `:fp8`;
+  - `deepseek-v4.1-flash` "32k", no model string listed.
+
+  "k" is not defined. 16,384 is within 32k for the two others. For the
+  397B it is the maximum if "16k" means 16,384, which the first call
+  settles: a refusal there is not a counted run, and the cap then becomes
+  16,000 before round 1.
+- **Scaleway, reasoning and structured outputs**: structured outputs and
+  function calling are listed for all three.
+  - `reasoning_effort` takes `none`, `low`, `medium`, `high` for the two
+    Qwen; for both, the schema says "`low` and `high` values are similar
+    to `medium`".
+  - It takes `none`, `low`, `high`, `max` for DeepSeek; no note on `low`.
+  - Reasoning text arrives in `message.reasoning_content`, the one field
+    the schema defines for it, dropped by the existing client.
+  - Usage fields as for the 397B: `prompt_tokens`, `completion_tokens`,
+    `completion_tokens_details.reasoning_tokens`,
+    `prompt_tokens_details.cached_tokens`.
+  - DeepSeek prices cached input apart (€0.12 per million); the two Qwen
+    list no cached rate.
+  - Limits: the documented level for a validated payment method,
+    200,000 tokens and 300 requests a minute, for each.
+- **Anthropic, the request**: the service engine sends `model`,
+  `max_tokens`, `system`, `output_config={"effort", "format"}` and one user
+  message built from the pseudonymised payload. The adapter sends exactly
+  that, pinned by the parity tests.
+- **Anthropic, the response**: `stop_reason` among `end_turn`,
+  `max_tokens`, `stop_sequence`, `tool_use`, `pause_turn`, `refusal` (the
+  pinned SDK's type). The service parser sends `refusal` and `max_tokens`
+  to a person and validates the text for every other stop reason; the
+  adapter does the same. `response.model` is the returned model.
+- **Anthropic, usage**: `input_tokens`, `output_tokens`,
+  `cache_read_input_tokens`, `cache_creation_input_tokens`. Anthropic counts
+  cache reads and writes **apart** from `input_tokens`. So the adapter
+  reports `input_tokens` as the sum of the three, with the cache reads and
+  writes as details, matching `Answer`'s meaning ("part of
+  `input_tokens`"). No request sets a cache breakpoint, so both are
+  expected to be zero.
+- **Anthropic, prices** (pricing page): Haiku 5.5, for prompts up to
+  100,000 tokens: $0.10 input, $0.125 for 5-minute cache writes, $0.01
+  for cache hits, $0.50 output. Above 100,000 tokens the prices are
+  higher; every prompt here is a few thousand tokens.
+- **Anthropic, errors**: `APIStatusError` (status code) and
+  `APIConnectionError` (timeouts included). 429 is a rate limit, 408, 409
+  and 5xx are outages, as the service engine's `_TRANSIENT` says. Any
+  other status is a refusal carrying its code alone. An unreadable
+  response (strict validation) is an unusable answer.
+- **Anthropic SDK settings**: `max_retries=0`; the key and the base URL
+  are passed explicitly. With an explicit key, the SDK consults no
+  credential variable. It still reads `ANTHROPIC_CUSTOM_HEADERS` (headers
+  on every request) and `ANTHROPIC_LOG` (request logging): the runner
+  refuses both, as it refuses OpenAI's.
+- **The account variable**: the SDK's credential chain reads
+  `ANTHROPIC_ORGANIZATION_ID` for workload identity. To leave the service
+  engine's client untouched by a variable it could read, the account id is
+  named `RESOLVE_ANTHROPIC_ORG_ID` instead of the plan's first name.
+
+### Approved unknowns, recorded as unknown
+
+- DeepSeek's served quantisation.
+- Whether "16k" is 16,384 for the 397B, until its first call.
+- Whether a vendor checks the declared account against the key.
+- The Anthropic account's rate limits, until the maintainer reads them
+  (T011).
