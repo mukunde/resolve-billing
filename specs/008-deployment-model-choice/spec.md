@@ -129,9 +129,10 @@ configurations (VII). Final-diff approval by the maintainer.
   ineligible configuration is still run and reported, as a comparison
   point. The proposal for his decision:
   - Claude (the three): eligible (already the service's engine);
-  - OpenAI (the two): eligible provisionally (processing has no regional
-    commitment without an approved retention arrangement; a deployment
-    slice would settle hosting under his preference);
+  - OpenAI (the two): eligible provisionally (regional processing is not
+    established for this account; a deployment slice would establish the
+    permitted location and the applicable retention terms, separately,
+    under his hosting preference);
   - Qwen (the two) and DeepSeek on Scaleway: eligible provisionally
     (Paris; a deployment slice and a paid tier's terms; for DeepSeek, its
     "preview" status ending before adoption);
@@ -277,7 +278,9 @@ they apply.
 - **FR-005**: Claude's runs MUST give the same evidence as the hosted
   engines': one result file per run (each run a separate invocation),
   written even when the run stops, with per-case statuses (`decided`,
-  `abstained`, `invalid`, `unavailable`, `rules_only`), attempts, token
+  `abstained`, `invalid`, `unavailable`, `not_sent_oversized`,
+  `rules_only` -- `unavailable` and `not_sent_oversized` never scored as
+  answers), attempts, token
   usage, the model returned, the effort, the output cap, the configuration
   fingerprint (prompt, schema, masking), the run's deadline and cost. Tests
   MUST cover a completed, an interrupted and a refused Claude run, the
