@@ -14,12 +14,27 @@ from evals.first_calls import fingerprint
 ROUNDS = [["gpt-6-luna", "qwen3.6-35b-a3b"]] * 3
 
 
-def outcome(case_id, unsafe=False):
-    """A recorded case's outcome, with every check the runner scores."""
-    return {field: True for field in campaign.OUTCOME_FIELDS} | {
-        "case_id": case_id,
-        "unsafe": unsafe,
-    }
+def outcome(case_id, unsafe=None):
+    """A recorded case's outcome, as the runner's `CaseOutcome` gives it."""
+    from dataclasses import asdict
+
+    from evals.runner import CaseOutcome
+
+    return asdict(
+        CaseOutcome(
+            case_id=case_id,
+            classification_ok=True,
+            action_ok=True,
+            approval_ok=True,
+            findings_ok=True,
+            skip_ok=True,
+            unsafe=unsafe,
+            confidence=0.9,
+            confidence_kind="self_reported",
+            cost_micros=None,
+            latency_ms=10,
+        )
+    )
 
 
 def manifest(tmp_path, rounds=ROUNDS, eligibility=None):
@@ -49,6 +64,14 @@ def clean(monkeypatch):
     state = {"commit": "c0ffee", "clean_tree": True}
     monkeypatch.setattr(campaign, "git_state", lambda root=None: dict(state))
     monkeypatch.setattr(campaign, "manifest_commit", lambda path, root=None: "c0ffee")
+    # The accounts the slots' configurations are run on.
+    for variable, value in {
+        "OPENAI_ORG_ID": "org-test",
+        "OPENAI_PROJECT_ID": "proj_test",
+        "SCALEWAY_ORGANIZATION_ID": "scw-org",
+        "SCALEWAY_PROJECT_ID": "scw-project",
+    }.items():
+        monkeypatch.setenv(variable, value)
     return state
 
 
@@ -239,7 +262,8 @@ class TestLostRuns:
     def test_a_killed_run_is_rebuilt_from_its_cases_and_replaced(self, tmp_path, clean):
         c = make(tmp_path)
         with c.admit("gpt-6-luna", "r1-gpt-6-luna") as admitted:
-            admitted.record_case("duplicate_fr", outcome("duplicate_fr", unsafe=True), "decided")
+            unsafe = outcome("duplicate_fr", unsafe="money moved where none moves")
+            admitted.record_case("duplicate_fr", unsafe, "decided")
             # killed here: no result written
 
         admitted = admit_and_finish(c, "r1-gpt-6-luna")
@@ -252,7 +276,7 @@ class TestLostRuns:
         ]
         assert len(rebuilt) == 1
         assert rebuilt[0]["complete"] is False
-        assert rebuilt[0]["outcomes"][0]["unsafe"] is True
+        assert rebuilt[0]["outcomes"][0]["unsafe"] == "money moved where none moves"
         assert rebuilt[0]["stop_kind"] == "qualifying"
 
     def test_unreadable_evidence_is_lost_and_never_replaced(self, tmp_path, clean):
@@ -363,6 +387,8 @@ class TestInFlightAccounting:
             # A request sent after the last recorded case, then the process dies.
             book.reserve("RUN1/gpt-6-luna/duplicate_en/1", 0.02)
         book.reserve("OTHER/gpt-6-luna/duplicate_fr/1", 0.5)
+        # The account's variables changing after the run changes nothing.
+        monkeypatch.setenv("OPENAI_ORG_ID", "org-another")
 
         c._recover()
 
@@ -372,6 +398,27 @@ class TestInFlightAccounting:
         assert rebuilt["cost"]["unknown_cost_attempts"] == 1
         assert rebuilt["cost"]["unknown_cost_reserved"] == pytest.approx(0.02)
         assert rebuilt["sends"] == 2
+
+    def test_an_unreadable_ledger_never_passes_for_complete_accounting(
+        self, tmp_path, clean, monkeypatch
+    ):
+        from evals import state
+
+        monkeypatch.setattr(state, "STATE_DIR", tmp_path / "state")
+        monkeypatch.setenv("OPENAI_ORG_ID", "org-test")
+        monkeypatch.setenv("OPENAI_PROJECT_ID", "proj_test")
+        c = make(tmp_path)
+        with c.admit("gpt-6-luna", "r1-gpt-6-luna", run_id="RUN1") as admitted:
+            admitted.record_case(
+                "duplicate_fr", outcome("duplicate_fr"), "decided", {"sends": 1, "cost": 0.001}
+            )
+
+        c._recover()
+
+        rebuilt = next(r for r in c.results().values() if r.get("rebuilt"))
+        assert rebuilt["cost"]["ledger_unavailable"] is True
+        assert rebuilt["cost"]["from_ledger"] is False
+        assert rebuilt["cost"]["complete"] is False
 
 
 class TestGitState:

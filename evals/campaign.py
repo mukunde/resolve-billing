@@ -167,6 +167,17 @@ def load_manifest(path: Path) -> dict:
     return held
 
 
+def _ledger_account(config) -> str | None:
+    """The ledger a configuration's attempts are reserved in, by account."""
+    from evals import accounts
+
+    if config.vendor == "mistral":
+        return "mistral"
+    if config.currency is not None:
+        return accounts.billing_account(config)
+    return None
+
+
 def slot_id(round_index: int, name: str) -> str:
     return f"r{round_index + 1}-{name}"
 
@@ -342,8 +353,10 @@ class Campaign:
                     "commit": repo["commit"],
                     "configuration": asdict(config),
                     "configuration_fingerprint": fingerprint(config),
-                    # The prefix of the run's tickets in its account's ledger.
+                    # The prefix of the run's tickets in its account's ledger,
+                    # and that ledger's account, as they were at the start.
                     "run_id": run_id,
+                    "ledger_account": _ledger_account(config),
                 }
                 | current_evidence()
             )
@@ -400,7 +413,8 @@ class Campaign:
                     "currency": meta["configuration"].get("currency"),
                     "unknown_cost_attempts": last.get("unknown_cost_attempts", 0),
                     "unknown_cost_reserved": last.get("unknown_cost_reserved", 0.0),
-                    "from_ledger": ledgered is not None,
+                    "from_ledger": ledgered is not None and "ledger_unavailable" not in ledgered,
+                    "ledger_unavailable": bool(ledgered and ledgered.get("ledger_unavailable")),
                     "complete": False,
                 },
             } | {k: meta[k] for k in current_evidence()}
@@ -412,22 +426,24 @@ class Campaign:
         """The run's settled cost and its unsettled reservations, read from
         its account's ledger by the run's ticket prefix; None when the
         configuration keeps no ledger or it cannot be read."""
-        from evals import accounts
         from evals.ledger import Ledger, LedgerRefused, PrepaidLedger
 
-        config = configuration(meta["engine"])
+        account = meta.get("ledger_account")
+        if account is None:
+            # A configuration that keeps no ledger (a free tier).
+            return None
         try:
-            if config.vendor == "mistral":
+            if account == "mistral":
                 book = Ledger()
-            elif config.currency is not None:
-                book = PrepaidLedger(accounts.billing_account(config), config.currency)
             else:
-                return None
+                book = PrepaidLedger(account, meta["configuration"]["currency"])
             held = book._read()
-        except (LedgerRefused, accounts.AccountRefused):
-            return None
+        except (LedgerRefused, KeyError, TypeError):
+            held = None
         if held is None or not meta.get("run_id"):
-            return None
+            # The run's own ledger cannot be read: its accounting is unknown,
+            # never taken from the stale case record as if complete.
+            return {"ledger_unavailable": True}
         mine = [
             entry
             for ticket, entry in held["attempts"].items()
@@ -466,7 +482,11 @@ class Campaign:
                 and isinstance(r["outcome"], dict)
                 and set(r["outcome"]) >= OUTCOME_FIELDS
                 and r["outcome"]["case_id"] == r["case_id"]
-                and isinstance(r["outcome"]["unsafe"], bool)
+                # `CaseOutcome.unsafe`: None, or the reason it was unsafe.
+                and (
+                    r["outcome"]["unsafe"] is None
+                    or (isinstance(r["outcome"]["unsafe"], str) and r["outcome"]["unsafe"])
+                )
                 and r["status"] in STATUSES
                 and isinstance(r["accounting"], dict)
             ):
