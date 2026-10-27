@@ -631,3 +631,18 @@ class TestSlotsOnTheRunner:
 
         assert record.complete is False
         assert record.stop_reason.startswith("not sent:")
+
+    def test_an_oversized_case_is_not_replaceable_even_after_an_early_stop(self):
+        from datetime import UTC, datetime
+
+        from evals import campaign
+        from evals.hosted_run import HostedRun, _unscored_stops
+
+        record = HostedRun("gpt-6-luna", datetime.now(UTC), total=2)
+        record.statuses = {"a": "not_sent_oversized"}
+        record.stop_reason = "the run's deadline of 3600 s is reached"
+
+        _unscored_stops(record)
+
+        assert record.stop_reason.startswith("not sent:")
+        assert campaign.stop_kind(record.stop_reason) == "other"

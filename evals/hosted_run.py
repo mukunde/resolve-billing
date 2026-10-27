@@ -205,16 +205,19 @@ def _unscored_stops(record: HostedRun) -> None:
     """A counted run is complete only if every case that entered the engine
     was scored: a case left unavailable by an outage makes it an outage stop
     (replaceable); a case too large to send, a stop of its own kind."""
-    if not record.complete:
-        return
     unavailable = [c for c, s in record.statuses.items() if s == "unavailable"]
     oversized = [c for c, s in record.statuses.items() if s == "not_sent_oversized"]
     # A case too large to send would be too large again: that stop takes
-    # precedence over an outage, which a replacement could repair.
+    # precedence over an outage or an early stop, which a replacement could
+    # repair -- also when the run stopped afterwards for another reason.
     if oversized:
+        earlier = f" (then: {record.stop_reason})" if record.stop_reason else ""
         record.complete = False
-        record.stop_reason = f"not sent: {len(oversized)} cases too large for the quota"
-    elif unavailable:
+        record.stop_reason = f"not sent: {len(oversized)} cases too large for the quota{earlier}"
+        return
+    if not record.complete:
+        return
+    if unavailable:
         record.complete = False
         record.stop_reason = f"outage: {len(unavailable)} cases left unscored"
 

@@ -325,6 +325,7 @@ class Campaign:
                 raise CampaignRefused(
                     "the checkout is not at the approved manifest revision's commit"
                 )
+            self._bind(repo["commit"])
             self._recover()
             self._retire()
             held = self.state()
@@ -493,6 +494,26 @@ class Campaign:
                 raise ValueError("a malformed case record")
             seen.add(r["case_id"])
         return meta, recorded
+
+    def _bind(self, commit: str) -> None:
+        """One campaign, one history: the first admission binds the campaign
+        to its results folder in the private state; another folder -- another
+        worktree's, say -- would start an empty history, and is refused."""
+        directory = self._state_dir or state.STATE_DIR
+        path = directory / f"campaign-{NAME}-binding.json"
+        here = {"manifest_commit": commit, "results_dir": str(self.results_dir.resolve())}
+        if not path.exists():
+            state.write_atomically(path, here)
+            return
+        try:
+            bound = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raise CampaignRefused(f"the campaign's binding {path} cannot be read") from None
+        if bound != here:
+            raise CampaignRefused(
+                f"the campaign is bound to {bound.get('results_dir')} at "
+                f"{bound.get('manifest_commit')}; another folder or revision is refused"
+            )
 
     def _retire(self) -> None:
         held = self.state()

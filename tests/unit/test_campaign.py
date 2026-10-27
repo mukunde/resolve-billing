@@ -421,6 +421,24 @@ class TestInFlightAccounting:
         assert rebuilt["cost"]["complete"] is False
 
 
+class TestOneHistory:
+    def test_another_worktree_s_folder_is_refused(self, tmp_path, clean):
+        first = make(tmp_path)
+        with first.admit("gpt-6-luna", "r1-gpt-6-luna"):
+            pass
+        other = tmp_path / "other-worktree"
+        other.mkdir()
+        second = Campaign(tmp_path / "manifest.json", results_dir=other)
+
+        with (
+            pytest.raises(CampaignRefused, match="bound"),
+            second.admit("gpt-6-luna", "r1-gpt-6-luna"),
+        ):
+            pass
+
+        assert not (other / campaign.LOG_NAME).exists()
+
+
 class TestGitState:
     def test_untracked_results_keep_the_tree_clean(self):
         assert campaign.clean_from_porcelain(["?? evals/results/x.json"]) is True
