@@ -12,11 +12,13 @@ each an integration run; it chose nothing. The framing of this choice was
 worked out with Codex (r231-r235) and decided by the maintainer on
 2026-10-27 (coordination decision 41):
 
-- **eight candidates**, the list frozen before any run:
-  - Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5;
-  - `gpt-6-luna` and `gpt-6.1-sol`;
+- **five candidates**, the list frozen before any run:
+  - Claude Haiku 5.5;
+  - `gpt-6-luna`;
   - `qwen3.5-397b-a17b` and `qwen3.6-35b-a3b`, on Scaleway;
   - `deepseek-v4.1-flash`, on Scaleway;
+- **Claude Opus 5.5 and Sonnet 5.5 and `gpt-6.1-sol` dropped**
+  (2026-10-27), too costly for this use case in the maintainer's judgement;
 - Gemini 3.5 Flash-Lite as a **comparison point**, on the free tier,
   unless the maintainer declares it provisionally eligible before round 1
   (a paid tier he decides, its hosting and data terms, a deployment slice,
@@ -57,8 +59,7 @@ configurations (VII). Final-diff approval by the maintainer.
 
   Every run had 0 unsafe actions. The Qwen run had five invalid answers,
   each at exactly the 4,096-token output cap.
-- **Not yet measured**: Claude Sonnet 5.5 and Opus 5.5 on the current set;
-  `qwen3.6-35b-a3b`; `deepseek-v4.1-flash`.
+- **Not yet measured**: `qwen3.6-35b-a3b`; `deepseek-v4.1-flash`.
 - **Scaleway** (catalogue and pricing, read 2026-10-26/27):
   - `qwen3.6-35b-a3b`: serverless, bf16/fp8, reasoning `none` to `high`
     ("`low` and `high` values are similar to `medium`"), 32k output cap,
@@ -68,9 +69,10 @@ configurations (VII). Final-diff approval by the maintainer.
     `max`, structured outputs listed, 32k output cap, quantisation not
     stated, €0.60 / €0.12 cached / €1.80 per million tokens;
   - `qwen3.5-397b-a17b`: its serverless output cap is listed as "16k".
-- **Anthropic**: Opus 5.5 at $4 / $20 per million tokens is not in
-  `PRICING_PER_MTOK` (its cost would read unknown). The engine runs at effort
-  `low` with an 8,192-token output cap; `CLAUDE_MODEL` selects the model.
+- **Anthropic**: the engine runs at effort `low` with an 8,192-token output
+  cap; `CLAUDE_MODEL` selects the model; the service's default is
+  `claude-opus-5`, so a Haiku choice changes the default. Haiku 5.5 is
+  priced at $0.10 / $0.50 in `PRICING_PER_MTOK`.
   Claude runs go through the plain runner (`--runs N`, no envelope, no
   first-call gate, another result shape); the hosted ones through
   `evals/hosted_run.py`.
@@ -129,8 +131,8 @@ configurations (VII). Final-diff approval by the maintainer.
   computed among eligible and provisionally eligible candidates only. An
   ineligible configuration is still run and reported, as a comparison
   point. The proposal for his decision:
-  - Claude (the three): eligible (already the service's engine);
-  - OpenAI (the two): eligible provisionally (regional processing is not
+  - Claude Haiku 5.5: eligible (Claude is already the service's engine);
+  - `gpt-6-luna`: eligible provisionally (regional processing is not
     established for this account; a deployment slice would establish the
     permitted location and the applicable retention terms, separately,
     under his hosting preference);
@@ -189,7 +191,7 @@ configurations (VII). Final-diff approval by the maintainer.
 
 ### User Story 1 - The maintainer sees one table, computed from the files (Priority: P1)
 
-After the 24 runs (eight candidates × three) and the comparison point's,
+After the 15 runs (five candidates × three) and the comparison point's,
 a script reads the result files only -- both shapes, Claude's and the
 hosted engines' -- and prints the table the criteria need, in the order
 they apply.
@@ -218,14 +220,12 @@ they apply.
 
 **Acceptance Scenarios**:
 
-1. **Given** `claude-opus-5-5`, **When** its cost is estimated, **Then** it
-   is priced at $4 / $20, with source and date, and a test pins it.
-2. **Given** `qwen3.6-35b-a3b` and `deepseek-v4.1-flash`, **When** the
+1. **Given** `qwen3.6-35b-a3b` and `deepseek-v4.1-flash`, **When** the
    runner is asked for them, **Then** each is a closed configuration on the
    Scaleway account, held to its envelope, to its model's identity on every
    answer, and to the development set, as spec 007's are. Each has its own
    accepted first call.
-3. **Given** the two Qwen and DeepSeek at a 16,384 cap, **When** a request
+2. **Given** the two Qwen and DeepSeek at a 16,384 cap, **When** a request
    is reserved, **Then** the reservation fits the account's per-minute
    limits. A changed configuration needs a fresh accepted first call.
 
@@ -236,11 +236,11 @@ they apply.
 1. **Given** the Claude runs, **When** each attempt would be sent, **Then**
    its maximum estimated cost -- input estimate plus the 8,192 output cap,
    at the model's highest rate -- is first reserved in an Anthropic
-   envelope the maintainer declares ($3 proposed), and settled from the
+   envelope the maintainer declares ($1 proposed), and settled from the
    reported usage after; an attempt the envelope cannot admit is not sent
    and the candidate is "not completing". The envelope is admission
    accounting under the same estimate as spec 007's; it does not promise
-   that nine runs fit.
+   that three runs fit.
 2. **Given** a hosted run its envelope cannot admit, **When** it is refused,
    **Then** the refusal is reported. The envelope is never raised without
    the maintainer's decision.
@@ -258,9 +258,10 @@ they apply.
 
 ## Requirements *(mandatory)*
 
-- **FR-001**: `PRICING_PER_MTOK` MUST price `claude-opus-5-5` ($4 / $20,
-  source and date), and a test MUST pin it; Haiku 5.5 and Sonnet 5.5 stay
-  as they are.
+- **FR-001**: The registry and the manifest MUST hold exactly the five
+  candidates and the comparison point; the dropped configurations
+  (`gpt-6.1-sol`, Gemini 3.8 Flash) stay in the registry, unused by this
+  comparison, their results kept.
 - **FR-002**: Two configurations MUST be added to the evaluation registry,
   closed as spec 007's are (FR-003 there), after a documentation check:
   `qwen3.6-35b-a3b` and `deepseek-v4.1-flash`, on the Scaleway account,
