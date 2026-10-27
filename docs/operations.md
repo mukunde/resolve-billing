@@ -398,7 +398,8 @@ read them in his project's Limits page (2026-10-27): `gpt-6-luna` 2,000,000
 tokens and 5,000 requests a minute, `gpt-6.1-sol` 1,000,000 and 5,000; and
 Scaleway's documented level for an organisation with a validated payment
 method, 200,000 tokens and 300 requests a minute for `qwen3.5-397b-a17b`
-(the console lists no Generative APIs quota before a first call). Scaleway
+-- an assumption the maintainer accepted: his console listed no Generative
+APIs quota on 2026-10-27, for a reason unknown. Scaleway
 applies its base limits only with a payment method; billing beyond the free
 tier is automatic. Read them again if an account's tier changes.
 OpenAI's first calls, then the full runs:

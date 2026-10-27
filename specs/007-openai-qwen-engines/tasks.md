@@ -121,13 +121,20 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 6: The maintainer's settings and first calls
 
-- [ ] T060 **[maintainer]** Create the OpenAI project and key, the Scaleway
+- [x] T060 **[maintainer]** Create the OpenAI project and key, the Scaleway
   project and key; read each account's limits in its console (tokens and
   requests per minute per model, the organisation-wide Scaleway limits)
   and the remaining credit or free-tier balance; put keys and account ids
   in his `.env`. The limits are pinned in the configurations with source
   and date, in a commit of their own, reviewed.
-- [ ] T060a **[maintainer]** Decide whether to add a payment method to the
+  *(2026-10-27: OpenAI's limits read in the maintainer's console and pinned.
+  Scaleway's console listed no Generative APIs quota, for a reason unknown,
+  the maintainer's card being the default one; its documented level for a
+  validated payment method (200,000 tokens and 300 requests a minute) is
+  pinned instead -- a deviation from this task, accepted by the maintainer
+  on 2026-10-27 as an unconfirmed account-limit assumption. T060a: the
+  payment method was already on the account.)*
+- [x] T060a **[maintainer]** Decide whether to add a payment method to the
   Scaleway account (its base rate limits apply with one; billing beyond the
   free million tokens is automatic). Without it, the Scaleway first call
   waits; OpenAI goes on.

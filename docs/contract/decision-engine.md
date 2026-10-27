@@ -146,8 +146,9 @@ evaluation runner selects from the same table plus the seven configurations
   catalogue lists it; whether Qwen's reasoning counts toward the output cap
   is not documented. OpenAI's limits are those the maintainer read in his
   console (2026-10-27); Scaleway's are its documented level for an
-  account with a validated payment method, its console listing no
-  Generative APIs quota before a first call.
+  account with a validated payment method, an assumption the maintainer
+  accepted: his console listed no Generative APIs quota on 2026-10-27, for
+  a reason unknown.
 
 ## Covered by
 
