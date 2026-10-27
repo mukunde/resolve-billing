@@ -169,8 +169,9 @@ evaluated outside the service (`evals/engines.py`).
   console (2026-10-27); Scaleway's are its documented level for an
   account with a validated payment method, an assumption the maintainer
   accepted: his console listed no Generative APIs quota on 2026-10-27, for
-  a reason unknown. Claude Haiku's limits await the maintainer's console: until
-  then they are provisional, and the comparison refuses its slots.
+  a reason unknown. Claude Haiku's are those the maintainer read in his
+  console (2026-10-27), the lower token figure (2.0M output a minute)
+  applied to input and output together.
 
 ## Covered by
 

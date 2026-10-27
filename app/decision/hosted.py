@@ -60,6 +60,14 @@ SCALEWAY_PRICES_008 = (
 #: below any published limit, replaced with his figures before the merge.
 PROVISIONAL_LIMITS = "provisional, pending the maintainer's console (T060)"
 ANTHROPIC_PRICES = "platform.claude.com/docs/en/about-claude/pricing, read 2026-10-27"
+#: Read by the maintainer in his console (spec 008, T011): 10.0M input tokens
+#: (cache reads excluded), 2.0M output tokens and 10,000 requests a minute.
+#: The limiter counts input and output together: it takes the lower, 2.0M.
+ANTHROPIC_LIMITS = (
+    "Claude Console, Usage > Limits, Claude Haiku 5.5 (all workspaces), read 2026-10-27: "
+    "10.0M input and 2.0M output tokens and 10k requests a minute; the lower token "
+    "figure applied to input and output together"
+)
 #: Where the limits below were read, and when (T060).
 OPENAI_LIMITS = (
     "OpenAI platform, project resolve-billing-eval, Project settings > Limits "
@@ -280,6 +288,9 @@ GPT_SOL = _openai(
 #: pinned by tests (`app/decision/anthropic_eval.py`).
 CLAUDE_HAIKU = _prepaid(
     "claude-haiku-5-5",
+    tokens_per_minute=2_000_000,
+    requests_per_second=10_000 / 60,
+    limits_source=ANTHROPIC_LIMITS,
     vendor="anthropic",
     developer="Anthropic",
     endpoint="https://api.anthropic.com",

@@ -152,12 +152,21 @@ class TestAdmission:
         ):
             pass
 
-    def test_provisional_limits_are_refused(self, tmp_path, clean):
-        c = make(tmp_path, rounds=[["claude-haiku-5-5"]] * 3)
+    def test_provisional_limits_are_refused(self, tmp_path, clean, monkeypatch):
+        from dataclasses import replace
+
+        from app.decision.hosted import PROVISIONAL_LIMITS
+
+        c = make(tmp_path)
+        provisional = replace(configuration("gpt-6-luna"), limits_source=PROVISIONAL_LIMITS)
+        monkeypatch.setattr(campaign, "configuration", lambda name: provisional)
+        monkeypatch.setattr(
+            campaign, "fingerprint", lambda config: fingerprint(configuration(config.name))
+        )
 
         with (
             pytest.raises(CampaignRefused, match="provisional"),
-            c.admit("claude-haiku-5-5", "r1-claude-haiku-5-5"),
+            c.admit("gpt-6-luna", "r1-gpt-6-luna"),
         ):
             pass
 
