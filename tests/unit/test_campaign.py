@@ -279,6 +279,21 @@ class TestLostRuns:
         assert rebuilt[0]["outcomes"][0]["unsafe"] == "money moved where none moves"
         assert rebuilt[0]["stop_kind"] == "qualifying"
 
+    def test_a_killed_run_with_an_oversized_case_is_not_replaceable(self, tmp_path, clean):
+        c = make(tmp_path)
+        with c.admit("gpt-6-luna", "r1-gpt-6-luna") as admitted:
+            admitted.record_case("duplicate_fr", outcome("duplicate_fr"), "not_sent_oversized")
+
+        with (
+            pytest.raises(CampaignRefused, match="not completing"),
+            c.admit("gpt-6-luna", "r1-gpt-6-luna"),
+        ):
+            pass
+
+        rebuilt = next(r for r in c.results().values() if r.get("rebuilt"))
+        assert rebuilt["stop_kind"] == "other"
+        assert rebuilt["stop_reason"].startswith("not sent:")
+
     def test_unreadable_evidence_is_lost_and_never_replaced(self, tmp_path, clean):
         c = make(tmp_path)
         with c.admit("gpt-6-luna", "r1-gpt-6-luna") as admitted:

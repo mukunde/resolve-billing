@@ -387,6 +387,14 @@ class Campaign:
                 self._append({"type": "lost", "slot": key[0], "attempt": key[1]})
                 continue
             last = recorded[-1]["accounting"] if recorded else {}
+            # As the runner decides: a case too large to send would be too
+            # large again, so it is never a replaceable loss.
+            oversized = sum(1 for r in recorded if r["status"] == "not_sent_oversized")
+            reason = (
+                f"not sent: {oversized} cases too large for the quota (then: {REBUILT_REASON})"
+                if oversized
+                else REBUILT_REASON
+            )
             # What the account's ledger holds for this run -- the attempt in
             # flight when the process died included -- overrides the record.
             ledgered = self._ledgered(meta)
@@ -399,8 +407,8 @@ class Campaign:
                 "engine": meta["engine"],
                 "rebuilt": True,
                 "complete": False,
-                "stop_reason": REBUILT_REASON,
-                "stop_kind": "qualifying",
+                "stop_reason": reason,
+                "stop_kind": stop_kind(reason),
                 "commit": meta["commit"],
                 "clean_tree": True,
                 "configuration": meta["configuration"],
