@@ -162,10 +162,15 @@ class TestTheNewConfigurations:
         assert "payment method validated" in qwen.limits_source
         assert "read 2026-10-27" in qwen.limits_source
 
-    def test_no_configuration_keeps_provisional_limits(self):
+    def test_only_haiku_awaits_its_limits(self):
+        """Haiku's limits await the maintainer's console (spec 008, T011);
+        every other configuration's are pinned."""
         from app.decision.hosted import PROVISIONAL_LIMITS
 
-        assert all(c.limits_source != PROVISIONAL_LIMITS for c in CONFIGURATIONS.values())
+        provisional = {
+            name for name, c in CONFIGURATIONS.items() if c.limits_source == PROVISIONAL_LIMITS
+        }
+        assert provisional <= {"claude-haiku-5-5"}
 
     def test_openai_prices(self):
         luna, sol = CONFIGURATIONS["gpt-6-luna"], CONFIGURATIONS["gpt-6.1-sol"]

@@ -85,8 +85,12 @@ def _account_refusal(engine_name: str) -> str | None:
     config = CONFIGURATIONS.get(engine_name)
     if config is None or not config.account_variables:
         return None
-    from app.decision.openai_compatible import ambient_refusal
     from evals import accounts
+
+    if config.vendor == "anthropic":
+        from app.decision.anthropic_eval import ambient_refusal
+    else:
+        from app.decision.openai_compatible import ambient_refusal
 
     try:
         accounts.declared(config)

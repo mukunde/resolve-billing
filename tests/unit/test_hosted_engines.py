@@ -244,6 +244,8 @@ class TestTheConfigurations:
             "gpt-6-luna",
             "gpt-6.1-sol",
             "qwen3.5-397b-a17b",
+            # specs/008-deployment-model-choice
+            "claude-haiku-5-5",
         }
 
     @pytest.mark.parametrize("name", sorted(CONFIGURATIONS))
@@ -258,6 +260,7 @@ class TestTheConfigurations:
             "MISTRAL_API_KEY",
             "OPENAI_API_KEY",
             "SCALEWAY_API_KEY",
+            "ANTHROPIC_API_KEY",
         }
         assert config.reservation == "estimated"
 

@@ -55,6 +55,7 @@ SCALEWAY_PRICES = (
 #: Until the maintainer reads his consoles (T060): conservative values, far
 #: below any published limit, replaced with his figures before the merge.
 PROVISIONAL_LIMITS = "provisional, pending the maintainer's console (T060)"
+ANTHROPIC_PRICES = "platform.claude.com/docs/en/about-claude/pricing, read 2026-10-27"
 #: Where the limits below were read, and when (T060).
 OPENAI_LIMITS = (
     "OpenAI platform, project resolve-billing-eval, Project settings > Limits "
@@ -77,7 +78,7 @@ class Configuration:
     reached, with which key, and every parameter the request carries."""
 
     name: str
-    vendor: Literal["google", "mistral", "openai", "scaleway"]
+    vendor: Literal["google", "mistral", "openai", "scaleway", "anthropic"]
     developer: str
     endpoint: str
     #: The API version the requests go to: set on Google's client; for
@@ -191,6 +192,7 @@ def _prepaid(
     tokens_per_minute: int = 100_000,
     requests_per_second: float = 0.5,
     limits_source: str = PROVISIONAL_LIMITS,
+    max_output_tokens: int = 4096,
     **fields,
 ) -> Configuration:
     """A configuration on a prepaid account (spec 007): every one alike but
@@ -200,7 +202,7 @@ def _prepaid(
         model=name,
         api_version="v1",
         temperature=None,
-        max_output_tokens=4096,
+        max_output_tokens=max_output_tokens,
         # The setting Claude's engine and Gemini use, and the lowest
         # gpt-6.1-sol allows: the same label, not a proven equal budget.
         reasoning="low",
@@ -266,6 +268,29 @@ GPT_SOL = _openai(
     tokens_per_minute=1_000_000,
     requests_per_minute=5_000,
 )
+#: Claude Haiku 5.5, measured as the service would run it
+#: (specs/008-deployment-model-choice): the request is the service engine's,
+#: pinned by tests (`app/decision/anthropic_eval.py`).
+CLAUDE_HAIKU = _prepaid(
+    "claude-haiku-5-5",
+    vendor="anthropic",
+    developer="Anthropic",
+    endpoint="https://api.anthropic.com",
+    key_variable="ANTHROPIC_API_KEY",
+    # The service engine's own output cap.
+    max_output_tokens=8192,
+    # Rates for prompts up to 100,000 tokens; every prompt here is a few
+    # thousand.
+    price_per_mtok=(0.10, 0.50),
+    price_source=ANTHROPIC_PRICES,
+    currency="USD",
+    cached_input_price_per_mtok=0.01,
+    cache_write_price_per_mtok=0.125,
+    # Anthropic's default routing is global; no regional commitment is made.
+    processing_location="global (default routing), no regional commitment",
+    # Not ANTHROPIC_ORGANIZATION_ID: the SDK's credential chain reads that one.
+    account_variables=("RESOLVE_ANTHROPIC_ORG_ID",),
+)
 QWEN = _prepaid(
     "qwen3.5-397b-a17b",
     tokens_per_minute=200_000,
@@ -330,6 +355,7 @@ CONFIGURATIONS: dict[str, Configuration] = {
         GPT_LUNA,
         GPT_SOL,
         QWEN,
+        CLAUDE_HAIKU,
     )
 }
 
