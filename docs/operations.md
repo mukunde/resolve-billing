@@ -393,10 +393,14 @@ waiver extended to these vendors (spec 007, FR-006b).
 model, or none, stops the run after its cost is settled; it is never
 scored, and the name it gave is recorded if it reads as a model id.
 
-Before the first call, the maintainer reads each account's limits in its
-console and pins them in the configurations (they are provisional until
-then), and decides whether to add a payment method to Scaleway: its base
-rate limits apply with one, and billing beyond the free tier is automatic.
+The limits pinned in the configurations are OpenAI's as the maintainer
+read them in his project's Limits page (2026-10-27): `gpt-6-luna` 2,000,000
+tokens and 5,000 requests a minute, `gpt-6.1-sol` 1,000,000 and 5,000; and
+Scaleway's documented level for an organisation with a validated payment
+method, 200,000 tokens and 300 requests a minute for `qwen3.5-397b-a17b`
+(the console lists no Generative APIs quota before a first call). Scaleway
+applies its base limits only with a payment method; billing beyond the free
+tier is automatic. Read them again if an account's tier changes.
 OpenAI's first calls, then the full runs:
 
 ```bash

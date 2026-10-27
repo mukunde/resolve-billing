@@ -155,6 +155,18 @@ class TestTheNewConfigurations:
             assert "read 2026-10-27" in config.limits_source
             assert "provisional" not in config.limits_source
 
+    def test_scaleway_limits_as_documented_for_the_maintainer_s_account(self):
+        qwen = CONFIGURATIONS["qwen3.5-397b-a17b"]
+
+        assert (qwen.tokens_per_minute, qwen.requests_per_second) == (200_000, 300 / 60)
+        assert "payment method validated" in qwen.limits_source
+        assert "read 2026-10-27" in qwen.limits_source
+
+    def test_no_configuration_keeps_provisional_limits(self):
+        from app.decision.hosted import PROVISIONAL_LIMITS
+
+        assert all(c.limits_source != PROVISIONAL_LIMITS for c in CONFIGURATIONS.values())
+
     def test_openai_prices(self):
         luna, sol = CONFIGURATIONS["gpt-6-luna"], CONFIGURATIONS["gpt-6.1-sol"]
 

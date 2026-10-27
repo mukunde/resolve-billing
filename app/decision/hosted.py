@@ -60,6 +60,14 @@ OPENAI_LIMITS = (
     "OpenAI platform, project resolve-billing-eval, Project settings > Limits "
     "(inherited from the organisation), read 2026-10-27"
 )
+#: Scaleway's console showed no Generative APIs line on 2026-10-27 (none
+#: before a first call); the documented level for an organisation whose
+#: payment method is validated -- the maintainer's card is its default.
+SCALEWAY_LIMITS = (
+    "scaleway.com/en/docs/organizations-and-projects/additional-content/organization-quotas "
+    "(Generative APIs serverless, payment method validated), read 2026-10-27; the console's "
+    "quotas page listed no Generative APIs line that day"
+)
 
 
 @dataclass(frozen=True)
@@ -259,6 +267,9 @@ GPT_SOL = _openai(
 )
 QWEN = _prepaid(
     "qwen3.5-397b-a17b",
+    tokens_per_minute=200_000,
+    requests_per_second=300 / 60,
+    limits_source=SCALEWAY_LIMITS,
     vendor="scaleway",
     developer="Alibaba (Qwen)",
     # The project the key belongs to goes in the path (Scaleway's schema).

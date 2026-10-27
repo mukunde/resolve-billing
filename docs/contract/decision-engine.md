@@ -144,8 +144,10 @@ evaluation runner selects from the same table plus the seven configurations
   observable in the answer; whether it checks the declared account against
   the key is not documented; the served quantisation is as Scaleway's
   catalogue lists it; whether Qwen's reasoning counts toward the output cap
-  is not documented. Their limits are provisional until the maintainer
-  reads his consoles.
+  is not documented. OpenAI's limits are those the maintainer read in his
+  console (2026-10-27); Scaleway's are its documented level for an
+  account with a validated payment method, its console listing no
+  Generative APIs quota before a first call.
 
 ## Covered by
 
