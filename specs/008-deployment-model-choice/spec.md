@@ -17,9 +17,13 @@ worked out with Codex (r231-r235) and decided by the maintainer on
   - `gpt-6-luna` and `gpt-6.1-sol`;
   - `qwen3.5-397b-a17b` and `qwen3.6-35b-a3b`, on Scaleway;
   - `deepseek-v4.1-flash`, on Scaleway;
-- Gemini 3.5 Flash-Lite and Gemini 3.8 Flash as **comparison points
-  only**: free tier, not deployable without a separate paid-tier
-  decision;
+- Gemini 3.5 Flash-Lite as a **comparison point**, on the free tier,
+  unless the maintainer declares it provisionally eligible before round 1
+  (a paid tier he decides, its hosting and data terms, a deployment slice,
+  the served model checked);
+- **Gemini 3.8 Flash dropped** (2026-10-27): 20 requests a day allow one
+  run per Pacific day, on a day with none spent, too constrained for the
+  protocol;
 - **DeepSeek reopened, as served by Scaleway only.** Decision 40 excluded
   it for its first-party API (processing in the PRC). In Paris, DeepSeek
   develops the model and Scaleway processes the request, as for Qwen;
@@ -54,7 +58,6 @@ configurations (VII). Final-diff approval by the maintainer.
   Every run had 0 unsafe actions. The Qwen run had five invalid answers,
   each at exactly the 4,096-token output cap.
 - **Not yet measured**: Claude Sonnet 5.5 and Opus 5.5 on the current set;
-  Gemini 3.8 Flash's full run (first call accepted; 20 requests a day);
   `qwen3.6-35b-a3b`; `deepseek-v4.1-flash`.
 - **Scaleway** (catalogue and pricing, read 2026-10-26/27):
   - `qwen3.6-35b-a3b`: serverless, bf16/fp8, reasoning `none` to `high`
@@ -98,12 +101,10 @@ configurations (VII). Final-diff approval by the maintainer.
   corrected.
 - Q: How many runs, in what order? → A: Three per configuration, in
   rounds: round 1 runs every configuration once, then round 2, then round 3
-  -- never all three runs of one configuration in a row. Gemini 3.8 Flash
-  takes one run per Pacific quota day. Its slot k is run on its k-th
-  quota day; the rounds of the others never wait for it. It is included
-  only if its three runs are done within seven days of round 1's start,
-  otherwise it is excluded, without extension. Comparison points follow
-  the same three-run and replacement rules.
+  -- never all three runs of one configuration in a row. The comparison
+  point follows the same three-run and replacement rules; Flash-Lite's 500
+  requests a day hold its three runs in one Pacific day (60 remaining
+  needed per run).
 - Q: What if a run stops? → A: A ranked candidate needs three complete
   runs. Every attempt is kept, never deleted, and listed; the rules below
   leave no choice:
@@ -136,7 +137,8 @@ configurations (VII). Final-diff approval by the maintainer.
   - Qwen (the two) and DeepSeek on Scaleway: eligible provisionally
     (Paris; a deployment slice and a paid tier's terms; for DeepSeek, its
     "preview" status ending before adoption);
-  - Gemini (the two): ineligible, comparison points.
+  - Gemini 3.5 Flash-Lite: a comparison point, unless he declares it
+    eligible provisionally on the conditions above.
 - Q: How is the choice made? → A: By the criteria below, computed from the
   result files only by a comparison script, then by the maintainer, who
   chooses among the candidates the rules leave, with his reasons recorded.
@@ -187,7 +189,7 @@ configurations (VII). Final-diff approval by the maintainer.
 
 ### User Story 1 - The maintainer sees one table, computed from the files (Priority: P1)
 
-After the 24 runs (eight candidates × three) and the comparison points',
+After the 24 runs (eight candidates × three) and the comparison point's,
 a script reads the result files only -- both shapes, Claude's and the
 hosted engines' -- and prints the table the criteria need, in the order
 they apply.
@@ -296,8 +298,8 @@ they apply.
   run manifest committed with this specification's implementation:
   configurations and their fingerprints, each candidate's eligibility as
   the maintainer declares it, the slots of the three rounds, commands,
-  envelopes, the date of round 1, the exchange rate's source and date, and
-  Flash's seven-day window.
+  envelopes, the date of round 1, and the exchange rate's source and
+  date.
 - **FR-007**: The decision MUST be recorded -- an ADR amending ADR-002 for a
   non-Anthropic choice, or a decision section for a Claude one -- with the
   table, the maintainer's choice and his reasons. Then, in its own change:
@@ -310,7 +312,7 @@ they apply.
 ## Success Criteria *(mandatory)*
 
 - **SC-001**: Three complete runs for each candidate that completes,
-  stored and listed, and the comparison points' runs where made.
+  stored and listed, and the comparison point's runs.
 - **SC-002**: One table, reproduced by the script from the committed files.
   The candidates it leaves and the maintainer's choice are recorded with
   his reasons.
