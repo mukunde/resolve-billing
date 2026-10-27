@@ -230,12 +230,15 @@ def compare(manifest_path: Path, results_dir: Path, cases: list[str] | None = No
         per_run = [sum(_fully_correct(o) for o in r["outcomes"]) for r in complete]
         correct = [{o["case_id"] for o in r["outcomes"] if _fully_correct(o)} for r in complete]
         verdicts = [{o["case_id"]: _verdict(o) for o in r["outcomes"]} for r in complete]
-        latencies = [
-            o["latency_ms"]
+        called = [
+            o.get("latency_ms")
             for r in complete
             for o in r["outcomes"]
-            if r["statuses"][o["case_id"]] in ENGINE_CALLED and _amount(o.get("latency_ms"))
+            if r["statuses"][o["case_id"]] in ENGINE_CALLED
         ]
+        # Comparable only if every answered call was measured.
+        measured = all(_amount(v) and v >= 0 for v in called)
+        latencies = called if measured else []
         costs = [_usd(r, rate) for r in complete]
         entry = c.manifest["candidates"].get(name)
         rows[name] = {
@@ -269,6 +272,8 @@ def compare(manifest_path: Path, results_dir: Path, cases: list[str] | None = No
             ),
             "median_latency_ms": statistics.median(latencies) if latencies else None,
         }
+    # An attempt lost before its result may have spent: unknown, counted.
+    spend_unknown += sum(1 for line in c.log_lines() if line.get("type") == "lost")
     return _rank(rows) | {
         "candidates": rows,
         "campaign_spend_usd": spend_known,

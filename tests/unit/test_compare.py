@@ -468,3 +468,29 @@ class TestMissingEvidence:
 
         assert a["correctness_changing"] == []
         assert a["verdict_changing"] == ["case_33"]
+
+    def test_one_unmeasured_call_makes_latency_not_comparable(self, tmp_path):
+        book = Book(tmp_path)
+        book.all_rounds({A: three(), B: three()})
+        path = next(book.dir.glob(f"{B}-r1-*.json"))
+        held = json.loads(path.read_text(encoding="utf-8"))
+        held["outcomes"][0]["latency_ms"] = None
+        path.write_text(json.dumps(held), encoding="utf-8")
+
+        result = table(tmp_path, book, names=(A, B))
+
+        assert result["candidates"][B]["median_latency_ms"] is None
+        assert result["tie_breaks"][-1]["not_comparable"] == [B]
+
+    def test_a_lost_attempt_counts_as_unknown_spend(self, tmp_path):
+        book = Book(tmp_path)
+        book.log.append({"type": "attempt", "slot": f"r1-{A}", "attempt": 1, "engine": A})
+        book.log.append({"type": "lost", "slot": f"r1-{A}", "attempt": 1})
+        for slot in (f"r2-{A}", f"r3-{A}"):
+            book.log.append({"type": "retired", "slot": slot})
+        book.flush()
+
+        result = table(tmp_path, book, names=(A,))
+
+        assert result["campaign_spend_unknown_attempts"] == 1
+        assert result["candidates"][A]["completing"] is False
