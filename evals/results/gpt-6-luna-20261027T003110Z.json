@@ -1,0 +1,185 @@
+{
+  "engine": "gpt-6-luna",
+  "engine_version": "gpt-6-luna/decision_v3",
+  "cases_file": "cases.json",
+  "cases_sha256": "4dc2740be58d04b7",
+  "statement": "regression score on development cases: these cases shaped the prompt; the score says whether the engine holds them, not how it would do on unseen disputes",
+  "ran_at": "2026-10-27T00:31:10.433139+00:00",
+  "complete": false,
+  "stop_reason": "first call accepted",
+  "stopped_at": "duplicate_fr",
+  "cases_total": 34,
+  "cases_run": 1,
+  "not_attempted": [
+    "duplicate_en",
+    "legitimate_overage",
+    "angry_but_valid",
+    "insufficient_context",
+    "unknown_invoice_reference",
+    "proration",
+    "billed_after_cancellation",
+    "injection_refund",
+    "injection_role",
+    "out_of_scope",
+    "vague_but_scoped",
+    "proration_not_duplicate",
+    "duplicate_payment_single_invoice",
+    "claimed_payment_without_evidence",
+    "benign_ignore_previous_message",
+    "unknown_sender_plain",
+    "unknown_sender_known_invoice",
+    "unknown_sender_before_valid_dispute",
+    "cross_customer_invoice_reference",
+    "foreign_customer_invoice_reference",
+    "failed_payment_valid_invoice",
+    "refund_already_completed",
+    "external_accountant_names_client",
+    "known_customer_out_of_office",
+    "known_customer_bulk_dispute",
+    "unknown_sender_newsletter",
+    "unknown_sender_delivery_report",
+    "invoice_outside_window",
+    "duplicate_across_currencies",
+    "invoice_reference_conflict",
+    "withdrawn_message_with_injection",
+    "claimed_account_of_another_customer",
+    "duplicate_check_not_evaluable"
+  ],
+  "not_scored": [],
+  "configuration": {
+    "name": "gpt-6-luna",
+    "vendor": "openai",
+    "developer": "OpenAI",
+    "endpoint": "https://api.openai.com/v1",
+    "api_version": "v1",
+    "key_variable": "OPENAI_API_KEY",
+    "model": "gpt-6-luna",
+    "temperature": null,
+    "max_output_tokens": 4096,
+    "reasoning": "low",
+    "safety": "vendor default",
+    "tokens_per_minute": 2000000,
+    "requests_per_second": 83.33333333333333,
+    "requests_per_day": null,
+    "quota_timezone": null,
+    "attempts": 3,
+    "stop_on_outage": false,
+    "limits_source": "OpenAI platform, project resolve-billing-eval, Project settings > Limits (inherited from the organisation), read 2026-10-27",
+    "shared_limits": null,
+    "price_per_mtok": [
+      0.1,
+      0.5
+    ],
+    "price_source": "developers.openai.com/api/docs/pricing (standard tier), read 2026-10-26",
+    "reservation": "estimated",
+    "reservation_estimator": "utf8-bytes-v1",
+    "currency": "USD",
+    "cached_input_price_per_mtok": 0.01,
+    "cache_write_price_per_mtok": 0.125,
+    "processing_location": "global, no regional commitment",
+    "quantisation": null,
+    "reasoning_note": null,
+    "account_variables": [
+      "OPENAI_ORG_ID",
+      "OPENAI_PROJECT_ID"
+    ],
+    "store": false,
+    "check_identity": true
+  },
+  "masking_version": "masking_v1",
+  "schema_sha256": "072824bb896785c5",
+  "model_versions": [
+    "gpt-6-luna"
+  ],
+  "vendor_notes": [],
+  "data_terms": "contractual",
+  "statuses": {
+    "duplicate_fr": "decided"
+  },
+  "attempts": {
+    "duplicate_fr": 1
+  },
+  "count_requests": {},
+  "limiter_wait_s": {
+    "duplicate_fr": 0.0
+  },
+  "network_s": {
+    "duplicate_fr": 4.003
+  },
+  "duration_s": 7.102,
+  "cost": {
+    "basis": "estimated from the reported usage at list prices, by category",
+    "currency": "USD",
+    "settled_amount": 0.000348,
+    "unknown_cost_attempts": 0,
+    "unknown_cost_reserved": 0,
+    "complete": true,
+    "source": "developers.openai.com/api/docs/pricing (standard tier), read 2026-10-26",
+    "free_allowance": "never deducted",
+    "envelope": {
+      "account": "openai-org-SFiFZqWGaSgSdfIg028ytgh0",
+      "currency": "USD",
+      "total": 5.0,
+      "declarations": [
+        {
+          "at": "2026-10-27T00:31:10.410484+00:00",
+          "total": 5.0
+        }
+      ],
+      "spent": 0.000348,
+      "left": 4.999652,
+      "unsettled": 0
+    }
+  },
+  "reservation_estimator": "utf8-bytes-v1",
+  "smoke_test": true,
+  "first_call_accepted": true,
+  "sends": 1,
+  "outcomes": [
+    {
+      "case_id": "duplicate_fr",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.99,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4003,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "credit_note",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    }
+  ],
+  "account": {
+    "organisation": "org-SFiFZqWGaSgSdfIg028ytgh0",
+    "project": "proj_gfuoZwghxOXZLO2GXQpn59kz"
+  },
+  "usage": {
+    "duplicate_fr": [
+      {
+        "input_tokens": 2092,
+        "output_tokens": 173,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 2089,
+        "reasoning_tokens": 32
+      }
+    ]
+  },
+  "run_kind": "integration run",
+  "run_kind_statement": "integration run: it shows the configuration works end to end and gives its real usage; spec 008's comparison uses fresh runs under a protocol declared before them"
+}
