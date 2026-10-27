@@ -258,10 +258,11 @@ they apply.
 
 ## Requirements *(mandatory)*
 
-- **FR-001**: The registry and the manifest MUST hold exactly the five
-  candidates and the comparison point; the dropped configurations
-  (`gpt-6.1-sol`, Gemini 3.8 Flash) stay in the registry, unused by this
-  comparison, their results kept.
+- **FR-001**: The run manifest MUST list exactly the five candidates and
+  the comparison point, and pin `CLAUDE_MODEL=claude-haiku-5-5` for the
+  Claude runs. The evaluation registry MUST contain them all, without
+  removing any existing engine: the dropped configurations (`gpt-6.1-sol`,
+  Gemini 3.8 Flash) stay, unused by this comparison, their results kept.
 - **FR-002**: Two configurations MUST be added to the evaluation registry,
   closed as spec 007's are (FR-003 there), after a documentation check:
   `qwen3.6-35b-a3b` and `deepseek-v4.1-flash`, on the Scaleway account,
@@ -306,8 +307,9 @@ they apply.
   table, the maintainer's choice and his reasons. Then, in its own change:
   for Claude, the default model, `.env.example` and the docs updated
   together; for any other, a deployment slice opened before adoption.
-- **FR-008**: CI MUST make no paid call; the comparison script, the pricing
-  row and the two configurations are tested without network. The mock
+- **FR-008**: CI MUST make no paid call; the comparison script, the Claude
+  runs' evidence and envelope, and the two configurations are tested
+  without network. The mock
   baseline stays matched.
 
 ## Success Criteria *(mandatory)*
