@@ -116,7 +116,7 @@ evaluation-only `AnthropicEvaluationEngine(HostedEngine)`, in
   vendors.
 - **A configuration `claude-haiku-5-5`** (vendor `anthropic`, developer
   Anthropic):
-  - key `ANTHROPIC_API_KEY`, account variable `ANTHROPIC_ORGANIZATION_ID`
+  - key `ANTHROPIC_API_KEY`, account variable `RESOLVE_ANTHROPIC_ORG_ID`
     (the organisation alone). `evals/accounts.py` accepts a configuration
     with no project; existing identities and locks stay as they are, by
     test;
@@ -264,7 +264,7 @@ written beside the manifest.
 - ADR-009's model-provider row: DeepSeek as developer, Scaleway as
   processor.
 - `docs/operations.md`: the comparison's commands.
-- `.env.example`: `ANTHROPIC_ORGANIZATION_ID`.
+- `.env.example`: `RESOLVE_ANTHROPIC_ORG_ID`.
 
 ## Amendments to the approved spec (covered by this plan's approval)
 

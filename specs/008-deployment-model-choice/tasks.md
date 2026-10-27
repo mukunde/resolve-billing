@@ -22,7 +22,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   reviews before Phase 2.
 - [ ] T011 **[maintainer]** Read the Anthropic account's rate limits for
   Haiku 5.5 and its organisation id in his console; add
-  `ANTHROPIC_ORGANIZATION_ID` to `.env`.
+  `RESOLVE_ANTHROPIC_ORG_ID` to `.env`.
 
 ## Phase 2: Claude on the governed path
 
@@ -123,7 +123,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 - [ ] T060 The evaluation and decision-engine contracts; ADR-009's
   model-provider row (DeepSeek as developer, Scaleway as processor);
-  `docs/operations.md`; `.env.example` (`ANTHROPIC_ORGANIZATION_ID`).
+  `docs/operations.md`; `.env.example` (`RESOLVE_ANTHROPIC_ORG_ID`).
 - [ ] T061 Final review by Codex on the final commit; the maintainer approves
   the final diff (sensitive change).
 
