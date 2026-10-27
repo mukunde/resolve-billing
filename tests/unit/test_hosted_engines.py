@@ -234,12 +234,16 @@ class TestMediumThreeFive:
 
 
 class TestTheConfigurations:
-    def test_exactly_four_closed_configurations(self):
+    def test_exactly_these_closed_configurations(self):
         assert set(CONFIGURATIONS) == {
             "gemini-3.8-flash",
             "gemini-3.5-flash-lite",
             "mistral-medium-3-5",
             "mistral-medium-3-5-reasoning",
+            # specs/007-openai-qwen-engines
+            "gpt-6-luna",
+            "gpt-6.1-sol",
+            "qwen3.5-397b-a17b",
         }
 
     @pytest.mark.parametrize("name", sorted(CONFIGURATIONS))
@@ -249,7 +253,12 @@ class TestTheConfigurations:
         assert config.model in {name, "mistral-medium-3-5"}
         assert "latest" not in config.model
         assert config.endpoint.startswith("https://")
-        assert config.key_variable in {"GEMINI_API_KEY", "MISTRAL_API_KEY"}
+        assert config.key_variable in {
+            "GEMINI_API_KEY",
+            "MISTRAL_API_KEY",
+            "OPENAI_API_KEY",
+            "SCALEWAY_API_KEY",
+        }
         assert config.reservation == "estimated"
 
     def test_the_vendors_and_their_keys(self):

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -35,10 +34,7 @@ from pathlib import Path
 from app.decision.hosted import CONFIGURATIONS, Configuration
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
-from evals import state
-
-#: Where a Gemini run names its project (`evals/hosted_run.py` reads it too).
-QUOTA_PROJECT = "GEMINI_QUOTA_PROJECT"
+from evals import accounts, state
 
 
 class FirstCallsRefused(Exception):  # noqa: N818 -- a refusal, not a defect
@@ -48,7 +44,7 @@ class FirstCallsRefused(Exception):  # noqa: N818 -- a refusal, not a defect
 def fingerprint(config: Configuration) -> str:
     """SHA-256 of everything that shapes a request and its reading."""
     whole = {
-        "configuration": asdict(config),
+        "configuration": _shaping(config),
         "prompt_version": config.prompt_version,
         "schema": verdict_schema(),
         "masking_version": MASKING_VERSION,
@@ -58,13 +54,42 @@ def fingerprint(config: Configuration) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+#: The fields added after spec 004, with the value the spec 004
+#: configurations hold. Fixed here, not read from the dataclass: a later
+#: change of a default must move a fingerprint, never pass unseen.
+ADDED_SINCE_SPEC_004 = {
+    "currency": None,
+    "cached_input_price_per_mtok": None,
+    "cache_write_price_per_mtok": None,
+    "processing_location": None,
+    "quantisation": None,
+    "reasoning_note": None,
+    "account_variables": [],
+    "store": None,
+    "check_identity": False,
+}
+
+
+def _shaping(config: Configuration) -> dict:
+    """The configuration's fields, leaving out a field added after spec 004
+    while it holds the value spec 004's configurations have: those four
+    keep the fingerprint their first calls were accepted on."""
+    return {
+        name: value
+        for name, value in asdict(config).items()
+        if name not in ADDED_SINCE_SPEC_004 or _listed(value) != ADDED_SINCE_SPEC_004[name]
+    }
+
+
+def _listed(value):
+    return list(value) if isinstance(value, tuple) else value
+
+
 def account(config: Configuration) -> dict:
-    """The account a run uses, by a non-secret identity."""
-    key = os.environ.get(config.key_variable, "")
-    identity = {"key": hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]}
-    if config.requests_per_day is not None:
-        identity["project"] = os.environ.get(QUOTA_PROJECT, "")
-    return identity
+    """The account a run uses, by a non-secret identity (`evals/accounts.py`):
+    spec 004's key fingerprint and Gemini project; for a prepaid account,
+    its declared organisation and project, never the key."""
+    return accounts.identity(config)
 
 
 class FirstCalls:

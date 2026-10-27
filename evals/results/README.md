@@ -127,6 +127,20 @@ credit note at a self-reported confidence of 0.95 where no money moves; the
 rules and the action policy held the action back and sent it to a person.
 That is the design working, not the model.
 
+## The engines on prepaid accounts: integration runs
+
+Runs of `gpt-6-luna`, `gpt-6.1-sol` and `qwen3.5-397b-a17b`
+(specs/007-openai-qwen-engines) are listed here once made. They carry the
+free-tier fields above, plus the declared account ids, each attempt's
+reported usage, and a cost block in the account's currency that keeps the
+attempts of unknown cost apart. Each is an **integration run**: it shows a
+configuration works end to end and gives its real usage. The comparison
+that chooses a deployment model (spec 008) uses fresh runs under a protocol
+declared before them; these never count toward it.
+
+| file | configuration | ran at | complete | fully correct |
+|---|---|---|---|---|
+
 ## What they contain
 
 One row per case: the expectations it met, the confidence and its kind, the

@@ -2,7 +2,8 @@
 
 How the system is measured, what the measurements may be read for, and what
 CI holds it to. Written on 2026-10-24 from the existing records;
-specs/004-second-engines folded in the same day. Reasons are in the constitution
+specs/004-second-engines folded in the same day, and
+specs/007-openai-qwen-engines on 2026-10-26. Reasons are in the constitution
 (VIII, IX), README "Evaluation", `evals/taxonomy.md`, `docs/operations.md`
 ("What CI actually enforces") and `evals/results/README.md`.
 
@@ -96,6 +97,34 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
   of the case bytes the guard checked, the configuration with its API
   version, the masking version and the schema's hash. The mock's and
   Claude's runs and outputs are unchanged.
+- **Three engines on prepaid accounts** (spec 007). `gpt-6-luna`,
+  `gpt-6.1-sol` and `qwen3.5-397b-a17b` run as the four above -- the
+  maintainer's command only, the development set only, a first call
+  before the full run -- with:
+  - **a declared account**: the billing organisation and project, by
+    their non-secret ids, never the key; the run lock and the envelope
+    belong to the organisation, a first call's acceptance to the project,
+    and rotating a key changes neither. A missing or malformed id refuses
+    the run before any client is built;
+  - **a prepaid envelope per billing organisation**, in its currency,
+    `~/.resolve-billing/envelope-<vendor>-<organisation>.json`: declared
+    once with `--envelope`, only ever raised, each declaration kept; each
+    attempt reserved before it is sent at the highest rate that may apply
+    (an estimate, not a bound),
+    settled from its reported usage category by category (an absent
+    category never read as zero; details above their totals, or counts
+    that are not counts, keep the reservation spent and stop the run); an
+    attempt it cannot cover is not sent and stops the run; never deducting
+    a vendor's free allowance; an unreadable or inconsistent ledger is
+    refused, never reset. Admission accounting under the maintainer's
+    waiver, not a billing cap;
+  - **the model's identity on every answer**: one that names another
+    model, or none, stops the run after its cost is settled, is never
+    scored, and the name is recorded only if it reads as a model id;
+  - **results that say what they are**: the declared account ids, each
+    attempt's reported usage, the settled cost apart from the attempts of
+    unknown cost, and the label **integration run** -- spec 008's
+    comparison uses fresh runs under a protocol declared before them.
 - **Stored runs.** A published figure's run is committed in `evals/results/`
   with its model, prompt and case set's hash; `evals/results/README.md` says
   what each can be read for.
@@ -120,5 +149,7 @@ specs/004-second-engines folded in the same day. Reasons are in the constitution
 `tests/unit/test_eval_baseline.py`, `tests/unit/test_eval_coverage.py`,
 `tests/unit/test_eval_rescore.py`, `tests/unit/test_eval_runner_lifecycle.py`,
 `tests/unit/test_eval_unsafe.py`, `tests/unit/test_eval_variance.py`,
-`tests/unit/test_evaluation_registry.py`, `tests/unit/test_evaluation_limits.py`;
+`tests/unit/test_evaluation_registry.py`, `tests/unit/test_evaluation_limits.py`,
+`tests/unit/test_accounts.py`, `tests/unit/test_prepaid_ledger.py`,
+`tests/unit/test_prepaid_runs.py`, `tests/unit/test_prepaid_runner.py`;
 the CI workflow's evaluation step.

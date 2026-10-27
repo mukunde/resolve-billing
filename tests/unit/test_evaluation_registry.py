@@ -16,6 +16,10 @@ HOSTED = (
     "gemini-3.5-flash-lite",
     "mistral-medium-3-5",
     "mistral-medium-3-5-reasoning",
+    # specs/007-openai-qwen-engines
+    "gpt-6-luna",
+    "gpt-6.1-sol",
+    "qwen3.5-397b-a17b",
 )
 
 
@@ -36,7 +40,7 @@ class TestTheRefusedConfigurations:
 
 
 class TestTheRegistry:
-    def test_it_holds_the_services_engines_and_the_four(self):
+    def test_it_holds_the_services_engines_and_the_hosted_ones(self):
         assert set(engines.evaluation_engines()) == set(deps.ENGINES) | set(HOSTED)
 
     @pytest.mark.parametrize("name", HOSTED)
@@ -146,7 +150,11 @@ def test_the_vendors_sdks_are_imported_only_by_their_clients():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
-    allowed = {"app/decision/gemini.py", "app/decision/mistral.py"}
+    allowed = {
+        "app/decision/gemini.py",
+        "app/decision/mistral.py",
+        "app/decision/openai_compatible.py",
+    }
     offenders = []
     for directory in ("app", "evals", "scripts"):
         for path in (root / directory).rglob("*.py"):
@@ -159,6 +167,7 @@ def test_the_vendors_sdks_are_imported_only_by_their_clients():
                     modules = [alias.name for alias in node.names]
                 elif isinstance(node, ast.ImportFrom) and node.level == 0:
                     modules = [node.module or ""]
-                if any(m.startswith(("google.genai", "google", "mistralai")) for m in modules):
+                vendors = ("google.genai", "google", "mistralai", "openai")
+                if any(m.startswith(vendors) for m in modules):
                     offenders.append(name)
     assert offenders == []

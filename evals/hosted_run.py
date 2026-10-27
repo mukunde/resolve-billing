@@ -34,10 +34,11 @@ from app.decision.base import EngineRejected
 from app.decision.hosted import GEMINI_PRICES, configuration
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
-from evals import engines
-from evals.first_calls import QUOTA_PROJECT, FirstCalls, FirstCallsRefused
+from evals import accounts, engines
+from evals.accounts import QUOTA_PROJECT, AccountRefused
+from evals.first_calls import FirstCalls, FirstCallsRefused
 from evals.governed import Governed
-from evals.ledger import Ledger, LedgerRefused
+from evals.ledger import Ledger, LedgerRefused, PrepaidLedger
 from evals.limits import RunStopped, limiters_for
 from evals.quota import DailyQuota, QuotaRefused
 from evals.state import AccountBusy, AccountRun
@@ -45,6 +46,12 @@ from evals.state import AccountBusy, AccountRun
 QUOTA_ASSUMPTIONS = (
     "dedicated project, no other caller; every attempt counted, never refunded; "
     "the key's project as declared by the maintainer, not verified"
+)
+
+#: What a run of a configuration on a prepaid account is (spec 007, SC-001).
+INTEGRATION_RUN = (
+    "integration run: it shows the configuration works end to end and gives its real "
+    "usage; spec 008's comparison uses fresh runs under a protocol declared before them"
 )
 
 STATEMENT = (
@@ -216,6 +223,8 @@ def main(args, cases: list[dict], parser) -> int:
     config = configuration(args.engine)
     if config.vendor != "mistral" and args.mistral_allowance_usd is not None:
         parser.error("--mistral-allowance-usd is for the Mistral configurations")
+    if config.currency is None and args.envelope is not None:
+        parser.error("--envelope is for the configurations on prepaid accounts")
     if config.requests_per_day is None and args.gemini_requests_used_today is not None:
         parser.error("--gemini-requests-used-today is for a configuration with a daily limit")
     if (missing := runner.missing_credential(args.engine)) is not None:
@@ -225,7 +234,7 @@ def main(args, cases: list[dict], parser) -> int:
         # of its configurations' -- before any client is built (FR-016).
         try:
             FirstCalls().admit_full_run(config)
-        except FirstCallsRefused as refusal:
+        except (FirstCallsRefused, AccountRefused) as refusal:
             print(f"refused: {refusal}", file=sys.stderr)
             return 2
 
@@ -237,6 +246,16 @@ def main(args, cases: list[dict], parser) -> int:
                 ledger.declare(args.mistral_allowance_usd)
             ledger.state()
         except LedgerRefused as refusal:
+            print(f"refused: {refusal}", file=sys.stderr)
+            return 2
+    elif config.currency is not None:
+        # The billing organisation's envelope, before any client is built.
+        try:
+            ledger = PrepaidLedger(accounts.billing_account(config), config.currency)
+            if args.envelope is not None:
+                ledger.declare(args.envelope)
+            ledger.state()
+        except (LedgerRefused, AccountRefused) as refusal:
             print(f"refused: {refusal}", file=sys.stderr)
             return 2
 
@@ -279,7 +298,7 @@ def main(args, cases: list[dict], parser) -> int:
             return 3
     defect = None
     try:
-        with AccountRun(config.shared_limits or config.vendor) as account:
+        with AccountRun(accounts.billing_account(config)) as account:
             try:
                 asyncio.run(run(record, cases, ledger, account, quota, args.first_call_only))
             except (KeyboardInterrupt, asyncio.CancelledError):
@@ -334,10 +353,29 @@ def write(
     governed = record.governed
     if config.price_per_mtok is None:
         cost = {"basis": "estimated zero under the free quota", "source": GEMINI_PRICES}
+    elif config.currency is not None:
+        unknown = governed.open_reservations if governed else {}
+        cost = {
+            "basis": "estimated from the reported usage at list prices, by category",
+            "currency": config.currency,
+            # What the settled attempts cost; the attempts whose cost is
+            # unknown are counted apart, at their reserved maximum: the run's
+            # cost is complete only when there are none.
+            "settled_amount": round(governed.cost, 6) if governed else 0.0,
+            "unknown_cost_attempts": len(unknown),
+            "unknown_cost_reserved": round(sum(unknown.values()), 6),
+            "complete": not unknown,
+            "source": config.price_source,
+            "free_allowance": "never deducted",
+        }
+        try:
+            cost["envelope"] = ledger.state()
+        except LedgerRefused as refusal:
+            cost["envelope"] = f"unreadable: {refusal}"
     else:
         cost = {
             "basis": "estimated from the reported usage at list prices",
-            "usd": round(governed.cost_usd, 6) if governed else 0.0,
+            "usd": round(governed.cost, 6) if governed else 0.0,
             "source": config.price_source,
         }
         if ledger is not None:
@@ -383,6 +421,12 @@ def write(
         "sends": governed.sends if governed else 0,
         "outcomes": [vars(o) for o in record.outcomes],
     }
+    if config.account_variables:
+        # Declared ids only: never a key, never a key's fingerprint.
+        payload["account"] = accounts.identity(config)
+        payload["usage"] = governed.usage if governed else {}
+        payload["run_kind"] = "integration run"
+        payload["run_kind_statement"] = INTEGRATION_RUN
     if quota is not None:
         try:
             held = quota.state()

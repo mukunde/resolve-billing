@@ -124,9 +124,13 @@ class Ledger:
             raise LedgerRefused(
                 f"the ledger {self.path} cannot be read ({type(error).__name__})"
             ) from None
-        if not _consistent(held):
+        if not self._consistent(held):
             raise LedgerRefused(f"the ledger {self.path} is inconsistent; it is never reset")
         return held
+
+    @staticmethod
+    def _consistent(held) -> bool:
+        return _consistent(held)
 
     def _write(self, held: dict) -> None:
         state.write_atomically(self.path, held)
@@ -148,6 +152,151 @@ class Ledger:
                 state.unlock(lock)
 
 
+class PrepaidLedger(Ledger):
+    """The envelope of a prepaid vendor account (specs/007-openai-qwen-engines).
+
+    One per billing organisation, in the account's currency, shared by every
+    configuration, run and checkout of that account under one lock. The
+    maintainer declares its total once; a later declaration only raises it,
+    recorded beside the earlier ones, never edited. Each attempt reserves
+    its maximum estimated cost before it is sent and is settled at its
+    reported usage's cost; a reservation never settled stays spent. It does
+    not reset monthly, and it never deducts a vendor's free allowance: the
+    vendor's console or prepaid credit is the account's own figure.
+    """
+
+    def __init__(
+        self,
+        account: str,
+        currency: str,
+        path: Path | None = None,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        lock_timeout: float = 30.0,
+    ) -> None:
+        super().__init__(
+            path if path is not None else state.STATE_DIR / f"envelope-{account}.json",
+            now=now,
+            lock_timeout=lock_timeout,
+        )
+        self.account = account
+        self.currency = currency
+
+    def declare(self, total: float) -> None:
+        """The envelope's total: once to open it, then only higher."""
+        if not (math.isfinite(total) and total > 0):
+            raise LedgerRefused(f"the envelope must be a positive amount ({self.currency})")
+        with self._locked():
+            held = self._read()
+            if held is None:
+                held = {
+                    "account": self.account,
+                    "currency": self.currency,
+                    "declarations": [],
+                    "attempts": {},
+                }
+            elif total <= held["declarations"][-1]["total"]:
+                raise LedgerRefused(
+                    f"the envelope of {self.account} is {held['declarations'][-1]['total']} "
+                    f"{self.currency}; a declaration only raises it"
+                )
+            held["declarations"].append({"at": self._now().isoformat(), "total": total})
+            self._write(held)
+
+    def reserve(self, attempt: str, amount: float) -> None:
+        """Reserve an attempt's maximum cost, on disk, before it is sent; an
+        attempt that would exceed what remains stops the run."""
+        _refuse_amount(amount)
+        with self._locked():
+            held = self._current()
+            if attempt in held["attempts"]:
+                raise LedgerRefused(f"attempt {attempt!r} is already in the ledger")
+            left = held["declarations"][-1]["total"] - _spent(held)
+            if amount > left + 1e-9:
+                raise RunStopped(
+                    f"the envelope of {self.account} cannot cover this attempt "
+                    f"({amount:.4f} {self.currency} reserved, {max(left, 0):.4f} left)"
+                )
+            held["attempts"][attempt] = {"reserved": round(amount, 6), "settled": None}
+            self._write(held)
+
+    def settle(self, attempt: str, amount: float) -> None:
+        """The attempt's cost as reported, replacing its reservation."""
+        _refuse_amount(amount)
+        super().settle(attempt, amount)
+
+    def state(self) -> dict:
+        """The total, its declarations, what is spent and what is left."""
+        with self._locked():
+            held = self._current()
+        spent = _spent(held)
+        total = held["declarations"][-1]["total"]
+        return {
+            "account": held["account"],
+            "currency": held["currency"],
+            "total": total,
+            "declarations": held["declarations"],
+            "spent": round(spent, 6),
+            "left": round(total - spent, 6),
+            "unsettled": sum(1 for a in held["attempts"].values() if a["settled"] is None),
+        }
+
+    def _current(self) -> dict:
+        held = self._read()
+        if held is None:
+            raise LedgerRefused(
+                f"no envelope is declared for {self.account}: declare it once with --envelope"
+            )
+        return held
+
+    def _read(self) -> dict | None:
+        held = super()._read()
+        if held is not None and held["account"] != self.account:
+            raise LedgerRefused(f"the ledger {self.path} belongs to another account")
+        if held is not None and held["currency"] != self.currency:
+            raise LedgerRefused(
+                f"the ledger {self.path} is kept in another currency ({held['currency']}, "
+                f"not {self.currency})"
+            )
+        return held
+
+    @staticmethod
+    def _consistent(held) -> bool:
+        if not isinstance(held, dict) or set(held) != {
+            "account",
+            "currency",
+            "declarations",
+            "attempts",
+        }:
+            return False
+        if not isinstance(held["account"], str) or not isinstance(held["currency"], str):
+            return False
+        if held["currency"] not in {"USD", "EUR"}:
+            return False
+        declarations = held["declarations"]
+        if not isinstance(declarations, list) or not declarations:
+            return False
+        totals = []
+        for entry in declarations:
+            if not isinstance(entry, dict) or set(entry) != {"at", "total"}:
+                return False
+            if not (_amount(entry["total"]) and entry["total"] > 0):
+                return False
+            try:
+                datetime.fromisoformat(entry["at"])
+            except (TypeError, ValueError):
+                return False
+            totals.append(entry["total"])
+        if any(later <= earlier for earlier, later in zip(totals, totals[1:], strict=False)):
+            return False
+        return _attempts_consistent(held["attempts"])
+
+
+def _refuse_amount(amount) -> None:
+    """An amount is a finite, non-negative number, or nothing is written."""
+    if not (_amount(amount) and amount >= 0):
+        raise LedgerRefused("an amount must be a finite, non-negative number")
+
+
 def _spent(held: dict) -> float:
     return sum(
         a["reserved"] if a["settled"] is None else a["settled"] for a in held["attempts"].values()
@@ -167,9 +316,13 @@ def _consistent(held) -> bool:
         return False
     if not (_amount(held["allowance_usd"]) and held["allowance_usd"] > 0):
         return False
-    if not isinstance(held["attempts"], dict):
+    return _attempts_consistent(held["attempts"])
+
+
+def _attempts_consistent(attempts) -> bool:
+    if not isinstance(attempts, dict):
         return False
-    for entry in held["attempts"].values():
+    for entry in attempts.values():
         if not isinstance(entry, dict) or set(entry) != {"reserved", "settled"}:
             return False
         if not (_amount(entry["reserved"]) and entry["reserved"] >= 0):

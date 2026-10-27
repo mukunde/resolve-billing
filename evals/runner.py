@@ -76,8 +76,29 @@ CREDENTIALS = engines.CREDENTIALS
 DATA_TERMS = ("contractual", "opted_out", "training_allowed", "unknown")
 
 
+def _account_refusal(engine_name: str) -> str | None:
+    """For a configuration on a prepaid account (spec 007): its account not
+    named, or an SDK setting from the environment that would change every
+    request; None otherwise."""
+    from app.decision.hosted import CONFIGURATIONS
+
+    config = CONFIGURATIONS.get(engine_name)
+    if config is None or not config.account_variables:
+        return None
+    from app.decision.openai_compatible import ambient_refusal
+    from evals import accounts
+
+    try:
+        accounts.declared(config)
+    except accounts.AccountRefused as refusal:
+        return str(refusal)
+    return ambient_refusal()
+
+
 def missing_credential(engine_name: str) -> str | None:
     """A message naming what is missing, or None if the engine can run."""
+    if (refusal := _account_refusal(engine_name)) is not None:
+        return refusal
     names = CREDENTIALS.get(engine_name, ())
     if not names or any(os.getenv(name) for name in names):
         return None
@@ -538,6 +559,11 @@ def main() -> int:
         type=float,
         help="declare this month's Mistral allowance, once a month",
     )
+    parser.add_argument(
+        "--envelope",
+        type=float,
+        help="declare (or raise) a prepaid account's envelope, in its currency",
+    )
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
@@ -565,12 +591,13 @@ def main() -> int:
     if (
         args.data_terms
         or args.mistral_allowance_usd is not None
+        or args.envelope is not None
         or args.first_call_only
         or args.gemini_requests_used_today is not None
     ):
         parser.error(
-            "--data-terms, --first-call-only and the allowance and quota declarations are "
-            "for the engines on free tiers"
+            "--data-terms, --first-call-only and the allowance, envelope and quota "
+            "declarations are for the engines evaluated outside the service"
         )
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
