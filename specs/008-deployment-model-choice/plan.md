@@ -232,8 +232,8 @@ comparison is reproducible from committed evidence alone.
 
 **The script checks the log against the files**, from the repository
 alone, without the private state. Every logged attempt has its result
-file, except those the log records as "lost" or as "retired" slots. Every logged attempt
-has its file; every file is logged. Rounds come in order; each
+file, except those the log records as "lost" or as "retired" slots;
+every file is logged. Rounds come in order; each
 replacement is linked to its first attempt; smoke tests (`--first-call-only`)
 take no slot. A missing, extra or out-of-order attempt is refused, by
 test. A qualifying interruption opens exactly one replacement; a second
