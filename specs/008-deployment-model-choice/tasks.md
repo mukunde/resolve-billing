@@ -12,7 +12,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 1: Research, pinned
 
-- [ ] T010 Plan "Research notes" (plan section 1): Scaleway's three Qwen and
+- [x] T010 Plan "Research notes" (plan section 1): Scaleway's three Qwen and
   DeepSeek configurations (exact output maxima, reasoning values, structured
   outputs, usage and reasoning fields, returned model, prices, limits);
   Anthropic's Messages request as the service engine sends it, stop
@@ -20,7 +20,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   cache prices, the organisation id's location in the console. An
   unsettled point blocks its client, except the approved unknowns. Codex
   reviews before Phase 2.
-- [ ] T012 `pyproject.toml`: `anthropic==0.105.2` in the `claude` extra;
+- [x] T012 `pyproject.toml`: `anthropic==0.105.2` in the `claude` extra;
   CI's network-free job installs the `claude` extra (no call, gates
   unchanged).
 - [ ] T011 **[maintainer]** Read the Anthropic account's rate limits for
@@ -29,7 +29,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 2: Claude on the governed path
 
-- [ ] T020 Test first, `tests/unit/test_anthropic_evaluation.py`:
+- [x] T020 Test first, `tests/unit/test_anthropic_evaluation.py`:
   - request parity (the adapter's request equals `ClaudeDecisionEngine`'s
     for the same dispute, on stubs);
   - decision parity, for a valid, a malformed, a refused, a truncated and
@@ -42,7 +42,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   - non-leak sentinels (key, vendor error body);
   - the configuration closed and refused by the service;
   - `evals/accounts.py` accepting an organisation-only account.
-- [ ] T022 Test first, `tests/unit/test_prepaid_runner.py`: Haiku on the
+- [x] T022 Test first, `tests/unit/test_prepaid_runner.py`: Haiku on the
   governed path, with the vendor stubbed:
   - reserve before send in the Anthropic envelope;
   - missing or inconsistent usage keeps the reservation and stops;
@@ -51,13 +51,13 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   - the existing account identities and run locks unchanged;
   - `gpt-6-luna`'s and Flash-Lite's existing acceptances still admitting
     their full runs.
-- [ ] T021 `app/decision/anthropic_eval.py`, the `claude-haiku-5-5`
+- [x] T021 `app/decision/anthropic_eval.py`, the `claude-haiku-5-5`
   configuration in `app/decision/hosted.py`, `app/decision/vendors.py`,
   `evals/accounts.py`.
 
 ## Phase 3: Scaleway configurations and the 397B's cap
 
-- [ ] T030 Test first, `tests/unit/test_openai_compatible_configurations.py`:
+- [x] T030 Test first, `tests/unit/test_openai_compatible_configurations.py`:
   - `qwen3.6-35b-a3b` and `deepseek-v4.1-flash` closed (developer apart
     from host, `low`, cap 16,384, prices with DeepSeek's cached rate,
     limits, preview status and unknown quantisation recorded);
@@ -69,12 +69,12 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   In `tests/unit/test_openai_compatible_client.py`: each new model's
   request on the in-memory transport, and any response difference T010
   found.
-- [ ] T031 `app/decision/hosted.py`, `app/decision/openai_compatible.py`
+- [x] T031 `app/decision/hosted.py`, `app/decision/openai_compatible.py`
   where T010 requires it.
 
 ## Phase 4: Commit and clean tree in every result
 
-- [ ] T040 Test first, `tests/unit/test_prepaid_runner.py`:
+- [x] T040 Test first, `tests/unit/test_prepaid_runner.py`:
   - every result carries `commit` and `clean_tree`;
   - a modified tracked file, a staged change, or an untracked file outside
     `evals/results/` makes the tree dirty, and the runner refuses to start
@@ -95,12 +95,12 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
     ends;
   - results written in `evals/results/` keep it clean;
   - outside git, `unknown` is recorded.
-- [ ] T041 `evals/hosted_run.py`, `evals/runner.py` (`--slot`), the
+- [x] T041 `evals/hosted_run.py`, `evals/runner.py` (`--slot`), the
   campaign log.
 
 ## Phase 5: The comparison script
 
-- [ ] T050 Test first, `tests/unit/test_compare.py`, on synthetic result
+- [x] T050 Test first, `tests/unit/test_compare.py`, on synthetic result
   files and a synthetic manifest:
   - each refusal: another commit, a dirty tree, another case-set hash,
     prompt, schema, masking or fingerprint, an undeclared slot, a duplicate
@@ -120,11 +120,11 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   - eligibility applied first;
   - the campaign's spend reported apart;
   - the Markdown and JSON outputs.
-- [ ] T051 `evals/compare.py`.
+- [x] T051 `evals/compare.py`.
 
 ## Phase 6: Documents
 
-- [ ] T060 The evaluation and decision-engine contracts; ADR-009's
+- [x] T060 The evaluation and decision-engine contracts; ADR-009's
   model-provider row (DeepSeek as developer, Scaleway as processor);
   `docs/operations.md`; `.env.example` (`RESOLVE_ANTHROPIC_ORG_ID`).
 - [ ] T061 Final review by Codex on the final commit; the maintainer approves

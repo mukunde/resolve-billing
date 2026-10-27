@@ -2,8 +2,9 @@
 
 What any engine behind the `DecisionEngine` port must do, and what the rest of
 the system may rely on. Written on 2026-10-24 from the existing records;
-specs/004-second-engines folded in the same day, and
-specs/007-openai-qwen-engines on 2026-10-26. Reasons are in ADR-002 (the engine is
+specs/004-second-engines folded in the same day,
+specs/007-openai-qwen-engines on 2026-10-26, and
+specs/008-deployment-model-choice on 2026-10-27. Reasons are in ADR-002 (the engine is
 a deployment choice), ADR-003 (deterministic before probabilistic), ADR-006
 (no agent loop) and ADR-009 (what a model provider receives).
 
@@ -89,17 +90,31 @@ source.
 
 ## The engines evaluated on prepaid accounts
 
-`gpt-6-luna` and `gpt-6.1-sol` (OpenAI's API), and `qwen3.5-397b-a17b`
-(a model Alibaba developed, served by Scaleway's OpenAI-compatible API in
-Paris), closed configurations in `app/decision/hosted.py` like the four
+`gpt-6-luna` and `gpt-6.1-sol` (OpenAI's API), and, on Scaleway's
+OpenAI-compatible API in Paris, `qwen3.5-397b-a17b` and `qwen3.6-35b-a3b`
+(models Alibaba developed) and `deepseek-v4.1-flash` (DeepSeek's, in
+preview), closed configurations in `app/decision/hosted.py` like the four
 above, through one client, `app/decision/openai_compatible.py`, with what
-differs by vendor kept there.
+differs by vendor kept there. The three on Scaleway cap their output at
+16,384 tokens (spec 008), the two OpenAI ones at 4,096.
+
+`claude-haiku-5-5` (spec 008) is Claude Haiku 5.5 measured as the service
+would run it: an evaluation-only adapter, `app/decision/anthropic_eval.py`,
+sends the request the service engine sends -- same model, cap, system
+prompt, effort, schema and payload -- and reads the answer as the service
+engine's parser does; tests hold the two engines' requests and decisions
+equal. Only retries differ: the SDK's are off, the runner counts attempts.
+Its account is the organisation the maintainer declares in
+`RESOLVE_ANTHROPIC_ORG_ID`, a name the SDK does not read.
 
 - **What the free-tier engines guarantee, they guarantee**, with reasoning
   at `low` for all three (the same label, not a proven equal budget;
   Scaleway documents that for this Qwen `low` is "similar to `medium`",
   recorded with the configuration) and the output cap sent as
   `max_completion_tokens`.
+- **No request reaches a log.** The SDKs log each request's options at
+  DEBUG; a filter on their request loggers drops those records whatever
+  level the application sets (the Anthropic SDK's include the payload).
 - **Every setting passed, none left to the environment.** The address, the
   key and the declared account are passed to the SDK; OpenAI's requests
   carry the declared organisation and project and ask not to be stored
@@ -158,4 +173,5 @@ evaluation runner selects from the same table plus the seven configurations
 `tests/unit/test_verdict.py`, `tests/unit/test_claude_pinned.py`,
 `tests/unit/test_hosted_engines.py`, `tests/unit/test_vendor_clients.py`,
 `tests/unit/test_openai_compatible_configurations.py`,
-`tests/unit/test_openai_compatible_client.py`.
+`tests/unit/test_openai_compatible_client.py`,
+`tests/unit/test_anthropic_evaluation.py`.
