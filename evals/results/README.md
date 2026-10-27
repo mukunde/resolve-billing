@@ -140,6 +140,41 @@ declared before them; these never count toward it.
 
 | file | configuration | ran at | complete | fully correct |
 |---|---|---|---|---|
+| `gpt-6-luna-20261027T003110Z.json` | `gpt-6-luna` | 2026-10-27 00:31 UTC | no: first call, **accepted** | 1/1 (the first call only) |
+| **`gpt-6-luna-20261027T003313Z.json`** | **`gpt-6-luna`** | **2026-10-27 00:33 UTC** | **yes** | **30/34, 0 unsafe** |
+| `gpt-6.1-sol-20261027T003131Z.json` | `gpt-6.1-sol` | 2026-10-27 00:31 UTC | no: first call, **accepted** | 1/1 (the first call only) |
+| **`gpt-6.1-sol-20261027T003429Z.json`** | **`gpt-6.1-sol`** | **2026-10-27 00:34 UTC** | **yes** | **29/34, 0 unsafe** |
+| `qwen3.5-397b-a17b-20261027T003224Z.json` | `qwen3.5-397b-a17b` | 2026-10-27 00:32 UTC | no: first call, **accepted** | 1/1 (the first call only) |
+| **`qwen3.5-397b-a17b-20261027T003639Z.json`** | **`qwen3.5-397b-a17b`** | **2026-10-27 00:36 UTC** | **yes** | **30/34, 0 unsafe** |
+
+**What the three integration runs say** -- one run each, regression scores
+on the development cases, not the comparison that chooses a model:
+
+- All three ran end to end, every response from the configured model, no
+  unsafe action. Estimated cost of the full runs: `gpt-6-luna` $0.004,
+  `gpt-6.1-sol` $0.058, `qwen3.5-397b-a17b` EUR 0.244 (before Scaleway's
+  free allowance, never deducted); median latency per engine call 3.2 s,
+  3.1 s and 28.6 s.
+- All three miss `duplicate_payment_single_invoice`: the case expects a
+  refund, and each recommended a credit note, which the code withheld (no
+  financial proposal made, the case left to a person); the mock passes it.
+  All three miss `refund_already_completed` too, escalated where the case
+  expects an explanation.
+- `gpt-6.1-sol` alone allowed automatic replies on cases it missed, two of
+  them. On `out_of_scope` it answered with a request for information where
+  the case expects a person. On `claimed_payment_without_evidence` the case
+  does expect an automatic reply -- a request for information -- and the
+  error is the classification (`valid_invoice`) and the reply it chose (an
+  explanation of the invoice). The runner counts neither as unsafe.
+- `qwen3.5-397b-a17b` returned **five invalid answers, each reporting
+  exactly 4,096 output tokens -- the output cap** (`insufficient_context`,
+  `out_of_scope`, `claimed_payment_without_evidence`,
+  `refund_already_completed`, `duplicate_check_not_evaluable`); each was
+  sent to a person. Scaleway reported no reasoning-token count and the
+  file does not keep finish reasons, so it does not prove what used the
+  cap; reasoning is the likely explanation, at a setting (`low`) Scaleway
+  documents as similar to `medium` for this model. How to treat reasoning
+  and the cap for a fair comparison is for spec 008 to declare.
 
 ## What they contain
 

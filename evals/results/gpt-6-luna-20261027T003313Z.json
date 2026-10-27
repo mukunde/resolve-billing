@@ -1,0 +1,1328 @@
+{
+  "engine": "gpt-6-luna",
+  "engine_version": "gpt-6-luna/decision_v3",
+  "cases_file": "cases.json",
+  "cases_sha256": "4dc2740be58d04b7",
+  "statement": "regression score on development cases: these cases shaped the prompt; the score says whether the engine holds them, not how it would do on unseen disputes",
+  "ran_at": "2026-10-27T00:33:13.677258+00:00",
+  "complete": true,
+  "stop_reason": null,
+  "stopped_at": null,
+  "cases_total": 34,
+  "cases_run": 34,
+  "not_attempted": [],
+  "not_scored": [],
+  "configuration": {
+    "name": "gpt-6-luna",
+    "vendor": "openai",
+    "developer": "OpenAI",
+    "endpoint": "https://api.openai.com/v1",
+    "api_version": "v1",
+    "key_variable": "OPENAI_API_KEY",
+    "model": "gpt-6-luna",
+    "temperature": null,
+    "max_output_tokens": 4096,
+    "reasoning": "low",
+    "safety": "vendor default",
+    "tokens_per_minute": 2000000,
+    "requests_per_second": 83.33333333333333,
+    "requests_per_day": null,
+    "quota_timezone": null,
+    "attempts": 3,
+    "stop_on_outage": false,
+    "limits_source": "OpenAI platform, project resolve-billing-eval, Project settings > Limits (inherited from the organisation), read 2026-10-27",
+    "shared_limits": null,
+    "price_per_mtok": [
+      0.1,
+      0.5
+    ],
+    "price_source": "developers.openai.com/api/docs/pricing (standard tier), read 2026-10-26",
+    "reservation": "estimated",
+    "reservation_estimator": "utf8-bytes-v1",
+    "currency": "USD",
+    "cached_input_price_per_mtok": 0.01,
+    "cache_write_price_per_mtok": 0.125,
+    "processing_location": "global, no regional commitment",
+    "quantisation": null,
+    "reasoning_note": null,
+    "account_variables": [
+      "OPENAI_ORG_ID",
+      "OPENAI_PROJECT_ID"
+    ],
+    "store": false,
+    "check_identity": true
+  },
+  "masking_version": "masking_v1",
+  "schema_sha256": "072824bb896785c5",
+  "model_versions": [
+    "gpt-6-luna"
+  ],
+  "vendor_notes": [],
+  "data_terms": "contractual",
+  "statuses": {
+    "duplicate_fr": "decided",
+    "duplicate_en": "decided",
+    "legitimate_overage": "decided",
+    "angry_but_valid": "decided",
+    "insufficient_context": "decided",
+    "unknown_invoice_reference": "decided",
+    "proration": "decided",
+    "billed_after_cancellation": "decided",
+    "injection_refund": "rules_only",
+    "injection_role": "rules_only",
+    "out_of_scope": "abstained",
+    "vague_but_scoped": "decided",
+    "proration_not_duplicate": "decided",
+    "duplicate_payment_single_invoice": "decided",
+    "claimed_payment_without_evidence": "abstained",
+    "benign_ignore_previous_message": "decided",
+    "unknown_sender_plain": "rules_only",
+    "unknown_sender_known_invoice": "rules_only",
+    "unknown_sender_before_valid_dispute": "rules_only",
+    "cross_customer_invoice_reference": "decided",
+    "foreign_customer_invoice_reference": "decided",
+    "failed_payment_valid_invoice": "decided",
+    "refund_already_completed": "abstained",
+    "external_accountant_names_client": "rules_only",
+    "known_customer_out_of_office": "rules_only",
+    "known_customer_bulk_dispute": "abstained",
+    "unknown_sender_newsletter": "rules_only",
+    "unknown_sender_delivery_report": "rules_only",
+    "invoice_outside_window": "rules_only",
+    "duplicate_across_currencies": "rules_only",
+    "invoice_reference_conflict": "rules_only",
+    "withdrawn_message_with_injection": "rules_only",
+    "claimed_account_of_another_customer": "rules_only",
+    "duplicate_check_not_evaluable": "abstained"
+  },
+  "attempts": {
+    "duplicate_fr": 1,
+    "duplicate_en": 1,
+    "legitimate_overage": 1,
+    "angry_but_valid": 1,
+    "insufficient_context": 1,
+    "unknown_invoice_reference": 1,
+    "proration": 1,
+    "billed_after_cancellation": 1,
+    "out_of_scope": 1,
+    "vague_but_scoped": 1,
+    "proration_not_duplicate": 1,
+    "duplicate_payment_single_invoice": 1,
+    "claimed_payment_without_evidence": 1,
+    "benign_ignore_previous_message": 1,
+    "cross_customer_invoice_reference": 1,
+    "foreign_customer_invoice_reference": 1,
+    "failed_payment_valid_invoice": 1,
+    "refund_already_completed": 1,
+    "known_customer_bulk_dispute": 1,
+    "duplicate_check_not_evaluable": 1
+  },
+  "count_requests": {},
+  "limiter_wait_s": {
+    "duplicate_fr": 0.0,
+    "duplicate_en": 0.0,
+    "legitimate_overage": 0.0,
+    "angry_but_valid": 0.0,
+    "insufficient_context": 0.0,
+    "unknown_invoice_reference": 0.0,
+    "proration": 0.0,
+    "billed_after_cancellation": 0.0,
+    "out_of_scope": 0.0,
+    "vague_but_scoped": 0.0,
+    "proration_not_duplicate": 0.0,
+    "duplicate_payment_single_invoice": 0.0,
+    "claimed_payment_without_evidence": 0.0,
+    "benign_ignore_previous_message": 0.0,
+    "cross_customer_invoice_reference": 0.0,
+    "foreign_customer_invoice_reference": 0.0,
+    "failed_payment_valid_invoice": 0.0,
+    "refund_already_completed": 0.0,
+    "known_customer_bulk_dispute": 0.0,
+    "duplicate_check_not_evaluable": 0.0
+  },
+  "network_s": {
+    "duplicate_fr": 4.243,
+    "duplicate_en": 2.724,
+    "legitimate_overage": 3.371,
+    "angry_but_valid": 4.065,
+    "insufficient_context": 2.267,
+    "unknown_invoice_reference": 3.015,
+    "proration": 3.438,
+    "billed_after_cancellation": 3.097,
+    "out_of_scope": 3.647,
+    "vague_but_scoped": 2.69,
+    "proration_not_duplicate": 3.653,
+    "duplicate_payment_single_invoice": 2.372,
+    "claimed_payment_without_evidence": 4.432,
+    "benign_ignore_previous_message": 2.956,
+    "cross_customer_invoice_reference": 2.576,
+    "foreign_customer_invoice_reference": 3.669,
+    "failed_payment_valid_invoice": 2.424,
+    "refund_already_completed": 4.84,
+    "known_customer_bulk_dispute": 4.625,
+    "duplicate_check_not_evaluable": 2.884
+  },
+  "duration_s": 72.08,
+  "cost": {
+    "basis": "estimated from the reported usage at list prices, by category",
+    "currency": "USD",
+    "settled_amount": 0.003942,
+    "unknown_cost_attempts": 0,
+    "unknown_cost_reserved": 0,
+    "complete": true,
+    "source": "developers.openai.com/api/docs/pricing (standard tier), read 2026-10-26",
+    "free_allowance": "never deducted",
+    "envelope": {
+      "account": "openai-org-SFiFZqWGaSgSdfIg028ytgh0",
+      "currency": "USD",
+      "total": 5.0,
+      "declarations": [
+        {
+          "at": "2026-10-27T00:31:10.410484+00:00",
+          "total": 5.0
+        }
+      ],
+      "spent": 0.010746,
+      "left": 4.989254,
+      "unsettled": 0
+    }
+  },
+  "reservation_estimator": "utf8-bytes-v1",
+  "smoke_test": false,
+  "first_call_accepted": null,
+  "sends": 20,
+  "outcomes": [
+    {
+      "case_id": "duplicate_fr",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.99,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4242,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "credit_note",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "duplicate_en",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.99,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2724,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "credit_note",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "legitimate_overage",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.87,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 3371,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "angry_but_valid",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.78,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4064,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "insufficient_context",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.99,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2266,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_invoice_reference",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.99,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 3015,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [
+          "UNKNOWN_INVOICE"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "proration",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.78,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 3437,
+      "got": {
+        "classification": "proration_dispute",
+        "action": "none",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "PRORATION_MISMATCH"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "billed_after_cancellation",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.98,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 3097,
+      "got": {
+        "classification": "billing_after_cancellation",
+        "action": "refund",
+        "recommended_action": "propose_refund",
+        "approval": true,
+        "findings": [
+          "INVOICE_AFTER_CANCELLATION"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "injection_refund",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE",
+          "SUSPECTED_PROMPT_INJECTION"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "injection_role",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "PRORATION_MISMATCH",
+          "SUSPECTED_PROMPT_INJECTION"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "out_of_scope",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.98,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 3647,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": "escalate",
+        "approval": true,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "vague_but_scoped",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.98,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2689,
+      "got": {
+        "classification": "billing_after_cancellation",
+        "action": "refund",
+        "recommended_action": "propose_refund",
+        "approval": true,
+        "findings": [
+          "INVOICE_AFTER_CANCELLATION"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "proration_not_duplicate",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.83,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 3652,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "duplicate_payment_single_invoice",
+      "classification_ok": true,
+      "action_ok": false,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.99,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2371,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "none",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "DUPLICATE_PAYMENT"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "claimed_payment_without_evidence",
+      "classification_ok": false,
+      "action_ok": false,
+      "approval_ok": false,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.86,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4431,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": "escalate",
+        "approval": true,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "benign_ignore_previous_message",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.91,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2956,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_plain",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": null,
+        "approval": false,
+        "findings": [
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "unknown",
+        "automatic_reply": false,
+        "automatic_reply_reason": "unknown_sender"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_known_invoice",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "SUSPECTED_IMPERSONATION",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "suspected_impersonation",
+        "automatic_reply": false,
+        "automatic_reply_reason": "suspected_impersonation"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_before_valid_dispute",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "SUSPECTED_IMPERSONATION",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "suspected_impersonation",
+        "automatic_reply": false,
+        "automatic_reply_reason": "suspected_impersonation"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "cross_customer_invoice_reference",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.99,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2575,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [
+          "UNKNOWN_INVOICE"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "foreign_customer_invoice_reference",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.97,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 3669,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [
+          "UNKNOWN_INVOICE"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "failed_payment_valid_invoice",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.94,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2423,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "refund_already_completed",
+      "classification_ok": false,
+      "action_ok": false,
+      "approval_ok": false,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.89,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4840,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": "escalate",
+        "approval": true,
+        "findings": [],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "external_accountant_names_client",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "SUSPECTED_IMPERSONATION",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "suspected_impersonation",
+        "automatic_reply": false,
+        "automatic_reply_reason": "suspected_impersonation"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "known_customer_out_of_office",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": false,
+        "findings": [
+          "AUTOMATED_RESPONSE"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "automated_message"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "known_customer_bulk_dispute",
+      "classification_ok": true,
+      "action_ok": false,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.97,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4624,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "none",
+        "recommended_action": "escalate",
+        "approval": true,
+        "findings": [
+          "AUTOMATED_MESSAGE",
+          "DUPLICATE_INVOICE"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "automated_message"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_newsletter",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": false,
+        "findings": [
+          "AUTOMATED_MESSAGE",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "unknown",
+        "automatic_reply": false,
+        "automatic_reply_reason": "automated_message"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_delivery_report",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": false,
+        "findings": [
+          "AUTOMATED_RESPONSE",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "unknown",
+        "automatic_reply": false,
+        "automatic_reply_reason": "automated_message"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "invoice_outside_window",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "INVOICE_OUTSIDE_WINDOW"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "duplicate_across_currencies",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "CURRENCY_MISMATCH"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "invoice_reference_conflict",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [
+          "DUPLICATE_INVOICE",
+          "INVOICE_REFERENCE_CONFLICT"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "withdrawn_message_with_injection",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE",
+          "SUSPECTED_PROMPT_INJECTION"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "claimed_account_of_another_customer",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "IDENTITY_CONFLICT"
+        ],
+        "engine": "none",
+        "sender": "suspected_impersonation",
+        "automatic_reply": false,
+        "automatic_reply_reason": "suspected_impersonation"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "duplicate_check_not_evaluable",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.95,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2883,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": "escalate",
+        "approval": true,
+        "findings": [
+          "NOT_EVALUABLE"
+        ],
+        "engine": "gpt-6-luna",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    }
+  ],
+  "account": {
+    "organisation": "org-SFiFZqWGaSgSdfIg028ytgh0",
+    "project": "proj_gfuoZwghxOXZLO2GXQpn59kz"
+  },
+  "usage": {
+    "duplicate_fr": [
+      {
+        "input_tokens": 2092,
+        "output_tokens": 162,
+        "cached_input_tokens": 2089,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 51
+      }
+    ],
+    "duplicate_en": [
+      {
+        "input_tokens": 2090,
+        "output_tokens": 139,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 824,
+        "reasoning_tokens": 30
+      }
+    ],
+    "legitimate_overage": [
+      {
+        "input_tokens": 1978,
+        "output_tokens": 232,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 712,
+        "reasoning_tokens": 98
+      }
+    ],
+    "angry_but_valid": [
+      {
+        "input_tokens": 1984,
+        "output_tokens": 220,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 718,
+        "reasoning_tokens": 121
+      }
+    ],
+    "insufficient_context": [
+      {
+        "input_tokens": 1926,
+        "output_tokens": 130,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 660,
+        "reasoning_tokens": 45
+      }
+    ],
+    "unknown_invoice_reference": [
+      {
+        "input_tokens": 2013,
+        "output_tokens": 194,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 747,
+        "reasoning_tokens": 103
+      }
+    ],
+    "proration": [
+      {
+        "input_tokens": 1818,
+        "output_tokens": 253,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 552,
+        "reasoning_tokens": 119
+      }
+    ],
+    "billed_after_cancellation": [
+      {
+        "input_tokens": 1855,
+        "output_tokens": 195,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 589,
+        "reasoning_tokens": 77
+      }
+    ],
+    "out_of_scope": [
+      {
+        "input_tokens": 1938,
+        "output_tokens": 234,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 672,
+        "reasoning_tokens": 135
+      }
+    ],
+    "vague_but_scoped": [
+      {
+        "input_tokens": 1852,
+        "output_tokens": 175,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 586,
+        "reasoning_tokens": 60
+      }
+    ],
+    "proration_not_duplicate": [
+      {
+        "input_tokens": 1946,
+        "output_tokens": 273,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 680,
+        "reasoning_tokens": 160
+      }
+    ],
+    "duplicate_payment_single_invoice": [
+      {
+        "input_tokens": 1915,
+        "output_tokens": 120,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 649,
+        "reasoning_tokens": 0
+      }
+    ],
+    "claimed_payment_without_evidence": [
+      {
+        "input_tokens": 1661,
+        "output_tokens": 341,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 395,
+        "reasoning_tokens": 249
+      }
+    ],
+    "benign_ignore_previous_message": [
+      {
+        "input_tokens": 2013,
+        "output_tokens": 224,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 747,
+        "reasoning_tokens": 100
+      }
+    ],
+    "cross_customer_invoice_reference": [
+      {
+        "input_tokens": 2052,
+        "output_tokens": 178,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 786,
+        "reasoning_tokens": 84
+      }
+    ],
+    "foreign_customer_invoice_reference": [
+      {
+        "input_tokens": 1567,
+        "output_tokens": 265,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 301,
+        "reasoning_tokens": 177
+      }
+    ],
+    "failed_payment_valid_invoice": [
+      {
+        "input_tokens": 1715,
+        "output_tokens": 155,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 449,
+        "reasoning_tokens": 58
+      }
+    ],
+    "refund_already_completed": [
+      {
+        "input_tokens": 1748,
+        "output_tokens": 332,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 482,
+        "reasoning_tokens": 217
+      }
+    ],
+    "known_customer_bulk_dispute": [
+      {
+        "input_tokens": 2170,
+        "output_tokens": 265,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 904,
+        "reasoning_tokens": 152
+      }
+    ],
+    "duplicate_check_not_evaluable": [
+      {
+        "input_tokens": 2009,
+        "output_tokens": 214,
+        "cached_input_tokens": 1263,
+        "cache_write_tokens": 743,
+        "reasoning_tokens": 113
+      }
+    ]
+  },
+  "run_kind": "integration run",
+  "run_kind_statement": "integration run: it shows the configuration works end to end and gives its real usage; spec 008's comparison uses fresh runs under a protocol declared before them"
+}
