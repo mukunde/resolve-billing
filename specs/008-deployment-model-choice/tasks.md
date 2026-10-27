@@ -20,6 +20,9 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   cache prices, the organisation id's location in the console. An
   unsettled point blocks its client, except the approved unknowns. Codex
   reviews before Phase 2.
+- [ ] T012 `pyproject.toml`: `anthropic==0.105.2` in the `claude` extra;
+  CI's network-free job installs the `claude` extra (no call, gates
+  unchanged).
 - [ ] T011 **[maintainer]** Read the Anthropic account's rate limits for
   Haiku 5.5 and its organisation id in his console; add
   `RESOLVE_ANTHROPIC_ORG_ID` to `.env`.

@@ -302,8 +302,12 @@ written beside the manifest.
 ## Research notes
 
 Read 2026-10-27 from Scaleway's catalogue (supported models) and published
-API schema, Anthropic's pricing page, and the pinned SDKs (`anthropic`
-0.105.2 as installed, `openai` 3.29.0).
+API schema, Anthropic's pricing page, and the SDKs: `openai` 3.29.0
+(pinned) and `anthropic` 0.105.2, installed but not pinned (`anthropic>=0.40`
+in the `claude` extra). **T012 pins `anthropic==0.105.2`** (published
+2026-05-29), the version this research and the D10 runs used, and adds the
+`claude` extra to CI's network-free job, so the adapter's SDK checks run
+there. The service's Claude engine then runs the same pinned SDK.
 
 ### Settled
 
@@ -340,8 +344,17 @@ API schema, Anthropic's pricing page, and the pinned SDKs (`anthropic`
   pinned SDK's type). The service parser sends `refusal` and `max_tokens`
   to a person and validates the text for every other stop reason; the
   adapter does the same. `response.model` is the returned model.
+- **The returned model's identity**: no page states the exact string
+  Scaleway or Anthropic returns in `model` (a catalogue's deployment name,
+  such as `qwen/qwen3.6-35b-a3b:fp8`, is not that evidence). Each
+  configuration keeps its strict identity check; each first call shows the
+  string. A first call answered under another form is not accepted, and
+  the accepted form is then recorded in the configuration, reviewed,
+  before round 1. Never relaxed after a score is seen.
 - **Anthropic, usage**: `input_tokens`, `output_tokens`,
-  `cache_read_input_tokens`, `cache_creation_input_tokens`. Anthropic counts
+  `cache_read_input_tokens`, `cache_creation_input_tokens`, and
+  `output_tokens_details.thinking_tokens`, recorded as the reasoning
+  detail, part of `output_tokens`, never added to it. Anthropic counts
   cache reads and writes **apart** from `input_tokens`. So the adapter
   reports `input_tokens` as the sum of the three, with the cache reads and
   writes as details, matching `Answer`'s meaning ("part of
@@ -353,9 +366,11 @@ API schema, Anthropic's pricing page, and the pinned SDKs (`anthropic`
   higher; every prompt here is a few thousand tokens.
 - **Anthropic, errors**: `APIStatusError` (status code) and
   `APIConnectionError` (timeouts included). 429 is a rate limit, 408, 409
-  and 5xx are outages, as the service engine's `_TRANSIENT` says. Any
-  other status is a refusal carrying its code alone. An unreadable
-  response (strict validation) is an unusable answer.
+  and 5xx are outages, as the service engine's `_TRANSIENT` says. A refusal
+  is a non-transient 4xx only, carrying its code alone, settled at zero.
+  Any other status (an unexpected 2xx or 3xx raised as an error) is an
+  unknown outcome: an outage whose reservation stays spent, tested. An
+  unreadable response (strict validation) is an unusable answer.
 - **Anthropic SDK settings**: `max_retries=0`; the key and the base URL
   are passed explicitly. With an explicit key, the SDK consults no
   credential variable. It still reads `ANTHROPIC_CUSTOM_HEADERS` (headers
