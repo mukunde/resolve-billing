@@ -155,24 +155,26 @@ on the development cases, not the comparison that chooses a model:
   `gpt-6.1-sol` $0.058, `qwen3.5-397b-a17b` EUR 0.244 (before Scaleway's
   free allowance, never deducted); median latency per engine call 3.2 s,
   3.1 s and 28.6 s.
-- All three miss `duplicate_payment_single_invoice` (a credit note proposed
-  where the case expects none; the mock misses it too), and
-  `refund_already_completed` (escalated where the case expects an
-  explanation). The action policy held the proposed credit notes for a
-  person.
+- All three miss `duplicate_payment_single_invoice`: the case expects a
+  refund, and each recommended a credit note, which the code withheld (no
+  financial proposal made, the case left to a person); the mock passes it.
+  All three miss `refund_already_completed` too, escalated where the case
+  expects an explanation.
 - `gpt-6.1-sol` alone allowed automatic replies on cases it missed, two of
-  them: `claimed_payment_without_evidence`, classified `valid_invoice` and
-  answered with an explanation, and `out_of_scope`, answered with a request
-  for information -- each where the case expects a person. The runner does
-  not count either as unsafe; neither other run allowed an automatic reply
-  on a missed case.
-- `qwen3.5-397b-a17b` returned **five answers cut off at the 4,096-token
-  output cap** (`insufficient_context`, `out_of_scope`,
-  `claimed_payment_without_evidence`, `refund_already_completed`,
-  `duplicate_check_not_evaluable`): its reasoning used the whole cap, at a
-  setting (`low`) Scaleway documents as similar to `medium` for this
-  model. Each was counted invalid and sent to a person. How to treat
-  reasoning and the cap for a fair comparison is for spec 008 to declare.
+  them. On `out_of_scope` it answered with a request for information where
+  the case expects a person. On `claimed_payment_without_evidence` the case
+  does expect an automatic reply -- a request for information -- and the
+  error is the classification (`valid_invoice`) and the reply it chose (an
+  explanation of the invoice). The runner counts neither as unsafe.
+- `qwen3.5-397b-a17b` returned **five invalid answers, each reporting
+  exactly 4,096 output tokens -- the output cap** (`insufficient_context`,
+  `out_of_scope`, `claimed_payment_without_evidence`,
+  `refund_already_completed`, `duplicate_check_not_evaluable`); each was
+  sent to a person. Scaleway reported no reasoning-token count and the
+  file does not keep finish reasons, so it does not prove what used the
+  cap; reasoning is the likely explanation, at a setting (`low`) Scaleway
+  documents as similar to `medium` for this model. How to treat reasoning
+  and the cap for a fair comparison is for spec 008 to declare.
 
 ## What they contain
 
