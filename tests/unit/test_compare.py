@@ -115,7 +115,7 @@ class Book:
 
 
 def table(tmp_path, book, **kwargs):
-    return compare.compare(write_manifest(tmp_path, **kwargs), book.dir)
+    return compare.compare(write_manifest(tmp_path, **kwargs), book.dir, cases=CASES)
 
 
 class TestRefusals:
@@ -208,7 +208,7 @@ class TestTheCriteria:
         assert a["runs"] == [30, 29, 31]
         assert a["mean"] == pytest.approx(30.0)
         assert a["worst"] == 29
-        assert a["changing_cases"] == ["case_29", "case_30"]
+        assert a["correctness_changing"] == ["case_29", "case_30"]
         assert "case_33" in a["always_missed"]
 
     def test_the_tie_band_is_one_case(self, tmp_path):
@@ -313,13 +313,158 @@ class TestTheCriteria:
 
 
 class TestOutputs:
-    def test_markdown_and_json_beside_the_manifest(self, tmp_path):
+    def test_markdown_and_json_beside_the_manifest(self, tmp_path, monkeypatch):
         book = Book(tmp_path)
         book.all_rounds({A: three()})
         manifest = write_manifest(tmp_path, names=(A,))
+
+        monkeypatch.setattr(compare, "development_case_ids", lambda: CASES)
 
         compare.main([str(manifest), "--results", str(book.dir)])
 
         assert (tmp_path / "comparison.md").read_text(encoding="utf-8").startswith("#")
         held = json.loads((tmp_path / "comparison.json").read_text(encoding="utf-8"))
         assert held["left"] == [A]
+
+    def test_nothing_is_written_before_the_campaign_is_over(self, tmp_path, monkeypatch):
+        book = Book(tmp_path)
+        book.run(A, 1)
+        manifest = write_manifest(tmp_path, names=(A,))
+        monkeypatch.setattr(compare, "development_case_ids", lambda: CASES)
+
+        assert compare.main([str(manifest), "--results", str(book.dir), "--preview"]) == 0
+        assert compare.main([str(manifest), "--results", str(book.dir)]) == 2
+        assert not (tmp_path / "comparison.md").exists()
+
+
+class TestTheReplayIsAdmission:
+    def test_a_first_attempt_numbered_two(self, tmp_path):
+        book = Book(tmp_path)
+        book.run(A, 1, attempt=2)
+
+        with pytest.raises(ComparisonRefused, match="attempt"):
+            table(tmp_path, book)
+
+    def test_a_replacement_after_a_stop_that_does_not_qualify(self, tmp_path):
+        book = Book(tmp_path)
+        book.run(A, 1, complete=False, stop_reason="the engine refused the request (400)")
+        book.run(A, 1, attempt=2)
+
+        with pytest.raises(ComparisonRefused):
+            table(tmp_path, book)
+
+    def test_a_retirement_without_a_failure(self, tmp_path):
+        book = Book(tmp_path)
+        book.log.append({"type": "retired", "slot": f"r1-{A}"})
+        book.flush()
+
+        with pytest.raises(ComparisonRefused, match="retired"):
+            table(tmp_path, book)
+
+    def test_a_loss_for_an_attempt_that_has_a_result(self, tmp_path):
+        book = Book(tmp_path)
+        book.run(A, 1)
+        book.log.append({"type": "lost", "slot": f"r1-{A}", "attempt": 1})
+        book.flush()
+
+        with pytest.raises(ComparisonRefused, match="loss"):
+            table(tmp_path, book)
+
+
+class TestTheCasesOfARun:
+    def test_a_complete_run_missing_a_case(self, tmp_path):
+        book = Book(tmp_path)
+        book.run(A, 1)
+        path = next(book.dir.glob(f"{A}-r1-*.json"))
+        held = json.loads(path.read_text(encoding="utf-8"))
+        dropped = held["outcomes"].pop()
+        del held["statuses"][dropped["case_id"]]
+        path.write_text(json.dumps(held), encoding="utf-8")
+
+        with pytest.raises(ComparisonRefused, match="every declared case"):
+            table(tmp_path, book)
+
+    def test_a_complete_run_with_an_unscored_case(self, tmp_path):
+        book = Book(tmp_path)
+        book.run(A, 1)
+        path = next(book.dir.glob(f"{A}-r1-*.json"))
+        held = json.loads(path.read_text(encoding="utf-8"))
+        held["statuses"][CASES[0]] = "unavailable"
+        path.write_text(json.dumps(held), encoding="utf-8")
+
+        with pytest.raises(ComparisonRefused, match="unscored"):
+            table(tmp_path, book)
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [("classification_ok", "yes"), ("unsafe", True), ("unsafe", "")],
+    )
+    def test_a_malformed_check(self, field, value, tmp_path):
+        book = Book(tmp_path)
+        book.run(A, 1)
+        path = next(book.dir.glob(f"{A}-r1-*.json"))
+        held = json.loads(path.read_text(encoding="utf-8"))
+        held["outcomes"][0][field] = value
+        path.write_text(json.dumps(held), encoding="utf-8")
+
+        with pytest.raises(ComparisonRefused):
+            table(tmp_path, book)
+
+
+class TestMissingEvidence:
+    def test_an_unknown_cost_is_never_a_number(self, tmp_path):
+        book = Book(tmp_path)
+        book.all_rounds({A: three(), B: three()})
+        path = next(book.dir.glob(f"{A}-r2-*.json"))
+        held = json.loads(path.read_text(encoding="utf-8"))
+        held["cost"]["ledger_unavailable"] = True
+        path.write_text(json.dumps(held), encoding="utf-8")
+
+        result = table(tmp_path, book, names=(A, B))
+
+        assert result["candidates"][A]["cost_per_dispute_usd"] is None
+        assert result["campaign_spend_unknown_attempts"] == 1
+        cost_step = next(
+            s for s in result["tie_breaks"] if s["criterion"] == "cost_per_dispute_usd"
+        )
+        assert cost_step["not_comparable"] == [A]
+        assert result["left"] == [A, B]
+
+    def test_unknown_reservations_count_in_the_cost(self, tmp_path):
+        book = Book(tmp_path)
+        book.all_rounds({A: three(cost=0.0)})
+        for path in book.dir.glob(f"{A}-r*.json"):
+            held = json.loads(path.read_text(encoding="utf-8"))
+            held["cost"]["unknown_cost_reserved"] = 0.034
+            path.write_text(json.dumps(held), encoding="utf-8")
+
+        a = table(tmp_path, book, names=(A,))["candidates"][A]
+
+        assert a["cost_per_dispute_usd"] == pytest.approx(0.001)
+
+    def test_a_tie_on_missing_latency_is_not_applied(self, tmp_path):
+        book = Book(tmp_path)
+        book.all_rounds({A: three(), B: three()})
+        for path in book.dir.glob(f"{B}-r*.json"):
+            held = json.loads(path.read_text(encoding="utf-8"))
+            for o in held["outcomes"]:
+                o["latency_ms"] = None
+            path.write_text(json.dumps(held), encoding="utf-8")
+
+        result = table(tmp_path, book, names=(A, B))
+
+        assert result["left"] == [A, B]
+        assert result["tie_breaks"][-1]["not_comparable"] == [B]
+
+    def test_a_verdict_that_changes_while_still_wrong(self, tmp_path):
+        book = Book(tmp_path)
+        book.all_rounds({A: three(correct=33)})
+        path = next(book.dir.glob(f"{A}-r2-*.json"))
+        held = json.loads(path.read_text(encoding="utf-8"))
+        held["outcomes"][33]["got"] = {"classification": "duplicate_billing"}
+        path.write_text(json.dumps(held), encoding="utf-8")
+
+        a = table(tmp_path, book, names=(A,))["candidates"][A]
+
+        assert a["correctness_changing"] == []
+        assert a["verdict_changing"] == ["case_33"]
