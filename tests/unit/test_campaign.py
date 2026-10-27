@@ -14,6 +14,14 @@ from evals.first_calls import fingerprint
 ROUNDS = [["gpt-6-luna", "qwen3.6-35b-a3b"]] * 3
 
 
+def outcome(case_id, unsafe=False):
+    """A recorded case's outcome, with every check the runner scores."""
+    return {field: True for field in campaign.OUTCOME_FIELDS} | {
+        "case_id": case_id,
+        "unsafe": unsafe,
+    }
+
+
 def manifest(tmp_path, rounds=ROUNDS, eligibility=None):
     names = sorted({name for r in rounds for name in r})
     data = {
@@ -231,9 +239,7 @@ class TestLostRuns:
     def test_a_killed_run_is_rebuilt_from_its_cases_and_replaced(self, tmp_path, clean):
         c = make(tmp_path)
         with c.admit("gpt-6-luna", "r1-gpt-6-luna") as admitted:
-            admitted.record_case(
-                "duplicate_fr", {"case_id": "duplicate_fr", "unsafe": True}, "decided"
-            )
+            admitted.record_case("duplicate_fr", outcome("duplicate_fr", unsafe=True), "decided")
             # killed here: no result written
 
         admitted = admit_and_finish(c, "r1-gpt-6-luna")
@@ -252,7 +258,7 @@ class TestLostRuns:
     def test_unreadable_evidence_is_lost_and_never_replaced(self, tmp_path, clean):
         c = make(tmp_path)
         with c.admit("gpt-6-luna", "r1-gpt-6-luna") as admitted:
-            admitted.record_case("duplicate_fr", {"case_id": "duplicate_fr"}, "decided")
+            admitted.record_case("duplicate_fr", outcome("duplicate_fr"), "decided")
         for sidecar in (c.results_dir / campaign.CASES_DIR).glob("*"):
             sidecar.write_text("not json", encoding="utf-8")
 
@@ -298,7 +304,7 @@ class TestRecoveryEvidence:
         with c.admit("gpt-6-luna", "r1-gpt-6-luna") as admitted:
             admitted.record_case(
                 "duplicate_fr",
-                {"case_id": "duplicate_fr"},
+                outcome("duplicate_fr"),
                 "decided",
                 {"sends": 1, "cost": 0.001, "unknown_cost_attempts": 0, "usage": None},
             )
@@ -321,6 +327,7 @@ class TestRecoveryEvidence:
             {"case_id": "not_a_case", "outcome": {}, "status": "decided", "accounting": {}},
             {"case_id": "duplicate_fr", "outcome": {}, "status": "weird", "accounting": {}},
             {"case_id": "duplicate_fr", "status": "decided"},
+            {"case_id": "duplicate_fr", "outcome": {}, "status": "decided", "accounting": {}},
         ],
     )
     def test_a_malformed_record_is_lost_not_a_crash(self, row, tmp_path, clean):
@@ -334,6 +341,37 @@ class TestRecoveryEvidence:
         c._recover()
 
         assert any(line.get("type") == "lost" for line in c.log_lines())
+
+
+class TestInFlightAccounting:
+    def test_the_rebuilt_cost_comes_from_the_run_s_ledger_tickets(
+        self, tmp_path, clean, monkeypatch
+    ):
+        from evals import state
+        from evals.ledger import PrepaidLedger
+
+        monkeypatch.setattr(state, "STATE_DIR", tmp_path / "state")
+        monkeypatch.setenv("OPENAI_ORG_ID", "org-test")
+        monkeypatch.setenv("OPENAI_PROJECT_ID", "proj_test")
+        book = PrepaidLedger("openai-org-test", "USD")
+        book.declare(5.0)
+        c = make(tmp_path)
+        with c.admit("gpt-6-luna", "r1-gpt-6-luna", run_id="RUN1") as admitted:
+            book.reserve("RUN1/gpt-6-luna/duplicate_fr/1", 0.01)
+            book.settle("RUN1/gpt-6-luna/duplicate_fr/1", 0.001)
+            admitted.record_case("duplicate_fr", outcome("duplicate_fr"), "decided", {})
+            # A request sent after the last recorded case, then the process dies.
+            book.reserve("RUN1/gpt-6-luna/duplicate_en/1", 0.02)
+        book.reserve("OTHER/gpt-6-luna/duplicate_fr/1", 0.5)
+
+        c._recover()
+
+        rebuilt = next(r for r in c.results().values() if r.get("rebuilt"))
+        assert rebuilt["cost"]["from_ledger"] is True
+        assert rebuilt["cost"]["settled_amount"] == pytest.approx(0.001)
+        assert rebuilt["cost"]["unknown_cost_attempts"] == 1
+        assert rebuilt["cost"]["unknown_cost_reserved"] == pytest.approx(0.02)
+        assert rebuilt["sends"] == 2
 
 
 class TestGitState:

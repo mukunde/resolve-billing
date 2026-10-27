@@ -209,12 +209,14 @@ def _unscored_stops(record: HostedRun) -> None:
         return
     unavailable = [c for c, s in record.statuses.items() if s == "unavailable"]
     oversized = [c for c, s in record.statuses.items() if s == "not_sent_oversized"]
-    if unavailable:
-        record.complete = False
-        record.stop_reason = f"outage: {len(unavailable)} cases left unscored"
-    elif oversized:
+    # A case too large to send would be too large again: that stop takes
+    # precedence over an outage, which a replacement could repair.
+    if oversized:
         record.complete = False
         record.stop_reason = f"not sent: {len(oversized)} cases too large for the quota"
+    elif unavailable:
+        record.complete = False
+        record.stop_reason = f"outage: {len(unavailable)} cases left unscored"
 
 
 #: A first call that opens the way to the full run (FR-016).
@@ -350,7 +352,13 @@ def main(args, cases: list[dict], parser) -> int:
         admission = None
         if args.slot is not None:
             try:
-                admission = held.enter_context(campaign.Campaign().admit(args.engine, args.slot))
+                admission = held.enter_context(
+                    campaign.Campaign().admit(
+                        args.engine,
+                        args.slot,
+                        run_id=record.started_at.strftime("%Y%m%dT%H%M%S.%fZ"),
+                    )
+                )
             except campaign.CampaignRefused as refusal:
                 print(f"refused: {refusal}", file=sys.stderr)
                 return 2

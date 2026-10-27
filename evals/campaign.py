@@ -59,6 +59,22 @@ QUALIFYING = (
     "process lost",
 )
 
+#: What a recorded case's outcome must hold: the runner's scored checks,
+#: the unsafe flag first among them.
+OUTCOME_FIELDS = frozenset(
+    {
+        "case_id",
+        "classification_ok",
+        "action_ok",
+        "approval_ok",
+        "findings_ok",
+        "skip_ok",
+        "unsafe",
+        "sender_ok",
+        "reply_ok",
+    }
+)
+
 #: The statuses a recorded case may carry.
 STATUSES = frozenset(
     {"decided", "abstained", "invalid", "unavailable", "not_sent_oversized", "rules_only"}
@@ -267,7 +283,7 @@ class Campaign:
     # -- admission -------------------------------------------------------
 
     @contextmanager
-    def admit(self, engine_name: str, slot: str, lock_timeout: float = 30.0):
+    def admit(self, engine_name: str, slot: str, lock_timeout: float = 30.0, run_id: str = ""):
         """The slot, admitted and logged, held for the run; or a refusal."""
         declared = self.declared_slots()
         if slot not in declared:
@@ -326,6 +342,8 @@ class Campaign:
                     "commit": repo["commit"],
                     "configuration": asdict(config),
                     "configuration_fingerprint": fingerprint(config),
+                    # The prefix of the run's tickets in its account's ledger.
+                    "run_id": run_id,
                 }
                 | current_evidence()
             )
@@ -355,6 +373,11 @@ class Campaign:
                 self._append({"type": "lost", "slot": key[0], "attempt": key[1]})
                 continue
             last = recorded[-1]["accounting"] if recorded else {}
+            # What the account's ledger holds for this run -- the attempt in
+            # flight when the process died included -- overrides the record.
+            ledgered = self._ledgered(meta)
+            if ledgered is not None:
+                last = last | ledgered
             rebuilt = {
                 "campaign": NAME,
                 "slot": key[0],
@@ -377,20 +400,58 @@ class Campaign:
                     "currency": meta["configuration"].get("currency"),
                     "unknown_cost_attempts": last.get("unknown_cost_attempts", 0),
                     "unknown_cost_reserved": last.get("unknown_cost_reserved", 0.0),
-                    # The attempt in flight when the process died is not in the
-                    # record; the account's ledger holds its reservation.
+                    "from_ledger": ledgered is not None,
                     "complete": False,
                 },
             } | {k: meta[k] for k in current_evidence()}
             target = self.results_dir / f"{meta['engine']}-{key[0]}-a{key[1]}-rebuilt.json"
             state.write_atomically(target, rebuilt)
 
+    @staticmethod
+    def _ledgered(meta: dict) -> dict | None:
+        """The run's settled cost and its unsettled reservations, read from
+        its account's ledger by the run's ticket prefix; None when the
+        configuration keeps no ledger or it cannot be read."""
+        from evals import accounts
+        from evals.ledger import Ledger, LedgerRefused, PrepaidLedger
+
+        config = configuration(meta["engine"])
+        try:
+            if config.vendor == "mistral":
+                book = Ledger()
+            elif config.currency is not None:
+                book = PrepaidLedger(accounts.billing_account(config), config.currency)
+            else:
+                return None
+            held = book._read()
+        except (LedgerRefused, accounts.AccountRefused):
+            return None
+        if held is None or not meta.get("run_id"):
+            return None
+        mine = [
+            entry
+            for ticket, entry in held["attempts"].items()
+            if ticket.startswith(f"{meta['run_id']}/")
+        ]
+        open_ = [entry["reserved"] for entry in mine if entry["settled"] is None]
+        return {
+            "sends": len(mine),
+            "cost": sum(entry["settled"] for entry in mine if entry["settled"] is not None),
+            "unknown_cost_attempts": len(open_),
+            "unknown_cost_reserved": sum(open_),
+        }
+
     def _read_record(self, slot: str, attempt: int) -> tuple[dict, list[dict]]:
         """The run's metadata and its recorded cases, each checked; any flaw
         raises, and the attempt is then lost."""
         meta = json.loads(self.meta_path(slot, attempt).read_text(encoding="utf-8"))
-        required = {"engine", "commit", "configuration", "configuration_fingerprint"}
-        if not isinstance(meta, dict) or not (required | set(current_evidence())) <= set(meta):
+        strings = ("engine", "commit", "configuration_fingerprint", *current_evidence())
+        if not (
+            isinstance(meta, dict)
+            and all(isinstance(meta.get(key), str) and meta[key] for key in strings)
+            and isinstance(meta.get("configuration"), dict)
+            and meta["configuration"].get("name") == meta["engine"]
+        ):
             raise ValueError("incomplete metadata")
         rows = self.cases_path(slot, attempt).read_text(encoding="utf-8").splitlines()
         recorded = [json.loads(row) for row in rows if row.strip()]
@@ -403,6 +464,9 @@ class Campaign:
                 and r["case_id"] in known
                 and r["case_id"] not in seen
                 and isinstance(r["outcome"], dict)
+                and set(r["outcome"]) >= OUTCOME_FIELDS
+                and r["outcome"]["case_id"] == r["case_id"]
+                and isinstance(r["outcome"]["unsafe"], bool)
                 and r["status"] in STATUSES
                 and isinstance(r["accounting"], dict)
             ):

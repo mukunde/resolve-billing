@@ -618,3 +618,16 @@ class TestSlotsOnTheRunner:
         assert result["complete"] is False
         assert result["stop_reason"].startswith("outage:")
         assert result["stop_kind"] == "qualifying"
+
+    def test_an_oversized_case_takes_precedence_over_an_outage(self):
+        from datetime import UTC, datetime
+
+        from evals.hosted_run import HostedRun, _unscored_stops
+
+        record = HostedRun("gpt-6-luna", datetime.now(UTC), total=2, complete=True)
+        record.statuses = {"a": "unavailable", "b": "not_sent_oversized"}
+
+        _unscored_stops(record)
+
+        assert record.complete is False
+        assert record.stop_reason.startswith("not sent:")
