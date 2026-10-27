@@ -81,6 +81,12 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
     round before an earlier one -- each refused before any client; the
     slot and attempt recorded; the campaign log line appended before
     sending;
+  - the campaign lock: two runs on different vendors never admit at once;
+  - a logged attempt without a result recorded as "lost" at the next
+    launch, before any admission;
+  - a "not completing" candidate's slots retired; a round over only when
+    each slot is complete or retired; a replacement before the round
+    ends;
   - results written in `evals/results/` keep it clean;
   - outside git, `unknown` is recorded.
 - [ ] T041 `evals/hosted_run.py`, `evals/runner.py` (`--slot`), the
@@ -93,8 +99,9 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   - each refusal: another commit, a dirty tree, another case-set hash,
     prompt, schema, masking or fingerprint, an undeclared slot, a duplicate
     slot, a manifest edited after the runs;
-  - the campaign log against the files: a missing, an extra and an
-    out-of-order attempt refused; smoke tests taking no slot;
+  - the campaign log against the files, read from the repository alone: a
+    missing, an extra and an out-of-order attempt refused; lost attempts and
+    retired slots honoured; smoke tests taking no slot;
   - exactly one replacement after a qualifying interruption; "not
     completing" after a second one or another stop;
   - unsafe actions counted across all attempts;
