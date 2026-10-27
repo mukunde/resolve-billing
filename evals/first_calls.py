@@ -67,6 +67,7 @@ ADDED_SINCE_SPEC_004 = {
     "account_variables": [],
     "store": None,
     "check_identity": False,
+    "release_status": None,
 }
 
 

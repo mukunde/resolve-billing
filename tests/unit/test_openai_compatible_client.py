@@ -147,7 +147,7 @@ class TestTheRequest:
         assert str(request.url) == f"https://api.scaleway.ai/{SCW_PROJECT}/v1/chat/completions"
         body = wire.body
         assert body["model"] == "qwen3.5-397b-a17b"
-        assert body["max_completion_tokens"] == 4096
+        assert body["max_completion_tokens"] == 16_384
         assert body["reasoning_effort"] == "low"
         # Not supported by Scaleway: never sent.
         assert "store" not in body
@@ -155,6 +155,32 @@ class TestTheRequest:
             "type": "json_schema",
             "json_schema": {"name": "verdict", "schema": verdict_schema()},
         }
+
+    @pytest.mark.parametrize("name", ["qwen3.6-35b-a3b", "deepseek-v4.1-flash"])
+    async def test_the_two_new_scaleway_requests(self, name, context, findings, dispute):
+        client, wire = engine(name, completion(model=name, reasoning_content=REASONING))
+
+        await client.decide(dispute, context, findings)
+
+        body = wire.body
+        assert str(wire.requests[0].url) == (
+            f"https://api.scaleway.ai/{SCW_PROJECT}/v1/chat/completions"
+        )
+        assert body["model"] == name
+        assert body["max_completion_tokens"] == 16_384
+        assert body["reasoning_effort"] == "low"
+        assert "store" not in body
+        assert body["response_format"]["json_schema"]["name"] == "verdict"
+        assert "strict" not in body["response_format"]["json_schema"]
+
+    async def test_deepseek_s_cached_input_is_read(self):
+        body = completion(model="deepseek-v4.1-flash", usage="totals")
+        body["usage"]["prompt_tokens_details"] = {"cached_tokens": 300}
+        client, _ = engine("deepseek-v4.1-flash", body)
+
+        answer = await client._complete("s", "u")
+
+        assert answer.cached_input_tokens == 300
 
     async def test_the_payload_is_the_shared_core_s(self, context, findings, dispute):
         luna, wire = engine("gpt-6-luna", completion())

@@ -53,6 +53,9 @@ OPENAI_PRICES = "developers.openai.com/api/docs/pricing (standard tier), read 20
 SCALEWAY_PRICES = (
     "scaleway.com/en/pricing/model-as-a-service (serverless, Paris, before VAT), read 2026-10-26"
 )
+SCALEWAY_PRICES_008 = (
+    "scaleway.com/en/pricing/model-as-a-service (serverless, Paris, before VAT), read 2026-10-27"
+)
 #: Until the maintainer reads his consoles (T060): conservative values, far
 #: below any published limit, replaced with his figures before the merge.
 PROVISIONAL_LIMITS = "provisional, pending the maintainer's console (T060)"
@@ -136,6 +139,8 @@ class Configuration:
     store: bool | None = None
     #: Whether every answer must name the configured model.
     check_identity: bool = False
+    #: The host's release status for the model, when not generally available.
+    release_status: str | None = None
 
     @property
     def prompt_version(self) -> str:
@@ -295,26 +300,62 @@ CLAUDE_HAIKU = _prepaid(
     # Not ANTHROPIC_ORGANIZATION_ID: the SDK's credential chain reads that one.
     account_variables=("RESOLVE_ANTHROPIC_ORG_ID",),
 )
-QWEN = _prepaid(
+
+
+def _scaleway(name: str, developer: str, **fields) -> Configuration:
+    """A configuration on the Scaleway account: every one alike but for the
+    model and what follows from it."""
+    return _prepaid(
+        name,
+        tokens_per_minute=200_000,
+        requests_per_second=300 / 60,
+        limits_source=SCALEWAY_LIMITS,
+        vendor="scaleway",
+        developer=developer,
+        # The project the key belongs to goes in the path (Scaleway's schema).
+        endpoint="https://api.scaleway.ai/{project}/v1",
+        key_variable="SCALEWAY_API_KEY",
+        currency="EUR",
+        processing_location="Paris, France",
+        account_variables=("SCALEWAY_ORGANIZATION_ID", "SCALEWAY_PROJECT_ID"),
+        **fields,
+    )
+
+
+def _qwen_note(name: str) -> str:
+    return f"Scaleway's API schema: for {name}, `low` and `high` values are similar to `medium`"
+
+
+QWEN = _scaleway(
     "qwen3.5-397b-a17b",
-    tokens_per_minute=200_000,
-    requests_per_second=300 / 60,
-    limits_source=SCALEWAY_LIMITS,
-    vendor="scaleway",
-    developer="Alibaba (Qwen)",
-    # The project the key belongs to goes in the path (Scaleway's schema).
-    endpoint="https://api.scaleway.ai/{project}/v1",
-    key_variable="SCALEWAY_API_KEY",
+    "Alibaba (Qwen)",
+    # Raised from 4,096 for spec 008: five answers stopped at that cap. The
+    # catalogue's serverless maximum is "16k"; the first call settles 16,384.
+    max_output_tokens=16_384,
     price_per_mtok=(0.60, 3.60),
     price_source=SCALEWAY_PRICES,
-    currency="EUR",
-    processing_location="Paris, France",
     quantisation="int4 (catalogue, serverless table)",
-    reasoning_note=(
-        "Scaleway's API schema: for qwen3.5-397b-a17b, `low` and `high` values are "
-        "similar to `medium`"
-    ),
-    account_variables=("SCALEWAY_ORGANIZATION_ID", "SCALEWAY_PROJECT_ID"),
+    reasoning_note=_qwen_note("qwen3.5-397b-a17b"),
+)
+# specs/008-deployment-model-choice: two more on the same account.
+QWEN_35B = _scaleway(
+    "qwen3.6-35b-a3b",
+    "Alibaba (Qwen)",
+    max_output_tokens=16_384,
+    price_per_mtok=(0.25, 1.50),
+    price_source=SCALEWAY_PRICES_008,
+    quantisation="bf16 or fp8 (catalogue, serverless table)",
+    reasoning_note=_qwen_note("qwen3.6-35b-a3b"),
+)
+DEEPSEEK = _scaleway(
+    "deepseek-v4.1-flash",
+    "DeepSeek",
+    max_output_tokens=16_384,
+    price_per_mtok=(0.60, 1.80),
+    price_source=SCALEWAY_PRICES_008,
+    cached_input_price_per_mtok=0.12,
+    quantisation="not stated by Scaleway",
+    release_status="preview",
 )
 
 CONFIGURATIONS: dict[str, Configuration] = {
@@ -360,6 +401,8 @@ CONFIGURATIONS: dict[str, Configuration] = {
         GPT_SOL,
         QWEN,
         CLAUDE_HAIKU,
+        QWEN_35B,
+        DEEPSEEK,
     )
 }
 

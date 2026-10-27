@@ -22,6 +22,8 @@ HOSTED = (
     "qwen3.5-397b-a17b",
     # specs/008-deployment-model-choice
     "claude-haiku-5-5",
+    "qwen3.6-35b-a3b",
+    "deepseek-v4.1-flash",
 )
 
 
