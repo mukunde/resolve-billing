@@ -82,8 +82,11 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
     slot and attempt recorded; the campaign log line appended before
     sending;
   - the campaign lock: two runs on different vendors never admit at once;
-  - a logged attempt without a result recorded as "lost" at the next
-    launch, before any admission;
+  - the log line flushed and synced before the first request;
+  - a run killed mid-way: its result rebuilt from the per-case sidecar at
+    the next launch, incomplete, its unsafe detections counted, replaced
+    once; an unreadable sidecar recorded "lost", the candidate "not
+    completing", no replacement;
   - a "not completing" candidate's slots retired; a round over only when
     each slot is complete or retired; a replacement before the round
     ends;

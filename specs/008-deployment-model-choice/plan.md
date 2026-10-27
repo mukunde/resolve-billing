@@ -209,14 +209,21 @@ records the slot and attempt in the result.
 **One campaign, one lock, one log.** Admitting a slot takes a
 campaign-wide lock (in the private state), held for the whole run,
 whatever the vendor: two runs never claim slots at once. Under it, before
-sending anything, the runner appends one line to the campaign log,
+sending anything, the runner appends one line to the campaign log, flushed
+and synced to disk before the first request,
 `evals/results/campaign-008.jsonl`: the slot, the attempt, the start time
 and the result's file name. The log is committed with the results, so the
 comparison is reproducible from committed evidence alone.
 
-- **An attempt logged without a result** (a process killed before writing
-  it) blocks admission. The next launch records it as "lost" -- an
-  operator interruption, so a qualifying one -- before admitting anything.
+- **Each case's outcome is persisted as it is decided**, in a per-attempt
+  sidecar beside the result (flushed and synced), so a run killed before
+  writing its result can be recovered.
+- **An attempt logged without a result** blocks admission. The next launch
+  rebuilds its result, marked incomplete, from the sidecar. Its unsafe
+  detections count. It is then an operator interruption, and a qualifying
+  one. If the sidecar cannot be read, the attempt is recorded as "lost"
+  and the candidate as "not completing": an attempt whose evidence is gone
+  is never replaced.
 - **A candidate that becomes "not completing"** has its remaining slots
   recorded as "retired" in the log.
 - **A round is over** when each of its slots is complete or retired. A
@@ -224,7 +231,8 @@ comparison is reproducible from committed evidence alone.
   The next round's first slot is refused until then.
 
 **The script checks the log against the files**, from the repository
-alone, without the private state. Every logged attempt
+alone, without the private state. Every logged attempt has its result
+file, except those the log records as "lost" or as "retired" slots. Every logged attempt
 has its file; every file is logged. Rounds come in order; each
 replacement is linked to its first attempt; smoke tests (`--first-call-only`)
 take no slot. A missing, extra or out-of-order attempt is refused, by
