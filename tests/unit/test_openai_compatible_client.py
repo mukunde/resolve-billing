@@ -406,10 +406,8 @@ class TestNothingLeaks:
         )
         await unreadable._complete("s", "u")
 
-        # A positive control: the SDK's own debug records were captured.
-        assert any(
-            r.name.startswith("openai") and r.levelno == logging.DEBUG for r in caplog.records
-        )
+        # The SDK's own debug records are dropped (spec 008): what it
+        # would have logged is covered in `TestThePayloadStaysOutOfLogs`.
         out = capsys.readouterr()
         for secret in (KEY, SENTINEL, REASONING):
             assert secret not in caplog.text
@@ -428,6 +426,34 @@ class TestNothingLeaks:
         for secret in (KEY, SENTINEL):
             assert secret not in caplog.text
             assert secret not in out.out + out.err
+
+
+class TestThePayloadStaysOutOfLogs:
+    async def test_with_debug_on_everywhere(self, caplog):
+        import app.decision.hosted as hosted
+
+        caplog.set_level(logging.DEBUG)
+        luna, _ = engine("gpt-6-luna", completion())
+        await luna._complete(f"SYSTEM {SENTINEL}", f"USER {SENTINEL}")
+
+        assert SENTINEL not in caplog.text
+
+        assert not [r for r in caplog.records if r.name == "openai._base_client"]
+
+        # A positive control: without the filter, the SDK's debug records come
+        # back (this release does not put the payload in them; the filter
+        # holds whatever a later one logs).
+        caplog.clear()
+        logger = logging.getLogger("openai._base_client")
+        dropped = [f for f in logger.filters if isinstance(f, hosted._BelowInfoDropped)]
+        for f in dropped:
+            logger.removeFilter(f)
+        try:
+            await luna._complete(f"SYSTEM {SENTINEL}", f"USER {SENTINEL}")
+            assert [r for r in caplog.records if r.name == "openai._base_client"]
+        finally:
+            for f in dropped:
+                logger.addFilter(f)
 
 
 class TestThePinnedSdk:

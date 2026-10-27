@@ -21,6 +21,7 @@ runner refuses them anywhere else (`evals/engines.py`).
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from typing import Literal
@@ -193,6 +194,7 @@ def _prepaid(
     requests_per_second: float = 0.5,
     limits_source: str = PROVISIONAL_LIMITS,
     max_output_tokens: int = 4096,
+    api_version: str = "v1",
     **fields,
 ) -> Configuration:
     """A configuration on a prepaid account (spec 007): every one alike but
@@ -200,7 +202,7 @@ def _prepaid(
     return Configuration(
         name=name,
         model=name,
-        api_version="v1",
+        api_version=api_version,
         temperature=None,
         max_output_tokens=max_output_tokens,
         # The setting Claude's engine and Gemini use, and the lowest
@@ -277,6 +279,8 @@ CLAUDE_HAIKU = _prepaid(
     developer="Anthropic",
     endpoint="https://api.anthropic.com",
     key_variable="ANTHROPIC_API_KEY",
+    # The `anthropic-version` header the requests send, set explicitly.
+    api_version="2023-06-01",
     # The service engine's own output cap.
     max_output_tokens=8192,
     # Rates for prompts up to 100,000 tokens; every prompt here is a few
@@ -493,6 +497,24 @@ def _user_payload(message: str, payload: dict) -> str:
         f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
         "</billing_context>"
     )
+
+
+class _BelowInfoDropped(logging.Filter):
+    """Drops a logger's records below INFO, whatever level the application
+    configures: the vendors' SDKs log each request's options, payload
+    included, at DEBUG."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= logging.INFO
+
+
+def silence_request_logging(logger_name: str) -> None:
+    """Keep an SDK's request logging out of every log, once per logger. A
+    filter acts on the records of the logger it is attached to, not on its
+    children's, so it is attached to the logger that writes them."""
+    logger = logging.getLogger(logger_name)
+    if not any(isinstance(f, _BelowInfoDropped) for f in logger.filters):
+        logger.addFilter(_BelowInfoDropped())
 
 
 def estimated_tokens(system: str, user: str, margin: int, max_output: int) -> int:

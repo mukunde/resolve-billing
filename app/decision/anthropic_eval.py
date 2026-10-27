@@ -31,6 +31,7 @@ from app.decision.hosted import (
     Configuration,
     HostedEngine,
     estimated_tokens,
+    silence_request_logging,
     unavailable,
 )
 
@@ -171,11 +172,14 @@ def build_client(config: Configuration, http_client=None):
     missing = [name for name in config.account_variables if not os.environ.get(name)]
     if missing:
         raise AmbientSettingRefused(f"{', '.join(missing)} not set: the account is not named")
+    # The SDK logs each request's options, payload included, at DEBUG.
+    silence_request_logging("anthropic._base_client")
     settings = {
         "api_key": os.environ[config.key_variable],
         "base_url": config.endpoint,
         "max_retries": 0,
         "_strict_response_validation": True,
+        "default_headers": {"anthropic-version": config.api_version},
     }
     if http_client is not None:
         settings["http_client"] = http_client

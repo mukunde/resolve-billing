@@ -377,6 +377,37 @@ class TestOnThePinnedSdk:
             assert secret not in caplog.text
             assert secret not in out.out + out.err
 
+    async def test_the_payload_never_reaches_the_logs(self, caplog):
+        """With DEBUG on everywhere, as an application might configure it."""
+        import app.decision.hosted as hosted
+
+        caplog.set_level(logging.DEBUG)
+        evaluated, _ = on_the_wire(message_body())
+        await evaluated._complete(f"SYSTEM {SENTINEL}", f"USER {SENTINEL}")
+
+        assert SENTINEL not in caplog.text
+
+        # A positive control: without the filter, the SDK logs the payload.
+        caplog.clear()
+        logger = logging.getLogger("anthropic._base_client")
+        dropped = [f for f in logger.filters if isinstance(f, hosted._BelowInfoDropped)]
+        for f in dropped:
+            logger.removeFilter(f)
+        try:
+            await evaluated._complete(f"SYSTEM {SENTINEL}", f"USER {SENTINEL}")
+            assert SENTINEL in caplog.text
+        finally:
+            for f in dropped:
+                logger.addFilter(f)
+
+    async def test_the_api_version_header_is_the_recorded_one(self):
+        evaluated, wire = on_the_wire(message_body())
+
+        await evaluated._complete("s", "u")
+
+        assert wire.requests[0].headers["anthropic-version"] == "2023-06-01"
+        assert configuration(HAIKU).api_version == "2023-06-01"
+
     def test_the_pinned_version(self):
         from importlib.metadata import version
 

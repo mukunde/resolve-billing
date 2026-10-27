@@ -356,6 +356,46 @@ class TestClaudeOnTheGovernedPath:
         assert all(a["settled"] is not None for a in held["attempts"].values())
         assert "sk-ant-SENTINEL-KEY" not in json.dumps(result)
 
+    def test_the_reservation_is_on_disk_before_the_call(self, tmp_path, monkeypatch):
+        seen = []
+
+        class Watching(Scripted):
+            async def _complete(self, system, user):
+                held = envelope("anthropic-anth-org")
+                seen.append(sum(a["settled"] is None for a in held["attempts"].values()))
+                return await super()._complete(system, user)
+
+        run(
+            monkeypatch,
+            tmp_path,
+            self.HAIKU,
+            "--first-call-only",
+            "--envelope",
+            "1",
+            vendor=Watching(self.HAIKU),
+        )
+
+        assert seen == [1]
+
+    def test_an_inconsistent_usage_keeps_the_reservation(self, tmp_path, monkeypatch):
+        inconsistent = Answer(
+            json.dumps(VALID_VERDICT), "stop", 100, 50, self.HAIKU, cached_input_tokens=500
+        )
+        status, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            self.HAIKU,
+            "--first-call-only",
+            "--envelope",
+            "1",
+            outcome=inconsistent,
+        )
+
+        assert result["complete"] is False
+        assert "inconsistent" in result["stop_reason"]
+        held = envelope("anthropic-anth-org")
+        assert sum(a["settled"] is None for a in held["attempts"].values()) == 1
+
     def test_an_attempt_the_envelope_cannot_cover_is_not_sent(self, tmp_path, monkeypatch):
         status, result, vendor = run(
             monkeypatch, tmp_path, self.HAIKU, "--first-call-only", "--envelope", "0.000001"
