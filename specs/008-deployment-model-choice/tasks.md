@@ -27,9 +27,11 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 ## Phase 2: Claude on the governed path
 
 - [ ] T020 Test first, `tests/unit/test_anthropic_evaluation.py`:
-  - the parity test (the adapter's request equals `ClaudeDecisionEngine`'s
+  - request parity (the adapter's request equals `ClaudeDecisionEngine`'s
     for the same dispute, on stubs);
-  - stop reasons mapped, `max_tokens` and `refusal` unusable;
+  - decision parity, for a valid, a malformed, a refused, a truncated and
+    an other-stop answer, restored references and explanation included;
+  - stop reasons mapped as the service parser decides;
   - usage and cache details read, never added twice;
   - the returned model recorded;
   - errors by category without vendor text;
@@ -37,6 +39,15 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   - non-leak sentinels (key, vendor error body);
   - the configuration closed and refused by the service;
   - `evals/accounts.py` accepting an organisation-only account.
+- [ ] T022 Test first, `tests/unit/test_prepaid_runner.py`: Haiku on the
+  governed path, with the vendor stubbed:
+  - reserve before send in the Anthropic envelope;
+  - missing or inconsistent usage keeps the reservation and stops;
+  - an interrupted and a refused run still written, incomplete;
+  - first-call admission on its organisation-only identity;
+  - the existing account identities and run locks unchanged;
+  - `gpt-6-luna`'s and Flash-Lite's existing acceptances still admitting
+    their full runs.
 - [ ] T021 `app/decision/anthropic_eval.py`, the `claude-haiku-5-5`
   configuration in `app/decision/hosted.py`, `app/decision/vendors.py`,
   `evals/accounts.py`.
@@ -62,11 +73,18 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 - [ ] T040 Test first, `tests/unit/test_prepaid_runner.py`:
   - every result carries `commit` and `clean_tree`;
-  - a modified tracked file, or an untracked file outside `evals/results/`,
-    makes the tree dirty, and the runner refuses to start;
+  - a modified tracked file, a staged change, or an untracked file outside
+    `evals/results/` makes the tree dirty, and the runner refuses to start
+    a slot;
+  - git is asked about the runner's own checkout from another directory;
+  - `--slot`: an undeclared id, an attempt the slot cannot take, a later
+    round before an earlier one -- each refused before any client; the
+    slot and attempt recorded; the campaign log line appended before
+    sending;
   - results written in `evals/results/` keep it clean;
   - outside git, `unknown` is recorded.
-- [ ] T041 `evals/hosted_run.py`.
+- [ ] T041 `evals/hosted_run.py`, `evals/runner.py` (`--slot`), the
+  campaign log.
 
 ## Phase 5: The comparison script
 
@@ -74,8 +92,9 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   files and a synthetic manifest:
   - each refusal: another commit, a dirty tree, another case-set hash,
     prompt, schema, masking or fingerprint, an undeclared slot, a duplicate
-    slot;
-  - slot assignment by start time;
+    slot, a manifest edited after the runs;
+  - the campaign log against the files: a missing, an extra and an
+    out-of-order attempt refused; smoke tests taking no slot;
   - exactly one replacement after a qualifying interruption; "not
     completing" after a second one or another stop;
   - unsafe actions counted across all attempts;
@@ -102,8 +121,9 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 - [ ] T070 **[maintainer]** The manifest PR
   (`evals/comparisons/008/manifest.json`): his eligibility declaration, the
-  date of round 1, the exchange rate's source and date; the slots and
-  commands; the envelopes (Anthropic $1 declared on Haiku's first call,
+  date of round 1, the exchange rate's source and date; the case-set hash,
+  prompt, schema and masking; the slots in order with their commands
+  (Flash-Lite's quota project and its one declaration of the day); the envelopes (Anthropic $1 declared on Haiku's first call,
   Scaleway raised to €3).
 - [ ] T071 **[maintainer]** First calls on the manifest's commit for
   `claude-haiku-5-5`, `qwen3.6-35b-a3b`, `deepseek-v4.1-flash`,

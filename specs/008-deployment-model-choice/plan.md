@@ -89,9 +89,10 @@ evaluation-only `AnthropicEvaluationEngine(HostedEngine)`, in
   service engine's exact parameters: model, `max_tokens` 8,192, the same
   system prompt, `output_config={"effort": "low", "format": ...}`, and one
   user message built from the shared core's payload. SDK retries are off.
-  It maps:
-  - `stop_reason` `end_turn` → `stop`, `max_tokens` → `length`,
-    `refusal` → `filtered`, anything else → `other`;
+  It maps, as the service engine's parser decides:
+  - `stop_reason` `max_tokens` → `length` and `refusal` → `filtered`
+    (both unusable); every other stop reason → `stop`, its text then
+    validated like any answer;
   - the text block → the answer;
   - the usage, with `cache_read_input_tokens` and
     `cache_creation_input_tokens` as details;
@@ -100,15 +101,25 @@ evaluation-only `AnthropicEvaluationEngine(HostedEngine)`, in
   Errors go through the Claude engine's own `_outage` and `_refusal`
   helpers, by category, without the vendor's text. An unreadable response
   is unusable, its usage unknown.
-- **A parity test** runs `ClaudeDecisionEngine.decide` and the adapter on
-  the same dispute, each with a stub client. It shows the two requests are
-  equal, field for field. So what is measured is what the service would
-  send.
+- **Parity tests**, with each engine on a stub client and the same
+  dispute:
+  - **request parity**: the two requests are equal, field for field;
+  - **decision parity**: for a valid answer, a malformed one, a refusal, a
+    truncated one and an answer under another stop reason, both engines
+    return the same decision, the restored references and explanation
+    included.
+
+  So what is measured is what the service would send and decide.
+- **What differs, documented:** outages and retries. The service engine
+  keeps its own client settings. On the governed path, SDK retries are off
+  and the runner counts attempts, three per case, as for the other
+  vendors.
 - **A configuration `claude-haiku-5-5`** (vendor `anthropic`, developer
   Anthropic):
   - key `ANTHROPIC_API_KEY`, account variable `ANTHROPIC_ORGANIZATION_ID`
-    (the organisation alone; `evals/accounts.py` accepts a configuration
-    with no project);
+    (the organisation alone). `evals/accounts.py` accepts a configuration
+    with no project; existing identities and locks stay as they are, by
+    test;
   - prices in USD with cache-read and cache-write rates from T010;
   - effort `low`, cap 8,192, `check_identity`;
   - limits as the maintainer reads them.
@@ -142,11 +153,12 @@ Claude shape.
 ### 4. The commit and the clean tree in every result (FR-005a)
 
 `evals/hosted_run.py` records `commit` (`git rev-parse HEAD`) and
-`clean_tree` in every result. A tree is clean when no tracked file is
-modified and no untracked file exists outside `evals/results/`, where runs
-write. The runner refuses to start a configuration of this comparison on a
-dirty tree. Outside a git checkout, it records `unknown` and the
-comparison refuses the file.
+`clean_tree` in every result. Git is asked about the checkout the runner's
+own code lives in, whatever the invocation directory. A tree is clean when
+no tracked file is modified, nothing is staged, and no untracked file
+exists outside `evals/results/`, where runs write. The runner refuses to
+start a slot of this comparison on a dirty tree. Outside a git checkout,
+it records `unknown` and the comparison refuses the file.
 
 ### 5. The run manifest (FR-006)
 
@@ -156,14 +168,22 @@ approves. It holds:
 
 - the five candidates and the comparison point, with their configuration
   fingerprints;
+- the case-set hash, the prompt version, the schema's hash and the
+  masking version every result must carry;
 - the maintainer's eligibility declaration for each;
-- the slots: round r, configuration c, 1 to 3, each with its command;
+- the slots in their global order: round r, configuration c, each with
+  its command and its slot id, plus the one replacement each slot may
+  take. Flash-Lite's commands carry its quota project and declare the
+  Pacific day once, before its first request; a day already declared is
+  not declared again;
 - the envelopes;
 - the date of round 1;
 - the exchange rate's source and date.
 
-The runs execute on the commit that adds the manifest. The script finds
-that commit with git and requires every result to carry it.
+The runs execute on the commit of the approved manifest revision. The
+script finds it with git (the last commit touching the manifest) and
+requires every result to carry it. A later edit of the manifest makes
+every earlier result refused, by test.
 
 This is a clarification of the spec's "committed with this
 specification's implementation": a file cannot name the commit that
@@ -179,9 +199,22 @@ prompt, schema, masking or configuration fingerprint differs from the
 manifest's, or that fills an undeclared slot, or a slot already filled
 except by the replacement the rules allow. Each refusal is tested.
 
-**It assigns the slots** by start time, the earliest file first. A
-qualifying interruption opens exactly one replacement; a second one, or
-any other stop, marks the candidate "not completing".
+**Slots are bound at launch, not inferred.** Each run of the comparison
+is launched with `--slot <id>`. The runner refuses an id the manifest does
+not declare, and an attempt the slot cannot take: a replacement whose
+first attempt did not stop for a qualifying reason, a third attempt, a
+slot of a later round started before every slot of the earlier one. It
+records the slot and attempt in the result. It also appends, before
+sending anything, one line to an append-only campaign log in the private
+state (`~/.resolve-billing/campaign-008.jsonl`): the slot, the attempt,
+the start time, the result's path.
+
+**The script checks the log against the files.** Every logged attempt
+has its file; every file is logged. Rounds come in order; each
+replacement is linked to its first attempt; smoke tests (`--first-call-only`)
+take no slot. A missing, extra or out-of-order attempt is refused, by
+test. A qualifying interruption opens exactly one replacement; a second
+one, or any other stop, marks the candidate "not completing".
 
 **It computes, in order:**
 - eligibility;
@@ -209,6 +242,17 @@ written beside the manifest.
   processor.
 - `docs/operations.md`: the comparison's commands.
 - `.env.example`: `ANTHROPIC_ORGANIZATION_ID`.
+
+## Amendments to the approved spec (covered by this plan's approval)
+
+- **FR-004/FR-005 — one result shape.** Claude is measured through the
+  governed path, so every configuration of the comparison writes the
+  hosted result shape, and the script reads that one shape. The older
+  `--engine claude` path and its results stay unchanged, outside the
+  comparison.
+- **FR-006 — the manifest after the implementation.** It is committed in
+  its own pull request after this implementation merges; the runs execute
+  on its approved revision's commit.
 
 ## After the merge (the maintainer's, with me where he asks)
 
