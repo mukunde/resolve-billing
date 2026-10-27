@@ -564,6 +564,10 @@ def main() -> int:
         help="declare this month's Mistral allowance, once a month",
     )
     parser.add_argument(
+        "--slot",
+        help="run a slot of the comparison's manifest (specs/008-deployment-model-choice)",
+    )
+    parser.add_argument(
         "--envelope",
         type=float,
         help="declare (or raise) a prepaid account's envelope, in its currency",
@@ -596,6 +600,7 @@ def main() -> int:
         args.data_terms
         or args.mistral_allowance_usd is not None
         or args.envelope is not None
+        or args.slot is not None
         or args.first_call_only
         or args.gemini_requests_used_today is not None
     ):

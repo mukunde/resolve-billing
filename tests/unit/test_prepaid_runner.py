@@ -468,3 +468,103 @@ class TestClaudeOnTheGovernedPath:
 
         assert result["complete"] is True
         assert result["account"] == {"organisation": "org-test", "project": "proj_test"}
+
+
+class TestSlotsOnTheRunner:
+    """specs/008-deployment-model-choice, T040: what every result records, and
+    a counted run bound to its slot at launch."""
+
+    def manifest(self, tmp_path, monkeypatch):
+        from evals import campaign
+        from tests.unit.test_campaign import manifest
+
+        path = manifest(tmp_path, rounds=[["gpt-6-luna"]] * 3)
+        monkeypatch.setattr(campaign, "MANIFEST", path)
+        monkeypatch.setattr(
+            campaign, "git_state", lambda root=None: {"commit": "c0ffee", "clean_tree": True}
+        )
+        return path
+
+    def test_every_result_records_its_commit_and_tree(self, tmp_path, monkeypatch):
+        _, result, _ = run(
+            monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5"
+        )
+
+        assert result["commit"]
+        assert "clean_tree" in result
+        assert result["configuration_fingerprint"]
+        assert result["prompt_version"] == "decision_v3"
+        assert "slot" not in result
+
+    def test_a_slot_run_is_bound_and_logged(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        status, result, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna")
+
+        assert result["campaign"] == "008"
+        assert (result["slot"], result["attempt"]) == ("r1-gpt-6-luna", 1)
+        assert result["stop_kind"] is None
+        log = (tmp_path / "campaign-008.jsonl").read_text(encoding="utf-8")
+        assert '"r1-gpt-6-luna"' in log
+        # The per-case record is gone once the result is written.
+        assert not list((tmp_path / "campaign-008-cases").glob("*"))
+
+    @pytest.mark.parametrize("slot", ["r9-gpt-6-luna", "r2-gpt-6-luna"])
+    def test_a_slot_out_of_turn_builds_no_client(self, slot, tmp_path, monkeypatch, capsys):
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        status, _, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--slot", slot, refused=True)
+
+        assert status == 2
+        assert "refused" in capsys.readouterr().err
+
+    def test_a_dirty_tree_builds_no_client(self, tmp_path, monkeypatch):
+        from evals import campaign
+
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+        monkeypatch.setattr(
+            campaign, "git_state", lambda root=None: {"commit": "c0ffee", "clean_tree": False}
+        )
+
+        status, _, _ = run(
+            monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna", refused=True
+        )
+
+        assert status == 2
+
+    def test_a_first_call_takes_no_slot(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+
+        with pytest.raises(SystemExit):
+            run(
+                monkeypatch,
+                tmp_path,
+                "gpt-6-luna",
+                "--first-call-only",
+                "--envelope",
+                "5",
+                "--slot",
+                "r1-gpt-6-luna",
+                refused=True,
+            )
+
+    def test_an_interrupted_slot_run_is_written_and_replaceable(self, tmp_path, monkeypatch):
+        self.manifest(tmp_path, monkeypatch)
+        run(monkeypatch, tmp_path, "gpt-6-luna", "--first-call-only", "--envelope", "5")
+
+        _, result, _ = run(
+            monkeypatch,
+            tmp_path,
+            "gpt-6-luna",
+            "--slot",
+            "r1-gpt-6-luna",
+            outcome=asyncio.CancelledError(),
+        )
+        _, replacement, _ = run(monkeypatch, tmp_path, "gpt-6-luna", "--slot", "r1-gpt-6-luna")
+
+        assert result["stop_kind"] == "qualifying"
+        assert replacement["attempt"] == 2
+        assert replacement["complete"] is True

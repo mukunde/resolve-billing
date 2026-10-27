@@ -1,0 +1,397 @@
+"""The comparison's campaign: which run fills which slot, in what order
+(specs/008-deployment-model-choice).
+
+The comparison that chooses the deployment model counts only runs declared
+in a manifest before any of them is made. Each counted run is launched
+with `--slot`; nothing is inferred afterwards. A slot is admitted only when
+its turn has come: rounds in the manifest's order, each slot's one
+permitted replacement taken next, a candidate that stops completing retired
+from its remaining slots. Admission takes one lock for the whole campaign,
+whatever the vendor, and writes a line to the campaign log -- flushed and
+synced before the run sends anything. The log lives with the results and
+is committed with them, so the comparison is reproducible from the
+repository alone.
+
+A run records each case as it is decided, in a per-attempt file beside the
+results. If its process dies before writing its result, the next admission
+rebuilds that result from those cases -- its unsafe detections counted --
+and the slot may take its replacement. If those cases cannot be read, the
+attempt is lost and the candidate stops completing: an attempt whose
+evidence is gone is never replaced.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+
+from app.decision.claude import PROMPT_VERSION
+from app.decision.hosted import PROVISIONAL_LIMITS, configuration
+from app.decision.masking import MASKING_VERSION
+from app.decision.verdict import verdict_schema
+from evals import engines, state
+from evals.first_calls import fingerprint
+
+REPO = Path(__file__).resolve().parents[1]
+#: The comparison's name, its manifest, where its runs and its log are kept.
+NAME = "008"
+MANIFEST = REPO / "evals" / "comparisons" / NAME / "manifest.json"
+RESULTS_DIR = REPO / "evals" / "results"
+LOG_NAME = f"campaign-{NAME}.jsonl"
+CASES_DIR = f"campaign-{NAME}-cases"
+
+#: Stops that come from outside the model's answers: one replacement each.
+#: The prefixes are this code's own words (`evals/governed.py`,
+#: `evals/hosted_run.py`), never a vendor's.
+QUALIFYING = (
+    "interrupted",
+    "the run's deadline",
+    "rate limiting persisted",
+    "outage:",
+    "process lost",
+)
+
+REBUILT_REASON = "process lost; rebuilt from its per-case record"
+
+
+class CampaignRefused(Exception):  # noqa: N818 -- a refusal, not a defect
+    """A slot is not admitted, or the campaign cannot be read as it stands."""
+
+
+def stop_kind(reason: str | None) -> str | None:
+    """`qualifying` for a stop outside the model's answers, `other` for any
+    other stop, None when the run did not stop."""
+    if reason is None:
+        return None
+    return "qualifying" if reason.startswith(QUALIFYING) else "other"
+
+
+def current_evidence() -> dict:
+    """What every counted result must carry, as the code stands."""
+    return {
+        "cases_sha256": engines.DEVELOPMENT_SET_SHA256[:16],
+        "prompt_version": PROMPT_VERSION,
+        "schema_sha256": hashlib.sha256(
+            json.dumps(verdict_schema(), sort_keys=True).encode("utf-8")
+        ).hexdigest()[:16],
+        "masking_version": MASKING_VERSION,
+    }
+
+
+def clean_from_porcelain(lines: list[str]) -> bool:
+    """Clean: nothing modified or staged, nothing untracked but results."""
+    for line in lines:
+        if not line.strip():
+            continue
+        path = line[3:].strip().strip('"')
+        if not (line.startswith("?? ") and path.startswith("evals/results/")):
+            return False
+    return True
+
+
+def git_state(root: Path = REPO) -> dict:
+    """The commit and whether the tree is clean, asked of the checkout this
+    code lives in, whatever the working directory."""
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain=v1", "--untracked-files=all"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError):
+        return {"commit": "unknown", "clean_tree": "unknown"}
+    return {"commit": commit, "clean_tree": clean_from_porcelain(status)}
+
+
+def load_manifest(path: Path) -> dict:
+    try:
+        held = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise CampaignRefused(
+            f"the manifest {path} cannot be read ({type(error).__name__})"
+        ) from None
+    required = {"comparison", "candidates", "comparison_points", "evidence", "rounds"}
+    if not isinstance(held, dict) or not required <= set(held) or held["comparison"] != NAME:
+        raise CampaignRefused(f"the manifest {path} is not comparison {NAME}'s")
+    return held
+
+
+def slot_id(round_index: int, name: str) -> str:
+    return f"r{round_index + 1}-{name}"
+
+
+@dataclass
+class CampaignState:
+    #: Per slot, in the manifest's order: open, unresolved, complete,
+    #: pending_replacement, failed or retired.
+    slots: dict[str, str] = field(default_factory=dict)
+    #: The configuration each slot runs.
+    engines: dict[str, str] = field(default_factory=dict)
+    not_completing: set[str] = field(default_factory=set)
+
+    def next_slot(self) -> str | None:
+        for slot, status in self.slots.items():
+            # A failed slot is over too: its candidate stops completing.
+            if status not in {"complete", "retired", "failed"}:
+                return slot
+        return None
+
+
+class Campaign:
+    def __init__(
+        self,
+        manifest_path: Path | None = None,
+        results_dir: Path | None = None,
+        state_dir: Path | None = None,
+    ) -> None:
+        # Read at call time, so a test can point them elsewhere.
+        self.manifest_path = Path(manifest_path or MANIFEST)
+        self.manifest = load_manifest(self.manifest_path)
+        self.results_dir = Path(results_dir or RESULTS_DIR)
+        self._state_dir = state_dir
+
+    # -- reading ---------------------------------------------------------
+
+    @property
+    def log_path(self) -> Path:
+        return self.results_dir / LOG_NAME
+
+    def log_lines(self) -> list[dict]:
+        if not self.log_path.exists():
+            return []
+        try:
+            return [
+                json.loads(line)
+                for line in self.log_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+        except ValueError:
+            raise CampaignRefused(f"the campaign log {self.log_path} cannot be read") from None
+
+    def results(self) -> dict[tuple[str, int], dict]:
+        """Every counted result in the results folder, by slot and attempt."""
+        found: dict[tuple[str, int], dict] = {}
+        for path in sorted(self.results_dir.glob("*.json")):
+            try:
+                held = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(held, dict) and held.get("campaign") == NAME:
+                key = (held.get("slot"), held.get("attempt"))
+                if key in found:
+                    raise CampaignRefused(f"two results fill slot {key[0]}, attempt {key[1]}")
+                found[key] = held | {"_file": path.name}
+        return found
+
+    def declared_slots(self) -> dict[str, str]:
+        return {
+            slot_id(index, name): name
+            for index, names in enumerate(self.manifest["rounds"])
+            for name in names
+        }
+
+    def state(self) -> CampaignState:
+        lines = self.log_lines()
+        results = self.results()
+        attempts: dict[str, list[int]] = {}
+        lost = set()
+        retired = set()
+        for line in lines:
+            kind = line.get("type")
+            if kind == "attempt":
+                attempts.setdefault(line["slot"], []).append(line["attempt"])
+            elif kind == "lost":
+                lost.add((line["slot"], line["attempt"]))
+            elif kind == "retired":
+                retired.add(line["slot"])
+        held = CampaignState(engines=self.declared_slots())
+        for slot in held.engines:
+            held.slots[slot] = self._status(slot, attempts.get(slot, []), results, lost, retired)
+            if held.slots[slot] == "failed":
+                held.not_completing.add(held.engines[slot])
+        return held
+
+    @staticmethod
+    def _status(slot, attempts, results, lost, retired) -> str:
+        if slot in retired:
+            return "retired"
+        status = "open"
+        for attempt in attempts:
+            if (slot, attempt) in lost:
+                return "failed"
+            outcome = results.get((slot, attempt))
+            if outcome is None:
+                return "unresolved"
+            if outcome.get("complete"):
+                return "complete"
+            if attempt >= 2 or stop_kind(outcome.get("stop_reason")) != "qualifying":
+                return "failed"
+            status = "pending_replacement"
+        return status
+
+    # -- admission -------------------------------------------------------
+
+    @contextmanager
+    def admit(self, engine_name: str, slot: str, lock_timeout: float = 30.0):
+        """The slot, admitted and logged, held for the run; or a refusal."""
+        declared = self.declared_slots()
+        if slot not in declared:
+            raise CampaignRefused(f"slot {slot} is not declared in the manifest")
+        if declared[slot] != engine_name:
+            raise CampaignRefused(
+                f"slot {slot} runs another configuration ({declared[slot]}), not {engine_name}"
+            )
+        config = configuration(engine_name)
+        entry = self.manifest["candidates"].get(engine_name) or self.manifest[
+            "comparison_points"
+        ].get(engine_name)
+        if entry is None or entry.get("fingerprint") != fingerprint(config):
+            raise CampaignRefused(
+                f"{engine_name}'s configuration fingerprint is not the manifest's"
+            )
+        if config.limits_source == PROVISIONAL_LIMITS:
+            raise CampaignRefused(f"{engine_name}'s limits are provisional; read them first")
+        repo = git_state()
+        if repo["clean_tree"] is not True:
+            raise CampaignRefused("the source tree is not clean: commit or remove the changes")
+        with self._locked(lock_timeout):
+            self._recover()
+            self._retire()
+            held = self.state()
+            if declared[slot] in held.not_completing:
+                raise CampaignRefused(f"{engine_name} is not completing: its slots are retired")
+            nxt = held.next_slot()
+            if slot != nxt:
+                raise CampaignRefused(f"slot {slot} is not the next slot ({nxt})")
+            attempt = 2 if held.slots[slot] == "pending_replacement" else 1
+            self._append(
+                {
+                    "type": "attempt",
+                    "slot": slot,
+                    "attempt": attempt,
+                    "engine": engine_name,
+                    "started_at": datetime.now(UTC).isoformat(),
+                    "commit": repo["commit"],
+                }
+            )
+            admitted = Admission(self, slot, attempt, engine_name)
+            try:
+                yield admitted
+            finally:
+                admitted.close()
+
+    def _recover(self) -> None:
+        """Rebuild the result of a run that died before writing it, or record
+        it lost when its cases cannot be read."""
+        results = self.results()
+        lost = {
+            (line["slot"], line["attempt"])
+            for line in self.log_lines()
+            if line.get("type") == "lost"
+        }
+        for line in self.log_lines():
+            if line.get("type") != "attempt":
+                continue
+            key = (line["slot"], line["attempt"])
+            if key in results or key in lost:
+                continue
+            cases = self.cases_path(*key)
+            try:
+                recorded = [
+                    json.loads(row)
+                    for row in cases.read_text(encoding="utf-8").splitlines()
+                    if row.strip()
+                ]
+                if not all(isinstance(r, dict) and "case_id" in r for r in recorded):
+                    raise ValueError
+            except (OSError, ValueError):
+                self._append({"type": "lost", "slot": key[0], "attempt": key[1]})
+                continue
+            rebuilt = {
+                "campaign": NAME,
+                "slot": key[0],
+                "attempt": key[1],
+                "engine": line["engine"],
+                "rebuilt": True,
+                "complete": False,
+                "stop_reason": REBUILT_REASON,
+                "stop_kind": "qualifying",
+                "commit": line["commit"],
+                "clean_tree": True,
+                "outcomes": [r["outcome"] for r in recorded],
+                "statuses": {r["case_id"]: r["status"] for r in recorded},
+            } | current_evidence()
+            target = self.results_dir / f"{line['engine']}-{key[0]}-a{key[1]}-rebuilt.json"
+            state.write_atomically(target, rebuilt)
+
+    def _retire(self) -> None:
+        held = self.state()
+        for slot, name in held.engines.items():
+            if name in held.not_completing and held.slots[slot] == "open":
+                self._append({"type": "retired", "slot": slot})
+
+    def _append(self, line: dict) -> None:
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.log_path, "a", encoding="utf-8") as log:
+            log.write(json.dumps(line) + "\n")
+            log.flush()
+            os.fsync(log.fileno())
+
+    def cases_path(self, slot: str, attempt: int) -> Path:
+        return self.results_dir / CASES_DIR / f"{slot}-a{attempt}.jsonl"
+
+    @contextmanager
+    def _locked(self, timeout: float):
+        directory = self._state_dir or state.STATE_DIR
+        directory.mkdir(parents=True, exist_ok=True)
+        with open(directory / f"campaign-{NAME}.lock", "a+b") as lock:
+            deadline = time.monotonic() + timeout
+            while not state.try_lock(lock):
+                if time.monotonic() > deadline:
+                    raise CampaignRefused("another run of the campaign holds its lock")
+                time.sleep(0.05)
+            try:
+                yield
+            finally:
+                state.unlock(lock)
+
+
+class Admission:
+    """A slot held for one run."""
+
+    def __init__(self, campaign: Campaign, slot: str, attempt: int, engine: str) -> None:
+        self.campaign = campaign
+        self.slot = slot
+        self.attempt = attempt
+        self.engine = engine
+
+    def record_case(self, case_id: str, outcome: dict, status: str) -> None:
+        """One decided case, on disk before the run goes on."""
+        path = self.campaign.cases_path(self.slot, self.attempt)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as cases:
+            cases.write(
+                json.dumps({"case_id": case_id, "outcome": outcome, "status": status}) + "\n"
+            )
+            cases.flush()
+            os.fsync(cases.fileno())
+
+    def close(self) -> None:
+        """Once the run's result is written, its per-case record is no longer
+        needed; without a result it stays, for recovery."""
+        if (self.slot, self.attempt) in self.campaign.results():
+            self.campaign.cases_path(self.slot, self.attempt).unlink(missing_ok=True)
