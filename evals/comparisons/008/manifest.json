@@ -24,7 +24,7 @@
     "deepseek-v4.1-flash": {
       "fingerprint": "339a70406b99b31b6bcbf1b5826ff5f18bc8783530de04c4dacfaf20dcd457b0",
       "eligibility": "eligible provisionally",
-      "conditions": "A deployment slice and a paid tier's terms (Scaleway, Paris); its preview status ended before adoption."
+      "conditions": "A deployment slice and a paid tier's terms (Scaleway, Paris); its preview status must have ended before adoption."
     }
   },
   "comparison_points": {
@@ -71,7 +71,7 @@
     "r1-qwen3.5-397b-a17b": "python -m dotenv run -- python -m evals.runner --engine qwen3.5-397b-a17b --data-terms contractual --slot r1-qwen3.5-397b-a17b --json evals/results/qwen3.5-397b-a17b.json",
     "r1-qwen3.6-35b-a3b": "python -m dotenv run -- python -m evals.runner --engine qwen3.6-35b-a3b --data-terms contractual --slot r1-qwen3.6-35b-a3b --json evals/results/qwen3.6-35b-a3b.json",
     "r1-deepseek-v4.1-flash": "python -m dotenv run -- python -m evals.runner --engine deepseek-v4.1-flash --data-terms contractual --slot r1-deepseek-v4.1-flash --json evals/results/deepseek-v4.1-flash.json",
-    "r1-gemini-3.5-flash-lite": "python -m dotenv run -- python -m evals.runner --engine gemini-3.5-flash-lite --data-terms contractual --slot r1-gemini-3.5-flash-lite --json evals/results/gemini-3.5-flash-lite.json --gemini-requests-used-today <the count AI Studio shows>",
+    "r1-gemini-3.5-flash-lite": "python -m dotenv run -- python -m evals.runner --engine gemini-3.5-flash-lite --data-terms contractual --slot r1-gemini-3.5-flash-lite --json evals/results/gemini-3.5-flash-lite.json",
     "r2-claude-haiku-5-5": "python -m dotenv run -- python -m evals.runner --engine claude-haiku-5-5 --data-terms contractual --slot r2-claude-haiku-5-5 --json evals/results/claude-haiku-5-5.json",
     "r2-gpt-6-luna": "python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --data-terms contractual --slot r2-gpt-6-luna --json evals/results/gpt-6-luna.json",
     "r2-qwen3.5-397b-a17b": "python -m dotenv run -- python -m evals.runner --engine qwen3.5-397b-a17b --data-terms contractual --slot r2-qwen3.5-397b-a17b --json evals/results/qwen3.5-397b-a17b.json",
@@ -95,5 +95,10 @@
     "eur_usd": 1.1172,
     "source": "European Central Bank euro reference rate, the last published before round 1",
     "date": "2026-10-30"
+  },
+  "notes": {
+    "gemini-3.5-flash-lite": "GEMINI_QUOTA_PROJECT must be set. On the first slot of a Pacific day, if that day is not yet declared, add --gemini-requests-used-today N, N being the count AI Studio shows; never declare a day twice, and declare again if later slots cross Pacific midnight. A replacement does not repeat a declaration.",
+    "exchange_rate": "The latest ECB reference rate published before round 1: the spec's rate of round 1's date does not exist on a day without one, and the rate must be fixed before the runs. Approved by the maintainer with this manifest.",
+    "first_calls": "Taken on main before this manifest, so that a first call that changes a configuration comes before its fingerprint is frozen. They take no slot and never count. Approved by the maintainer."
   }
 }
