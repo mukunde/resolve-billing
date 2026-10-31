@@ -1,0 +1,99 @@
+{
+  "comparison": "008",
+  "candidates": {
+    "claude-haiku-5-5": {
+      "fingerprint": "340937d123edc6537ae87ff6ca43b0f9ec7aaa822961c076b971ebe8ddd2feaf",
+      "eligibility": "eligible",
+      "conditions": "Claude is already the service's engine."
+    },
+    "gpt-6-luna": {
+      "fingerprint": "6f2271d2ee88b43727aef7fa72d858a7498113fd0009459596a0fbd6ec968719",
+      "eligibility": "eligible provisionally",
+      "conditions": "A deployment slice would establish the permitted processing location and the retention terms (no regional commitment for this account)."
+    },
+    "qwen3.5-397b-a17b": {
+      "fingerprint": "303c45af387d94cf7f65d99e39f0aa0c1a03555ee075a42feda42534841bb173",
+      "eligibility": "eligible provisionally",
+      "conditions": "A deployment slice and a paid tier's terms (Scaleway, Paris)."
+    },
+    "qwen3.6-35b-a3b": {
+      "fingerprint": "c18ec8014b2ad1d0342499a8299035cf4d4b43d8915ea34676bb13e0c23ee026",
+      "eligibility": "eligible provisionally",
+      "conditions": "A deployment slice and a paid tier's terms (Scaleway, Paris)."
+    },
+    "deepseek-v4.1-flash": {
+      "fingerprint": "339a70406b99b31b6bcbf1b5826ff5f18bc8783530de04c4dacfaf20dcd457b0",
+      "eligibility": "eligible provisionally",
+      "conditions": "A deployment slice and a paid tier's terms (Scaleway, Paris); its preview status ended before adoption."
+    }
+  },
+  "comparison_points": {
+    "gemini-3.5-flash-lite": {
+      "fingerprint": "a3e7d509eed1b5b0c279873491352031ae09ef260e9a9d852a4ad88cdc74bde8",
+      "note": "free tier; not deployable without a separate paid-tier decision"
+    }
+  },
+  "evidence": {
+    "cases_sha256": "4dc2740be58d04b7",
+    "prompt_version": "decision_v3",
+    "schema_sha256": "072824bb896785c5",
+    "masking_version": "masking_v1"
+  },
+  "rounds": [
+    [
+      "claude-haiku-5-5",
+      "gpt-6-luna",
+      "qwen3.5-397b-a17b",
+      "qwen3.6-35b-a3b",
+      "deepseek-v4.1-flash",
+      "gemini-3.5-flash-lite"
+    ],
+    [
+      "claude-haiku-5-5",
+      "gpt-6-luna",
+      "qwen3.5-397b-a17b",
+      "qwen3.6-35b-a3b",
+      "deepseek-v4.1-flash",
+      "gemini-3.5-flash-lite"
+    ],
+    [
+      "claude-haiku-5-5",
+      "gpt-6-luna",
+      "qwen3.5-397b-a17b",
+      "qwen3.6-35b-a3b",
+      "deepseek-v4.1-flash",
+      "gemini-3.5-flash-lite"
+    ]
+  ],
+  "commands": {
+    "r1-claude-haiku-5-5": "python -m dotenv run -- python -m evals.runner --engine claude-haiku-5-5 --data-terms contractual --slot r1-claude-haiku-5-5 --json evals/results/claude-haiku-5-5.json",
+    "r1-gpt-6-luna": "python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --data-terms contractual --slot r1-gpt-6-luna --json evals/results/gpt-6-luna.json",
+    "r1-qwen3.5-397b-a17b": "python -m dotenv run -- python -m evals.runner --engine qwen3.5-397b-a17b --data-terms contractual --slot r1-qwen3.5-397b-a17b --json evals/results/qwen3.5-397b-a17b.json",
+    "r1-qwen3.6-35b-a3b": "python -m dotenv run -- python -m evals.runner --engine qwen3.6-35b-a3b --data-terms contractual --slot r1-qwen3.6-35b-a3b --json evals/results/qwen3.6-35b-a3b.json",
+    "r1-deepseek-v4.1-flash": "python -m dotenv run -- python -m evals.runner --engine deepseek-v4.1-flash --data-terms contractual --slot r1-deepseek-v4.1-flash --json evals/results/deepseek-v4.1-flash.json",
+    "r1-gemini-3.5-flash-lite": "python -m dotenv run -- python -m evals.runner --engine gemini-3.5-flash-lite --data-terms contractual --slot r1-gemini-3.5-flash-lite --json evals/results/gemini-3.5-flash-lite.json --gemini-requests-used-today <the count AI Studio shows>",
+    "r2-claude-haiku-5-5": "python -m dotenv run -- python -m evals.runner --engine claude-haiku-5-5 --data-terms contractual --slot r2-claude-haiku-5-5 --json evals/results/claude-haiku-5-5.json",
+    "r2-gpt-6-luna": "python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --data-terms contractual --slot r2-gpt-6-luna --json evals/results/gpt-6-luna.json",
+    "r2-qwen3.5-397b-a17b": "python -m dotenv run -- python -m evals.runner --engine qwen3.5-397b-a17b --data-terms contractual --slot r2-qwen3.5-397b-a17b --json evals/results/qwen3.5-397b-a17b.json",
+    "r2-qwen3.6-35b-a3b": "python -m dotenv run -- python -m evals.runner --engine qwen3.6-35b-a3b --data-terms contractual --slot r2-qwen3.6-35b-a3b --json evals/results/qwen3.6-35b-a3b.json",
+    "r2-deepseek-v4.1-flash": "python -m dotenv run -- python -m evals.runner --engine deepseek-v4.1-flash --data-terms contractual --slot r2-deepseek-v4.1-flash --json evals/results/deepseek-v4.1-flash.json",
+    "r2-gemini-3.5-flash-lite": "python -m dotenv run -- python -m evals.runner --engine gemini-3.5-flash-lite --data-terms contractual --slot r2-gemini-3.5-flash-lite --json evals/results/gemini-3.5-flash-lite.json",
+    "r3-claude-haiku-5-5": "python -m dotenv run -- python -m evals.runner --engine claude-haiku-5-5 --data-terms contractual --slot r3-claude-haiku-5-5 --json evals/results/claude-haiku-5-5.json",
+    "r3-gpt-6-luna": "python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --data-terms contractual --slot r3-gpt-6-luna --json evals/results/gpt-6-luna.json",
+    "r3-qwen3.5-397b-a17b": "python -m dotenv run -- python -m evals.runner --engine qwen3.5-397b-a17b --data-terms contractual --slot r3-qwen3.5-397b-a17b --json evals/results/qwen3.5-397b-a17b.json",
+    "r3-qwen3.6-35b-a3b": "python -m dotenv run -- python -m evals.runner --engine qwen3.6-35b-a3b --data-terms contractual --slot r3-qwen3.6-35b-a3b --json evals/results/qwen3.6-35b-a3b.json",
+    "r3-deepseek-v4.1-flash": "python -m dotenv run -- python -m evals.runner --engine deepseek-v4.1-flash --data-terms contractual --slot r3-deepseek-v4.1-flash --json evals/results/deepseek-v4.1-flash.json",
+    "r3-gemini-3.5-flash-lite": "python -m dotenv run -- python -m evals.runner --engine gemini-3.5-flash-lite --data-terms contractual --slot r3-gemini-3.5-flash-lite --json evals/results/gemini-3.5-flash-lite.json"
+  },
+  "envelopes": {
+    "anthropic": "USD 1, declared on claude-haiku-5-5's first call",
+    "openai": "USD 5, declared 2026-10-26",
+    "scaleway": "EUR 3, raised from EUR 2 before round 1"
+  },
+  "round_1_date": "2026-10-31",
+  "exchange_rate": {
+    "eur_usd": 1.1172,
+    "source": "European Central Bank euro reference rate, the last published before round 1",
+    "date": "2026-10-30"
+  }
+}
