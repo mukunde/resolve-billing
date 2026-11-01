@@ -95,7 +95,10 @@ OpenAI-compatible API in Paris, `qwen3.5-397b-a17b` and `qwen3.6-35b-a3b`
 (models Alibaba developed) and `deepseek-v4.1-flash` (DeepSeek's, in
 preview), closed configurations in `app/decision/hosted.py` like the four
 above, through one client, `app/decision/openai_compatible.py`, with what
-differs by vendor kept there. The three on Scaleway cap their output at
+differs by vendor kept there. `deepseek-v4.1-flash` answers as the dated
+snapshot `deepseek-v4.1-flash-1017`, recorded in its configuration: every
+answer must carry exactly that name, so a new snapshot stops the run. The
+three on Scaleway cap their output at
 16,384 tokens (spec 008), the two OpenAI ones at 4,096.
 
 `claude-haiku-5-5` (spec 008) is Claude Haiku 5.5 measured as the service

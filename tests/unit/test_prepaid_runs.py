@@ -103,6 +103,27 @@ class TestTheModelsIdentity:
         if model is not None:
             assert model in engine.engine.model_versions
 
+    async def test_the_recorded_returned_name_is_the_one_accepted(
+        self, tmp_path, context, findings, dispute
+    ):
+        name = "deepseek-v4.1-flash"
+        vendor = Vendor([answered(model="deepseek-v4.1-flash-1017")], name=name)
+        engine, _ = prepaid(tmp_path, vendor)
+
+        await engine.decide(dispute, context, findings)
+
+        assert engine.statuses["case"] == "decided"
+
+    @pytest.mark.parametrize("model", ["deepseek-v4.1-flash", "deepseek-v4.1-flash-1101"])
+    async def test_any_other_name_stops_even_the_configured_id(
+        self, model, tmp_path, context, findings, dispute
+    ):
+        vendor = Vendor([answered(model=model)], name="deepseek-v4.1-flash")
+        engine, _ = prepaid(tmp_path, vendor)
+
+        with pytest.raises(RunStopped, match="model"):
+            await engine.decide(dispute, context, findings)
+
     async def test_a_model_name_that_is_not_an_id_is_never_recorded(
         self, tmp_path, context, findings, dispute
     ):
