@@ -238,6 +238,7 @@ class TestTheNewConfigurations:
         assert config.cached_input_price_per_mtok == 0.12
         assert config.quantisation == "not stated by Scaleway"
         assert config.release_status == "preview"
+        assert config.returned_model == "deepseek-v4.1-flash-1017"
         assert (config.tokens_per_minute, config.requests_per_second) == (200_000, 300 / 60)
         assert config.processing_location == "Paris, France"
         assert config.check_identity is True

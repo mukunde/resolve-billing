@@ -149,6 +149,10 @@ class Configuration:
     check_identity: bool = False
     #: The host's release status for the model, when not generally available.
     release_status: str | None = None
+    #: The model name the vendor returns, when its first call showed it is
+    #: not the requested id; None: the requested id. Exact: another snapshot
+    #: stops the run.
+    returned_model: str | None = None
 
     @property
     def prompt_version(self) -> str:
@@ -367,6 +371,8 @@ DEEPSEEK = _scaleway(
     cached_input_price_per_mtok=0.12,
     quantisation="not stated by Scaleway",
     release_status="preview",
+    # Shown by its first call (2026-11-01): a dated snapshot of the id.
+    returned_model="deepseek-v4.1-flash-1017",
 )
 
 CONFIGURATIONS: dict[str, Configuration] = {

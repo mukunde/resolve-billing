@@ -261,7 +261,8 @@ class Governed:
             raise RunStopped(
                 f"{self.name}: usage above the reservation ({used} tokens, {reserved} reserved)"
             )
-        if self.config.check_identity and answer.model_version != self.config.model:
+        expected = self.config.returned_model or self.config.model
+        if self.config.check_identity and answer.model_version != expected:
             # Settled first: what the substitute cost is kept. Its answer is
             # never scored; the name it gave is recorded only if it reads as
             # a model id, never as free text.
