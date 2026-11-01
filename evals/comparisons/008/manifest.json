@@ -22,7 +22,7 @@
       "conditions": "A deployment slice and a paid tier's terms (Scaleway, Paris)."
     },
     "deepseek-v4.1-flash": {
-      "fingerprint": "339a70406b99b31b6bcbf1b5826ff5f18bc8783530de04c4dacfaf20dcd457b0",
+      "fingerprint": "1e815ff41c6533b170ec37fc12fd761a83a709bbbd505e7caf927c57ff0184b1",
       "eligibility": "eligible provisionally",
       "conditions": "A deployment slice and a paid tier's terms (Scaleway, Paris); its preview status must have ended before adoption."
     }
@@ -90,7 +90,7 @@
     "openai": "USD 5, declared 2026-10-26",
     "scaleway": "EUR 3, raised from EUR 2 before round 1"
   },
-  "round_1_date": "2026-10-31",
+  "round_1_date": "2026-11-02",
   "exchange_rate": {
     "eur_usd": 1.1172,
     "source": "European Central Bank euro reference rate, the last published before round 1",
