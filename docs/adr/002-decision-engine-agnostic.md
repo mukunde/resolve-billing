@@ -1,6 +1,7 @@
 # ADR-002 — Decision-engine agnostic
 
-**Status:** accepted · 2026-09-20 · revised 2026-09-21
+**Status:** accepted · 2026-09-20 · revised 2026-09-21 · amended by
+[ADR-013](013-deployment-model.md) (hosting outside the EU, 2026-11-02)
 
 ## Context
 
@@ -52,7 +53,10 @@ The engine is a deployment choice. Changing it is an edit in `app/api/deps.py`.
 An engine hosted outside the EU is not disqualified from being *evaluated* —
 the comparison runs offline on synthetic fixtures, so no customer data leaves.
 It is disqualified from the production path, and the port is what makes that
-distinction cheap.
+distinction cheap. *(Amended 2026-11-02 by
+[ADR-013](013-deployment-model.md): Europe is preferred and the United States
+accepted otherwise, the hosting and data terms judged by the maintainer for
+each engine in its deployment slice.)*
 
 The context handed to any engine is pseudonymised. It sees `INVOICE_1`, not
 `inv_002`, and references outside the aliases we issued are dropped rather

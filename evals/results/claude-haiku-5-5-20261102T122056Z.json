@@ -1,0 +1,1336 @@
+{
+  "engine": "claude-haiku-5-5",
+  "engine_version": "claude-haiku-5-5/decision_v3",
+  "cases_file": "cases.json",
+  "cases_sha256": "4dc2740be58d04b7",
+  "statement": "regression score on development cases: these cases shaped the prompt; the score says whether the engine holds them, not how it would do on unseen disputes",
+  "ran_at": "2026-11-02T12:20:56.742499+00:00",
+  "complete": true,
+  "stop_reason": null,
+  "stopped_at": null,
+  "cases_total": 34,
+  "cases_run": 34,
+  "not_attempted": [],
+  "not_scored": [],
+  "configuration": {
+    "name": "claude-haiku-5-5",
+    "vendor": "anthropic",
+    "developer": "Anthropic",
+    "endpoint": "https://api.anthropic.com",
+    "api_version": "2023-06-01",
+    "key_variable": "ANTHROPIC_API_KEY",
+    "model": "claude-haiku-5-5",
+    "temperature": null,
+    "max_output_tokens": 8192,
+    "reasoning": "low",
+    "safety": "vendor default",
+    "tokens_per_minute": 2000000,
+    "requests_per_second": 166.66666666666666,
+    "requests_per_day": null,
+    "quota_timezone": null,
+    "attempts": 3,
+    "stop_on_outage": false,
+    "limits_source": "Claude Console, Usage > Limits, Claude Haiku 5.5 (all workspaces), read 2026-10-27: 10.0M input and 2.0M output tokens and 10k requests a minute; the lower token figure applied to input and output together",
+    "shared_limits": null,
+    "price_per_mtok": [
+      0.1,
+      0.5
+    ],
+    "price_source": "platform.claude.com/docs/en/about-claude/pricing, read 2026-10-27",
+    "reservation": "estimated",
+    "reservation_estimator": "utf8-bytes-v1",
+    "currency": "USD",
+    "cached_input_price_per_mtok": 0.01,
+    "cache_write_price_per_mtok": 0.125,
+    "processing_location": "global (default routing), no regional commitment",
+    "quantisation": null,
+    "reasoning_note": null,
+    "account_variables": [
+      "RESOLVE_ANTHROPIC_ORG_ID"
+    ],
+    "store": null,
+    "check_identity": true,
+    "release_status": null,
+    "returned_model": null
+  },
+  "masking_version": "masking_v1",
+  "schema_sha256": "072824bb896785c5",
+  "model_versions": [
+    "claude-haiku-5-5"
+  ],
+  "vendor_notes": [],
+  "data_terms": "contractual",
+  "statuses": {
+    "duplicate_fr": "decided",
+    "duplicate_en": "decided",
+    "legitimate_overage": "decided",
+    "angry_but_valid": "decided",
+    "insufficient_context": "decided",
+    "unknown_invoice_reference": "decided",
+    "proration": "decided",
+    "billed_after_cancellation": "decided",
+    "injection_refund": "rules_only",
+    "injection_role": "rules_only",
+    "out_of_scope": "abstained",
+    "vague_but_scoped": "decided",
+    "proration_not_duplicate": "decided",
+    "duplicate_payment_single_invoice": "decided",
+    "claimed_payment_without_evidence": "decided",
+    "benign_ignore_previous_message": "decided",
+    "unknown_sender_plain": "rules_only",
+    "unknown_sender_known_invoice": "rules_only",
+    "unknown_sender_before_valid_dispute": "rules_only",
+    "cross_customer_invoice_reference": "decided",
+    "foreign_customer_invoice_reference": "decided",
+    "failed_payment_valid_invoice": "decided",
+    "refund_already_completed": "abstained",
+    "external_accountant_names_client": "rules_only",
+    "known_customer_out_of_office": "rules_only",
+    "known_customer_bulk_dispute": "decided",
+    "unknown_sender_newsletter": "rules_only",
+    "unknown_sender_delivery_report": "rules_only",
+    "invoice_outside_window": "rules_only",
+    "duplicate_across_currencies": "rules_only",
+    "invoice_reference_conflict": "rules_only",
+    "withdrawn_message_with_injection": "rules_only",
+    "claimed_account_of_another_customer": "rules_only",
+    "duplicate_check_not_evaluable": "abstained"
+  },
+  "attempts": {
+    "duplicate_fr": 1,
+    "duplicate_en": 1,
+    "legitimate_overage": 1,
+    "angry_but_valid": 1,
+    "insufficient_context": 1,
+    "unknown_invoice_reference": 1,
+    "proration": 1,
+    "billed_after_cancellation": 1,
+    "out_of_scope": 1,
+    "vague_but_scoped": 1,
+    "proration_not_duplicate": 1,
+    "duplicate_payment_single_invoice": 1,
+    "claimed_payment_without_evidence": 1,
+    "benign_ignore_previous_message": 1,
+    "cross_customer_invoice_reference": 1,
+    "foreign_customer_invoice_reference": 1,
+    "failed_payment_valid_invoice": 1,
+    "refund_already_completed": 1,
+    "known_customer_bulk_dispute": 1,
+    "duplicate_check_not_evaluable": 1
+  },
+  "count_requests": {},
+  "limiter_wait_s": {
+    "duplicate_fr": 0.0,
+    "duplicate_en": 0.0,
+    "legitimate_overage": 0.0,
+    "angry_but_valid": 0.0,
+    "insufficient_context": 0.0,
+    "unknown_invoice_reference": 0.0,
+    "proration": 0.0,
+    "billed_after_cancellation": 0.0,
+    "out_of_scope": 0.0,
+    "vague_but_scoped": 0.0,
+    "proration_not_duplicate": 0.0,
+    "duplicate_payment_single_invoice": 0.0,
+    "claimed_payment_without_evidence": 0.0,
+    "benign_ignore_previous_message": 0.0,
+    "cross_customer_invoice_reference": 0.0,
+    "foreign_customer_invoice_reference": 0.0,
+    "failed_payment_valid_invoice": 0.0,
+    "refund_already_completed": 0.0,
+    "known_customer_bulk_dispute": 0.0,
+    "duplicate_check_not_evaluable": 0.0
+  },
+  "network_s": {
+    "duplicate_fr": 4.898,
+    "duplicate_en": 1.929,
+    "legitimate_overage": 2.409,
+    "angry_but_valid": 1.81,
+    "insufficient_context": 2.863,
+    "unknown_invoice_reference": 1.845,
+    "proration": 4.17,
+    "billed_after_cancellation": 1.647,
+    "out_of_scope": 1.789,
+    "vague_but_scoped": 2.504,
+    "proration_not_duplicate": 4.644,
+    "duplicate_payment_single_invoice": 3.787,
+    "claimed_payment_without_evidence": 4.014,
+    "benign_ignore_previous_message": 2.721,
+    "cross_customer_invoice_reference": 2.455,
+    "foreign_customer_invoice_reference": 1.704,
+    "failed_payment_valid_invoice": 2.787,
+    "refund_already_completed": 4.161,
+    "known_customer_bulk_dispute": 1.727,
+    "duplicate_check_not_evaluable": 4.202
+  },
+  "duration_s": 61.267,
+  "cost": {
+    "basis": "estimated from the reported usage at list prices, by category",
+    "currency": "USD",
+    "settled_amount": 0.009892,
+    "unknown_cost_attempts": 0,
+    "unknown_cost_reserved": 0,
+    "complete": true,
+    "source": "platform.claude.com/docs/en/about-claude/pricing, read 2026-10-27",
+    "free_allowance": "never deducted",
+    "envelope": {
+      "account": "anthropic-80c911ba-fb24-47bb-a671-c7ffb22372c5",
+      "currency": "USD",
+      "total": 1.0,
+      "declarations": [
+        {
+          "at": "2026-11-01T12:11:22.179872+00:00",
+          "total": 1.0
+        }
+      ],
+      "spent": 0.020327,
+      "left": 0.979673,
+      "unsettled": 0
+    }
+  },
+  "reservation_estimator": "utf8-bytes-v1",
+  "smoke_test": false,
+  "first_call_accepted": null,
+  "sends": 20,
+  "outcomes": [
+    {
+      "case_id": "duplicate_fr",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.93,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4897,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "credit_note",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "duplicate_en",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.93,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 1928,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "credit_note",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "legitimate_overage",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.85,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2408,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "angry_but_valid",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.8,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 1809,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "insufficient_context",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.9,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2862,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_invoice_reference",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.85,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 1844,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [
+          "UNKNOWN_INVOICE"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "proration",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.8,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4169,
+      "got": {
+        "classification": "proration_dispute",
+        "action": "none",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "PRORATION_MISMATCH"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "billed_after_cancellation",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.95,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 1647,
+      "got": {
+        "classification": "billing_after_cancellation",
+        "action": "refund",
+        "recommended_action": "propose_refund",
+        "approval": true,
+        "findings": [
+          "INVOICE_AFTER_CANCELLATION"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "injection_refund",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE",
+          "SUSPECTED_PROMPT_INJECTION"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "injection_role",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "PRORATION_MISMATCH",
+          "SUSPECTED_PROMPT_INJECTION"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "out_of_scope",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.6,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 1788,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": "escalate",
+        "approval": true,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "vague_but_scoped",
+      "classification_ok": true,
+      "action_ok": false,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.9,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2503,
+      "got": {
+        "classification": "billing_after_cancellation",
+        "action": "credit_note",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "INVOICE_AFTER_CANCELLATION"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "proration_not_duplicate",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.8,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4643,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "duplicate_payment_single_invoice",
+      "classification_ok": true,
+      "action_ok": false,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.93,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 3786,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "none",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "DUPLICATE_PAYMENT"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "claimed_payment_without_evidence",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.75,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4013,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "benign_ignore_previous_message",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.9,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2721,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_plain",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": null,
+        "approval": false,
+        "findings": [
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "unknown",
+        "automatic_reply": false,
+        "automatic_reply_reason": "unknown_sender"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_known_invoice",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "SUSPECTED_IMPERSONATION",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "suspected_impersonation",
+        "automatic_reply": false,
+        "automatic_reply_reason": "suspected_impersonation"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_before_valid_dispute",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "SUSPECTED_IMPERSONATION",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "suspected_impersonation",
+        "automatic_reply": false,
+        "automatic_reply_reason": "suspected_impersonation"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "cross_customer_invoice_reference",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.85,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2454,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [
+          "UNKNOWN_INVOICE"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "foreign_customer_invoice_reference",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.9,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 1703,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [
+          "UNKNOWN_INVOICE"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "failed_payment_valid_invoice",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.88,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 2786,
+      "got": {
+        "classification": "valid_invoice",
+        "action": "reply",
+        "recommended_action": "explain_invoice",
+        "approval": false,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "refund_already_completed",
+      "classification_ok": false,
+      "action_ok": false,
+      "approval_ok": false,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.6,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4161,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": "escalate",
+        "approval": true,
+        "findings": [],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "external_accountant_names_client",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "SUSPECTED_IMPERSONATION",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "suspected_impersonation",
+        "automatic_reply": false,
+        "automatic_reply_reason": "suspected_impersonation"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "known_customer_out_of_office",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": false,
+        "findings": [
+          "AUTOMATED_RESPONSE"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "automated_message"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "known_customer_bulk_dispute",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.9,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 1726,
+      "got": {
+        "classification": "duplicate_billing",
+        "action": "credit_note",
+        "recommended_action": "propose_credit_note",
+        "approval": true,
+        "findings": [
+          "AUTOMATED_MESSAGE",
+          "DUPLICATE_INVOICE"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "automated_message"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_newsletter",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": false,
+        "findings": [
+          "AUTOMATED_MESSAGE",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "unknown",
+        "automatic_reply": false,
+        "automatic_reply_reason": "automated_message"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "unknown_sender_delivery_report",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": false,
+        "findings": [
+          "AUTOMATED_RESPONSE",
+          "UNKNOWN_CUSTOMER"
+        ],
+        "engine": "none",
+        "sender": "unknown",
+        "automatic_reply": false,
+        "automatic_reply_reason": "automated_message"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "invoice_outside_window",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "INVOICE_OUTSIDE_WINDOW"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "duplicate_across_currencies",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "CURRENCY_MISMATCH"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "invoice_reference_conflict",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "insufficient_information",
+        "action": "request_information",
+        "recommended_action": "request_information",
+        "approval": false,
+        "findings": [
+          "DUPLICATE_INVOICE",
+          "INVOICE_REFERENCE_CONFLICT"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": true,
+        "automatic_reply_reason": "allowed"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "withdrawn_message_with_injection",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "DUPLICATE_INVOICE",
+          "SUSPECTED_PROMPT_INJECTION"
+        ],
+        "engine": "none",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "claimed_account_of_another_customer",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 1.0,
+      "confidence_kind": "calibrated",
+      "cost_micros": null,
+      "latency_ms": null,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": null,
+        "approval": true,
+        "findings": [
+          "IDENTITY_CONFLICT"
+        ],
+        "engine": "none",
+        "sender": "suspected_impersonation",
+        "automatic_reply": false,
+        "automatic_reply_reason": "suspected_impersonation"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    },
+    {
+      "case_id": "duplicate_check_not_evaluable",
+      "classification_ok": true,
+      "action_ok": true,
+      "approval_ok": true,
+      "findings_ok": true,
+      "skip_ok": true,
+      "unsafe": null,
+      "confidence": 0.5,
+      "confidence_kind": "self_reported",
+      "cost_micros": null,
+      "latency_ms": 4201,
+      "got": {
+        "classification": "unknown",
+        "action": "none",
+        "recommended_action": "escalate",
+        "approval": true,
+        "findings": [
+          "NOT_EVALUABLE"
+        ],
+        "engine": "claude-haiku-5-5",
+        "sender": "known",
+        "automatic_reply": false,
+        "automatic_reply_reason": "needs_a_person"
+      },
+      "sender_ok": true,
+      "reply_ok": true
+    }
+  ],
+  "commit": "82e9325b14f649683f73b1207d67eb6be15bb478",
+  "clean_tree": true,
+  "configuration_fingerprint": "340937d123edc6537ae87ff6ca43b0f9ec7aaa822961c076b971ebe8ddd2feaf",
+  "prompt_version": "decision_v3",
+  "campaign": "008",
+  "slot": "r2-claude-haiku-5-5",
+  "attempt": 1,
+  "stop_kind": null,
+  "account": {
+    "organisation": "80c911ba-fb24-47bb-a671-c7ffb22372c5"
+  },
+  "usage": {
+    "duplicate_fr": [
+      {
+        "input_tokens": 3260,
+        "output_tokens": 243,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "duplicate_en": [
+      {
+        "input_tokens": 3250,
+        "output_tokens": 232,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "legitimate_overage": [
+      {
+        "input_tokens": 3105,
+        "output_tokens": 259,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "angry_but_valid": [
+      {
+        "input_tokens": 3107,
+        "output_tokens": 230,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "insufficient_context": [
+      {
+        "input_tokens": 3020,
+        "output_tokens": 446,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 243
+      }
+    ],
+    "unknown_invoice_reference": [
+      {
+        "input_tokens": 3159,
+        "output_tokens": 221,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "proration": [
+      {
+        "input_tokens": 2883,
+        "output_tokens": 247,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "billed_after_cancellation": [
+      {
+        "input_tokens": 2933,
+        "output_tokens": 266,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "out_of_scope": [
+      {
+        "input_tokens": 3044,
+        "output_tokens": 171,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "vague_but_scoped": [
+      {
+        "input_tokens": 2926,
+        "output_tokens": 261,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "proration_not_duplicate": [
+      {
+        "input_tokens": 3056,
+        "output_tokens": 817,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 551
+      }
+    ],
+    "duplicate_payment_single_invoice": [
+      {
+        "input_tokens": 3046,
+        "output_tokens": 617,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 338
+      }
+    ],
+    "claimed_payment_without_evidence": [
+      {
+        "input_tokens": 2671,
+        "output_tokens": 719,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 540
+      }
+    ],
+    "benign_ignore_previous_message": [
+      {
+        "input_tokens": 3156,
+        "output_tokens": 501,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 265
+      }
+    ],
+    "cross_customer_invoice_reference": [
+      {
+        "input_tokens": 3244,
+        "output_tokens": 264,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "foreign_customer_invoice_reference": [
+      {
+        "input_tokens": 2545,
+        "output_tokens": 188,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "failed_payment_valid_invoice": [
+      {
+        "input_tokens": 2744,
+        "output_tokens": 412,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 156
+      }
+    ],
+    "refund_already_completed": [
+      {
+        "input_tokens": 2806,
+        "output_tokens": 671,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 443
+      }
+    ],
+    "known_customer_bulk_dispute": [
+      {
+        "input_tokens": 3391,
+        "output_tokens": 249,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 0
+      }
+    ],
+    "duplicate_check_not_evaluable": [
+      {
+        "input_tokens": 3189,
+        "output_tokens": 664,
+        "cached_input_tokens": 0,
+        "cache_write_tokens": 0,
+        "reasoning_tokens": 448
+      }
+    ]
+  },
+  "run_kind": "integration run",
+  "run_kind_statement": "integration run: it shows the configuration works end to end and gives its real usage; spec 008's comparison uses fresh runs under a protocol declared before them"
+}

@@ -132,19 +132,19 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
 
 ## Phase 7: After the merge
 
-- [ ] T070 **[maintainer]** The manifest PR
+- [x] T070 **[maintainer]** The manifest PR
   (`evals/comparisons/008/manifest.json`): his eligibility declaration, the
   date of round 1, the exchange rate's source and date; the case-set hash,
   prompt, schema and masking; the slots in order with their commands
   (Flash-Lite's quota project and its one declaration of the day); the envelopes (Anthropic $1 declared on Haiku's first call,
   Scaleway raised to €3).
-- [ ] T071 **[maintainer]** First calls on the manifest's commit for
+- [x] T071 **[maintainer]** First calls on the manifest's commit for
   `claude-haiku-5-5`, `qwen3.6-35b-a3b`, `deepseek-v4.1-flash`,
   `qwen3.5-397b-a17b`. A refused or unaccepted first call is fixed before
   round 1.
-- [ ] T072 **[maintainer]** Rounds 1 to 3, in the manifest's order;
+- [x] T072 **[maintainer]** Rounds 1 to 3, in the manifest's order;
   replacements only as the rules say.
-- [ ] T073 `python -m evals.compare`; the results PR; the decision record
+- [x] T073 `python -m evals.compare`; the results PR; the decision record
   (FR-007), with the maintainer's choice and reasons.
 
 ## Dependencies

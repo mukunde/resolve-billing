@@ -152,7 +152,9 @@ evaluated outside the service (`evals/engines.py`).
 - Real models measured on the development set: Claude, and Gemini 3.5
   Flash-Lite (one full run, 2026-10-25, `evals/results/README.md`);
   Flash's full run is still to come; the prepaid configurations have
-  integration runs (spec 007) and the comparison of spec 008 is to come.
+  integration runs (spec 007) and the comparison of spec 008 was run on
+  2026-11-02. It retained `gpt-6-luna` provisionally (ADR-013); its
+  deployment slice is to come, and the service's engine is unchanged.
 - The ten configurations' reservations are estimates (the maintainer's
   waivers, 2026-10-24, extended to the prepaid vendors on 2026-10-26 and
   2026-10-27): the

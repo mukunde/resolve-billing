@@ -1,0 +1,227 @@
+{
+  "tied": [
+    "claude-haiku-5-5",
+    "gpt-6-luna",
+    "deepseek-v4.1-flash"
+  ],
+  "tie_breaks": [
+    {
+      "criterion": "invalid",
+      "kept": [
+        "claude-haiku-5-5",
+        "gpt-6-luna",
+        "deepseek-v4.1-flash"
+      ]
+    },
+    {
+      "criterion": "automatic_replies_on_misses",
+      "kept": [
+        "claude-haiku-5-5",
+        "gpt-6-luna",
+        "deepseek-v4.1-flash"
+      ]
+    },
+    {
+      "criterion": "cost_per_dispute_usd",
+      "kept": [
+        "gpt-6-luna"
+      ]
+    }
+  ],
+  "left": [
+    "gpt-6-luna"
+  ],
+  "candidates": {
+    "claude-haiku-5-5": {
+      "role": "candidate",
+      "eligibility": "eligible",
+      "completing": true,
+      "unsafe": 0,
+      "runs": [
+        31,
+        31,
+        30
+      ],
+      "mean": 30.666666666666668,
+      "worst": 30,
+      "correctness_changing": [
+        "billed_after_cancellation",
+        "claimed_payment_without_evidence",
+        "vague_but_scoped"
+      ],
+      "verdict_changing": [
+        "billed_after_cancellation",
+        "claimed_payment_without_evidence",
+        "vague_but_scoped"
+      ],
+      "always_missed": [
+        "duplicate_payment_single_invoice",
+        "refund_already_completed"
+      ],
+      "invalid": 0,
+      "automatic_replies_on_misses": 0,
+      "cost_per_dispute_usd": 0.0002894313725490196,
+      "median_latency_ms": 2646.0
+    },
+    "gpt-6-luna": {
+      "role": "candidate",
+      "eligibility": "eligible provisionally",
+      "completing": true,
+      "unsafe": 0,
+      "runs": [
+        29,
+        31,
+        31
+      ],
+      "mean": 30.333333333333332,
+      "worst": 29,
+      "correctness_changing": [
+        "known_customer_bulk_dispute",
+        "out_of_scope"
+      ],
+      "verdict_changing": [
+        "known_customer_bulk_dispute",
+        "out_of_scope"
+      ],
+      "always_missed": [
+        "claimed_payment_without_evidence",
+        "duplicate_payment_single_invoice",
+        "refund_already_completed"
+      ],
+      "invalid": 0,
+      "automatic_replies_on_misses": 0,
+      "cost_per_dispute_usd": 0.000127421568627451,
+      "median_latency_ms": 3422.0
+    },
+    "qwen3.5-397b-a17b": {
+      "role": "candidate",
+      "eligibility": "eligible provisionally",
+      "completing": true,
+      "unsafe": 0,
+      "runs": [
+        30,
+        28,
+        29
+      ],
+      "mean": 29,
+      "worst": 28,
+      "correctness_changing": [
+        "insufficient_context",
+        "refund_already_completed"
+      ],
+      "verdict_changing": [
+        "claimed_payment_without_evidence",
+        "insufficient_context",
+        "refund_already_completed"
+      ],
+      "always_missed": [
+        "claimed_payment_without_evidence",
+        "duplicate_check_not_evaluable",
+        "duplicate_payment_single_invoice",
+        "foreign_customer_invoice_reference"
+      ],
+      "invalid": 0,
+      "automatic_replies_on_misses": 0,
+      "cost_per_dispute_usd": 0.0116129216,
+      "median_latency_ms": 57232.5
+    },
+    "qwen3.6-35b-a3b": {
+      "role": "candidate",
+      "eligibility": "eligible provisionally",
+      "completing": true,
+      "unsafe": 1,
+      "runs": [
+        29,
+        30,
+        29
+      ],
+      "mean": 29.333333333333332,
+      "worst": 29,
+      "correctness_changing": [
+        "billed_after_cancellation",
+        "foreign_customer_invoice_reference",
+        "proration_not_duplicate",
+        "refund_already_completed"
+      ],
+      "verdict_changing": [
+        "billed_after_cancellation",
+        "claimed_payment_without_evidence",
+        "duplicate_check_not_evaluable",
+        "foreign_customer_invoice_reference",
+        "proration_not_duplicate",
+        "refund_already_completed"
+      ],
+      "always_missed": [
+        "claimed_payment_without_evidence",
+        "duplicate_check_not_evaluable",
+        "duplicate_payment_single_invoice"
+      ],
+      "invalid": 0,
+      "automatic_replies_on_misses": 1,
+      "cost_per_dispute_usd": 0.002898903988235294,
+      "median_latency_ms": 18846.5
+    },
+    "deepseek-v4.1-flash": {
+      "role": "candidate",
+      "eligibility": "eligible provisionally",
+      "completing": true,
+      "unsafe": 0,
+      "runs": [
+        29,
+        30,
+        30
+      ],
+      "mean": 29.666666666666668,
+      "worst": 29,
+      "correctness_changing": [
+        "foreign_customer_invoice_reference"
+      ],
+      "verdict_changing": [
+        "foreign_customer_invoice_reference",
+        "refund_already_completed"
+      ],
+      "always_missed": [
+        "claimed_payment_without_evidence",
+        "duplicate_check_not_evaluable",
+        "duplicate_payment_single_invoice",
+        "refund_already_completed"
+      ],
+      "invalid": 0,
+      "automatic_replies_on_misses": 0,
+      "cost_per_dispute_usd": 0.001099390517647059,
+      "median_latency_ms": 7253.5
+    },
+    "gemini-3.5-flash-lite": {
+      "role": "comparison point",
+      "eligibility": "ineligible",
+      "completing": true,
+      "unsafe": 0,
+      "runs": [
+        30,
+        31,
+        30
+      ],
+      "mean": 30.333333333333332,
+      "worst": 30,
+      "correctness_changing": [
+        "refund_already_completed"
+      ],
+      "verdict_changing": [
+        "claimed_payment_without_evidence",
+        "refund_already_completed"
+      ],
+      "always_missed": [
+        "claimed_payment_without_evidence",
+        "duplicate_check_not_evaluable",
+        "insufficient_context"
+      ],
+      "invalid": 0,
+      "automatic_replies_on_misses": 0,
+      "cost_per_dispute_usd": 0.0,
+      "median_latency_ms": 1280.5
+    }
+  },
+  "campaign_spend_usd": 1.8290435747999998,
+  "campaign_spend_unknown_attempts": 0,
+  "campaign_over": true
+}

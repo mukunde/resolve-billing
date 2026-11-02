@@ -250,8 +250,10 @@ Mistral, a monthly envelope kept on disk. Three more -- `gpt-6-luna` and
 `gpt-6.1-sol` (OpenAI), `qwen3.5-397b-a17b` (Alibaba's model, served by
 Scaleway in Paris) -- run the same way on prepaid accounts, each held to
 an envelope per billing organisation and to its model's identity on every
-answer; their runs are integration runs, before the choice of a deployment
-model. Their scores are regression scores
+answer; their runs are integration runs, made before the comparison of
+spec 008, which retained `gpt-6-luna` provisionally
+([ADR-013](docs/adr/013-deployment-model.md)); it is not deployed, and the
+service's engine is unchanged. Their scores are regression scores
 on development cases, stored and listed apart
 ([`evals/results/README.md`](evals/results/README.md)). How to run them:
 [`docs/operations.md`](docs/operations.md#the-engines-evaluated-on-free-tiers).
@@ -385,6 +387,7 @@ tracing, the MCP server, cost reconciliation and querying the audit are in
 | [ADR-010](docs/adr/010-target-integration-architecture.md) | Target integration: the support tool owns the case, a durable workflow owns the lifecycle *(not built)* |
 | [ADR-011](docs/adr/011-automated-mail-and-automatic-replies.md) | Automated mail, and who may receive an automatic reply |
 | [ADR-012](docs/adr/012-constitution-and-product-contract.md) | The constitution, the product contract, and where factory rules live |
+| [ADR-013](docs/adr/013-deployment-model.md) | The deployment model: `gpt-6-luna`, provisionally |
 
 More: [engineering notes](docs/engineering-notes.md) (incidents, review
 findings, techniques not used) · [operations](docs/operations.md) ·
