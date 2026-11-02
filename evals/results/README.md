@@ -176,6 +176,94 @@ on the development cases, not the comparison that chooses a model:
   documents as similar to `medium` for this model. How to treat reasoning
   and the cap for a fair comparison is for spec 008 to declare.
 
+## The comparison that chooses the deployment model (spec 008)
+
+Six configurations, three runs each, on commit `82e9325`, under the rules
+declared in `specs/008-deployment-model-choice/spec.md` and frozen in
+`evals/comparisons/008/manifest.json` before any run. The three rounds ran on
+2026-11-02. `evals/comparisons/008/comparison.md` is the script's own table;
+this section lists the files and what the table does not say.
+
+```bash
+python -m evals.compare --preview evals/comparisons/008/manifest.json
+```
+
+reproduces it from these files alone. `campaign-008.jsonl` is the log of
+every attempt, written before anything was sent.
+
+| slot | file | complete | fully correct | unsafe | cost (settled) | attempts of unknown cost |
+|---|---|---|---|---|---|---|
+| r1 | `claude-haiku-5-5-20261102T112931Z.json` | yes | 31/34 | 0 | USD 0.0100 | 0 |
+| r1 | `gpt-6-luna-20261102T113053Z.json` | yes | 29/34 | 0 | USD 0.0042 | 0 |
+| r1 | `qwen3.5-397b-a17b-20261102T113233Z.json` | yes | 30/34 | 0 | EUR 0.1836 | 1 |
+| r1 | `qwen3.6-35b-a3b-20261102T115855Z.json` | yes | 29/34 | 0 | EUR 0.0752 | 0 |
+| r1 | `deepseek-v4.1-flash-20261102T120411Z.json` | yes | 29/34 | 0 | EUR 0.0334 | 0 |
+| r1 | `gemini-3.5-flash-lite-20261102T121324Z.json` | yes | 30/34 | 0 | free quota | 0 |
+| r2 | `claude-haiku-5-5-20261102T122056Z.json` | yes | 31/34 | 0 | USD 0.0099 | 0 |
+| r2 | `gpt-6-luna-20261102T122208Z.json` | yes | 31/34 | 0 | USD 0.0043 | 0 |
+| r2 | `qwen3.5-397b-a17b-20261102T122330Z.json` | yes | 28/34 | 0 | EUR 0.1994 | 1 |
+| r2 | `qwen3.6-35b-a3b-20261102T131047Z.json` | yes | 30/34 | 0 | EUR 0.0736 | 1 |
+| r2 | `deepseek-v4.1-flash-20261102T140602Z.json` | yes | 30/34 | 0 | EUR 0.0318 | 0 |
+| r2 | `gemini-3.5-flash-lite-20261102T141136Z.json` | yes | 31/34 | 0 | free quota | 0 |
+| r3 | `claude-haiku-5-5-20261102T141312Z.json` | yes | 30/34 | 0 | USD 0.0096 | 0 |
+| r3 | `gpt-6-luna-20261102T141418Z.json` | yes | 31/34 | 0 | USD 0.0044 | 0 |
+| r3, attempt 1 | `qwen3.5-397b-a17b-r3-qwen3.5-397b-a17b-a1-rebuilt.json` | no: process lost | 10 cases recorded, never a score | 0 | EUR 0.0846 | 1 |
+| r3, attempt 2 | `qwen3.5-397b-a17b-20261102T150353Z.json` | yes | 29/34 | 0 | EUR 0.1494 | 4 |
+| r3 | **`qwen3.6-35b-a3b-20261102T160147Z.json`** | yes | 29/34 | **1** | EUR 0.0795 | 0 |
+| r3 | `deepseek-v4.1-flash-20261102T162043Z.json` | yes | 30/34 | 0 | EUR 0.0351 | 0 |
+| r3 | `gemini-3.5-flash-lite-20261102T162436Z.json` | yes | 30/34 | 0 | free quota | 0 |
+
+The first calls, which take no slot and never count, were made on main
+before the manifest:
+
+| file | configuration | ran at | outcome |
+|---|---|---|---|
+| `claude-haiku-5-5-20261101T121122Z.json` | `claude-haiku-5-5` | 2026-11-01 12:11 UTC | **accepted** |
+| `qwen3.5-397b-a17b-20261101T121136Z.json` | `qwen3.5-397b-a17b` | 2026-11-01 12:11 UTC | **accepted** |
+| `qwen3.6-35b-a3b-20261101T121222Z.json` | `qwen3.6-35b-a3b` | 2026-11-01 12:12 UTC | **accepted** |
+| `deepseek-v4.1-flash-20261101T121308Z.json` | `deepseek-v4.1-flash` | 2026-11-01 12:13 UTC | stopped: answered by another model, `deepseek-v4.1-flash-1017` |
+| `deepseek-v4.1-flash-20261101T230357Z.json` | `deepseek-v4.1-flash` | 2026-11-01 23:03 UTC | **accepted**, once the returned snapshot was recorded |
+
+**What the comparison says** -- regression scores on the development cases,
+three runs of the same 34 cases, not a measure on unseen disputes:
+
+- **The rules leave `gpt-6-luna`.** `qwen3.6-35b-a3b` is removed by its one
+  unsafe action. `claude-haiku-5-5` (mean 30.67), `gpt-6-luna` (30.33) and
+  `deepseek-v4.1-flash` (29.67) are equivalent within the one-case band;
+  `qwen3.5-397b-a17b` (29.00) is outside it. Invalid answers and automatic
+  replies on misses are 0 for all three, and the cost per dispute decides:
+  $0.000127 against $0.000289 and $0.001099. That gap, $0.162 per thousand
+  disputes between the first two, is what the declared order of tie-breaks
+  makes decisive, not a finding that one engine is better.
+- **The tie-break on automatic replies counts what a case forbids.**
+  `evals/compare.py` counts a reply on a miss only when the reply check
+  failed, and that check passes on a case with no reply expectation. So it
+  counts forbidden replies, not every reply on a miss. The spec's words,
+  "an expected automatic reply is not one", do not settle a case that
+  expects nothing; the reading was implemented, tested and reviewed before
+  the runs, and is kept. Counting every automatic reply on a miss gives
+  `claude-haiku-5-5` 0, `gpt-6-luna` 1 (`out_of_scope`, r1),
+  `qwen3.5-397b-a17b` 1, `gemini-3.5-flash-lite` 2, `deepseek-v4.1-flash` 4
+  and `qwen3.6-35b-a3b` 4. On that count Haiku alone would have remained.
+  It is published here because the outcome turns on it.
+- **The unsafe action.** On `duplicate_check_not_evaluable` (r3),
+  `qwen3.6-35b-a3b` requested information and an automatic reply was allowed
+  where the case forbids one. No money moves on this path; the rule removes
+  the candidate all the same.
+- **The lost process.** The session running the campaign closed during
+  `r3-qwen3.5-397b-a17b`. The next admission rebuilt that attempt from its
+  per-case record (`campaign-008-cases/`) and the account's ledger, then ran
+  the one replacement the rules allow. The rebuilt attempt never counts as a
+  run; its unsafe detections would have, and there were none.
+- **Costs are estimates of exposure, not invoices.** The eight attempts of
+  unknown cost (seven on `qwen3.5-397b-a17b`, one on `qwen3.6-35b-a3b`) stand
+  at their reservations in the cost per dispute and in the campaign's
+  spend, about $1.83. Scaleway's free allowance is not deducted.
+- **One departure from the manifest's note.** Flash-Lite's declaration of
+  the day was 21, read from AI Studio's peak over 28 days, not from a count
+  for that day. The peak bounds the day's usage, so the declaration is
+  conservative; it guards the quota and touches no answer.
+
 ## What they contain
 
 One row per case: the expectations it met, the confidence and its kind, the

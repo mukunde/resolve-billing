@@ -1,0 +1,53 @@
+{
+  "engine": "qwen3.5-397b-a17b",
+  "commit": "82e9325b14f649683f73b1207d67eb6be15bb478",
+  "configuration": {
+    "name": "qwen3.5-397b-a17b",
+    "vendor": "scaleway",
+    "developer": "Alibaba (Qwen)",
+    "endpoint": "https://api.scaleway.ai/{project}/v1",
+    "api_version": "v1",
+    "key_variable": "SCALEWAY_API_KEY",
+    "model": "qwen3.5-397b-a17b",
+    "temperature": null,
+    "max_output_tokens": 16384,
+    "reasoning": "low",
+    "safety": "vendor default",
+    "tokens_per_minute": 200000,
+    "requests_per_second": 5.0,
+    "requests_per_day": null,
+    "quota_timezone": null,
+    "attempts": 3,
+    "stop_on_outage": false,
+    "limits_source": "scaleway.com/en/docs/organizations-and-projects/additional-content/organization-quotas (Generative APIs serverless, payment method validated), read 2026-10-27; the console's quotas page listed no Generative APIs line that day",
+    "shared_limits": null,
+    "price_per_mtok": [
+      0.6,
+      3.6
+    ],
+    "price_source": "scaleway.com/en/pricing/model-as-a-service (serverless, Paris, before VAT), read 2026-10-26",
+    "reservation": "estimated",
+    "reservation_estimator": "utf8-bytes-v1",
+    "currency": "EUR",
+    "cached_input_price_per_mtok": null,
+    "cache_write_price_per_mtok": null,
+    "processing_location": "Paris, France",
+    "quantisation": "int4 (catalogue, serverless table)",
+    "reasoning_note": "Scaleway's API schema: for qwen3.5-397b-a17b, `low` and `high` values are similar to `medium`",
+    "account_variables": [
+      "SCALEWAY_ORGANIZATION_ID",
+      "SCALEWAY_PROJECT_ID"
+    ],
+    "store": null,
+    "check_identity": true,
+    "release_status": null,
+    "returned_model": null
+  },
+  "configuration_fingerprint": "303c45af387d94cf7f65d99e39f0aa0c1a03555ee075a42feda42534841bb173",
+  "run_id": "20261102T141554.848726Z",
+  "ledger_account": "scaleway-3f9b4d4a-edf7-4d8d-ae60-2ff21e47fb12",
+  "cases_sha256": "4dc2740be58d04b7",
+  "prompt_version": "decision_v3",
+  "schema_sha256": "072824bb896785c5",
+  "masking_version": "masking_v1"
+}
