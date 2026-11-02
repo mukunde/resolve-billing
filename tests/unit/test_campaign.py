@@ -463,6 +463,61 @@ class TestOneHistory:
         assert not (other / campaign.LOG_NAME).exists()
 
 
+class TestManifestCommit:
+    def git(self, root, *args):
+        import subprocess
+
+        subprocess.run(
+            ["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            check=True,
+            capture_output=True,
+        )
+
+    def head(self, root):
+        return campaign.git_state(root)["commit"]
+
+    def repo(self, tmp_path):
+        self.git(tmp_path, "init", "-q", "-b", "main")
+        (tmp_path / "other.txt").write_text("a", encoding="utf-8")
+        self.git(tmp_path, "add", ".")
+        self.git(tmp_path, "commit", "-qm", "start")
+        return tmp_path / "manifest.json"
+
+    def test_after_a_merge_it_is_the_merge_commit(self, tmp_path):
+        manifest = self.repo(tmp_path)
+        self.git(tmp_path, "checkout", "-qb", "side")
+        manifest.write_text("{}", encoding="utf-8")
+        self.git(tmp_path, "add", ".")
+        self.git(tmp_path, "commit", "-qm", "manifest")
+        self.git(tmp_path, "checkout", "-q", "main")
+        self.git(tmp_path, "merge", "-q", "--no-ff", "side", "-m", "merge")
+
+        assert campaign.manifest_commit(manifest, tmp_path) == self.head(tmp_path)
+
+    def test_a_later_commit_elsewhere_does_not_move_it(self, tmp_path):
+        manifest = self.repo(tmp_path)
+        manifest.write_text("{}", encoding="utf-8")
+        self.git(tmp_path, "add", ".")
+        self.git(tmp_path, "commit", "-qm", "manifest")
+        at_manifest = self.head(tmp_path)
+        (tmp_path / "other.txt").write_text("b", encoding="utf-8")
+        self.git(tmp_path, "add", ".")
+        self.git(tmp_path, "commit", "-qm", "later")
+
+        assert campaign.manifest_commit(manifest, tmp_path) == at_manifest
+
+    def test_a_later_edit_of_the_manifest_moves_it(self, tmp_path):
+        manifest = self.repo(tmp_path)
+        manifest.write_text("{}", encoding="utf-8")
+        self.git(tmp_path, "add", ".")
+        self.git(tmp_path, "commit", "-qm", "manifest")
+        manifest.write_text('{"a": 1}', encoding="utf-8")
+        self.git(tmp_path, "add", ".")
+        self.git(tmp_path, "commit", "-qm", "edit")
+
+        assert campaign.manifest_commit(manifest, tmp_path) == self.head(tmp_path)
+
+
 class TestGitState:
     def test_untracked_results_keep_the_tree_clean(self):
         assert campaign.clean_from_porcelain(["?? evals/results/x.json"]) is True

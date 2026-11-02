@@ -140,11 +140,13 @@ def git_state(root: Path = REPO) -> dict:
 
 
 def manifest_commit(path: Path, root: Path = REPO) -> str | None:
-    """The last commit that touched the manifest: the commit the runs execute
-    on. None outside git, or for a manifest never committed."""
+    """The commit on the checked-out branch that brought the manifest's last
+    revision: the commit the runs execute on. First-parent history, so a merge
+    is that commit, not the merged branch's. None outside git, or for a
+    manifest never committed."""
     try:
         commit = subprocess.run(
-            ["git", "-C", str(root), "log", "-1", "--format=%H", "--", str(path)],
+            ["git", "-C", str(root), "log", "-1", "--first-parent", "--format=%H", "--", str(path)],
             capture_output=True,
             text=True,
             check=True,
