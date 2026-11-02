@@ -220,7 +220,7 @@ class BoundedEngine:
         config = self.engine.config
 
         def end(outcome: AttemptOutcome, answer: Answer | None = None) -> None:
-            cost = self._account(run, answer)
+            cost = None if outcome is AttemptOutcome.NOT_SENT else self._account(run, answer)
             ended = AttemptEnd(
                 attempt_id=attempt_id,
                 outcome=outcome,
@@ -238,6 +238,10 @@ class BoundedEngine:
             tracing.set_attributes(current, **tracing.attempt_attributes(ended, number, run.id))
             self._recorder.finished(ended)
 
+        # Recording takes time too: the last check before anything leaves.
+        if run.remaining() <= 0:
+            end(AttemptOutcome.NOT_SENT)
+            raise EngineUnavailable("deadline")
         try:
             async with asyncio.timeout(min(self.bounds.per_attempt, run.remaining())):
                 answer = await self.engine.complete(system, user)
@@ -301,7 +305,7 @@ class BoundedEngine:
         telemetry = decision.telemetry.model_copy(
             update={
                 "model_id": _named(answer) or self.engine.config.model,
-                "cache_read_input_tokens": answer.cached_input_tokens or 0,
+                "cache_read_input_tokens": answer.cached_input_tokens,
                 "usage_known": usage_known,
                 "unknown_cost_attempts": run.unknown_cost_attempts,
                 "invocation_id": run.id,

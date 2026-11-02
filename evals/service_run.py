@@ -54,7 +54,9 @@ STATEMENT = (
 )
 
 #: Outcomes the vendor refused before processing: nothing was spent, as `Governed` holds.
-REFUSED_UNPROCESSED = frozenset({AttemptOutcome.RATE_LIMITED, AttemptOutcome.REJECTED})
+REFUSED_UNPROCESSED = frozenset(
+    {AttemptOutcome.NOT_SENT, AttemptOutcome.RATE_LIMITED, AttemptOutcome.REJECTED}
+)
 #: Outcomes that carry an answer, and so its usage.
 ANSWERED = frozenset({AttemptOutcome.ANSWERED, AttemptOutcome.UNUSABLE, AttemptOutcome.WRONG_MODEL})
 

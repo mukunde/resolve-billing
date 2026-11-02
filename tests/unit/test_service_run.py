@@ -210,6 +210,16 @@ class TestStops:
 
 
 class TestTheEdges:
+    def test_an_attempt_that_never_left_costs_nothing(self):
+        from app.decision.base import AttemptEnd, AttemptOutcome, AttemptStart
+
+        book = Book()
+        recorder = service_run.LedgerRecorder(book, LUNA, "run")
+        recorder.started(AttemptStart("a", "i", "d", 1, "openai", "m", "t", 1000))
+        recorder.finished(AttemptEnd("a", AttemptOutcome.NOT_SENT, "t", 0))
+        assert recorder.open_reservations == {}
+        assert recorder.cost == 0.0
+
     def test_a_factory_failure_writes_an_incomplete_result(self, monkeypatch, tmp_path):
         def broken():
             raise RuntimeError("no client")

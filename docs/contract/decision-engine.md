@@ -162,6 +162,7 @@ fails on any drift.
 | `wrong_model` | no | an escalation with its own event, not an outage |
 | `timeout`, `unavailable`, `rate_limited` | yes | exhausted, the outage path: an escalation |
 | `rejected` | no | HTTP 502 with a category; nothing is decided, no run is written |
+| `not_sent` | no | the time ran out after recording: nothing left, the outage path |
 | `cancelled`, `failed` | no | propagates; its record stays |
 
 - **Attempts on record.** `engine_attempts`, in the audit file, committed one by

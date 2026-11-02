@@ -135,6 +135,7 @@ class TestTheBounds:
     def test_the_outcomes_are_closed(self):
         assert {o.value for o in AttemptOutcome} == {
             "answered",
+            "not_sent",
             "unusable",
             "wrong_model",
             "timeout",
@@ -382,6 +383,24 @@ class TestTheDeadlineBoundsTheStage:
             await wrapper.decide(dispute, context, findings)
         assert engine.sent == []
 
+    async def test_a_slow_record_sends_nothing_past_the_deadline(self, dispute, context, findings):
+        clock = Clock()
+
+        class Slow(Book):
+            def started(self, attempt):
+                super().started(attempt)
+                clock.now += 500.0
+
+        engine = FakeEngine()
+        book = Slow()
+        wrapper = BoundedEngine(engine, book, clock=clock, sleep=clock.sleep)
+        with pytest.raises(EngineUnavailable) as raised:
+            await wrapper.decide(dispute, context, findings)
+        assert str(raised.value) == "deadline"
+        assert engine.sent == []
+        assert book.outcomes == [AttemptOutcome.NOT_SENT]
+        assert book.ends[0].cost_micros is None
+
 
 class TestAnUnreadableResponse:
     async def test_it_is_unusable_not_misidentified(self, dispute, context, findings):
@@ -555,6 +574,10 @@ class TestPrices:
             await bounded(FakeEngine(reply))[0].decide(dispute, context, findings)
         ).telemetry
         assert telemetry.cache_read_input_tokens == 40
+
+    async def test_a_cache_count_not_reported_stays_unknown(self, dispute, context, findings):
+        telemetry = await bounded(FakeEngine(answer()))[0].decide(dispute, context, findings)
+        assert telemetry.telemetry.cache_read_input_tokens is None
 
     async def test_an_unpriced_configuration_is_unknown_not_a_crash(
         self, dispute, context, findings

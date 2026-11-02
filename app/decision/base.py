@@ -136,7 +136,8 @@ class EngineTelemetry(BaseModel):
     prompt_version: str
     input_tokens: int = 0
     output_tokens: int = 0
-    cache_read_input_tokens: int = 0
+    #: None when the vendor reported totals but not this category.
+    cache_read_input_tokens: int | None = 0
     cost_micros: int | None = None
     pricing_as_of: str | None = None
     latency_ms: int = 0
@@ -172,6 +173,8 @@ class AttemptOutcome(StrEnum):
     """How one send to a vendor ended. Closed set: a category, never its text."""
 
     ANSWERED = "answered"
+    #: Recorded, then the time ran out before it left: nothing reached the vendor.
+    NOT_SENT = "not_sent"
     UNUSABLE = "unusable"
     WRONG_MODEL = "wrong_model"
     TIMEOUT = "timeout"
