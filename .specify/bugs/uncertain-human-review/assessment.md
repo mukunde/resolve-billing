@@ -70,8 +70,9 @@ stays as it is.
 ## Risks & Considerations
 
 - The stored result stays as it is: the fix does not rewrite it.
-- It does not make the case correct: classification, action and approval remain the
-  engine's, so a score can stay below a threshold.
+- It does not make the case correct: the classification and the proposed action stay the
+  engine's, and wrong. The routing to a person and the refusal of the automatic reply are
+  what it corrects, so a score can stay below a threshold.
 - `evals.rescore` cannot show this: it re-applies expectations, not the policy.
 - No new development case: the set is pinned by its hash, and spec 008's manifest with it.
 

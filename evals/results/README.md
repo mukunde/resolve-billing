@@ -300,8 +300,9 @@ holdout reference run: ADR-013 lists what that run waits for.
 ## The composite with Luna's leg disabled (spec 010)
 
 One run of the development cases through `gpt-6-luna+claude-haiku-5-5` on commit
-`860033e`, authorised by the maintainer, with nothing sent to OpenAI: every dispute
-reached Haiku through the failover's wiring. It is no slot of spec 008.
+`860033e`, authorised by the maintainer, with nothing sent to OpenAI: the 20 cases that
+reached the engine reached Haiku through the failover's wiring, and the rules settled the
+other 14. It is no slot of spec 008.
 
 | file | ran at | complete | fully correct | unsafe | cost (settled) | attempts of unknown cost |
 |---|---|---|---|---|---|---|
