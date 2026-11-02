@@ -97,15 +97,15 @@
   README, `.env.example`.
 - [x] T071 `docs/adr/013-deployment-model.md`: the reading of "deployed", the conditions
   of the reference run, and the empty hosting record.
-- [ ] T072 Gates: `ruff check .`, `pytest`, the mock baseline at 29, `evals.coverage
+- [x] T072 Gates: `ruff check .`, `pytest`, the mock baseline at 29, `evals.coverage
   --check`. Final diff to Codex, then to the maintainer by SHA. The PR.
 
 ## Phase 8: After the merge, with the maintainer's authorisation
 
-- [ ] T080 **[maintainer]** Authorises the paid steps, on what is shown before launch.
-- [ ] T081 One dispute over HTTP on Luna (SC-001), its trace read in a local backend
+- [x] T080 **[maintainer]** Authorises the paid steps, on what is shown before launch.
+- [x] T081 One dispute over HTTP on Luna (SC-001), its trace read in a local backend
   (FR-007b).
-- [ ] T082 The measurement through the service (FR-014); stored and listed. SC-006's
+- [x] T082 The measurement through the service (FR-014); stored and listed. SC-006's
   trigger, if met, goes to the maintainer, and it is not rerun to reach a score.
 - [ ] T083 **[maintainer]** Writes to OpenAI: Europe, then explicit United States
   processing; reads the data processing terms (FR-013). It blocks nothing above, and
