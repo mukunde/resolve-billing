@@ -299,7 +299,7 @@ class DisputeInvestigator:
             # engine could not be reached, no decision event is written for
             # an answer that never came, and no cost is invented.
             trace.append(event("decision_engine_unavailable", reason=str(outage)))
-            decision = _escalation_after_outage(str(outage))
+            decision = _escalation_after_outage(str(outage), getattr(outage, "telemetry", None))
             result = self._assemble(
                 dispute, context, findings, decision, getattr(outage, "invocation_id", None)
             )
@@ -308,7 +308,7 @@ class DisputeInvestigator:
             # The engine answered, so this is no outage: the answer came from
             # a model nobody chose, and it was dropped.
             trace.append(event("decision_engine_identity_failed", reason=str(error)))
-            decision = _escalation_after_identity_failure()
+            decision = _escalation_after_identity_failure(getattr(error, "telemetry", None))
             result = self._assemble(
                 dispute, context, findings, decision, getattr(error, "invocation_id", None)
             )
@@ -849,7 +849,7 @@ def _usage_unavailable(invoice_id: str, metrics: list[str]) -> RuleFinding:
     )
 
 
-def _escalation_after_identity_failure() -> Decision:
+def _escalation_after_identity_failure(telemetry: EngineTelemetry | None = None) -> Decision:
     """An answer from a model nobody chose: a person, and nothing of it kept."""
     return Decision(
         classification=Classification.UNKNOWN,
@@ -860,10 +860,11 @@ def _escalation_after_identity_failure() -> Decision:
             "Le moteur de décision a répondu avec un autre modèle que celui configuré : "
             "sa réponse est écartée et le litige part en revue humaine."
         ),
+        telemetry=telemetry,
     )
 
 
-def _escalation_after_outage(reason: str) -> Decision:
+def _escalation_after_outage(reason: str, telemetry: EngineTelemetry | None = None) -> Decision:
     """What an unreachable engine yields: a person, and no cost invented."""
     return Decision(
         classification=Classification.UNKNOWN,
@@ -873,6 +874,7 @@ def _escalation_after_outage(reason: str) -> Decision:
         explanation=(
             f"Moteur de décision indisponible ({reason}) : le litige part en revue humaine."
         ),
+        telemetry=telemetry,
     )
 
 

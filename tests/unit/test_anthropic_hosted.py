@@ -32,9 +32,9 @@ from tests.unit.test_claude_engine import (  # noqa: F401 -- the fixtures are us
 anthropic = pytest.importorskip("anthropic", reason="the `claude` extra is not installed")
 httpx = pytest.importorskip("httpx")
 
-from app.decision.anthropic_eval import (  # noqa: E402
+from app.decision.anthropic_hosted import (  # noqa: E402
     AmbientSettingRefused,
-    AnthropicEvaluationEngine,
+    AnthropicHostedEngine,
     ambient_refusal,
     build_client,
 )
@@ -52,9 +52,9 @@ def account(monkeypatch):
     monkeypatch.setenv("RESOLVE_ANTHROPIC_ORG_ID", "anthropic-org-test")
 
 
-def adapter(outcome) -> tuple[AnthropicEvaluationEngine, StubClient]:
+def adapter(outcome) -> tuple[AnthropicHostedEngine, StubClient]:
     client = StubClient(outcome)
-    return AnthropicEvaluationEngine(configuration(HAIKU), client=client), client
+    return AnthropicHostedEngine(configuration(HAIKU), client=client), client
 
 
 def service(outcome) -> tuple[ClaudeDecisionEngine, StubClient]:
@@ -240,7 +240,7 @@ def on_the_wire(answer):
     wire = Wire(answer)
     config = configuration(HAIKU)
     http = httpx.AsyncClient(transport=httpx.MockTransport(wire))
-    return AnthropicEvaluationEngine(config, client=build_client(config, http_client=http)), wire
+    return AnthropicHostedEngine(config, client=build_client(config, http_client=http)), wire
 
 
 class TestOnThePinnedSdk:
@@ -312,7 +312,7 @@ class TestOnThePinnedSdk:
         assert SENTINEL not in repr(raised.value.args)
 
     async def test_an_unexpected_status_keeps_its_outcome_unknown(self):
-        from app.decision.anthropic_eval import _translated
+        from app.decision.anthropic_hosted import _translated
 
         error = anthropic.APIStatusError(
             SENTINEL,

@@ -253,7 +253,8 @@ an envelope per billing organisation and to its model's identity on every
 answer; their runs are integration runs, made before the comparison of
 spec 008, which retained `gpt-6-luna` provisionally
 ([ADR-013](docs/adr/013-deployment-model.md)). It can be selected on the
-demonstrator's local service path, on synthetic data only (spec 009); the
+demonstrator's local service path, on synthetic data only (spec 009), alone or
+with a fallback to Claude Haiku 5.5 when OpenAI cannot be reached (spec 010); the
 default stays the mock, and nothing is deployed. Their scores are regression scores
 on development cases, stored and listed apart
 ([`evals/results/README.md`](evals/results/README.md)). How to run them:

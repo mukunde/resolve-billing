@@ -33,6 +33,7 @@ from app.decision.base import (
     EngineMisidentified,
     EngineRefused,
     EngineRejected,
+    EngineTelemetry,
     EngineUnavailable,
 )
 from app.decision.hosted import (
@@ -64,18 +65,23 @@ class _Invocation:
     """One `decide`, its bookkeeping local to it: the wrapper is shared by
     concurrent requests."""
 
-    def __init__(self, dispute_id: str, deadline: float, clock: Callable[[], float]) -> None:
-        self.id = uuid4().hex
+    def __init__(
+        self, invocation_id: str, dispute_id: str, ends_at: float, clock: Callable[[], float]
+    ) -> None:
+        self.id = invocation_id
         self.dispute_id = dispute_id
         self._clock = clock
         self._started = clock()
-        self._deadline = deadline
+        #: An absolute moment on `clock`, so that a caller can share it.
+        self._ends_at = ends_at
         self.known_cost: float | None = None
         self.unknown_cost_attempts = 0
         self.pricing_as_of: str | None = None
+        #: The model that answered, when one did and it reads as a model id.
+        self.answered_by: str | None = None
 
     def remaining(self) -> float:
-        return self._deadline - self.elapsed()
+        return self._ends_at - self._clock()
 
     def elapsed(self) -> float:
         return self._clock() - self._started
@@ -120,21 +126,36 @@ class BoundedEngine:
         await self.engine.aclose()
 
     async def decide(self, dispute, context, findings) -> Decision:
-        run = _Invocation(dispute.id, self.bounds.deadline, self._clock)
+        ends_at = self._clock() + self.bounds.deadline
+        return await self.leg(dispute, context, findings, uuid4().hex, ends_at)
+
+    async def leg(
+        self,
+        dispute,
+        context,
+        findings,
+        invocation_id: str,
+        ends_at: float,
+        first_number: int = 1,
+    ) -> Decision:
+        """`decide`, under a caller's correlation id, deadline and numbering.
+        A failure carries what the attempts cost, as a telemetry."""
+        run = _Invocation(invocation_id, dispute.id, ends_at, self._clock)
         system, user, names = self.engine.request_texts(dispute, context, findings)
         try:
             reserved = await self._within(run, self.engine.reservation(system, user))
-        except EngineUnavailable as outage:
-            outage.invocation_id = run.id
+            for attempt in range(1, self.bounds.attempts + 1):
+                number = first_number + attempt - 1
+                try:
+                    answer = await self._attempt(run, number, system, user, reserved)
+                except EngineUnavailable as outage:
+                    await self._wait_for_next(run, attempt, outage)
+                    continue
+                return self._decision(run, answer, names)
+        except (EngineUnavailable, EngineMisidentified) as failure:
+            failure.invocation_id = run.id
+            failure.telemetry = self._failed(run)
             raise
-        for number in range(1, self.bounds.attempts + 1):
-            try:
-                answer = await self._attempt(run, number, system, user, reserved)
-            except EngineUnavailable as outage:
-                outage.invocation_id = run.id
-                await self._wait_for_next(run, number, outage)
-                continue
-            return self._decision(run, answer, names)
         raise AssertionError("unreachable")  # pragma: no cover
 
     @staticmethod
@@ -220,6 +241,7 @@ class BoundedEngine:
         config = self.engine.config
 
         def end(outcome: AttemptOutcome, answer: Answer | None = None) -> None:
+            run.answered_by = _named(answer) or run.answered_by
             # An attempt that never left cost nothing: known, and zero.
             cost = 0 if outcome is AttemptOutcome.NOT_SENT else self._account(run, answer)
             ended = AttemptEnd(
@@ -248,7 +270,9 @@ class BoundedEngine:
                 answer = await self.engine.complete(system, user)
         except TimeoutError:
             end(AttemptOutcome.TIMEOUT)
-            raise EngineUnavailable("timeout") from None
+            outage = EngineUnavailable("timeout")
+            outage.failover_eligible = True
+            raise outage from None
         except EngineRejected as refusal:
             end(AttemptOutcome.REJECTED)
             error = EngineRefused(str(refusal))
@@ -257,6 +281,7 @@ class BoundedEngine:
         except EngineUnavailable as outage:
             limited = str(outage) == "rate_limited"
             end(AttemptOutcome.RATE_LIMITED if limited else AttemptOutcome.UNAVAILABLE)
+            outage.failover_eligible = _eligible(outage)
             raise
         except asyncio.CancelledError:
             # A record that cannot be written leaves the row unfinished, which
@@ -297,6 +322,22 @@ class BoundedEngine:
         run.pricing_as_of = _priced_on(config.price_source)
         return round(cost * 1_000_000)
 
+    def _failed(self, run: _Invocation) -> EngineTelemetry:
+        """What a leg with no decision still knows. Its usage is not a measure:
+        each attempt's is on record."""
+        telemetry = EngineTelemetry(
+            model_id=run.answered_by or self.engine.config.model,
+            prompt_version=self.version,
+            usage_known=False,
+            unknown_cost_attempts=run.unknown_cost_attempts,
+            invocation_id=run.id,
+            cost_micros=round(run.known_cost * 1_000_000) if run.known_cost is not None else None,
+            pricing_as_of=run.pricing_as_of,
+            latency_ms=int(run.elapsed() * 1000),
+        )
+        tracing.set_on_current(**tracing.usage_attributes(telemetry))
+        return telemetry
+
     def _decision(self, run: _Invocation, answer: Answer, names) -> Decision:
         decision = self.engine.decision_from(answer, names, int(run.elapsed() * 1000))
         # Those lists suit a run. A service would keep them for ever.
@@ -319,6 +360,17 @@ class BoundedEngine:
         # The attempts' spans hold each send; the investigation's, the total.
         tracing.set_on_current(**tracing.usage_attributes(telemetry))
         return decision.model_copy(update={"telemetry": telemetry})
+
+
+def _eligible(outage: EngineUnavailable) -> bool:
+    """Whether a sent request failed the way a failover may answer: a broken
+    connection, a 429, or a status from 500 to 599. `server_error` alone is not
+    enough: it also covers statuses nobody expected."""
+    category = str(outage)
+    if category in {"transport", "rate_limited"}:
+        return True
+    status = getattr(outage, "status", None)
+    return isinstance(status, int) and 500 <= status <= 599
 
 
 def _wrong_model(answer: Answer, config) -> bool:

@@ -163,7 +163,10 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
   evaluation path's safeguards: the guard, the declared accounts, the accepted
   first call, the account held, and the envelope, reserved before each send and
   settled after it. Its result names itself a service run: no slot, and no part
-  of spec 008's comparison. It is not rerun to reach a score.
+  of spec 008's comparison. It is not rerun to reach a score. The composite
+  (spec 010) runs there only, with `--primary-disabled`: no client for OpenAI, the
+  Anthropic envelope, and each case attributed to the model that answered. That
+  measures the failover's wiring and Haiku through it, not an outage.
 - **Stored runs.** A published figure's run is committed in `evals/results/`
   with its model, prompt and case set's hash; `evals/results/README.md` says
   what each can be read for.

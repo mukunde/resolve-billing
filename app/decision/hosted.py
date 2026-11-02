@@ -290,7 +290,7 @@ GPT_SOL = _openai(
 )
 #: Claude Haiku 5.5, measured as the service would run it
 #: (specs/008-deployment-model-choice): the request is the service engine's,
-#: pinned by tests (`app/decision/anthropic_eval.py`).
+#: pinned by tests (`app/decision/anthropic_hosted.py`).
 CLAUDE_HAIKU = _prepaid(
     "claude-haiku-5-5",
     tokens_per_minute=2_000_000,
@@ -603,6 +603,8 @@ def unavailable(category: str, response=None) -> EngineUnavailable:
     except (TypeError, ValueError):
         seconds = None
     outage.retry_after = seconds if seconds is not None and seconds >= 0 else None
+    # What actually came back: `server_error` also covers unexpected statuses.
+    outage.status = getattr(response, "status_code", None)
     return outage
 
 

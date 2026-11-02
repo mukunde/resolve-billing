@@ -45,7 +45,9 @@ class TestTheRefusedConfigurations:
 
 class TestTheRegistry:
     def test_it_holds_the_services_engines_and_the_hosted_ones(self):
-        assert set(engines.evaluation_engines()) == set(deps.ENGINES) | set(HOSTED)
+        assert set(engines.evaluation_engines()) == (
+            set(deps.ENGINES) - engines.SERVICE_ONLY
+        ) | set(HOSTED)
 
     @pytest.mark.parametrize("name", [name for name in HOSTED if name != deps.LUNA])
     def test_the_service_refuses_each(self, name, monkeypatch):

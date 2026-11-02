@@ -88,7 +88,7 @@ def _account_refusal(engine_name: str) -> str | None:
     from evals import accounts
 
     if config.vendor == "anthropic":
-        from app.decision.anthropic_eval import ambient_refusal
+        from app.decision.anthropic_hosted import ambient_refusal
     else:
         from app.decision.openai_compatible import ambient_refusal
 

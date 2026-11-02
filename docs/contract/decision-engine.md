@@ -5,14 +5,15 @@ the system may rely on. Written on 2026-10-24 from the existing records;
 specs/004-second-engines folded in the same day,
 specs/007-openai-qwen-engines on 2026-10-26,
 specs/008-deployment-model-choice on 2026-10-27, and
-specs/009-luna-service on 2026-11-02. Reasons are in ADR-002 (the engine is
+specs/009-luna-service and specs/010-haiku-fallback on 2026-11-02. Reasons are in ADR-002 (the engine is
 a deployment choice), ADR-003 (deterministic before probabilistic), ADR-006
 (no agent loop) and ADR-009 (what a model provider receives).
 
-The service runs three engines: the **mock**, deterministic and free, the
+The service runs four engines: the **mock**, deterministic and free, the
 default and what CI and the demo run on; **Claude**, through the Messages API,
-selected with `DECISION_ENGINE=claude` and an Anthropic key; and
-**`gpt-6-luna`**, on synthetic data only (below). Four configurations exist for
+selected with `DECISION_ENGINE=claude` and an Anthropic key; **`gpt-6-luna`**;
+and **`gpt-6-luna+claude-haiku-5-5`**, the last two on synthetic data only
+(below). Four configurations exist for
 the evaluation runner alone, on free tiers, and more on prepaid accounts
 (below).
 
@@ -104,7 +105,7 @@ three on Scaleway cap their output at
 16,384 tokens (spec 008), the two OpenAI ones at 4,096.
 
 `claude-haiku-5-5` (spec 008) is Claude Haiku 5.5 measured as the service
-would run it: an evaluation-only adapter, `app/decision/anthropic_eval.py`,
+would run it: a hosted client, `app/decision/anthropic_hosted.py`,
 sends the request the service engine sends -- same model, cap, system
 prompt, effort, schema and payload -- and reads the answer as the service
 engine's parser does; tests hold the two engines' requests and decisions
@@ -151,8 +152,7 @@ fails on any drift.
   API answers only once the investigation ends. The runner's deadline covers a
   run: the two differ on purpose. 4 requests in flight, and the configuration's
   requests per second and tokens per minute. The limits hold within one process.
-- **No fallback.** It never switches to another engine (spec 010 decides whether
-  that changes).
+- **No fallback.** Selected alone, it never switches to another engine.
 - **Failures by outcome.** A closed set, recorded per attempt:
 
 | Outcome | Retried | Ends in |
@@ -177,13 +177,37 @@ fails on any drift.
   This guards against a slip in configuration. It does not control content: the
   service cannot tell real text pasted into a request.
 
+## `gpt-6-luna+claude-haiku-5-5`: the fallback
+
+`FailoverEngine` (`app/decision/failover.py`) around two bounded legs, each sending
+its evaluated request, Haiku pinned whatever `CLAUDE_MODEL` says.
+
+- **Bounds.** One Luna attempt of at most 30 seconds, then one Haiku attempt of at
+  most 60 seconds or what remains, within 90 seconds for the whole stage. Spec 009's
+  retries do not apply here, on purpose: a passing 429 moves on rather than waits, and
+  a `Retry-After` is not waited for.
+- **What triggers it.** Only a request actually sent to OpenAI that ended in a
+  timeout, a broken connection, a 429, or a status from 500 to 599. A 429 can mean no
+  credit: the dispute is then answered by Haiku, the attempt shows the category, and
+  nothing alerts anyone.
+- **What never does.** Any other status, a wrong model, an unusable answer, a failure
+  before the send, a recording failure, a budget refusal, a cancellation, a defect.
+- **Haiku's leg** ends as a standalone engine's would, and there is no third attempt.
+- **Who answered.** `decision_engine` is the composite's name; `model_id` is the model
+  that answered. Attempts share one `engine_invocation_id`, numbered 1 and 2, each with
+  its provider, so costs read by provider. A failing leg's telemetry reaches the run row.
+- **No memory.** The choice is made per dispute. Each leg's limits stay shared.
+- **Refused at start** on spec 009's conditions and on Anthropic's key, declared
+  organisation and ambient settings.
+
 ## Selection
 
 `app/api/deps.py` names the engines the service may run (`ENGINES`: mock, claude,
-`gpt-6-luna`); `DECISION_ENGINE` chooses one, and an unknown name is refused. The
+`gpt-6-luna`, the composite); `DECISION_ENGINE` chooses one, and an unknown name is refused. The
 evaluation runner selects from the same table plus the ten configurations
 evaluated outside the service (`evals/engines.py`); for `gpt-6-luna` that means
-its governed engine, under its development-set guard, not the service's.
+its governed engine, under its development-set guard, not the service's. The runner
+refuses the composite: `evals/service_run.py` is its only evaluation path.
 
 ## Not guaranteed today
 
@@ -229,6 +253,7 @@ its governed engine, under its development-set guard, not the service's.
 `tests/unit/test_hosted_engines.py`, `tests/unit/test_vendor_clients.py`,
 `tests/unit/test_openai_compatible_configurations.py`,
 `tests/unit/test_openai_compatible_client.py`,
-`tests/unit/test_anthropic_evaluation.py`, `tests/unit/test_bounded_engine.py`,
+`tests/unit/test_anthropic_hosted.py`, `tests/unit/test_bounded_engine.py`,
 `tests/unit/test_attempt_store.py`, `tests/unit/test_luna_service.py`,
+`tests/unit/test_failover_engine.py`, `tests/unit/test_failover_service.py`,
 `tests/integration/test_tracing.py`.

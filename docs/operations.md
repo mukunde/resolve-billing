@@ -72,6 +72,21 @@ evaluation envelope: only the prepaid credit bounds them. A run's attempts are o
 its page; a refusal leaves no run, and its attempts stay in `engine_attempts`,
 by `dispute_id`.
 
+### With a fallback to Claude Haiku 5.5
+
+```bash
+DECISION_ENGINE=gpt-6-luna+claude-haiku-5-5
+RESOLVE_DATA=synthetic
+```
+
+with the variables above, the `claude` extra, `ANTHROPIC_API_KEY` and
+`RESOLVE_ANTHROPIC_ORG_ID`. When a request to OpenAI times out, breaks, or answers a 429
+or a 5xx, the dispute goes to Haiku, one attempt each within 90 seconds. Nothing else
+triggers it. A cut of your own network reaches both vendors. Direct calls pass through
+neither envelope. A timed-out request OpenAI did process means the masked payload
+reached both vendors, and both may bill it. A 429 that means no credit moves to Haiku
+with no alert: read the attempts.
+
 ### On a Stripe test account
 
 The fake is the default. To investigate on a Stripe test account instead --
@@ -513,6 +528,16 @@ python -m dotenv run -- python -m evals.service_run --data-terms contractual --j
 
 Development cases only, through the envelope. A result below 29, or any unsafe
 action, goes to the maintainer; it is not rerun to reach a score.
+
+The fallback's wiring, once, also authorised, with Luna's leg out and nothing sent to
+OpenAI:
+
+```bash
+python -m dotenv run -- python -m evals.service_run --engine gpt-6-luna+claude-haiku-5-5 --primary-disabled --data-terms contractual --json evals/results/gpt-6-luna-failover.json
+```
+
+Through the Anthropic envelope. A result below 30, or any unsafe action, goes to the
+maintainer in the same way.
 
 ### Reconciling what we estimated against what we were billed
 

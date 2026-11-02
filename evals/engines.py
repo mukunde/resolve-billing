@@ -58,10 +58,16 @@ def _hosted(name: str) -> Callable[[], object]:
 HOSTED_ENGINES: dict[str, Callable[[], object]] = {name: _hosted(name) for name in HOSTED}
 
 
+#: The service's engines the runner never builds: no guard, limit or envelope
+#: would hold them there. `evals.service_run` is their only evaluation path.
+SERVICE_ONLY = frozenset({deps.FAILOVER})
+
+
 def evaluation_engines() -> dict[str, Callable[[], object]]:
     """Every engine the runner may build, by name: the service's table, read
-    when asked, and the hosted configurations."""
-    return {**deps.ENGINES, **HOSTED_ENGINES}
+    when asked, less what it never builds, and the hosted configurations."""
+    allowed = {name: build for name, build in deps.ENGINES.items() if name not in SERVICE_ONLY}
+    return {**allowed, **HOSTED_ENGINES}
 
 
 class OffTheDevelopmentSet(Exception):  # noqa: N818 -- a refusal, not a defect

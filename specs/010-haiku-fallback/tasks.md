@@ -6,22 +6,22 @@
 
 ## Phase 1: `BoundedEngine` under a shared deadline
 
-- [ ] T010 Test first: `leg` takes an invocation id, one absolute deadline with a non-zero
+- [x] T010 Test first: `leg` takes an invocation id, one absolute deadline with a non-zero
   clock origin, and a first number; `failover_eligible` true only for a sent timeout,
   transport failure, 429 or 500 to 599, false for an unexpected 2xx or 3xx, the queue, the
   limiter, the deadline and `not_sent`; a failure carries its telemetry, and the investigator's
   outage and identity paths write it. Standalone Luna's other tests pass unchanged.
-- [ ] T011 `app/decision/bounded.py`.
+- [x] T011 `app/decision/bounded.py`.
 
 ## Phase 2: The Anthropic client
 
-- [ ] T020 Rename to `app/decision/anthropic_hosted.py`, `AnthropicHostedEngine`; documentation,
+- [x] T020 Rename to `app/decision/anthropic_hosted.py`, `AnthropicHostedEngine`; documentation,
   `vendors.client_for`, `hosted.py`, `evals/runner.py`, the contract, tests. Fingerprints and
   parity tests unchanged. Any result file unchanged.
 
 ## Phase 3: `FailoverEngine`
 
-- [ ] T030 Test first, `tests/unit/test_failover_engine.py`, fake legs and clock:
+- [x] T030 Test first, `tests/unit/test_failover_engine.py`, fake legs and clock:
   - each trigger falls back: timeout, transport, 5xx, 429, no wait for `Retry-After`;
   - each exclusion does not: other 4xx, wrong model, unusable, not sent, queue, limiter,
     recording failure, budget refusal, cancellation, defect;
@@ -34,8 +34,8 @@
     stated; the answering model named; no state between disputes; limiters shared across
     disputes;
   - both legs get the masking hook, both close, the second even if the first fails.
-- [ ] T031 `app/decision/failover.py`.
-- [ ] T032 Test first: parity of both legs with their evaluated requests and fingerprints,
+- [x] T031 `app/decision/failover.py`.
+- [x] T032 Test first: parity of both legs with their evaluated requests and fingerprints,
   whatever `CLAUDE_MODEL` says (SC-005); the investigator, audit, run page and API on a run
   that fell back, selected through the real wiring over the investigation endpoint with
   the SDKs on in-memory transports (SC-003); no vendor text anywhere; the workflow span's
@@ -43,25 +43,25 @@
 
 ## Phase 4: Wiring
 
-- [ ] T040 Test first: the composite selected by one variable; each missing condition
+- [x] T040 Test first: the composite selected by one variable; each missing condition
   refused by name at start, Anthropic's included; the other selections unchanged (SC-004);
   two successive lifespans.
-- [ ] T041 `app/api/deps.py`.
-- [ ] T042 Test first, then `evals/engines.py` and `evals/runner.py`: the plain runner refuses
+- [x] T041 `app/api/deps.py`.
+- [x] T042 Test first, then `evals/engines.py` and `evals/runner.py`: the plain runner refuses
   the composite before reading a case or building a client; `evaluation_engines()` leaves it
   out, and the registry test says so.
 
 ## Phase 5: The measurement's tool
 
-- [ ] T050 Test first, no network: the composite needs `--primary-disabled`; no OpenAI client
+- [x] T050 Test first, no network: the composite needs `--primary-disabled`; no OpenAI client
   is built and no attempt recorded for it; a known zero, so no unknown cost; the Anthropic
   envelope reserved and settled through a real bounded leg, masking included; each case
   attributed; the guard, first call and account held for Haiku; the standalone tool unchanged.
-- [ ] T051 `evals/service_run.py`.
+- [x] T051 `evals/service_run.py`.
 
 ## Phase 6: Documents
 
-- [ ] T060 ADR-009, ADR-013 (reference configuration, attestations, the maintainer's statement),
+- [x] T060 ADR-009, ADR-013 (reference configuration, attestations, the maintainer's statement),
   the contracts, operations, README, `.env.example`.
 - [ ] T061 Gates. Final diff to Codex, then to the maintainer by SHA. The PR.
 

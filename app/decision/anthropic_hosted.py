@@ -1,22 +1,21 @@
-"""`claude-haiku-5-5` on the governed evaluation path
-(specs/008-deployment-model-choice).
+"""`claude-haiku-5-5` as a hosted engine: the governed evaluation path
+(specs/008-deployment-model-choice) and the failover's second leg
+(specs/010-haiku-fallback).
 
-The service runs `ClaudeDecisionEngine`, and that is what a choice of Claude
-would deploy. This adapter measures it under the discipline the other
-vendors' configurations already have -- the envelope, the first call, a
-status per case, a result written even when a run stops -- without changing
-the service engine: it sends the request the service engine sends (same
-model, output cap, system prompt, effort and schema, the same user payload)
-and reads the answer as the service engine's parser does, `refusal` and
-`max_tokens` sent to a person, the text validated for every other stop
-reason. Tests hold the two engines' requests and decisions equal.
+`ClaudeDecisionEngine` stays the service's engine for `DECISION_ENGINE=claude`.
+This client measures the same thing under the discipline the other vendors'
+configurations have -- the envelope, the first call, a status per case, a result
+written even when a run stops: it sends the request the service engine sends (same
+model, output cap, system prompt, effort and schema, the same user payload) and
+reads the answer as the service engine's parser does, `refusal` and `max_tokens`
+sent to a person, the text validated for every other stop reason. Tests hold the
+two engines' requests and decisions equal.
 
-What differs is how outages are retried: the SDK's own retries are off here,
-and the runner counts attempts, as for the other vendors. `anthropic` pinned
-at 0.105.2; the key and the address are passed, two settings the SDK would
-read from the environment -- extra headers (`ANTHROPIC_CUSTOM_HEADERS`) and
-request logging (`ANTHROPIC_LOG`) -- are refused, and responses are
-validated strictly. Imported by the evaluation runner only.
+What differs is how outages are retried: the SDK's own retries are off here, and
+the caller counts attempts, as for the other vendors. `anthropic` pinned at
+0.105.2; the key and the address are passed, two settings the SDK would read from
+the environment -- extra headers (`ANTHROPIC_CUSTOM_HEADERS`) and request logging
+(`ANTHROPIC_LOG`) -- are refused, and responses are validated strictly.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ def ambient_refusal() -> str | None:
     return None
 
 
-class AnthropicEvaluationEngine(HostedEngine):
+class AnthropicHostedEngine(HostedEngine):
     def __init__(self, config: Configuration, client=None, invoice_references=None) -> None:
         super().__init__(config, invoice_references)
         self._client = client if client is not None else build_client(config)
