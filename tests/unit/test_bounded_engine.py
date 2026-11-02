@@ -399,7 +399,7 @@ class TestTheDeadlineBoundsTheStage:
         assert str(raised.value) == "deadline"
         assert engine.sent == []
         assert book.outcomes == [AttemptOutcome.NOT_SENT]
-        assert book.ends[0].cost_micros is None
+        assert book.ends[0].cost_micros == 0
 
 
 class TestAnUnreadableResponse:

@@ -220,7 +220,8 @@ class BoundedEngine:
         config = self.engine.config
 
         def end(outcome: AttemptOutcome, answer: Answer | None = None) -> None:
-            cost = None if outcome is AttemptOutcome.NOT_SENT else self._account(run, answer)
+            # An attempt that never left cost nothing: known, and zero.
+            cost = 0 if outcome is AttemptOutcome.NOT_SENT else self._account(run, answer)
             ended = AttemptEnd(
                 attempt_id=attempt_id,
                 outcome=outcome,

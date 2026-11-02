@@ -347,6 +347,17 @@ class TestThePage:
         deps.get_attempts().started(start("open", invocation, "dsp_test", 2))
         assert "non terminée" in http.get(f"/api/v1/runs/{result.run_id}/view").text
 
+    async def test_an_attempt_that_never_left_reads_as_zero(self, page):
+        http, deps = page
+        result = await self._run(deps, [answer()])
+        invocation = deps.get_audit().run(result.run_id)["engine_invocation_id"]
+        deps.get_attempts().started(start("gone", invocation, "dsp_test", 2))
+        deps.get_attempts().finished(end("gone", AttemptOutcome.NOT_SENT, cost_micros=0))
+        html = http.get(f"/api/v1/runs/{result.run_id}/view").text
+        assert "not_sent" in html
+        assert "$0.00000" in html
+        assert "au moins" not in html
+
     async def test_the_api_returns_them(self, page):
         http, deps = page
         result = await self._run(deps, [answer()])
