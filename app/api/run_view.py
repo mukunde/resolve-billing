@@ -26,8 +26,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 
 from app.api.auth import Anyone
-from app.api.deps import get_audit
+from app.api.deps import get_attempts, get_audit
 from app.api.templating import Safe, escape, render
+from app.infrastructure.attempts import SqliteAttemptStore
 from app.infrastructure.audit import SqliteAuditRepository
 
 router = APIRouter(prefix="/api/v1/runs", tags=["review"])
@@ -42,6 +43,7 @@ async def run_page(
     run_id: str,
     _reader: Anyone,
     audit: Annotated[SqliteAuditRepository, Depends(get_audit)],
+    attempt_store: Annotated[SqliteAttemptStore, Depends(get_attempts)],
 ) -> HTMLResponse:
     """Show a run, its findings and its trace. No buttons."""
     run = audit.run(run_id)
@@ -50,6 +52,7 @@ async def run_page(
 
     blocked = run["short_circuited_by"]
     events = audit.events(run_id)
+    attempts = attempt_store.for_invocation(run["engine_invocation_id"])
 
     return HTMLResponse(
         render(
@@ -79,7 +82,8 @@ async def run_page(
             explanation=run["explanation"] or "—",
             trace=_trace(events),
             absent_note=_absent_note(events),
-            cost_display=_cost(run),
+            attempts=_attempts(attempts),
+            cost_display=_cost(run, attempts),
             latency_display=(
                 f"{run['latency_ms']} ms" if run["latency_ms"] else "aucun appel"
             ),
@@ -105,15 +109,48 @@ def _findings(run) -> str:
     return ", ".join(codes) or "aucun"
 
 
-def _cost(run) -> str:
+def _cost(run, attempts=()) -> str:
     """`None` and `0` are different answers, and the page must not merge them.
 
     An unknown rate and a model with no per-call price would otherwise both
     print as free -- one being a gap in the price table, the other a result.
+    With attempts on record, a sum that leaves some out is a floor, not a cost.
     """
+    unknown = sum(1 for attempt in attempts if attempt["cost_micros"] is None)
     if run["cost_micros"] is None:
-        return "aucun — le moteur n'a pas été appelé"
+        return "inconnu" if attempts else "aucun — le moteur n'a pas été appelé"
+    if unknown:
+        return f"au moins ${run['cost_micros'] / 1e6:.5f} ({unknown} tentative(s) au coût inconnu)"
     return f"${run['cost_micros'] / 1e6:.5f}"
+
+
+def _attempts(attempts) -> Safe:
+    """Each send to the vendor. A row with no outcome never ended on record:
+    it says so, and it never reads as a success."""
+    if not attempts:
+        return Safe("")
+    rows = []
+    for attempt in attempts:
+        cost = attempt["cost_micros"]
+        tokens = (
+            f"{attempt['input_tokens']} + {attempt['output_tokens']}"
+            if attempt["input_tokens"] is not None and attempt["output_tokens"] is not None
+            else "inconnu"
+        )
+        rows.append(
+            "<li>"
+            f"<span class='seq'>{escape(attempt['number'])}</span>"
+            f"<span class='name'>{escape(attempt['outcome'] or 'non terminée')}</span>"
+            "<span class='payload'>"
+            f"{escape(attempt['returned_model'] or attempt['requested_model'])}"
+            f" · {escape(attempt['duration_ms'] if attempt['duration_ms'] is not None else '?')} ms"
+            f" · {escape(tokens)} tokens"
+            f" · {escape('inconnu' if cost is None else f'${cost / 1e6:.5f}')}"
+            "</span></li>"
+        )
+    return Safe(
+        "<h2>Tentatives auprès du moteur</h2><ol class='trace'>" + "".join(rows) + "</ol>"
+    )
 
 
 def _trace(events) -> Safe:

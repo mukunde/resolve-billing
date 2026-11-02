@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.auth import Anyone, Approver, Service
-from app.api.deps import get_actions, get_approvals, get_audit
+from app.api.deps import get_actions, get_approvals, get_attempts, get_audit
 from app.application.execute_action import ApprovalService
 from app.domain.enums import ActionState
 from app.infrastructure.actions import (
@@ -23,6 +23,7 @@ from app.infrastructure.actions import (
     SqliteActionStore,
     UnknownAction,
 )
+from app.infrastructure.attempts import SqliteAttemptStore
 from app.infrastructure.audit import SqliteAuditRepository
 from app.providers.base import ProviderRejected, ProviderUnavailable, ProviderUnsupported
 
@@ -194,6 +195,7 @@ async def read_run(
     _caller: Anyone,
     audit: Annotated[SqliteAuditRepository, Depends(get_audit)],
     actions: Annotated[SqliteActionStore, Depends(get_actions)],
+    attempts: Annotated[SqliteAttemptStore, Depends(get_attempts)],
 ) -> dict:
     """Everything known about a run, days later if need be.
 
@@ -206,5 +208,6 @@ async def read_run(
     return {
         "run": dict(row),
         "events": [dict(event) for event in audit.events(run_id)],
+        "attempts": [dict(a) for a in attempts.for_invocation(row["engine_invocation_id"])],
         "actions": [ActionOut.of(a).model_dump() for a in actions.for_run(run_id)],
     }

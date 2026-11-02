@@ -16,6 +16,7 @@ from app.decision.base import DecisionEngine
 from app.decision.claude import ClaudeDecisionEngine
 from app.decision.mock import MockDecisionEngine
 from app.infrastructure.actions import SqliteActionStore
+from app.infrastructure.attempts import SqliteAttemptStore
 from app.infrastructure.audit import SqliteAuditRepository
 from app.providers.base import BillingProvider
 from app.providers.fake.adapter import FakeBillingProvider
@@ -75,6 +76,11 @@ def wire(engine, provider):
 @lru_cache(maxsize=1)
 def get_audit() -> SqliteAuditRepository:
     return SqliteAuditRepository(os.getenv("AUDIT_DB", "audit.db"))
+
+
+@lru_cache(maxsize=1)
+def get_attempts() -> SqliteAttemptStore:
+    return SqliteAttemptStore(os.getenv("AUDIT_DB", "audit.db"))
 
 
 @lru_cache(maxsize=1)
