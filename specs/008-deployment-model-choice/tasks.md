@@ -144,7 +144,7 @@ the coverage check pass; committed locally. **[maintainer]** marks his tasks.
   round 1.
 - [x] T072 **[maintainer]** Rounds 1 to 3, in the manifest's order;
   replacements only as the rules say.
-- [ ] T073 `python -m evals.compare`; the results PR; the decision record
+- [x] T073 `python -m evals.compare`; the results PR; the decision record
   (FR-007), with the maintainer's choice and reasons.
 
 ## Dependencies
