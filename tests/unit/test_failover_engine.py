@@ -3,7 +3,6 @@
 # ruff: noqa: F811 -- the fixtures imported below are requested by name
 
 import asyncio
-import json
 
 import pytest
 
@@ -278,6 +277,30 @@ class TestTheSecondLeg:
         assert telemetry.unknown_cost_attempts == 1
         assert telemetry.cost_micros > 0
         assert telemetry.usage_known is False
+
+
+class TestPreparation:
+    async def test_a_failure_on_the_second_leg_stays_an_outage(self, dispute, context, findings):
+        engine, _, haiku, _ = rig([outage("transport")])
+
+        def broken(dispute, context, findings):
+            raise EngineUnavailable("transport")
+
+        haiku.request_texts = broken
+        with pytest.raises(EngineUnavailable) as raised:
+            await engine.decide(dispute, context, findings)
+        assert raised.value.telemetry.unknown_cost_attempts == 1
+
+    async def test_a_failure_on_the_first_is_not_eligible(self, dispute, context, findings):
+        engine, luna, haiku, _ = rig([])
+
+        def broken(dispute, context, findings):
+            raise EngineUnavailable("transport")
+
+        luna.request_texts = broken
+        with pytest.raises(EngineUnavailable):
+            await engine.decide(dispute, context, findings)
+        assert haiku.sent == []
 
 
 class TestAttribution:

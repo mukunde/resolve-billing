@@ -302,6 +302,22 @@ class TestTheReconciler:
         assert rows[0].lower_bound_runs == 1
 
 
+class TestAnOutageInTheReconciler:
+    async def test_it_is_a_floor_not_a_gap_in_the_price_table(self, tmp_path):
+        clock = Clock()
+        path = tmp_path / "audit.db"
+        script = [outage("transport"), outage("transport"), outage("transport")]
+        wrapper = BoundedEngine(
+            FakeEngine(*script), SqliteAttemptStore(path), clock=clock, sleep=clock.sleep
+        )
+        investigator, _ = TestTheInvestigation().investigator(tmp_path, wrapper)
+        await investigator.investigate(TestTheInvestigation.a_dispute())
+        today = datetime.now(UTC).date()
+        rows = estimated_from_audit(str(path), today, date(today.year + 1, 1, 1))
+        assert rows[0].lower_bound_runs == 1
+        assert rows[0].priced_runs == rows[0].runs == 1
+
+
 class TestThePage:
     @pytest.fixture
     def page(self, tmp_path, monkeypatch):

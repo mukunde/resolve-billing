@@ -79,6 +79,8 @@ class _Invocation:
         self.pricing_as_of: str | None = None
         #: The model that answered, when one did and it reads as a model id.
         self.answered_by: str | None = None
+        #: Whether anything left for the vendor: nothing sent cost nothing.
+        self.sent = False
 
     def remaining(self) -> float:
         return self._ends_at - self._clock()
@@ -141,8 +143,8 @@ class BoundedEngine:
         """`decide`, under a caller's correlation id, deadline and numbering.
         A failure carries what the attempts cost, as a telemetry."""
         run = _Invocation(invocation_id, dispute.id, ends_at, self._clock)
-        system, user, names = self.engine.request_texts(dispute, context, findings)
         try:
+            system, user, names = self.engine.request_texts(dispute, context, findings)
             reserved = await self._within(run, self.engine.reservation(system, user))
             for attempt in range(1, self.bounds.attempts + 1):
                 number = first_number + attempt - 1
@@ -265,6 +267,7 @@ class BoundedEngine:
         if run.remaining() <= 0:
             end(AttemptOutcome.NOT_SENT)
             raise EngineUnavailable("deadline")
+        run.sent = True
         try:
             async with asyncio.timeout(min(self.bounds.per_attempt, run.remaining())):
                 answer = await self.engine.complete(system, user)
@@ -325,13 +328,14 @@ class BoundedEngine:
     def _failed(self, run: _Invocation) -> EngineTelemetry:
         """What a leg with no decision still knows. Its usage is not a measure:
         each attempt's is on record."""
+        known = round(run.known_cost * 1_000_000) if run.known_cost is not None else None
         telemetry = EngineTelemetry(
             model_id=run.answered_by or self.engine.config.model,
             prompt_version=self.version,
             usage_known=False,
             unknown_cost_attempts=run.unknown_cost_attempts,
             invocation_id=run.id,
-            cost_micros=round(run.known_cost * 1_000_000) if run.known_cost is not None else None,
+            cost_micros=known if run.sent else 0,
             pricing_as_of=run.pricing_as_of,
             latency_ms=int(run.elapsed() * 1000),
         )

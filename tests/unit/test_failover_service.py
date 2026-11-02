@@ -12,10 +12,9 @@ from fastapi.testclient import TestClient
 
 from app.api import deps
 from app.decision.bounded import BoundedEngine
-from app.decision.failover import FailoverEngine
+from app.decision.failover import PRIMARY_BOUNDS, SECONDARY_BOUNDS, FailoverEngine
 from app.decision.hosted import configuration
 from app.decision.mock import MockDecisionEngine
-from app.infrastructure.attempts import SqliteAttemptStore
 from app.main import app
 from evals import engines, runner, service_run, state
 from tests.integration._auth import SERVICE, SERVICE_KEY
@@ -190,35 +189,37 @@ def message():
 class TestThroughTheEndpoint:
     """The real wiring, the SDKs on in-memory transports (T032, SC-003)."""
 
-    def wired(self, monkeypatch, tmp_path, openai_reply, anthropic_reply):
+    def wired(self, monkeypatch, openai_reply, anthropic_reply):
+        """The real factory: only the transports under the SDKs are fake."""
         openai_http = pytest.importorskip("httpx2")
         import httpx
 
-        from app.decision.anthropic_hosted import AnthropicHostedEngine
-        from app.decision.anthropic_hosted import build_client as anthropic_client
-        from app.decision.failover import PRIMARY_BOUNDS, SECONDARY_BOUNDS
-        from app.decision.openai_compatible import OpenAICompatibleEngine, build_client
+        from app.decision import anthropic_hosted, openai_compatible
 
         ready(monkeypatch)
-        store = SqliteAttemptStore(tmp_path / "audit.db")
-        luna_http = openai_http.AsyncClient(transport=openai_http.MockTransport(openai_reply))
-        claude_http = httpx.AsyncClient(transport=httpx.MockTransport(anthropic_reply))
-        engine = FailoverEngine(
-            BoundedEngine(
-                OpenAICompatibleEngine(LUNA, build_client(LUNA, http_client=luna_http)),
-                store,
-                bounds=PRIMARY_BOUNDS,
+        real_openai = openai_compatible.build_client
+        real_anthropic = anthropic_hosted.build_client
+        monkeypatch.setattr(
+            openai_compatible,
+            "build_client",
+            lambda config: real_openai(
+                config,
+                http_client=openai_http.AsyncClient(
+                    transport=openai_http.MockTransport(openai_reply)
+                ),
             ),
-            BoundedEngine(
-                AnthropicHostedEngine(HAIKU, anthropic_client(HAIKU, http_client=claude_http)),
-                store,
-                bounds=SECONDARY_BOUNDS,
-            ),
-            name=deps.FAILOVER,
-            version=f"{deps.FAILOVER}/failover_v1/decision_v3",
         )
-        monkeypatch.setattr(deps, "get_engine", lambda: engine)
-        return store
+        monkeypatch.setattr(
+            anthropic_hosted,
+            "build_client",
+            lambda config: real_anthropic(
+                config,
+                http_client=httpx.AsyncClient(transport=httpx.MockTransport(anthropic_reply)),
+            ),
+        )
+        engine = deps.get_engine()
+        assert engine.primary.bounds is PRIMARY_BOUNDS
+        assert engine.secondary.bounds is SECONDARY_BOUNDS
 
     def test_a_run_that_fell_back(self, monkeypatch, tmp_path, caplog):
         import httpx
@@ -234,7 +235,7 @@ class TestThroughTheEndpoint:
             seen.append(json.loads(request.content))
             return httpx.Response(200, json=message())
 
-        self.wired(monkeypatch, tmp_path, openai_reply, anthropic_reply)
+        self.wired(monkeypatch, openai_reply, anthropic_reply)
         http = TestClient(app, headers=SERVICE)
         with caplog.at_level(logging.DEBUG):
             response = http.post("/api/v1/disputes/investigate", json=PAYLOAD)
@@ -253,6 +254,30 @@ class TestThroughTheEndpoint:
         assert "au moins $" in page
         assert SENTINEL not in json.dumps(body)
 
+    def test_a_wrong_second_model_is_attributed(self, monkeypatch):
+        import httpx
+
+        httpx2 = pytest.importorskip("httpx2")
+
+        def openai_reply(request):
+            return httpx2.Response(503, json={"error": {"message": SENTINEL}})
+
+        def anthropic_reply(request):
+            return httpx.Response(200, json={**message(), "model": "claude-other"})
+
+        self.wired(monkeypatch, openai_reply, anthropic_reply)
+        http = TestClient(app, headers=SERVICE)
+        run_id = http.post("/api/v1/disputes/investigate", json=PAYLOAD).json()["run_id"]
+        body = http.get(f"/api/v1/runs/{run_id}").json()
+        assert body["run"]["model_id"] == "claude-other"
+        assert body["run"]["unknown_cost_attempts"] == 1
+        assert body["run"]["cost_micros"] > 0
+        assert "decision_engine_identity_failed" in [e["event"] for e in body["events"]]
+        assert [a["outcome"] for a in body["attempts"]] == ["unavailable", "wrong_model"]
+        page = http.get(f"/api/v1/runs/{run_id}/view").text
+        assert "claude-other" in page
+        assert "au moins $" in page
+
     def test_a_refusal_never_reaches_anthropic(self, monkeypatch, tmp_path):
         import httpx
 
@@ -267,7 +292,7 @@ class TestThroughTheEndpoint:
             seen.append(request)
             return httpx.Response(200, json=message())
 
-        self.wired(monkeypatch, tmp_path, openai_reply, anthropic_reply)
+        self.wired(monkeypatch, openai_reply, anthropic_reply)
         http = TestClient(app, headers=SERVICE)
         response = http.post("/api/v1/disputes/investigate", json=PAYLOAD)
         assert response.status_code == 502
@@ -287,7 +312,7 @@ class TestThroughTheEndpoint:
             seen.append(request)
             return httpx.Response(200, json=message())
 
-        self.wired(monkeypatch, tmp_path, openai_reply, anthropic_reply)
+        self.wired(monkeypatch, openai_reply, anthropic_reply)
         http = TestClient(app, headers=SERVICE)
         run_id = http.post("/api/v1/disputes/investigate", json=PAYLOAD).json()["run_id"]
         assert http.get(f"/api/v1/runs/{run_id}").json()["run"]["model_id"] == "gpt-6-luna"
@@ -342,6 +367,13 @@ class TestTheMeasurement:
         assert result["complete"] is True
         assert result["engine"] == deps.FAILOVER
         assert result["primary_disabled"] is True
+        assert "failover_v1" in result["engine_version"]
+        assert result["failover"]["deadline_s"] == 90.0
+        assert [leg["configuration"] for leg in result["failover"]["legs"]] == [
+            "gpt-6-luna",
+            "claude-haiku-5-5",
+        ]
+        assert all(leg["fingerprint"] for leg in result["failover"]["legs"])
         assert result["cases_run"] == 34
         assert self.admitted == ["claude-haiku-5-5"]
         assert vendor.calls == 20

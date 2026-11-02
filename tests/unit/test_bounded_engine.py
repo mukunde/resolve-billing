@@ -402,6 +402,38 @@ class TestTheDeadlineBoundsTheStage:
         assert book.ends[0].cost_micros == 0
 
 
+class TestAFailureBeforeTheSend:
+    async def test_it_carries_a_known_zero(self, dispute, context, findings):
+        wrapper, _ = bounded(FakeEngine(), bounds=Bounds(deadline=0.02, in_flight=1))
+        await wrapper._slots.acquire()
+        with pytest.raises(EngineUnavailable) as raised:
+            await wrapper.decide(dispute, context, findings)
+        telemetry = raised.value.telemetry
+        assert telemetry.cost_micros == 0
+        assert telemetry.unknown_cost_attempts == 0
+
+    async def test_preparing_the_request_carries_its_telemetry(self, dispute, context, findings):
+        engine = FakeEngine()
+
+        def broken(dispute, context, findings):
+            raise EngineUnavailable("transport")
+
+        engine.request_texts = broken
+        wrapper, _ = bounded(engine)
+        with pytest.raises(EngineUnavailable) as raised:
+            await wrapper.decide(dispute, context, findings)
+        assert raised.value.telemetry.cost_micros == 0
+
+    async def test_a_sent_attempt_stays_unknown(self, dispute, context, findings):
+        clock = Clock()
+        engine = FakeEngine(outage("transport"), outage("transport"), outage("transport"))
+        wrapper, _ = bounded(engine, clock=clock)
+        with pytest.raises(EngineUnavailable) as raised:
+            await wrapper.decide(dispute, context, findings)
+        assert raised.value.telemetry.cost_micros is None
+        assert raised.value.telemetry.unknown_cost_attempts == 3
+
+
 class TestAnUnreadableResponse:
     async def test_it_is_unusable_not_misidentified(self, dispute, context, findings):
         unreadable = Answer(None, "other", None, None, None, ("response_unreadable",))

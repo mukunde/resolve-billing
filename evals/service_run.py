@@ -41,7 +41,13 @@ from app.decision.base import (
 )
 from app.decision.bounded import BoundedEngine, Bounds
 from app.decision.claude import PROMPT_VERSION
-from app.decision.failover import POLICY, SECONDARY_BOUNDS, FailoverEngine
+from app.decision.failover import (
+    DEADLINE,
+    POLICY,
+    PRIMARY_BOUNDS,
+    SECONDARY_BOUNDS,
+    FailoverEngine,
+)
 from app.decision.hosted import Answer, configuration
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
@@ -67,6 +73,27 @@ REFUSED_UNPROCESSED = frozenset(
 )
 #: Outcomes that carry an answer, and so its usage.
 ANSWERED = frozenset({AttemptOutcome.ANSWERED, AttemptOutcome.UNUSABLE, AttemptOutcome.WRONG_MODEL})
+
+
+FAILOVER_VERSION = f"{FAILOVER}/{POLICY}/{PROMPT_VERSION}"
+
+
+def failover_record() -> dict:
+    """The composite measured: its policy and both legs, each by fingerprint."""
+    legs = ((ENGINE, PRIMARY_BOUNDS), (HAIKU, SECONDARY_BOUNDS))
+    return {
+        "policy": POLICY,
+        "deadline_s": DEADLINE,
+        "legs": [
+            {
+                "configuration": name,
+                "fingerprint": fingerprint(configuration(name)),
+                "bounds": asdict(bounds),
+            }
+            for name, bounds in legs
+        ],
+        "disabled": ENGINE,
+    }
 
 
 class DisabledLeg:
@@ -170,7 +197,7 @@ async def run(record: dict, cases: list[dict], recorder: LedgerRecorder, account
             DisabledLeg(configuration(ENGINE)),
             BoundedEngine(engines.HOSTED_ENGINES[HAIKU](), recorder, bounds=bounds),
             name=FAILOVER,
-            version=f"{FAILOVER}/{POLICY}/{PROMPT_VERSION}",
+            version=FAILOVER_VERSION,
         )
     else:
         wrapper = BoundedEngine(engines.HOSTED_ENGINES[ENGINE](), recorder, bounds=bounds)
@@ -206,7 +233,7 @@ def write(record: dict, recorder: LedgerRecorder, ledger, config, args, started:
         envelope = f"unreadable: {refusal}"
     payload = {
         "engine": record["engine"],
-        "engine_version": config.prompt_version,
+        "engine_version": record["engine_version"],
         "primary_disabled": record["engine"] == FAILOVER,
         "run_kind": RUN_KIND,
         "statement": STATEMENT,
@@ -221,6 +248,7 @@ def write(record: dict, recorder: LedgerRecorder, ledger, config, args, started:
         "cases_run": len(record["outcomes"]),
         "not_attempted": record["not_attempted"],
         "bounds": asdict(record["bounds"]),
+        "failover": record["failover"],
         "data_terms": args.data_terms,
         "configuration_fingerprint": fingerprint(config),
         "prompt_version": PROMPT_VERSION,
@@ -287,6 +315,8 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     record = {
         "engine": args.engine,
+        "engine_version": FAILOVER_VERSION if args.engine == FAILOVER else config.prompt_version,
+        "failover": failover_record() if args.engine == FAILOVER else None,
         "started_at": began,
         "total": len(cases),
         "outcomes": [],
