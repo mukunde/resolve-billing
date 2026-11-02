@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Draft, for the maintainer's approval
+**Status**: Approved by the maintainer on 2026-11-02, at `65669cb`, with its four choices
 
 **Input**: ADR-013 retained `gpt-6-luna` provisionally and requires a
 deployment slice before any adoption (spec 008, FR-007). The framing was
