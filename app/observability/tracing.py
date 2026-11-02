@@ -167,13 +167,16 @@ def workflow_attributes(*, run_id: str, provider: str, engine: str) -> dict[str,
     }
 
 
-def chat_attributes(*, model: str, prompt_version: str, max_tokens: int) -> dict[str, Any]:
-    """The single model call, before its answer is known."""
+def chat_attributes(
+    *, model: str, prompt_version: str, max_tokens: int, provider: str | None = None
+) -> dict[str, Any]:
+    """The single model call, before its answer is known. The provider is
+    Anthropic unless the caller says otherwise."""
     if not AVAILABLE:
         return {}
     return {
         genai.GEN_AI_OPERATION_NAME: genai.GenAiOperationNameValues.CHAT.value,
-        genai.GEN_AI_PROVIDER_NAME: genai.GenAiProviderNameValues.ANTHROPIC.value,
+        genai.GEN_AI_PROVIDER_NAME: provider or genai.GenAiProviderNameValues.ANTHROPIC.value,
         genai.GEN_AI_REQUEST_MODEL: model,
         genai.GEN_AI_REQUEST_MAX_TOKENS: max_tokens,
         genai.GEN_AI_PROMPT_NAME: prompt_version,
@@ -199,6 +202,24 @@ def usage_attributes(telemetry) -> dict[str, Any]:
         "billing.cost_micros": telemetry.cost_micros,
         "billing.pricing_as_of": telemetry.pricing_as_of,
         "billing.latency_ms": telemetry.latency_ms,
+    }
+
+
+def attempt_attributes(attempt, number: int, invocation_id: str) -> dict[str, Any]:
+    """How one send to a vendor ended: closed categories and counts, never
+    what was said (spec 009, FR-007b). `None` stays absent: unknown, not zero."""
+    if not AVAILABLE:
+        return {}
+    return {
+        "billing.attempt.number": number,
+        "billing.attempt.outcome": attempt.outcome.value,
+        "billing.attempt.invocation_id": invocation_id,
+        "billing.attempt.cost_known": attempt.cost_micros is not None,
+        "billing.latency_ms": attempt.duration_ms,
+        "billing.cost_micros": attempt.cost_micros,
+        genai.GEN_AI_RESPONSE_MODEL: attempt.returned_model,
+        genai.GEN_AI_USAGE_INPUT_TOKENS: attempt.input_tokens,
+        genai.GEN_AI_USAGE_OUTPUT_TOKENS: attempt.output_tokens,
     }
 
 

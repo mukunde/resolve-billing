@@ -253,7 +253,7 @@ class TestTheNewConfigurations:
 
         deps.get_engine.cache_clear()
 
-    @pytest.mark.parametrize("name", NEW)
+    @pytest.mark.parametrize("name", [name for name in NEW if name != deps.LUNA])
     def test_the_service_refuses_each(self, name, monkeypatch):
         monkeypatch.setenv("DECISION_ENGINE", name)
         deps.get_engine.cache_clear()

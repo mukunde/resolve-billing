@@ -264,7 +264,8 @@ def an_old_file(path):
         """
     )
     connection.execute(
-        "INSERT INTO agent_runs VALUES ('run_old', '2026-06-01T00:00:00+00:00', 'c', 'm', 5, 0, 'x')"
+        "INSERT INTO agent_runs VALUES "
+        "('run_old', '2026-06-01T00:00:00+00:00', 'c', 'm', 5, 0, 'x')"
     )
     connection.commit()
     connection.close()

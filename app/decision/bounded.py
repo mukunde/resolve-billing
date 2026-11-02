@@ -42,6 +42,7 @@ from app.decision.hosted import (
     usable,
 )
 from app.decision.limits import Limiter, Oversized, WaitTooLong
+from app.observability import tracing
 
 
 @dataclass(frozen=True)
@@ -177,10 +178,30 @@ class BoundedEngine:
             )
         )
         began = self._clock()
+        attributes = tracing.chat_attributes(
+            model=config.model,
+            prompt_version=self.version,
+            max_tokens=config.max_output_tokens,
+            provider=config.vendor,
+        )
+        with tracing.span(f"chat {config.model}", **attributes) as current:
+            return await self._outcome(run, number, attempt_id, began, system, user, current)
+
+    async def _outcome(
+        self,
+        run: _Invocation,
+        number: int,
+        attempt_id: str,
+        began: float,
+        system: str,
+        user: str,
+        current,
+    ) -> Answer:
+        config = self.engine.config
 
         def end(outcome: AttemptOutcome, answer: Answer | None = None) -> None:
             cost = self._account(run, answer)
-            self._recorder.finished(
+            ended = (
                 AttemptEnd(
                     attempt_id=attempt_id,
                     outcome=outcome,
@@ -196,6 +217,8 @@ class BoundedEngine:
                     pricing_as_of=run.pricing_as_of if cost is not None else None,
                 )
             )
+            tracing.set_attributes(current, **tracing.attempt_attributes(ended, number, run.id))
+            self._recorder.finished(ended)
 
         try:
             async with asyncio.timeout(min(self.bounds.per_attempt, max(run.remaining(), 0.001))):

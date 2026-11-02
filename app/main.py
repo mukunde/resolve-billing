@@ -3,16 +3,30 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api import approvals, disputes, health, review, run_view
+from app.api import approvals, deps, disputes, health, review, run_view
+from app.decision.base import EngineRefused
 from app.observability import tracing
 from app.providers.base import ProviderUnsupported
 
 log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Refuse to serve a selection that may not start, before any request;
+    release the engine on the way out."""
+    if (refusal := deps.selection_refusal()) is not None:
+        raise RuntimeError(f"decision engine refused: {refusal}")
+    yield
+    await deps.close_engine()
+
 
 app = FastAPI(
     title="ResolveBilling",
@@ -22,6 +36,7 @@ app = FastAPI(
         "person approves every financial action."
     ),
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 
@@ -64,6 +79,20 @@ async def _validation_error(request: Request, error: RequestValidationError) -> 
             location.append(part)
         detail.append({"loc": location, "type": problem.get("type")})
     return JSONResponse(status_code=422, content={"detail": detail})
+
+
+@app.exception_handler(EngineRefused)
+async def _engine_refused(request: Request, error: EngineRefused) -> JSONResponse:
+    """The vendor refused the request: nothing was decided, and trying again
+    changes nothing until someone looks. A category, never the vendor's words."""
+    log.warning("decision engine refused: category=%s path=%s", error, request.url.path)
+    return JSONResponse(
+        status_code=502,
+        content={
+            "detail": "decision engine refused the request: nothing was decided",
+            "category": str(error),
+        },
+    )
 
 
 @app.exception_handler(ProviderUnsupported)
