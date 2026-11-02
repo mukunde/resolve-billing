@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-02
 
-**Status**: Draft, for the maintainer's approval
+**Status**: Approved by the maintainer on 2026-11-02, at `a45c9d5`, with its threshold of 30
 
 **Input**: Spec 009 put `gpt-6-luna` on the demonstrator's service path with no
 automatic fallback, and left the question to this specification, to be decided
