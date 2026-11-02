@@ -61,7 +61,8 @@ This choice is an intention, not a deployment:
   terms that apply are established apart, below, and they gate real data.
 - **The choice can fall.** If the slice cannot establish acceptable terms, this
   ADR is reopened. Claude Haiku 5.5 does not take its place by default:
-  choosing it would be a new decision, with its own reasons.
+  choosing it would be a new decision, with its own reasons. Its role as a
+  fallback (spec 010) is a different thing: it answers when OpenAI cannot.
 
 This amends one sentence of ADR-002, which disqualified any engine hosted
 outside the EU from the production path. As spec 008 states it, Europe is
@@ -86,8 +87,25 @@ spec 009, which leaves the evaluation path's guard as it is:
    synthetic, generated independently of this engine, adjudicated and frozen
    (constitution, principle IX), and written by a model of another family than
    this engine (the README's rule);
-3. the decision on a fallback to Claude Haiku 5.5 (spec 010), because the run
-   measures the configuration actually adopted, once.
+3. the reference configuration, recorded below, because the run measures the
+   configuration actually adopted, once.
+
+### The reference configuration
+
+The maintainer decided on 2026-11-02 that the reference run measures
+**`gpt-6-luna+claude-haiku-5-5`, with the fallback on** (spec 010). With no outage
+during the run, it observes Luna's path and does not validate the fallback. If Haiku
+answers some cases, the result is kept with each case attributed to the model that
+answered, and it is never rerun to obtain a Luna-only score.
+
+The attestation above therefore covers both engines: entirely synthetic; generated
+independently of both, adjudicated and frozen; and written by a model of a family
+other than OpenAI's and Anthropic's. A conversation's isolation shows neither of the
+last two by itself. Relaxing either goes through the change the constitution requires
+of its holdout policy.
+
+On 2026-11-02 the maintainer stated that the holdout's generator is neither OpenAI's
+nor Anthropic's. That statement is recorded here. It is not yet the attestation.
 
 ## The hosting record
 

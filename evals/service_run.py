@@ -1,5 +1,5 @@
-"""`gpt-6-luna` measured through the service's own engine
-(specs/009-luna-service, FR-014).
+"""The service's own engines, measured (specs/009-luna-service, FR-014, and
+specs/010-haiku-fallback, FR-012).
 
 The runner sends this configuration through `Governed`; the service sends it
 through `BoundedEngine`. This tool measures the second, on the development
@@ -12,6 +12,10 @@ slot of spec 008's campaign, and its comparison takes no part of it.
 
     python -m dotenv run -- python -m evals.service_run \\
         --data-terms contractual --json evals/results/gpt-6-luna-service.json
+
+The composite runs only with `--primary-disabled`: no client for OpenAI is
+built, every dispute reaches Haiku through the failover's own wiring, and the
+Anthropic envelope pays. It measures that wiring, not an outage.
 """
 
 from __future__ import annotations
@@ -26,14 +30,24 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.api.deps import FAILOVER, HAIKU
 from app.decision.base import (
     AttemptEnd,
     AttemptOutcome,
     AttemptStart,
     EngineRejected,
+    EngineTelemetry,
+    EngineUnavailable,
 )
 from app.decision.bounded import BoundedEngine, Bounds
 from app.decision.claude import PROMPT_VERSION
+from app.decision.failover import (
+    DEADLINE,
+    POLICY,
+    PRIMARY_BOUNDS,
+    SECONDARY_BOUNDS,
+    FailoverEngine,
+)
 from app.decision.hosted import Answer, configuration
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
@@ -48,7 +62,7 @@ from evals.state import AccountBusy, AccountRun
 ENGINE = "gpt-6-luna"
 RUN_KIND = "service run"
 STATEMENT = (
-    "one run of the development cases through the service's engine: a regression score on "
+    "one run of the development cases through a service engine: a regression score on "
     "cases that shaped the prompt, not a measure on unseen disputes, and no part of spec "
     "008's comparison"
 )
@@ -59,6 +73,53 @@ REFUSED_UNPROCESSED = frozenset(
 )
 #: Outcomes that carry an answer, and so its usage.
 ANSWERED = frozenset({AttemptOutcome.ANSWERED, AttemptOutcome.UNUSABLE, AttemptOutcome.WRONG_MODEL})
+
+
+FAILOVER_VERSION = f"{FAILOVER}/{POLICY}/{PROMPT_VERSION}"
+
+
+def failover_record() -> dict:
+    """The composite measured: its policy and both legs, each by fingerprint."""
+    legs = ((ENGINE, PRIMARY_BOUNDS), (HAIKU, SECONDARY_BOUNDS))
+    return {
+        "policy": POLICY,
+        "deadline_s": DEADLINE,
+        "legs": [
+            {
+                "configuration": name,
+                "fingerprint": fingerprint(configuration(name)),
+                "bounds": asdict(bounds),
+            }
+            for name, bounds in legs
+        ],
+        "disabled": ENGINE,
+    }
+
+
+class DisabledLeg:
+    """The failover's first leg, out of the measurement: no engine, no client,
+    nothing sent, no attempt, and a cost known to be zero."""
+
+    invoice_references = None
+
+    def __init__(self, config) -> None:
+        self._config = config
+
+    async def leg(self, dispute, context, findings, invocation_id, ends_at, first_number=1):
+        outage = EngineUnavailable("disabled")
+        outage.failover_eligible = True
+        outage.invocation_id = invocation_id
+        outage.telemetry = EngineTelemetry(
+            model_id=self._config.model,
+            prompt_version=self._config.prompt_version,
+            usage_known=False,
+            cost_micros=0,
+            invocation_id=invocation_id,
+        )
+        raise outage
+
+    async def aclose(self) -> None:
+        pass
 
 
 class LedgerRecorder:
@@ -107,10 +168,10 @@ class LedgerRecorder:
             if cost is not None:
                 self._settle(ticket, cost)
             if stop is not None:
-                raise RunStopped(f"{ENGINE}: {stop}")
+                raise RunStopped(f"{self._config.name}: {stop}")
         if attempt.outcome is AttemptOutcome.WRONG_MODEL:
             # Its cost is kept; its answer never scored, as in `Governed`.
-            raise RunStopped(f"{ENGINE}: answered by another model")
+            raise RunStopped(f"{self._config.name}: answered by another model")
 
     def _settle(self, ticket: str, amount: float) -> None:
         self._ledger.settle(ticket, amount)
@@ -131,7 +192,15 @@ async def run(record: dict, cases: list[dict], recorder: LedgerRecorder, account
     if (wait := account.wait()) > 0:
         print(f"waiting {wait:.0f} s for the previous run's quota window", file=sys.stderr)
         await asyncio.sleep(wait)
-    wrapper = BoundedEngine(engines.HOSTED_ENGINES[ENGINE](), recorder, bounds=bounds)
+    if record["engine"] == FAILOVER:
+        wrapper = FailoverEngine(
+            DisabledLeg(configuration(ENGINE)),
+            BoundedEngine(engines.HOSTED_ENGINES[HAIKU](), recorder, bounds=bounds),
+            name=FAILOVER,
+            version=FAILOVER_VERSION,
+        )
+    else:
+        wrapper = BoundedEngine(engines.HOSTED_ENGINES[ENGINE](), recorder, bounds=bounds)
     provider = FakeBillingProvider()
     investigator = DisputeInvestigator(provider=provider, engine=wire(wrapper, provider))
     try:
@@ -163,8 +232,9 @@ def write(record: dict, recorder: LedgerRecorder, ledger, config, args, started:
     except LedgerRefused as refusal:
         envelope = f"unreadable: {refusal}"
     payload = {
-        "engine": ENGINE,
-        "engine_version": config.prompt_version,
+        "engine": record["engine"],
+        "engine_version": record["engine_version"],
+        "primary_disabled": record["engine"] == FAILOVER,
         "run_kind": RUN_KIND,
         "statement": STATEMENT,
         "cases_file": engines.DEVELOPMENT_SET.name,
@@ -178,6 +248,7 @@ def write(record: dict, recorder: LedgerRecorder, ledger, config, args, started:
         "cases_run": len(record["outcomes"]),
         "not_attempted": record["not_attempted"],
         "bounds": asdict(record["bounds"]),
+        "failover": record["failover"],
         "data_terms": args.data_terms,
         "configuration_fingerprint": fingerprint(config),
         "prompt_version": PROMPT_VERSION,
@@ -199,6 +270,11 @@ def write(record: dict, recorder: LedgerRecorder, ledger, config, args, started:
             "envelope": envelope,
         },
         "attempts": recorder.attempts,
+        "answered_by": {
+            attempt["dispute_id"].removeprefix("eval_"): attempt.get("returned_model")
+            for attempt in recorder.attempts
+            if attempt.get("outcome") == AttemptOutcome.ANSWERED.value
+        },
         "outcomes": [vars(outcome) for outcome in record["outcomes"]],
     }
     return _new_file(args.json, record["started_at"], payload)
@@ -209,9 +285,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", type=Path, required=True)
     parser.add_argument("--data-terms", required=True)
     parser.add_argument("--cases", type=Path, default=engines.DEVELOPMENT_SET)
+    parser.add_argument("--engine", choices=(ENGINE, FAILOVER), default=ENGINE)
+    parser.add_argument(
+        "--primary-disabled",
+        action="store_true",
+        help="the composite only: measure its wiring with Luna's leg out",
+    )
     args = parser.parse_args(argv)
+    if (args.engine == FAILOVER) != args.primary_disabled:
+        parser.error(f"{FAILOVER} runs with --primary-disabled, and nothing else does")
 
-    config = configuration(ENGINE)
+    config = configuration(HAIKU if args.engine == FAILOVER else ENGINE)
     try:
         cases = engines.development_cases(args.cases)
         FirstCalls().admit_full_run(config)
@@ -226,10 +310,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
 
-    bounds = Bounds()
+    bounds = SECONDARY_BOUNDS if args.engine == FAILOVER else Bounds()
     began = datetime.now(UTC)
     started = time.monotonic()
     record = {
+        "engine": args.engine,
+        "engine_version": FAILOVER_VERSION if args.engine == FAILOVER else config.prompt_version,
+        "failover": failover_record() if args.engine == FAILOVER else None,
         "started_at": began,
         "total": len(cases),
         "outcomes": [],
@@ -269,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     if not record["complete"]:
         print(f"INCOMPLETE: {record['stop_reason']}", file=sys.stderr)
     print(f"\n{STATEMENT}")
-    status = runner.report(ENGINE, record["outcomes"])
+    status = runner.report(args.engine, record["outcomes"])
     print(f"\nresult written to {written}")
     return status if record["complete"] else 3
 

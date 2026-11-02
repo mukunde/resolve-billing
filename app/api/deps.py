@@ -16,7 +16,8 @@ from app.application.investigate_dispute import DisputeInvestigator
 from app.decision.base import DecisionEngine
 from app.decision.bounded import BoundedEngine
 from app.decision.claude import ClaudeDecisionEngine
-from app.decision.hosted import configuration
+from app.decision.failover import POLICY, PRIMARY_BOUNDS, SECONDARY_BOUNDS, FailoverEngine
+from app.decision.hosted import PROMPT_VERSION, configuration
 from app.decision.mock import MockDecisionEngine
 from app.infrastructure.actions import SqliteActionStore
 from app.infrastructure.attempts import SqliteAttemptStore
@@ -28,6 +29,12 @@ from app.providers.stripe.client import connect, connect_writer
 
 #: The engine ADR-013 retained provisionally, on synthetic data only.
 LUNA = "gpt-6-luna"
+#: The engine it falls back to, pinned whatever `CLAUDE_MODEL` says.
+HAIKU = "claude-haiku-5-5"
+#: Luna, then Haiku when OpenAI cannot be reached (spec 010).
+FAILOVER = f"{LUNA}+{HAIKU}"
+#: What each selection needs at start, on synthetic data alone.
+SYNTHETIC_ONLY = {LUNA: (LUNA,), FAILOVER: (LUNA, HAIKU)}
 
 
 def _luna() -> DecisionEngine:
@@ -37,12 +44,28 @@ def _luna() -> DecisionEngine:
     return BoundedEngine(OpenAICompatibleEngine(configuration(LUNA)), get_attempts())
 
 
+def _failover() -> DecisionEngine:
+    """Both evaluated configurations, one attempt each, under one deadline."""
+    from app.decision.openai_compatible import OpenAICompatibleEngine
+    from app.decision.vendors import client_for
+
+    primary = OpenAICompatibleEngine(configuration(LUNA))
+    secondary = client_for(configuration(HAIKU))
+    return FailoverEngine(
+        BoundedEngine(primary, get_attempts(), bounds=PRIMARY_BOUNDS),
+        BoundedEngine(secondary, get_attempts(), bounds=SECONDARY_BOUNDS),
+        name=FAILOVER,
+        version=f"{FAILOVER}/{POLICY}/{PROMPT_VERSION}",
+    )
+
+
 #: Engines that exist today. The roadmap ones are absent on purpose: an empty
 #: stub in this table would suggest an integration that is not there.
 ENGINES: dict[str, type] = {
     "mock": MockDecisionEngine,
     "claude": ClaudeDecisionEngine,
     LUNA: _luna,
+    FAILOVER: _failover,
 }
 
 
@@ -74,24 +97,35 @@ def selection_refusal() -> str | None:
     service cannot tell a real message from a synthetic one, so the declaration
     is the operator's. Lifting it is a decision of its own, never a variable.
     """
-    if os.getenv("DECISION_ENGINE", "mock").lower() != LUNA:
+    selected = os.getenv("DECISION_ENGINE", "mock").lower()
+    if selected not in SYNTHETIC_ONLY:
         return None
     if os.getenv("BILLING_PROVIDER", "fake").lower() != "fake":
-        return f"{LUNA} runs on the fake billing platform only (BILLING_PROVIDER=fake)"
+        return f"{selected} runs on the fake billing platform only (BILLING_PROVIDER=fake)"
     if os.getenv("RESOLVE_DATA") != "synthetic":
-        return f"{LUNA} needs the data declared synthetic (RESOLVE_DATA=synthetic)"
-    if importlib.util.find_spec("openai") is None:
-        return f"{LUNA} needs the `engines` extra"
-    config = configuration(LUNA)
+        return f"{selected} needs the data declared synthetic (RESOLVE_DATA=synthetic)"
+    for name in SYNTHETIC_ONLY[selected]:
+        if (refusal := _configuration_refusal(selected, name)) is not None:
+            return refusal
+    return None
+
+
+def _configuration_refusal(selected: str, name: str) -> str | None:
+    config = configuration(name)
+    package = "anthropic" if config.vendor == "anthropic" else "openai"
+    if importlib.util.find_spec(package) is None:
+        return f"{selected} needs the `{package}` package"
     missing = [
-        name
-        for name in (config.key_variable, *config.account_variables)
-        if not os.environ.get(name)
+        variable
+        for variable in (config.key_variable, *config.account_variables)
+        if not os.environ.get(variable)
     ]
     if missing:
-        return f"{LUNA} needs {', '.join(missing)}"
-    from app.decision.openai_compatible import ambient_refusal
-
+        return f"{selected} needs {', '.join(missing)}"
+    if config.vendor == "anthropic":
+        from app.decision.anthropic_hosted import ambient_refusal
+    else:
+        from app.decision.openai_compatible import ambient_refusal
     return ambient_refusal()
 
 
@@ -100,9 +134,7 @@ def get_engine() -> DecisionEngine:
     name = os.getenv("DECISION_ENGINE", "mock").lower()
     engine = ENGINES.get(name)
     if engine is None:
-        raise RuntimeError(
-            f"unknown decision engine {name!r}; available: {sorted(ENGINES)}"
-        )
+        raise RuntimeError(f"unknown decision engine {name!r}; available: {sorted(ENGINES)}")
     if (refusal := selection_refusal()) is not None:
         raise RuntimeError(f"decision engine refused: {refusal}")
     return wire(engine(), get_provider())

@@ -255,6 +255,36 @@ class TestAttempts:
         assert chat
         assert any(s.attributes["billing.unknown_cost_attempts"] == 1 for s in carrying)
 
+    async def test_the_workflow_span_holds_the_composites_totals(self, exporter):
+        from app.decision.bounded import BoundedEngine
+        from app.decision.failover import PRIMARY_BOUNDS, SECONDARY_BOUNDS, FailoverEngine
+        from app.decision.hosted import configuration
+        from tests.unit.test_bounded_engine import Book, Clock, FakeEngine, answer, outage
+
+        exporter.clear()
+        clock = Clock()
+        book = Book()
+        extra = {"clock": clock, "sleep": clock.sleep}
+        haiku = FakeEngine(answer(model="claude-haiku-5-5"))
+        haiku.config = configuration("claude-haiku-5-5")
+        engine = FailoverEngine(
+            BoundedEngine(FakeEngine(outage("transport")), book, bounds=PRIMARY_BOUNDS, **extra),
+            BoundedEngine(haiku, book, bounds=SECONDARY_BOUNDS, **extra),
+            name="both",
+            version="both/failover_v1",
+            clock=clock,
+        )
+        await DisputeInvestigator(provider=FakeBillingProvider(), engine=engine).investigate(CASE_A)
+        spans = exporter.get_finished_spans()
+        workflow = next(s for s in spans if s.name.startswith("invoke_workflow"))
+        assert workflow.attributes["gen_ai.response.model"] == "claude-haiku-5-5"
+        assert workflow.attributes["billing.unknown_cost_attempts"] == 1
+        assert workflow.attributes["billing.cost_micros"] == book.ends[1].cost_micros
+        assert [s.attributes["gen_ai.provider.name"] for s in self.attempts(spans)] == [
+            "openai",
+            "anthropic",
+        ]
+
     def test_unknown_usage_is_absent_not_zero(self):
         from app.decision.base import EngineTelemetry
 

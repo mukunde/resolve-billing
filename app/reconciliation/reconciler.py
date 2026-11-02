@@ -180,7 +180,11 @@ def estimated_from_audit(
             model=model,
             cost_micros=sum(r["cost_micros"] or 0 for r in rows),
             runs=len(rows),
-            priced_runs=sum(1 for r in rows if r["cost_micros"] is not None),
+            # A run with an attempt of unknown cost has a rate and no usage: it
+            # is no gap in the price table, and `lower_bound_runs` says so.
+            priced_runs=sum(
+                1 for r in rows if r["cost_micros"] is not None or r["unknown_cost_attempts"]
+            ),
             cache_read_tokens=sum(r["cache_read_input_tokens"] or 0 for r in rows),
             lower_bound_runs=sum(1 for r in rows if r["unknown_cost_attempts"]),
         )
