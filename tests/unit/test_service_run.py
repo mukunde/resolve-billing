@@ -209,6 +209,51 @@ class TestStops:
         assert code in (0, 1, 3)
 
 
+class TestTheEdges:
+    def test_a_factory_failure_writes_an_incomplete_result(self, monkeypatch, tmp_path):
+        def broken():
+            raise RuntimeError("no client")
+
+        monkeypatch.setitem(engines.HOSTED_ENGINES, "gpt-6-luna", broken)
+        target = tmp_path / "gpt-6-luna-service.json"
+        with pytest.raises(RuntimeError):
+            service_run.main(["--data-terms", "contractual", "--json", str(target)])
+        result = json.loads(sorted(tmp_path.glob("gpt-6-luna-service-*.json"))[-1].read_text())
+        assert result["complete"] is False
+        assert "internal error" in result["stop_reason"]
+
+    def test_a_close_that_fails_is_not_complete(self, monkeypatch, tmp_path):
+        class Closing(Scripted):
+            async def aclose(self):
+                raise RuntimeError("no close")
+
+        with pytest.raises(RuntimeError):
+            measured(monkeypatch, tmp_path, Closing("gpt-6-luna"))
+        result = json.loads(sorted(tmp_path.glob("gpt-6-luna-service-*.json"))[-1].read_text())
+        assert result["complete"] is False
+
+    def test_the_previous_runs_window_is_waited_for(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("evals.state.AccountRun.wait", lambda self: 0.01)
+        slept = []
+        real = service_run.asyncio.sleep
+
+        async def noted(seconds):
+            slept.append(seconds)
+            await real(0)
+
+        monkeypatch.setattr(service_run.asyncio, "sleep", noted)
+        vendor = Scripted("gpt-6-luna")
+        measured(monkeypatch, tmp_path, vendor)
+        assert slept[0] == 0.01
+
+    def test_an_unreadable_response_stops_it_as_governed_does(self, monkeypatch, tmp_path):
+        unreadable = Answer(None, "other", None, None, None, ("response_unreadable",))
+        code, result = measured(monkeypatch, tmp_path, Scripted("gpt-6-luna", unreadable))
+        assert code == 3
+        assert "without its usage" in result["stop_reason"]
+        assert result["attempts"][0]["outcome"] == "unusable"
+
+
 def _quick():
     from app.decision.bounded import Bounds
 

@@ -155,6 +155,12 @@ def set_attributes(current, **attributes: Any) -> None:
 # they move, one module changes.
 
 
+def set_on_current(**attributes: Any) -> None:
+    """Add attributes to the span in progress, if there is one."""
+    if AVAILABLE:
+        set_attributes(trace.get_current_span(), **attributes)
+
+
 def workflow_attributes(*, run_id: str, provider: str, engine: str) -> dict[str, Any]:
     """The run as a whole: one dispute, start to authorisation."""
     if not AVAILABLE:
@@ -194,12 +200,18 @@ def usage_attributes(telemetry) -> dict[str, Any]:
     """
     if not AVAILABLE or telemetry is None:
         return {}
+    # Tokens nobody reported are absent, not zero; above zero, the unknown
+    # attempts make the cost a lower bound (spec 009).
+    known = telemetry.usage_known
     return {
         genai.GEN_AI_RESPONSE_MODEL: telemetry.model_id,
-        genai.GEN_AI_USAGE_INPUT_TOKENS: telemetry.input_tokens,
-        genai.GEN_AI_USAGE_OUTPUT_TOKENS: telemetry.output_tokens,
-        genai.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS: telemetry.cache_read_input_tokens,
+        genai.GEN_AI_USAGE_INPUT_TOKENS: telemetry.input_tokens if known else None,
+        genai.GEN_AI_USAGE_OUTPUT_TOKENS: telemetry.output_tokens if known else None,
+        genai.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS: (
+            telemetry.cache_read_input_tokens if known else None
+        ),
         "billing.cost_micros": telemetry.cost_micros,
+        "billing.unknown_cost_attempts": telemetry.unknown_cost_attempts or None,
         "billing.pricing_as_of": telemetry.pricing_as_of,
         "billing.latency_ms": telemetry.latency_ms,
     }

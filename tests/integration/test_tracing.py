@@ -246,6 +246,23 @@ class TestAttempts:
             for value in dict(span.attributes).values():
                 assert SECRET not in str(value)
 
+    async def test_the_workflow_span_keeps_unknowns_apart(self, exporter):
+        from tests.unit.test_bounded_engine import answer, outage
+
+        spans = await self._spans(exporter, outage("transport"), answer())
+        chat = [s for s in spans if s.name.startswith("chat")]
+        carrying = [s for s in spans if "billing.unknown_cost_attempts" in dict(s.attributes)]
+        assert chat
+        assert any(s.attributes["billing.unknown_cost_attempts"] == 1 for s in carrying)
+
+    def test_unknown_usage_is_absent_not_zero(self):
+        from app.decision.base import EngineTelemetry
+
+        telemetry = EngineTelemetry(model_id="m", prompt_version="v", usage_known=False)
+        attributes = tracing.usage_attributes(telemetry)
+        assert attributes["gen_ai.usage.input_tokens"] is None
+        assert attributes["gen_ai.usage.output_tokens"] is None
+
     def test_claudes_provider_is_unchanged(self):
         attributes = tracing.chat_attributes(model="m", prompt_version="v", max_tokens=1)
         assert attributes["gen_ai.provider.name"] == "anthropic"

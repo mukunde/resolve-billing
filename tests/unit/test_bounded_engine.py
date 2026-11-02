@@ -323,6 +323,90 @@ class TestTime:
         assert wrapper._slots.locked() is False
 
 
+class TestTheDeadlineBoundsTheStage:
+    async def test_a_stalled_reservation_stops_at_the_deadline(self, dispute, context, findings):
+        engine = FakeEngine()
+
+        async def stall(system, user):
+            await asyncio.sleep(30)
+
+        engine.reservation = stall
+        wrapper, book = bounded(engine, bounds=Bounds(deadline=0.02))
+        with pytest.raises(EngineUnavailable) as raised:
+            await wrapper.decide(dispute, context, findings)
+        assert str(raised.value) == "deadline"
+        assert engine.sent == []
+        assert raised.value.invocation_id
+        assert book.starts == []
+
+    async def test_a_sleep_that_overshoots_sends_nothing_more(self, dispute, context, findings):
+        clock = Clock()
+
+        async def overshoot(seconds):
+            clock.now += 500.0
+
+        engine = FakeEngine(outage("transport"), answer())
+        wrapper = BoundedEngine(engine, Book(), clock=clock, sleep=overshoot)
+        with pytest.raises(EngineUnavailable):
+            await wrapper.decide(dispute, context, findings)
+        assert len(engine.sent) == 1
+
+    async def test_a_stalled_sleep_stops_at_the_deadline(self, dispute, context, findings):
+        async def stall(seconds):
+            await asyncio.sleep(30)
+
+        engine = FakeEngine(outage("transport"), answer())
+        wrapper = BoundedEngine(engine, Book(), bounds=Bounds(deadline=0.05), sleep=stall)
+        with pytest.raises(EngineUnavailable):
+            await wrapper.decide(dispute, context, findings)
+        assert len(engine.sent) == 1
+
+    async def test_a_stalled_limiter_stops_at_the_deadline(self, dispute, context, findings):
+        engine = FakeEngine()
+        wrapper, _ = bounded(engine, bounds=Bounds(deadline=0.02))
+
+        async def stall(tokens, remaining=None):
+            await asyncio.sleep(30)
+
+        wrapper._limiter.acquire = stall
+        with pytest.raises(EngineUnavailable):
+            await wrapper.decide(dispute, context, findings)
+        assert engine.sent == []
+        assert wrapper._slots.locked() is False
+
+    async def test_a_full_queue_stops_at_the_deadline(self, dispute, context, findings):
+        engine = FakeEngine()
+        wrapper, _ = bounded(engine, bounds=Bounds(deadline=0.02, in_flight=1))
+        await wrapper._slots.acquire()
+        with pytest.raises(EngineUnavailable):
+            await wrapper.decide(dispute, context, findings)
+        assert engine.sent == []
+
+
+class TestAnUnreadableResponse:
+    async def test_it_is_unusable_not_misidentified(self, dispute, context, findings):
+        unreadable = Answer(None, "other", None, None, None, ("response_unreadable",))
+        wrapper, book = bounded(FakeEngine(unreadable))
+        decision = await wrapper.decide(dispute, context, findings)
+        assert decision.recommended_action.value == "escalate"
+        assert book.outcomes == [AttemptOutcome.UNUSABLE]
+        assert book.ends[0].cost_micros is None
+
+    async def test_a_usable_answer_naming_no_model_is_refused(self, dispute, context, findings):
+        wrapper, book = bounded(FakeEngine(answer(model=None)))
+        with pytest.raises(EngineMisidentified):
+            await wrapper.decide(dispute, context, findings)
+        assert book.outcomes == [AttemptOutcome.WRONG_MODEL]
+
+    async def test_an_unusable_answer_from_another_model_is_misidentified(
+        self, dispute, context, findings
+    ):
+        wrapper, book = bounded(FakeEngine(answer(model="gpt-6-other", finish="length")))
+        with pytest.raises(EngineMisidentified):
+            await wrapper.decide(dispute, context, findings)
+        assert book.outcomes == [AttemptOutcome.WRONG_MODEL]
+
+
 class TestConcurrency:
     async def test_in_flight_stays_bounded(self, dispute, context, findings):
         flying = peak = 0
@@ -429,6 +513,61 @@ class TestRecording:
         wrapper, book = bounded(FakeEngine(outage("transport"), answer()), clock=clock)
         await wrapper.decide(dispute, context, findings)
         assert [start.number for start in book.starts] == [1, 2]
+
+
+class TestRecorderFailures:
+    async def test_it_does_not_replace_a_cancellation(self, dispute, context, findings):
+        class Broken(Book):
+            def finished(self, attempt):
+                raise OSError("the disk")
+
+        async def stall():
+            await asyncio.sleep(30)
+
+        engine = FakeEngine(stall)
+        wrapper = BoundedEngine(engine, Broken())
+        task = asyncio.create_task(wrapper.decide(dispute, context, findings))
+        while not engine.sent:
+            await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+class TestPrices:
+    async def test_as_of_is_a_date_not_a_citation(self, dispute, context, findings):
+        wrapper, book = bounded(FakeEngine(answer()))
+        telemetry = (await wrapper.decide(dispute, context, findings)).telemetry
+        assert telemetry.pricing_as_of == "2026-10-26"
+        assert book.ends[0].pricing_as_of == "2026-10-26"
+
+    async def test_reported_cache_reads_reach_the_telemetry(self, dispute, context, findings):
+        reply = Answer(
+            json.dumps(VALID_VERDICT),
+            "stop",
+            100,
+            50,
+            "gpt-6-luna",
+            cached_input_tokens=40,
+        )
+        telemetry = (
+            await bounded(FakeEngine(reply))[0].decide(dispute, context, findings)
+        ).telemetry
+        assert telemetry.cache_read_input_tokens == 40
+
+    async def test_an_unpriced_configuration_is_unknown_not_a_crash(
+        self, dispute, context, findings
+    ):
+        from dataclasses import replace
+
+        engine = FakeEngine(answer())
+        engine.config = replace(LUNA, price_per_mtok=None)
+        wrapper, book = bounded(engine)
+        telemetry = (await wrapper.decide(dispute, context, findings)).telemetry
+        assert telemetry.cost_micros is None
+        assert telemetry.unknown_cost_attempts == 1
+        assert book.outcomes == [AttemptOutcome.ANSWERED]
 
 
 class TestTheWrapper:

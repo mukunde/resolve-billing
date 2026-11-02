@@ -116,15 +116,20 @@ class LedgerRecorder:
         self.cost += amount
 
 
-async def run(record: dict, cases: list[dict], wrapper: BoundedEngine) -> None:
+async def run(record: dict, cases: list[dict], recorder: LedgerRecorder, account, bounds) -> None:
     """Run the cases into `record`, which holds what was done whatever stops
-    the run."""
+    the run. Complete only once the engine closed cleanly too."""
     from app.api.deps import wire
     from app.application.investigate_dispute import DisputeInvestigator
     from app.domain.models import Dispute
     from app.providers.fake.adapter import FakeBillingProvider
     from evals import runner
 
+    # The previous run on this account may still count against the minute.
+    if (wait := account.wait()) > 0:
+        print(f"waiting {wait:.0f} s for the previous run's quota window", file=sys.stderr)
+        await asyncio.sleep(wait)
+    wrapper = BoundedEngine(engines.HOSTED_ENGINES[ENGINE](), recorder, bounds=bounds)
     provider = FakeBillingProvider()
     investigator = DisputeInvestigator(provider=provider, engine=wire(wrapper, provider))
     try:
@@ -143,9 +148,9 @@ async def run(record: dict, cases: list[dict], wrapper: BoundedEngine) -> None:
             record["outcomes"].append(runner._evaluate(case, result))
         record["not_attempted"] = []
         record["stopped_at"] = None
-        record["complete"] = True
     finally:
         await wrapper.aclose()
+    record["complete"] = True
 
 
 def write(record: dict, recorder: LedgerRecorder, ledger, config, args, started: float) -> Path:
@@ -237,9 +242,8 @@ def main(argv: list[str] | None = None) -> int:
             recorder = LedgerRecorder(
                 ledger, config, began.strftime("%Y%m%dT%H%M%S.%fZ"), account.record_send
             )
-            wrapper = BoundedEngine(engines.HOSTED_ENGINES[ENGINE](), recorder, bounds=bounds)
             try:
-                asyncio.run(run(record, cases, wrapper))
+                asyncio.run(run(record, cases, recorder, account, bounds))
             except RunStopped as stop:
                 record["stop_reason"] = str(stop)
             except LedgerRefused as refusal:

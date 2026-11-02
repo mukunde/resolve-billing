@@ -226,7 +226,7 @@ class SqliteAuditRepository:
                     "prompt_version": telemetry.prompt_version if telemetry else None,
                     "input_tokens": telemetry.input_tokens if known_usage else None,
                     "cache_read_input_tokens": (
-                        telemetry.cache_read_input_tokens if telemetry else None
+                        telemetry.cache_read_input_tokens if known_usage else None
                     ),
                     "output_tokens": telemetry.output_tokens if known_usage else None,
                     "cost_micros": telemetry.cost_micros if telemetry else None,
