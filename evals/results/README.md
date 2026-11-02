@@ -264,6 +264,39 @@ three runs of the same 34 cases, not a measure on unseen disputes:
   for that day. The peak bounds the day's usage, so the declaration is
   conservative; it guards the quota and touches no answer.
 
+## `gpt-6-luna` through the service (spec 009)
+
+One run of the development cases through the service's engine, on commit
+`b330f73`, authorised by the maintainer on 2026-11-02. It is a service run: no
+slot, and no part of spec 008's comparison.
+
+| file | ran at | complete | fully correct | unsafe | cost (settled) | attempts of unknown cost |
+|---|---|---|---|---|---|---|
+| **`gpt-6-luna-service-20261102T202943Z.json`** | 2026-11-02 20:29 UTC | yes | **31/34** | 0 | USD 0.0041 | 0 |
+
+- **The review trigger was not met.** Spec 009 sets it at any unsafe action or
+  a score below 29, the lowest of spec 008's three runs (29, 31, 31). One run is
+  one sample: 31 says the service path did not visibly change what was measured,
+  not that it is better or equal.
+- **What it missed.** `duplicate_payment_single_invoice`,
+  `claimed_payment_without_evidence` and `refund_already_completed`, the three
+  cases `gpt-6-luna` missed in all of spec 008's runs. No automatic reply was
+  allowed on any of them.
+- **No retry was needed.** 20 sends for 20 engine calls, each answered by
+  `gpt-6-luna`, in 75 seconds, so the bounds and failure paths were not exercised
+  by this run: the tests hold those, with no network.
+
+One dispute also went over HTTP through the local service before this run, on
+the fake platform: answered in 3.5 seconds, for about $0.00033, outside the
+envelope. Its audit row and attempt named the model, and its trace, read in a
+local Jaeger 1.62.0 on the loopback address and kept in memory, held one attempt
+span inside the investigation's, with none of the message, the customer's address
+or the invoice reference. That service, its audit file and Jaeger are gone: this
+paragraph is the record of that check, not a file to inspect.
+
+Nothing here reaches OpenAI's terms for real data, and nothing here is the
+holdout reference run: ADR-013 lists what that run waits for.
+
 ## What they contain
 
 One row per case: the expectations it met, the confidence and its kind, the
