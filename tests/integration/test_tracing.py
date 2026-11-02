@@ -140,9 +140,9 @@ class TestNothingAboutTheCustomerLeaves:
         the MCP server gets for the mutating call, for the same reason.
         """
         from app.application import investigate_dispute
-        from app.decision import claude
+        from app.decision import bounded, claude
 
-        for module in (investigate_dispute, claude):
+        for module in (investigate_dispute, claude, bounded):
             source = inspect.getsource(module)
             # Only the lines that build spans, not the whole module: the
             # engine legitimately reads dispute.customer_message to send it
@@ -156,6 +156,116 @@ class TestNothingAboutTheCustomerLeaves:
             for line in traced:
                 for bad in tracing.FORBIDDEN:
                     assert bad not in line, f"{module.__name__}: {line.strip()}"
+
+
+class TestAttempts:
+    """One span per attempt, inside the investigation's (spec 009, FR-007b)."""
+
+    async def _spans(self, exporter, *script, expect=None):
+        from app.decision.bounded import BoundedEngine
+        from tests.unit.test_bounded_engine import Book, Clock, FakeEngine
+
+        exporter.clear()
+        clock = Clock()
+        engine = FakeEngine(*script)
+        wrapper = BoundedEngine(engine, Book(), clock=clock, sleep=clock.sleep)
+        investigator = DisputeInvestigator(provider=FakeBillingProvider(), engine=wrapper)
+        if expect is None:
+            await investigator.investigate(CASE_A)
+        else:
+            with pytest.raises(expect):
+                await investigator.investigate(CASE_A)
+        return exporter.get_finished_spans()
+
+    @staticmethod
+    def attempts(spans):
+        return [s for s in spans if "billing.attempt.outcome" in dict(s.attributes)]
+
+    async def test_a_success_after_a_retry(self, exporter):
+        from tests.unit.test_bounded_engine import answer, outage
+
+        spans = await self._spans(exporter, outage("transport"), answer())
+        attempts = self.attempts(spans)
+        assert [s.attributes["billing.attempt.outcome"] for s in attempts] == [
+            "unavailable",
+            "answered",
+        ]
+        assert [s.attributes["billing.attempt.cost_known"] for s in attempts] == [False, True]
+        assert "gen_ai.usage.input_tokens" not in attempts[0].attributes
+        assert attempts[0].attributes["gen_ai.provider.name"] == "openai"
+        workflow = next(s for s in spans if s.name.startswith("invoke_workflow"))
+        assert all(s.parent.span_id == workflow.context.span_id for s in attempts)
+        assert all(s.context.trace_id == workflow.context.trace_id for s in attempts)
+
+    async def test_exhaustion(self, exporter):
+        from tests.unit.test_bounded_engine import outage
+
+        spans = await self._spans(
+            exporter, outage("transport"), outage("transport"), outage("transport")
+        )
+        assert len(self.attempts(spans)) == 3
+
+    async def test_a_refusal(self, exporter):
+        from app.decision.base import EngineRefused, EngineRejected
+
+        spans = await self._spans(exporter, EngineRejected("401"), expect=EngineRefused)
+        assert [s.attributes["billing.attempt.outcome"] for s in self.attempts(spans)] == [
+            "rejected"
+        ]
+
+    async def test_a_cancellation(self, exporter):
+        import asyncio
+
+        from app.decision.bounded import BoundedEngine
+        from tests.unit.test_bounded_engine import Book, FakeEngine
+
+        async def stall():
+            await asyncio.sleep(30)
+
+        exporter.clear()
+        engine = FakeEngine(stall)
+        investigator = DisputeInvestigator(
+            provider=FakeBillingProvider(), engine=BoundedEngine(engine, Book())
+        )
+        task = asyncio.create_task(investigator.investigate(CASE_A))
+        while not engine.sent:
+            await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        spans = exporter.get_finished_spans()
+        assert [s.attributes["billing.attempt.outcome"] for s in self.attempts(spans)] == [
+            "cancelled"
+        ]
+
+    async def test_nothing_of_the_dispute_leaves(self, exporter):
+        from tests.unit.test_bounded_engine import answer
+
+        for span in await self._spans(exporter, answer()):
+            for value in dict(span.attributes).values():
+                assert SECRET not in str(value)
+
+    async def test_the_workflow_span_keeps_unknowns_apart(self, exporter):
+        from tests.unit.test_bounded_engine import answer, outage
+
+        spans = await self._spans(exporter, outage("transport"), answer())
+        chat = [s for s in spans if s.name.startswith("chat")]
+        carrying = [s for s in spans if "billing.unknown_cost_attempts" in dict(s.attributes)]
+        assert chat
+        assert any(s.attributes["billing.unknown_cost_attempts"] == 1 for s in carrying)
+
+    def test_unknown_usage_is_absent_not_zero(self):
+        from app.decision.base import EngineTelemetry
+
+        telemetry = EngineTelemetry(model_id="m", prompt_version="v", usage_known=False)
+        attributes = tracing.usage_attributes(telemetry)
+        assert attributes["gen_ai.usage.input_tokens"] is None
+        assert attributes["gen_ai.usage.output_tokens"] is None
+
+    def test_claudes_provider_is_unchanged(self):
+        attributes = tracing.chat_attributes(model="m", prompt_version="v", max_tokens=1)
+        assert attributes["gen_ai.provider.name"] == "anthropic"
 
 
 def test_an_exception_leaves_its_type_not_its_text(exporter):

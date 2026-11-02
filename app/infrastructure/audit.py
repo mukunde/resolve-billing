@@ -71,7 +71,12 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     -- NULL means "no rate known", not "it was free". Zero is a claim.
     cost_micros              INTEGER,
     pricing_as_of            TEXT,
-    latency_ms               INTEGER
+    latency_ms               INTEGER,
+
+    -- For an engine that records its attempts (`engine_attempts`); NULL
+    -- otherwise. Above zero, `cost_micros` is a lower bound.
+    engine_invocation_id     TEXT,
+    unknown_cost_attempts    INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS agent_events (
@@ -131,6 +136,8 @@ class SqliteAuditRepository:
             # have had a known sender, but the row should not claim a fact
             # nobody recorded.
             ("sender", "TEXT"),
+            ("engine_invocation_id", "TEXT"),
+            ("unknown_cost_attempts", "INTEGER"),
         ):
             if column not in held:
                 self._connection.execute(
@@ -150,6 +157,8 @@ class SqliteAuditRepository:
         """
         created_at = (now or datetime.now(UTC)).isoformat()
         telemetry = result.telemetry
+        # Tokens that were never reported are not zero tokens.
+        known_usage = telemetry is not None and telemetry.usage_known
         action = result.proposed_action
         authorization = result.authorization
 
@@ -168,7 +177,8 @@ class SqliteAuditRepository:
                     verdict, authorization_reason, autonomy_available,
                     model_id, prompt_version,
                     input_tokens, cache_read_input_tokens, output_tokens,
-                    cost_micros, pricing_as_of, latency_ms
+                    cost_micros, pricing_as_of, latency_ms,
+                    engine_invocation_id, unknown_cost_attempts
                 ) VALUES (
                     :run_id, :created_at,
                     :billing_provider, :decision_engine, :decision_engine_version,
@@ -179,7 +189,8 @@ class SqliteAuditRepository:
                     :verdict, :authorization_reason, :autonomy_available,
                     :model_id, :prompt_version,
                     :input_tokens, :cache_read_input_tokens, :output_tokens,
-                    :cost_micros, :pricing_as_of, :latency_ms
+                    :cost_micros, :pricing_as_of, :latency_ms,
+                    :engine_invocation_id, :unknown_cost_attempts
                 )
                 """,
                 {
@@ -213,14 +224,20 @@ class SqliteAuditRepository:
                     "autonomy_available": int(authorization.autonomy_available),
                     "model_id": telemetry.model_id if telemetry else None,
                     "prompt_version": telemetry.prompt_version if telemetry else None,
-                    "input_tokens": telemetry.input_tokens if telemetry else None,
+                    "input_tokens": telemetry.input_tokens if known_usage else None,
                     "cache_read_input_tokens": (
-                        telemetry.cache_read_input_tokens if telemetry else None
+                        telemetry.cache_read_input_tokens if known_usage else None
                     ),
-                    "output_tokens": telemetry.output_tokens if telemetry else None,
+                    "output_tokens": telemetry.output_tokens if known_usage else None,
                     "cost_micros": telemetry.cost_micros if telemetry else None,
                     "pricing_as_of": telemetry.pricing_as_of if telemetry else None,
                     "latency_ms": telemetry.latency_ms if telemetry else None,
+                    "engine_invocation_id": result.engine_invocation_id,
+                    "unknown_cost_attempts": (
+                        telemetry.unknown_cost_attempts
+                        if telemetry and telemetry.invocation_id
+                        else None
+                    ),
                 },
             )
             self._connection.executemany(

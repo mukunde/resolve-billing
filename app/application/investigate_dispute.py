@@ -30,6 +30,7 @@ from app.decision.base import (
     Classification,
     Decision,
     DecisionEngine,
+    EngineMisidentified,
     EngineTelemetry,
     EngineUnavailable,
     RecommendedAction,
@@ -119,6 +120,9 @@ class InvestigationResult(BaseModel):
     action_id: str | None = None
     """Set when a financial action is queued for a human to approve."""
     telemetry: EngineTelemetry | None = None
+    engine_invocation_id: str | None = None
+    """Links the run to its engine's attempts, for an engine that records
+    them. A path with no telemetry still has attempts to link."""
     short_circuited_by: RuleCode | None = None
     sender: SenderStatus = SenderStatus.KNOWN
     """Whether we know who wrote. Decided by the rules, never by the engine."""
@@ -296,7 +300,19 @@ class DisputeInvestigator:
             # an answer that never came, and no cost is invented.
             trace.append(event("decision_engine_unavailable", reason=str(outage)))
             decision = _escalation_after_outage(str(outage))
-            return self._finish(self._assemble(dispute, context, findings, decision), trace)
+            result = self._assemble(
+                dispute, context, findings, decision, getattr(outage, "invocation_id", None)
+            )
+            return self._finish(result, trace)
+        except EngineMisidentified as error:
+            # The engine answered, so this is no outage: the answer came from
+            # a model nobody chose, and it was dropped.
+            trace.append(event("decision_engine_identity_failed", reason=str(error)))
+            decision = _escalation_after_identity_failure()
+            result = self._assemble(
+                dispute, context, findings, decision, getattr(error, "invocation_id", None)
+            )
+            return self._finish(result, trace)
         trace.append(
             event(
                 "decision_created",
@@ -734,6 +750,7 @@ class DisputeInvestigator:
         context: BillingContext,
         findings: list[RuleFinding],
         decision: Decision,
+        invocation_id: str | None = None,
     ) -> InvestigationResult:
         action, withheld = _proposed_action(decision, context, findings)
         authorization = self._policy.evaluate(decision, findings, action.amount, withheld)
@@ -759,6 +776,9 @@ class DisputeInvestigator:
             recommended_action=decision.recommended_action,
             authorization=authorization,
             telemetry=decision.telemetry,
+            engine_invocation_id=(
+                invocation_id or (decision.telemetry.invocation_id if decision.telemetry else None)
+            ),
         )
 
 
@@ -826,6 +846,20 @@ def _usage_unavailable(invoice_id: str, metrics: list[str]) -> RuleFinding:
         severity=Severity.LOW,
         description="Usage mesuré indisponible : des lignes à l'usage n'ont pas pu être vérifiées.",
         evidence={"invoice_id": invoice_id, "metrics": sorted(set(metrics))},
+    )
+
+
+def _escalation_after_identity_failure() -> Decision:
+    """An answer from a model nobody chose: a person, and nothing of it kept."""
+    return Decision(
+        classification=Classification.UNKNOWN,
+        confidence=0.0,
+        confidence_kind="self_reported",
+        recommended_action=RecommendedAction.ESCALATE,
+        explanation=(
+            "Le moteur de décision a répondu avec un autre modèle que celui configuré : "
+            "sa réponse est écartée et le litige part en revue humaine."
+        ),
     )
 
 

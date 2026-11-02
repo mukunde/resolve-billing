@@ -36,6 +36,11 @@ async def observed(context, findings, dispute) -> dict:
         decision = await engine.decide(dispute, context, findings)
         record = decision.model_dump(mode="json")
         record["telemetry"].pop("latency_ms")
+        # Added by spec 009 for engines that record their attempts: at their
+        # defaults here, and so absent from the snapshot.
+        assert record["telemetry"].pop("usage_known") is True
+        assert record["telemetry"].pop("unknown_cost_attempts") == 0
+        assert record["telemetry"].pop("invocation_id") is None
         seen[name] = {"request": client.messages.last_request, "decision": record}
     return seen
 

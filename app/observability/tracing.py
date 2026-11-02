@@ -155,6 +155,12 @@ def set_attributes(current, **attributes: Any) -> None:
 # they move, one module changes.
 
 
+def set_on_current(**attributes: Any) -> None:
+    """Add attributes to the span in progress, if there is one."""
+    if AVAILABLE:
+        set_attributes(trace.get_current_span(), **attributes)
+
+
 def workflow_attributes(*, run_id: str, provider: str, engine: str) -> dict[str, Any]:
     """The run as a whole: one dispute, start to authorisation."""
     if not AVAILABLE:
@@ -167,13 +173,16 @@ def workflow_attributes(*, run_id: str, provider: str, engine: str) -> dict[str,
     }
 
 
-def chat_attributes(*, model: str, prompt_version: str, max_tokens: int) -> dict[str, Any]:
-    """The single model call, before its answer is known."""
+def chat_attributes(
+    *, model: str, prompt_version: str, max_tokens: int, provider: str | None = None
+) -> dict[str, Any]:
+    """The single model call, before its answer is known. The provider is
+    Anthropic unless the caller says otherwise."""
     if not AVAILABLE:
         return {}
     return {
         genai.GEN_AI_OPERATION_NAME: genai.GenAiOperationNameValues.CHAT.value,
-        genai.GEN_AI_PROVIDER_NAME: genai.GenAiProviderNameValues.ANTHROPIC.value,
+        genai.GEN_AI_PROVIDER_NAME: provider or genai.GenAiProviderNameValues.ANTHROPIC.value,
         genai.GEN_AI_REQUEST_MODEL: model,
         genai.GEN_AI_REQUEST_MAX_TOKENS: max_tokens,
         genai.GEN_AI_PROMPT_NAME: prompt_version,
@@ -191,14 +200,38 @@ def usage_attributes(telemetry) -> dict[str, Any]:
     """
     if not AVAILABLE or telemetry is None:
         return {}
+    # Tokens nobody reported are absent, not zero; above zero, the unknown
+    # attempts make the cost a lower bound (spec 009).
+    known = telemetry.usage_known
     return {
         genai.GEN_AI_RESPONSE_MODEL: telemetry.model_id,
-        genai.GEN_AI_USAGE_INPUT_TOKENS: telemetry.input_tokens,
-        genai.GEN_AI_USAGE_OUTPUT_TOKENS: telemetry.output_tokens,
-        genai.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS: telemetry.cache_read_input_tokens,
+        genai.GEN_AI_USAGE_INPUT_TOKENS: telemetry.input_tokens if known else None,
+        genai.GEN_AI_USAGE_OUTPUT_TOKENS: telemetry.output_tokens if known else None,
+        genai.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS: (
+            telemetry.cache_read_input_tokens if known else None
+        ),
         "billing.cost_micros": telemetry.cost_micros,
+        "billing.unknown_cost_attempts": telemetry.unknown_cost_attempts or None,
         "billing.pricing_as_of": telemetry.pricing_as_of,
         "billing.latency_ms": telemetry.latency_ms,
+    }
+
+
+def attempt_attributes(attempt, number: int, invocation_id: str) -> dict[str, Any]:
+    """How one send to a vendor ended: closed categories and counts, never
+    what was said (spec 009, FR-007b). `None` stays absent: unknown, not zero."""
+    if not AVAILABLE:
+        return {}
+    return {
+        "billing.attempt.number": number,
+        "billing.attempt.outcome": attempt.outcome.value,
+        "billing.attempt.invocation_id": invocation_id,
+        "billing.attempt.cost_known": attempt.cost_micros is not None,
+        "billing.latency_ms": attempt.duration_ms,
+        "billing.cost_micros": attempt.cost_micros,
+        genai.GEN_AI_RESPONSE_MODEL: attempt.returned_model,
+        genai.GEN_AI_USAGE_INPUT_TOKENS: attempt.input_tokens,
+        genai.GEN_AI_USAGE_OUTPUT_TOKENS: attempt.output_tokens,
     }
 
 

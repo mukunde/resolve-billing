@@ -7,26 +7,42 @@ the claim of ADR-001 and ADR-002, made checkable.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from functools import lru_cache
 
 from app.application.execute_action import ApprovalService
 from app.application.investigate_dispute import DisputeInvestigator
 from app.decision.base import DecisionEngine
+from app.decision.bounded import BoundedEngine
 from app.decision.claude import ClaudeDecisionEngine
+from app.decision.hosted import configuration
 from app.decision.mock import MockDecisionEngine
 from app.infrastructure.actions import SqliteActionStore
+from app.infrastructure.attempts import SqliteAttemptStore
 from app.infrastructure.audit import SqliteAuditRepository
 from app.providers.base import BillingProvider
 from app.providers.fake.adapter import FakeBillingProvider
 from app.providers.stripe.adapter import StripeBillingProvider
 from app.providers.stripe.client import connect, connect_writer
 
+#: The engine ADR-013 retained provisionally, on synthetic data only.
+LUNA = "gpt-6-luna"
+
+
+def _luna() -> DecisionEngine:
+    """The configuration spec 008 measured, under the service's bounds."""
+    from app.decision.openai_compatible import OpenAICompatibleEngine
+
+    return BoundedEngine(OpenAICompatibleEngine(configuration(LUNA)), get_attempts())
+
+
 #: Engines that exist today. The roadmap ones are absent on purpose: an empty
 #: stub in this table would suggest an integration that is not there.
 ENGINES: dict[str, type] = {
     "mock": MockDecisionEngine,
     "claude": ClaudeDecisionEngine,
+    LUNA: _luna,
 }
 
 
@@ -51,6 +67,34 @@ def get_provider() -> BillingProvider:
     raise RuntimeError(f"unknown billing provider {name!r}; available: {list(PROVIDERS)}")
 
 
+def selection_refusal() -> str | None:
+    """Why the selected engine may not start, or None (spec 009, FR-009).
+
+    A safeguard against a slip in configuration, not a control of content: the
+    service cannot tell a real message from a synthetic one, so the declaration
+    is the operator's. Lifting it is a decision of its own, never a variable.
+    """
+    if os.getenv("DECISION_ENGINE", "mock").lower() != LUNA:
+        return None
+    if os.getenv("BILLING_PROVIDER", "fake").lower() != "fake":
+        return f"{LUNA} runs on the fake billing platform only (BILLING_PROVIDER=fake)"
+    if os.getenv("RESOLVE_DATA") != "synthetic":
+        return f"{LUNA} needs the data declared synthetic (RESOLVE_DATA=synthetic)"
+    if importlib.util.find_spec("openai") is None:
+        return f"{LUNA} needs the `engines` extra"
+    config = configuration(LUNA)
+    missing = [
+        name
+        for name in (config.key_variable, *config.account_variables)
+        if not os.environ.get(name)
+    ]
+    if missing:
+        return f"{LUNA} needs {', '.join(missing)}"
+    from app.decision.openai_compatible import ambient_refusal
+
+    return ambient_refusal()
+
+
 @lru_cache(maxsize=1)
 def get_engine() -> DecisionEngine:
     name = os.getenv("DECISION_ENGINE", "mock").lower()
@@ -59,7 +103,21 @@ def get_engine() -> DecisionEngine:
         raise RuntimeError(
             f"unknown decision engine {name!r}; available: {sorted(ENGINES)}"
         )
+    if (refusal := selection_refusal()) is not None:
+        raise RuntimeError(f"decision engine refused: {refusal}")
     return wire(engine(), get_provider())
+
+
+async def close_engine() -> None:
+    """Close the engine if one was built, and forget it: the next start
+    builds its own."""
+    if get_engine.cache_info().currsize == 0:
+        return
+    engine = get_engine()
+    get_engine.cache_clear()
+    close = getattr(engine, "aclose", None)
+    if close is not None:
+        await close()
 
 
 def wire(engine, provider):
@@ -75,6 +133,11 @@ def wire(engine, provider):
 @lru_cache(maxsize=1)
 def get_audit() -> SqliteAuditRepository:
     return SqliteAuditRepository(os.getenv("AUDIT_DB", "audit.db"))
+
+
+@lru_cache(maxsize=1)
+def get_attempts() -> SqliteAttemptStore:
+    return SqliteAttemptStore(os.getenv("AUDIT_DB", "audit.db"))
 
 
 @lru_cache(maxsize=1)

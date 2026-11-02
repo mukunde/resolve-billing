@@ -12,6 +12,7 @@ probability distribution. See the V5 note in PLAN.md.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, Protocol, runtime_checkable
 
@@ -42,6 +43,23 @@ class EngineRejected(Exception):  # noqa: N818 -- a state, not a programming err
     so plainly (the evaluation runner) stops with one line rather than a
     traceback. Its text is a status and a category, never the provider's own
     words, which can quote the request or a credential.
+    """
+
+
+class EngineRefused(EngineRejected):
+    """A refusal the service answers with an error of its own (spec 009).
+
+    A subclass, so that an engine that only raises `EngineRejected` keeps what
+    it does today. Its text is a closed category, as `EngineRejected`'s is.
+    """
+
+
+class EngineMisidentified(Exception):  # noqa: N818 -- a state, not a programming error
+    """An answer came from a model other than the configured one, and was
+    discarded (spec 009, FR-003).
+
+    Not an outage: the engine was reached and answered. The investigation
+    escalates it and says which of the two happened.
     """
 
 
@@ -106,6 +124,10 @@ class EngineTelemetry(BaseModel):
     ``pricing_as_of`` travels with it for the same reason ``confidence_kind``
     travels with ``confidence``: a number whose provenance is lost cannot be
     interpreted later. It is set only when a cost was actually computed.
+
+    The last three belong to an engine that records its attempts (spec 009).
+    ``usage_known`` false means the token counts above are not a measure, and
+    ``unknown_cost_attempts`` above zero makes ``cost_micros`` a lower bound.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -114,10 +136,14 @@ class EngineTelemetry(BaseModel):
     prompt_version: str
     input_tokens: int = 0
     output_tokens: int = 0
-    cache_read_input_tokens: int = 0
+    #: None when the vendor reported totals but not this category.
+    cache_read_input_tokens: int | None = 0
     cost_micros: int | None = None
     pricing_as_of: str | None = None
     latency_ms: int = 0
+    usage_known: bool = True
+    unknown_cost_attempts: int = 0
+    invocation_id: str | None = None
 
 
 class Decision(BaseModel):
@@ -141,6 +167,64 @@ class Decision(BaseModel):
 
     telemetry: EngineTelemetry | None = None
     """Absent for engines that cost nothing, such as the mock."""
+
+
+class AttemptOutcome(StrEnum):
+    """How one send to a vendor ended. Closed set: a category, never its text."""
+
+    ANSWERED = "answered"
+    #: Recorded, then the time ran out before it left: nothing reached the vendor.
+    NOT_SENT = "not_sent"
+    UNUSABLE = "unusable"
+    WRONG_MODEL = "wrong_model"
+    TIMEOUT = "timeout"
+    UNAVAILABLE = "unavailable"
+    RATE_LIMITED = "rate_limited"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class AttemptStart:
+    """One send, before it leaves: all a record or a ledger needs up front."""
+
+    attempt_id: str
+    invocation_id: str
+    dispute_id: str
+    number: int
+    provider: str
+    requested_model: str
+    started_at: str
+    reserved_tokens: int
+
+
+@dataclass(frozen=True)
+class AttemptEnd:
+    """How that send ended. A count or a cost the vendor did not give stays
+    None, never zero."""
+
+    attempt_id: str
+    outcome: AttemptOutcome
+    ended_at: str
+    duration_ms: int
+    returned_model: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cost_micros: int | None = None
+    pricing_as_of: str | None = None
+
+
+class AttemptRecorder(Protocol):
+    """Where an engine's attempts are kept. `started` comes before the send
+    and may refuse it by raising: nothing is sent then."""
+
+    def started(self, attempt: AttemptStart) -> None: ...
+
+    def finished(self, attempt: AttemptEnd) -> None: ...
 
 
 @runtime_checkable

@@ -38,6 +38,8 @@ class Estimated:
     runs: int
     priced_runs: int
     cache_read_tokens: int
+    #: Runs whose cost is a lower bound: an attempt's cost stayed unknown.
+    lower_bound_runs: int = 0
 
 
 @dataclass
@@ -69,6 +71,7 @@ class Reconciliation:
     rows: list[Row] = field(default_factory=list)
     unpriced: dict[str, int] = field(default_factory=dict)
     unknown_estimate_runs: int = 0
+    lower_bound_runs: int = 0
 
     @property
     def estimated_micros(self) -> int:
@@ -119,6 +122,12 @@ class Reconciliation:
             listed = ", ".join(f"{k} {_usd(v)}" for k, v in sorted(other.items()))
             findings.append(f"Billed under categories we do not price: {listed}.")
 
+        if self.lower_bound_runs:
+            findings.append(
+                f"{self.lower_bound_runs} run(s) carry a lower bound: an attempt's "
+                "cost stayed unknown, so the estimate leaves it out."
+            )
+
         if self.unknown_estimate_runs:
             findings.append(
                 f"{self.unknown_estimate_runs} run(s) carry no estimate at all "
@@ -143,8 +152,12 @@ def estimated_from_audit(
     """
     connection = sqlite3.connect(database)
     connection.row_factory = sqlite3.Row
-    query = """
-        SELECT created_at, model_id, cost_micros, cache_read_input_tokens
+    held = {row["name"] for row in connection.execute("PRAGMA table_info(agent_runs)")}
+    # A file no repository has opened since the column was added has none.
+    unknown = "unknown_cost_attempts" if "unknown_cost_attempts" in held else "0"
+    query = f"""
+        SELECT created_at, model_id, cost_micros, cache_read_input_tokens,
+               {unknown} AS unknown_cost_attempts
         FROM agent_runs
         WHERE model_id IS NOT NULL AND date(created_at) >= ? AND date(created_at) < ?
     """
@@ -169,6 +182,7 @@ def estimated_from_audit(
             runs=len(rows),
             priced_runs=sum(1 for r in rows if r["cost_micros"] is not None),
             cache_read_tokens=sum(r["cache_read_input_tokens"] or 0 for r in rows),
+            lower_bound_runs=sum(1 for r in rows if r["unknown_cost_attempts"]),
         )
         for (day, model), rows in sorted(grouped.items())
     ]
@@ -206,6 +220,7 @@ def reconcile(
         key = (entry.day, entry.model)
         seen.add(key)
         result.unknown_estimate_runs += entry.runs - entry.priced_runs
+        result.lower_bound_runs += entry.lower_bound_runs
         result.rows.append(
             Row(
                 day=entry.day,

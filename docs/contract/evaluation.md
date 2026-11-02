@@ -158,6 +158,12 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
     turn invalid answers, automatic replies on missed cases, cost per
     dispute and median latency, the campaign's spend reported apart. The
     maintainer chooses among the candidates left.
+- **The measurement through the service** (spec 009). `evals/service_run.py`
+  runs the development cases through the service's `gpt-6-luna` engine, with the
+  evaluation path's safeguards: the guard, the declared accounts, the accepted
+  first call, the account held, and the envelope, reserved before each send and
+  settled after it. Its result names itself a service run: no slot, and no part
+  of spec 008's comparison. It is not rerun to reach a score.
 - **Stored runs.** A published figure's run is committed in `evals/results/`
   with its model, prompt and case set's hash; `evals/results/README.md` says
   what each can be read for.
@@ -185,5 +191,6 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
 `tests/unit/test_evaluation_registry.py`, `tests/unit/test_evaluation_limits.py`,
 `tests/unit/test_accounts.py`, `tests/unit/test_prepaid_ledger.py`,
 `tests/unit/test_prepaid_runs.py`, `tests/unit/test_prepaid_runner.py`,
-`tests/unit/test_campaign.py`, `tests/unit/test_compare.py`;
+`tests/unit/test_campaign.py`, `tests/unit/test_compare.py`,
+`tests/unit/test_service_run.py`;
 the CI workflow's evaluation step.
