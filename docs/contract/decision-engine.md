@@ -3,16 +3,18 @@
 What any engine behind the `DecisionEngine` port must do, and what the rest of
 the system may rely on. Written on 2026-10-24 from the existing records;
 specs/004-second-engines folded in the same day,
-specs/007-openai-qwen-engines on 2026-10-26, and
-specs/008-deployment-model-choice on 2026-10-27. Reasons are in ADR-002 (the engine is
+specs/007-openai-qwen-engines on 2026-10-26,
+specs/008-deployment-model-choice on 2026-10-27, and
+specs/009-luna-service on 2026-11-02. Reasons are in ADR-002 (the engine is
 a deployment choice), ADR-003 (deterministic before probabilistic), ADR-006
 (no agent loop) and ADR-009 (what a model provider receives).
 
-The service runs two engines: the **mock**, deterministic and free, the
-default and what CI and the demo run on; and **Claude**, through the
-Messages API, selected with `DECISION_ENGINE=claude` and an Anthropic key.
-Four more configurations exist for the evaluation runner alone, on free
-tiers, and three on prepaid accounts (below).
+The service runs three engines: the **mock**, deterministic and free, the
+default and what CI and the demo run on; **Claude**, through the Messages API,
+selected with `DECISION_ENGINE=claude` and an Anthropic key; and
+**`gpt-6-luna`**, on synthetic data only (below). Four configurations exist for
+the evaluation runner alone, on free tiers, and more on prepaid accounts
+(below).
 
 ## What the system relies on
 
@@ -137,16 +139,55 @@ Its account is the organisation the maintainer declares in
   Claude adapter adds them to the input total and keeps them as details.
 - **Failures by kind, as above.**
 
+## `gpt-6-luna` on the service's path
+
+The configuration spec 008 measured, under `BoundedEngine`
+(`app/decision/bounded.py`), which does for one dispute what the runner does for
+a run. The prompt, schema, masking and request are the evaluated ones, and a test
+fails on any drift.
+
+- **Bounds.** At most 3 attempts, each at most 60 seconds or what remains, within
+  90 seconds for the whole engine stage, waits and limiter included, because the
+  API answers only once the investigation ends. The runner's deadline covers a
+  run: the two differ on purpose. 4 requests in flight, and the configuration's
+  requests per second and tokens per minute. The limits hold within one process.
+- **No fallback.** It never switches to another engine (spec 010 decides whether
+  that changes).
+- **Failures by outcome.** A closed set, recorded per attempt:
+
+| Outcome | Retried | Ends in |
+|---|---|---|
+| `answered` | -- | the decision |
+| `unusable` | no | an escalation, as for any engine |
+| `wrong_model` | no | an escalation with its own event, not an outage |
+| `timeout`, `unavailable`, `rate_limited` | yes | exhausted, the outage path: an escalation |
+| `rejected` | no | HTTP 502 with a category; nothing is decided, no run is written |
+| `cancelled`, `failed` | no | propagates; its record stays |
+
+- **Attempts on record.** `engine_attempts`, in the audit file, committed one by
+  one, so a refusal or a stopped process keeps them. A row with no outcome reads as
+  unfinished, never as a success. No vendor text is kept. A run links to them by
+  `engine_invocation_id`.
+- **Unknown stays unknown.** Tokens the vendor did not report are NULL, not zero.
+  With `unknown_cost_attempts` above zero, `cost_micros` is a lower bound, and the
+  run page and the reconciler say so. A timed-out attempt may have been billed.
+- **Refused at start.** Unless the billing platform is the fake one,
+  `RESOLVE_DATA=synthetic` is set, and its key and declared account ids are there.
+  This guards against a slip in configuration. It does not control content: the
+  service cannot tell real text pasted into a request.
+
 ## Selection
 
-`app/api/deps.py` names the engines the service may run (`ENGINES`: mock,
-claude); `DECISION_ENGINE` chooses one, and an unknown name is refused. The
+`app/api/deps.py` names the engines the service may run (`ENGINES`: mock, claude,
+`gpt-6-luna`); `DECISION_ENGINE` chooses one, and an unknown name is refused. The
 evaluation runner selects from the same table plus the ten configurations
-evaluated outside the service (`evals/engines.py`).
+evaluated outside the service (`evals/engines.py`); for `gpt-6-luna` that means
+its governed engine, under its development-set guard, not the service's.
 
 ## Not guaranteed today
 
 - That a self-reported confidence means anything: no engine is calibrated.
+- That Claude's retries are on record: those inside its SDK leave no attempts.
 - Masking is by pattern: other people's names, free text and unusual formats
   pass (ADR-009).
 - Real models measured on the development set: Claude, and Gemini 3.5
@@ -187,4 +228,6 @@ evaluated outside the service (`evals/engines.py`).
 `tests/unit/test_hosted_engines.py`, `tests/unit/test_vendor_clients.py`,
 `tests/unit/test_openai_compatible_configurations.py`,
 `tests/unit/test_openai_compatible_client.py`,
-`tests/unit/test_anthropic_evaluation.py`.
+`tests/unit/test_anthropic_evaluation.py`, `tests/unit/test_bounded_engine.py`,
+`tests/unit/test_attempt_store.py`, `tests/unit/test_luna_service.py`,
+`tests/integration/test_tracing.py`.

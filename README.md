@@ -252,8 +252,9 @@ Scaleway in Paris) -- run the same way on prepaid accounts, each held to
 an envelope per billing organisation and to its model's identity on every
 answer; their runs are integration runs, made before the comparison of
 spec 008, which retained `gpt-6-luna` provisionally
-([ADR-013](docs/adr/013-deployment-model.md)); it is not deployed, and the
-service's engine is unchanged. Their scores are regression scores
+([ADR-013](docs/adr/013-deployment-model.md)). It can be selected on the
+demonstrator's local service path, on synthetic data only (spec 009); the
+default stays the mock, and nothing is deployed. Their scores are regression scores
 on development cases, stored and listed apart
 ([`evals/results/README.md`](evals/results/README.md)). How to run them:
 [`docs/operations.md`](docs/operations.md#the-engines-evaluated-on-free-tiers).

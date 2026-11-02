@@ -51,14 +51,14 @@ decides.
 
 This choice is an intention, not a deployment:
 
-- **The service does not change.** Its engine stays as it is configured today
-  (`CLAUDE_MODEL`, by default `claude-opus-5`). Nothing here sends a customer's
-  data to OpenAI: `docs/adr/009-trust-boundaries.md` still limits OpenAI to
-  evaluation runs on the synthetic development cases.
-- **A deployment slice comes first.** In its own change, it establishes where
-  this account's requests are processed and the retention terms that apply,
-  brings the engine into the service behind the `DecisionEngine` port, and
-  updates ADR-009, the contracts and `.env.example` together.
+- **The service's default does not change.** It stays as it is configured
+  today (`DECISION_ENGINE`, by default the mock; `CLAUDE_MODEL`, by default
+  `claude-opus-5`). Nothing here sends a customer's data to OpenAI:
+  `docs/adr/009-trust-boundaries.md` keeps OpenAI to synthetic data.
+- **A deployment slice comes first.** Spec 009 brings the engine into the
+  service behind the `DecisionEngine` port, on synthetic data and the account's
+  standard terms. Where this account's requests are processed and the retention
+  terms that apply are established apart, below, and they gate real data.
 - **The choice can fall.** If the slice cannot establish acceptable terms, this
   ADR is reopened. Claude Haiku 5.5 does not take its place by default:
   choosing it would be a new decision, with its own reasons.
@@ -70,6 +70,39 @@ are a gate the maintainer judges for each engine in its deployment slice. A
 client's own policy can still forbid a model, and the port is what keeps that
 cheap.
 
+## What "deployed" means, and what comes before the reference run
+
+Spec 008's SC-004 runs the holdout on the chosen and deployed configuration.
+Nothing here is deployed in the usual sense: the repository is a demonstrator.
+**Deployed reads as selected and verified on the demonstrator's service path**
+(spec 009), not as production infrastructure.
+
+The reference run on `gpt-6-luna` waits for three things, none of them made by
+spec 009, which leaves the evaluation path's guard as it is:
+
+1. ADR-009 amended for it: OpenAI is authorised on synthetic development cases
+   and on the demonstrator's synthetic data, not on the holdout;
+2. the maintainer's attestation, exposing no case, that the cases are entirely
+   synthetic, generated independently of this engine, adjudicated and frozen
+   (constitution, principle IX), and written by a model of another family than
+   this engine (the README's rule);
+3. the decision on a fallback to Claude Haiku 5.5 (spec 010), because the run
+   measures the configuration actually adopted, once.
+
+## The hosting record
+
+Spec 009, FR-013. To fill when OpenAI answers. Asked in this order: European
+processing, then explicit United States processing. Global routing does not
+meet the preference above. The answer must cover, together: the endpoint, the
+project, the model's support, the processing location and the retention.
+
+| | |
+|---|---|
+| Asked | not yet |
+| Answered | not yet |
+| Data processing terms read | not yet |
+| Decision on real data | none: real data stays gated |
+
 ## Consequences
 
 These are regression scores on development cases, three runs of the same 34
@@ -77,8 +110,9 @@ cases, not a measure on unseen disputes. The holdout reference run is the
 maintainer's and follows the deployment of the chosen configuration; this
 record does not stand in for it.
 
-`app/decision/hosted.py` remains the only place `gpt-6-luna` is configured, on
-the evaluation path. The engine agnosticism of ADR-002 is what makes a
+`app/decision/hosted.py` remains the only place `gpt-6-luna` is configured.
+Spec 009 selects that configuration in the service, on synthetic data. The
+engine agnosticism of ADR-002 is what makes a
 provisional choice affordable: if it falls, no application code has moved.
 
 A count of 0 automatic replies on misses here means 0 forbidden ones, and the

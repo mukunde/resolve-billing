@@ -47,6 +47,31 @@ Set `DECISION_ENGINE=claude` and `ANTHROPIC_API_KEY`, and install the
 `claude` extra, to use the real engine.
 The default is the mock, so tests and demos cost nothing.
 
+### On `gpt-6-luna`, on synthetic data
+
+The engine ADR-013 retained provisionally. It sends the masked, pseudonymised
+payload to OpenAI, on this account's standard terms: no regional commitment, and
+abuse-monitoring logs may keep prompts and responses for up to 30 days whatever
+`store` says. Those terms are accepted for synthetic data alone. Do not paste a
+real message: the service cannot tell, and the declaration below is yours.
+
+Install the `engines` extra, then set:
+
+```bash
+DECISION_ENGINE=gpt-6-luna
+RESOLVE_DATA=synthetic
+```
+
+with `OPENAI_API_KEY`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, and the default
+fake billing platform. A missing condition refuses the start, by name. To go
+back, set `DECISION_ENGINE` to `claude` or `mock`: nothing else to undo.
+
+Run one process per account: the rate limits hold within a process, and a
+vendor's 429 is the backstop beyond it. These calls do not pass through the
+evaluation envelope: only the prepaid credit bounds them. A run's attempts are on
+its page; a refusal leaves no run, and its attempts stay in `engine_attempts`,
+by `dispute_id`.
+
 ### On a Stripe test account
 
 The fake is the default. To investigate on a Stripe test account instead --
@@ -478,6 +503,17 @@ declared before any run.
    or says why it refuses. The results, the campaign log and the
    comparison go in a results pull request; the decision record follows.
 
+### Measuring the service's engine
+
+Spec 009, once, authorised before it is made:
+
+```bash
+python -m dotenv run -- python -m evals.service_run --data-terms contractual --json evals/results/gpt-6-luna-service.json
+```
+
+Development cases only, through the envelope. A result below 29, or any unsafe
+action, goes to the maintainer; it is not rerun to reach a score.
+
 ### Reconciling what we estimated against what we were billed
 
 ```bash
@@ -576,6 +612,13 @@ today's behaviour. And one thing the conventions deliberately do not carry is
 a price: OpenTelemetry GenAI records *tokens*, because no provider exposes a
 rate through an API. The arithmetic stays ours or the backend's — the same
 conclusion the pricing table reaches.
+
+**Luna's attempts, in a local backend.** One span per attempt, inside the
+investigation's. Use a backend on this machine, with no onward export, for
+example the local Langfuse above: its access is yours, its data sits in its own
+local storage until you delete it, and it should export nowhere. A trace is not
+the audit: `engine_attempts` is. SDK or HTTP auto-instrumentation is not
+supported here, since its spans are not reviewed and could carry a request.
 
 ### The same data, over MCP
 
