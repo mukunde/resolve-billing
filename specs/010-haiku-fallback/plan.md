@@ -47,8 +47,8 @@ for the network-free checks and makes no paid call.
   eligible, and neither is any failure before the send. An `EngineUnavailable` with no
   attribute reads as not eligible, so the composite fails safe.
 - **Carried accounting.** A failing leg attaches a `telemetry` (`EngineTelemetry`) to its
-  exception: the requested model, `usage_known=False`, the known cost, the unknown
-  attempts, the invocation id. The investigator's outage and identity paths pass it to
+  exception: the model that answered when one did and its id is valid, the requested one
+  otherwise, `usage_known=False`, the known cost, the unknown attempts, the invocation id. The investigator's outage and identity paths pass it to
   their escalation decision, so the run row holds them and the page and workflow span read
   them. Standalone Luna gains the same, which is more exact than a NULL.
 - `retry_after` is ignored by the composite: no wait before asking the other vendor.

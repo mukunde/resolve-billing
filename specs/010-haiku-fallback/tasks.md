@@ -28,7 +28,8 @@
   - Luna capped at 30 s, Haiku at 60 s or what remains, 90 s in all, and a slow Luna leaves
     Haiku the rest;
   - each of Haiku's outcomes ends as a standalone engine's, and its identity failure keeps
-    both legs' accounting through the audit, the page and the workflow span; no third attempt;
+    both legs' accounting and names the model that really answered, through the audit, the
+    page and the workflow span; no third attempt;
   - one correlation id; attempts numbered 1 and 2; costs summed, unknowns kept, the floor
     stated; the answering model named; no state between disputes; limiters shared across
     disputes;
