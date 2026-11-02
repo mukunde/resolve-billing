@@ -107,6 +107,15 @@ of its holdout policy.
 On 2026-11-02 the maintainer stated that the holdout's generator is neither OpenAI's
 nor Anthropic's. That statement is recorded here. It is not yet the attestation.
 
+The measurement of the composite with Luna's leg disabled met its review trigger: 29/34
+and one unsafe action, by a hole in the action policy that
+`.specify/bugs/uncertain-human-review/` closes. The maintainer keeps the composite, and
+the reference run waits for that fix and one measurement on the corrected commit.
+
+Spec 008's outcome does not change. Its rules were frozen before the runs, and
+`qwen3.6-35b-a3b`'s removal stands, although this fix would have stopped the reply that
+removed it.
+
 ## The hosting record
 
 Spec 009, FR-013. To fill when OpenAI answers. Asked in this order: European

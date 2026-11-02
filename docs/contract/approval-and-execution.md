@@ -18,6 +18,10 @@ approvals bound to what was shown, writes on a real platform) and ADR-009
   execution writes exactly the instrument approved: a credit note as a
   credit note, a refund as a refund. A type with no write on the platform is
   refused before anything is claimed, never replaced by the nearest one.
+- **A check that could not conclude goes to a person.** With `NOT_EVALUABLE` or
+  `USAGE_UNAVAILABLE` among the findings, the verdict is human review, whatever
+  the engine classified or asked, so no automatic reply leaves either
+  (`.specify/bugs/uncertain-human-review/`).
 - **One action per correction.** An action is queued with an idempotency key
   derived from what it is -- platform, invoice, type, amount and currency --
   so the same proposal queued twice is one action, and the key is the one
