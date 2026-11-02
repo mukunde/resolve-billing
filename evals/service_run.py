@@ -1,0 +1,272 @@
+"""`gpt-6-luna` measured through the service's own engine
+(specs/009-luna-service, FR-014).
+
+The runner sends this configuration through `Governed`; the service sends it
+through `BoundedEngine`. This tool measures the second, on the development
+cases alone, with the first's safeguards: the guard, the declared accounts,
+the accepted first call, the account held for the whole run, and the envelope,
+reserved before each send and settled after it.
+
+The request is not touched. The result names itself a service run: it is no
+slot of spec 008's campaign, and its comparison takes no part of it.
+
+    python -m dotenv run -- python -m evals.service_run \\
+        --data-terms contractual --json evals/results/gpt-6-luna-service.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import hashlib
+import json
+import sys
+import time
+from dataclasses import asdict
+from datetime import UTC, datetime
+from pathlib import Path
+
+from app.decision.base import (
+    AttemptEnd,
+    AttemptOutcome,
+    AttemptStart,
+    EngineRejected,
+)
+from app.decision.bounded import BoundedEngine, Bounds
+from app.decision.claude import PROMPT_VERSION
+from app.decision.hosted import Answer, configuration
+from app.decision.masking import MASKING_VERSION
+from app.decision.verdict import verdict_schema
+from evals import accounts, campaign, engines
+from evals.first_calls import FirstCalls, FirstCallsRefused, fingerprint
+from evals.governed import reservation_cost, settlement
+from evals.hosted_run import _new_file
+from evals.ledger import LedgerRefused, PrepaidLedger
+from evals.limits import RunStopped
+from evals.state import AccountBusy, AccountRun
+
+ENGINE = "gpt-6-luna"
+RUN_KIND = "service run"
+STATEMENT = (
+    "one run of the development cases through the service's engine: a regression score on "
+    "cases that shaped the prompt, not a measure on unseen disputes, and no part of spec "
+    "008's comparison"
+)
+
+#: Outcomes the vendor refused before processing: nothing was spent, as `Governed` holds.
+REFUSED_UNPROCESSED = frozenset({AttemptOutcome.RATE_LIMITED, AttemptOutcome.REJECTED})
+#: Outcomes that carry an answer, and so its usage.
+ANSWERED = frozenset({AttemptOutcome.ANSWERED, AttemptOutcome.UNUSABLE, AttemptOutcome.WRONG_MODEL})
+
+
+class LedgerRecorder:
+    """Attempts against the account's envelope: reserved before the send, and
+    a refusal sends nothing; settled after it. A reservation with no known cost
+    stays spent. Attempts are kept for the result."""
+
+    def __init__(self, ledger, config, run_id: str, on_send=None) -> None:
+        self._ledger = ledger
+        self._config = config
+        self._run_id = run_id
+        self._on_send = on_send
+        self._reserved: dict[str, tuple[str, int, float]] = {}
+        self.open_reservations: dict[str, float] = {}
+        self.cost = 0.0
+        self.attempts: list[dict] = []
+
+    def started(self, attempt: AttemptStart) -> None:
+        ticket = f"{self._run_id}/{attempt.attempt_id}"
+        amount = reservation_cost(attempt.reserved_tokens, self._config)
+        self._ledger.reserve(ticket, amount)
+        self._reserved[attempt.attempt_id] = (ticket, attempt.reserved_tokens, amount)
+        self.open_reservations[ticket] = amount
+        self.attempts.append(vars(attempt).copy())
+        if self._on_send is not None:
+            self._on_send()
+
+    def finished(self, attempt: AttemptEnd) -> None:
+        ticket, reserved, _ = self._reserved[attempt.attempt_id]
+        held = next(a for a in self.attempts if a["attempt_id"] == attempt.attempt_id)
+        held.update(vars(attempt) | {"outcome": attempt.outcome.value})
+        if attempt.outcome in REFUSED_UNPROCESSED:
+            self._settle(ticket, 0.0)
+        elif attempt.outcome in ANSWERED:
+            answer = Answer(
+                None,
+                "stop",
+                attempt.input_tokens,
+                attempt.output_tokens,
+                attempt.returned_model,
+                cached_input_tokens=attempt.cached_input_tokens,
+                cache_write_tokens=attempt.cache_write_tokens,
+                reasoning_tokens=attempt.reasoning_tokens,
+            )
+            cost, stop = settlement(answer, reserved, self._config)
+            if cost is not None:
+                self._settle(ticket, cost)
+            if stop is not None:
+                raise RunStopped(f"{ENGINE}: {stop}")
+        if attempt.outcome is AttemptOutcome.WRONG_MODEL:
+            # Its cost is kept; its answer never scored, as in `Governed`.
+            raise RunStopped(f"{ENGINE}: answered by another model")
+
+    def _settle(self, ticket: str, amount: float) -> None:
+        self._ledger.settle(ticket, amount)
+        self.open_reservations.pop(ticket, None)
+        self.cost += amount
+
+
+async def run(record: dict, cases: list[dict], wrapper: BoundedEngine) -> None:
+    """Run the cases into `record`, which holds what was done whatever stops
+    the run."""
+    from app.api.deps import wire
+    from app.application.investigate_dispute import DisputeInvestigator
+    from app.domain.models import Dispute
+    from app.providers.fake.adapter import FakeBillingProvider
+    from evals import runner
+
+    provider = FakeBillingProvider()
+    investigator = DisputeInvestigator(provider=provider, engine=wire(wrapper, provider))
+    try:
+        for index, case in enumerate(cases):
+            record["stopped_at"] = case["id"]
+            record["not_attempted"] = [later["id"] for later in cases[index:]]
+            dispute = Dispute(
+                id=f"eval_{case['id']}",
+                customer_message=case["message"],
+                customer_email=case["customer_email"],
+                customer_id=case.get("customer_id"),
+                invoice_id=case["invoice_id"],
+                headers=runner.header_pairs(case.get("headers")),
+            )
+            result = await investigator.investigate(dispute, now=runner.EVALUATION_DATE)
+            record["outcomes"].append(runner._evaluate(case, result))
+        record["not_attempted"] = []
+        record["stopped_at"] = None
+        record["complete"] = True
+    finally:
+        await wrapper.aclose()
+
+
+def write(record: dict, recorder: LedgerRecorder, ledger, config, args, started: float) -> Path:
+    unknown = recorder.open_reservations
+    repo = campaign.git_state()
+    try:
+        envelope = ledger.state()
+    except LedgerRefused as refusal:
+        envelope = f"unreadable: {refusal}"
+    payload = {
+        "engine": ENGINE,
+        "engine_version": config.prompt_version,
+        "run_kind": RUN_KIND,
+        "statement": STATEMENT,
+        "cases_file": engines.DEVELOPMENT_SET.name,
+        "cases_sha256": engines.DEVELOPMENT_SET_SHA256[:16],
+        "ran_at": record["started_at"].isoformat(),
+        "duration_s": round(time.monotonic() - started, 3),
+        "complete": record["complete"],
+        "stop_reason": record["stop_reason"],
+        "stopped_at": record["stopped_at"],
+        "cases_total": record["total"],
+        "cases_run": len(record["outcomes"]),
+        "not_attempted": record["not_attempted"],
+        "bounds": asdict(record["bounds"]),
+        "data_terms": args.data_terms,
+        "configuration_fingerprint": fingerprint(config),
+        "prompt_version": PROMPT_VERSION,
+        "masking_version": MASKING_VERSION,
+        "schema_sha256": hashlib.sha256(
+            json.dumps(verdict_schema(), sort_keys=True).encode("utf-8")
+        ).hexdigest()[:16],
+        "commit": repo["commit"],
+        "clean_tree": repo["clean_tree"],
+        "account": accounts.identity(config),
+        "cost": {
+            "basis": "estimated from the reported usage at list prices, by category",
+            "currency": config.currency,
+            "settled_amount": round(recorder.cost, 6),
+            "unknown_cost_attempts": len(unknown),
+            "unknown_cost_reserved": round(sum(unknown.values()), 6),
+            "complete": not unknown,
+            "source": config.price_source,
+            "envelope": envelope,
+        },
+        "attempts": recorder.attempts,
+        "outcomes": [vars(outcome) for outcome in record["outcomes"]],
+    }
+    return _new_file(args.json, record["started_at"], payload)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--json", type=Path, required=True)
+    parser.add_argument("--data-terms", required=True)
+    parser.add_argument("--cases", type=Path, default=engines.DEVELOPMENT_SET)
+    args = parser.parse_args(argv)
+
+    config = configuration(ENGINE)
+    try:
+        cases = engines.development_cases(args.cases)
+        FirstCalls().admit_full_run(config)
+        ledger = PrepaidLedger(accounts.billing_account(config), config.currency)
+        ledger.state()
+    except (
+        engines.OffTheDevelopmentSet,
+        FirstCallsRefused,
+        accounts.AccountRefused,
+        LedgerRefused,
+    ) as refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 2
+
+    bounds = Bounds()
+    began = datetime.now(UTC)
+    started = time.monotonic()
+    record = {
+        "started_at": began,
+        "total": len(cases),
+        "outcomes": [],
+        "not_attempted": [case["id"] for case in cases],
+        "stopped_at": None,
+        "complete": False,
+        "stop_reason": None,
+        "bounds": bounds,
+    }
+    try:
+        with AccountRun(accounts.billing_account(config)) as account:
+            recorder = LedgerRecorder(
+                ledger, config, began.strftime("%Y%m%dT%H%M%S.%fZ"), account.record_send
+            )
+            wrapper = BoundedEngine(engines.HOSTED_ENGINES[ENGINE](), recorder, bounds=bounds)
+            try:
+                asyncio.run(run(record, cases, wrapper))
+            except RunStopped as stop:
+                record["stop_reason"] = str(stop)
+            except LedgerRefused as refusal:
+                record["stop_reason"] = f"the ledger refused: {refusal}"
+            except EngineRejected as refusal:
+                record["stop_reason"] = f"the engine refused the request ({refusal})"
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                record["stop_reason"] = "interrupted"
+            except Exception as error:
+                record["stop_reason"] = f"internal error ({type(error).__name__})"
+                written = write(record, recorder, ledger, config, args, started)
+                print(f"result written to {written}", file=sys.stderr)
+                raise
+            written = write(record, recorder, ledger, config, args, started)
+    except AccountBusy as refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 2
+
+    from evals import runner
+
+    if not record["complete"]:
+        print(f"INCOMPLETE: {record['stop_reason']}", file=sys.stderr)
+    print(f"\n{STATEMENT}")
+    status = runner.report(ENGINE, record["outcomes"])
+    print(f"\nresult written to {written}")
+    return status if record["complete"] else 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
