@@ -25,7 +25,7 @@ from app.providers.base import (
     ProviderAction,
     ProviderRejected,
 )
-from app.providers.fake.fixtures import load_all
+from app.providers.fake.fixtures import FixtureSet, load_all
 
 __all__ = ["FakeBillingProvider", "NotFound"]
 
@@ -61,8 +61,10 @@ class FakeBillingProvider:
             for match in self._INVOICE_REFERENCE.finditer(text)
         ]
 
-    def __init__(self) -> None:
-        data = load_all()
+    def __init__(self, fixtures: FixtureSet | None = None) -> None:
+        # A given set is the reference run's frozen snapshot; otherwise the
+        # repository's fixtures, as always.
+        data = fixtures if fixtures is not None else load_all()
         self._customers = list(data.customers)
         self._subscriptions = list(data.subscriptions)
         self._invoices = list(data.invoices)

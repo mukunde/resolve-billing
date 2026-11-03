@@ -44,16 +44,19 @@ def _luna() -> DecisionEngine:
     return BoundedEngine(OpenAICompatibleEngine(configuration(LUNA)), get_attempts())
 
 
-def _failover() -> DecisionEngine:
-    """Both evaluated configurations, one attempt each, under one deadline."""
+def _failover(recorder=None) -> DecisionEngine:
+    """Both evaluated configurations, one attempt each, under one deadline.
+    The attempts go to the audit file, or to `recorder` when one is given: the
+    reference run's private record (specs/011-reference-run)."""
     from app.decision.openai_compatible import OpenAICompatibleEngine
     from app.decision.vendors import client_for
 
     primary = OpenAICompatibleEngine(configuration(LUNA))
     secondary = client_for(configuration(HAIKU))
+    recorder = recorder if recorder is not None else get_attempts()
     return FailoverEngine(
-        BoundedEngine(primary, get_attempts(), bounds=PRIMARY_BOUNDS),
-        BoundedEngine(secondary, get_attempts(), bounds=SECONDARY_BOUNDS),
+        BoundedEngine(primary, recorder, bounds=PRIMARY_BOUNDS),
+        BoundedEngine(secondary, recorder, bounds=SECONDARY_BOUNDS),
         name=FAILOVER,
         version=f"{FAILOVER}/{POLICY}/{PROMPT_VERSION}",
     )

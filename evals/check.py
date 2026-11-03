@@ -46,6 +46,7 @@ from app.providers.fake.fixtures import (
     MissingFixturesDirectory,
     extra_fixtures_dir,
     load_all,
+    load_from,
 )
 
 ACTIONS = frozenset({"credit_note", "refund", "reply", "request_information", "none"})
@@ -55,11 +56,17 @@ _SENDERS = {s.value for s in SenderStatus}
 _UNKNOWN_SENDERS = {SenderStatus.UNKNOWN.value, SenderStatus.SUSPECTED_IMPERSONATION.value}
 
 
-def check(cases_path: Path) -> int:
-    """Print totals; return 1 when anything does not fit."""
+def check(cases_path: Path, fixtures: tuple[Path, Path] | None = None) -> int:
+    """Print totals; return 1 when anything does not fit. `fixtures` is a base
+    and an extra directory to read instead of the configured ones: the
+    reference run's snapshot (specs/011-reference-run)."""
     try:
-        extra = extra_fixtures_dir()
-        data = load_all()
+        if fixtures is not None:
+            extra = fixtures[1]
+            data = load_from(*fixtures)
+        else:
+            extra = extra_fixtures_dir()
+            data = load_all()
     except MissingFixturesDirectory:
         return _fail("fixtures", "extra directory not found")
     except DuplicateFixture:

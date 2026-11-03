@@ -7,29 +7,29 @@ test makes a paid call, and no test reads the holdout.
 
 ## Phase 1: Lockdown
 
-- [ ] T010 Test first, `tests/unit/test_reference_lockdown.py`: an exporter variable or an
+- [x] T010 Test first, `tests/unit/test_reference_lockdown.py`: an exporter variable or an
   installed tracer provider refuses; a private folder inside the repository, a worktree, under
   `.git`, through a link, missing or read-only refuses; a defect prints its type and the folder
   only; logs, SDK logs, named loggers with handlers of their own, stdout, stderr and file
   descriptors 1 and 2 go to the private log, before preparation and imports, checked in a
   subprocess; only the allowlist reaches the console, through the duplicated descriptor;
   `app.main` is never imported.
-- [ ] T011 `evals/reference_run.py`: the lockdown.
+- [x] T011 `evals/reference_run.py`: the lockdown.
 
 ## Phase 2: `prepare`
 
-- [ ] T020 Test first: the check's failure prints nothing case-level; the freeze record holds every
+- [x] T020 Test first: the check's failure prints nothing case-level; the freeze record holds every
   field of FR-003; a commit without the uncertainty fix refuses; the budget is computed without a
   send; undeclared accounts, a missing first call or a short envelope refuse; the state becomes
   `prepared`; a second prepare with other inputs is refused once a record exists; the snapshot is
   what runs: a case, a holdout fixture or a repository fixture changed, or a fixture file added,
   after preparation changes nothing or refuses; the loader's default base is unchanged for the
   service.
-- [ ] T021 `prepare`, the dry engine.
+- [x] T021 `prepare`, the dry engine.
 
 ## Phase 3: `run` and the state
 
-- [ ] T030 Test first, fake legs: a wrong hash refuses; anything but `RUN ONCE` stops, still
+- [x] T030 Test first, fake legs: a wrong hash refuses; anything but `RUN ONCE` stops, still
   prepared; `consumed` is written before the first send, under both locks, after the envelopes
   are rechecked, and a short envelope then leaves it `prepared`; two competing starts consume once;
   a second start is refused for another folder, freeze record or case file; an unreadable state or
@@ -39,20 +39,20 @@ test makes a paid call, and no test reads the holdout.
   counted and the run
   goes on; a ledger refusal, an interruption and a defect end it incomplete; no sentinel in any
   output for a complete run, a stopped run and a defect; spans are not exported.
-- [ ] T031 `run`, `RoutingRecorder`, the state.
+- [x] T031 `run`, `RoutingRecorder`, the state.
 
 ## Phase 4: Totals and `rebuild`
 
-- [ ] T040 Test first: every total of FR-009 on a stand-in; a failure before any send is not
+- [x] T040 Test first: every total of FR-009 on a stand-in; a failure before any send is not
   counted as rules-only; `requires_approval` counts as sent to a person; the fallback and
   both-failed counts;
   models counted only when they answered; an incomplete run shows no full-set rate; an unsafe
   action comes first; `rebuild` gives the same totals and calls nothing.
-- [ ] T041 Totals and `rebuild`.
+- [x] T041 Totals and `rebuild`.
 
 ## Phase 5: Documents
 
-- [ ] T050 ADR-009, ADR-013, the evaluation contract, operations, README.
+- [x] T050 ADR-009, ADR-013, the evaluation contract, operations, README.
 - [ ] T051 Gates. Final diff to Codex, then to the maintainer by SHA. The PR.
 
 ## Phase 6: After the merge, the maintainer alone

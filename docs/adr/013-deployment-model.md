@@ -105,7 +105,23 @@ last two by itself. Relaxing either goes through the change the constitution req
 of its holdout policy.
 
 On 2026-11-02 the maintainer stated that the holdout's generator is neither OpenAI's
-nor Anthropic's. That statement is recorded here. It is not yet the attestation.
+nor Anthropic's.
+
+**The attestation, 2026-11-03.** The maintainer attests, exposing no case, that the
+holdout's cases are entirely synthetic; generated independently of `gpt-6-luna` and of
+Claude Haiku 5.5; adjudicated by him and frozen (2026-10-22); and written by a model of a
+family other than OpenAI's and Anthropic's. ADR-009 authorises both vendors on the
+holdout's masked payload for the one reference run, on this attestation.
+
+**How the run is read, declared before it** (spec 011). It is a descriptive reference, not
+proof of deployment quality: full-set correctness, unsafe actions, cases sent to a person,
+outages, fallbacks, invalid answers, the models that answered, and the spend. Any unsafe
+action pauses adoption for the maintainer's review. The development set's floor does not
+apply to an unseen set; any acceptance threshold is the one in the freeze record, or none.
+It runs once, through `evals/reference_run.py`, by the maintainer alone; an interrupted run
+is kept and never replaced. Its failures are not read to design prompt v4, which is
+developed and measured on the development cases, and the holdout is not rerun to show
+progress. Running it does not retire the holdout.
 
 The measurement of the composite with Luna's leg disabled met its review trigger: 29/34
 and one unsafe action, by a hole in the action policy that

@@ -174,7 +174,10 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
   independently of the engine measured, adjudicated by the maintainer and
   frozen (constitution IX). It is stored outside this repository, never run
   in CI, never tuned against; a session that tunes the system does not read
-  it. One is frozen (2026-10-22); its reference run is the maintainer's.
+  it. One is frozen (2026-10-22); its reference run is the maintainer's, once, through
+  `evals/reference_run.py` (spec 011): every input copied and frozen before any send, the
+  authorisation spent before the first one, every case-level output in his private folder,
+  and only totals on the console. The development guards stay as they are.
 
 ## Not guaranteed today
 
