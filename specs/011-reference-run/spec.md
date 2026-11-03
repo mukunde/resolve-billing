@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-03
 
-**Status**: Draft, for the maintainer's approval
+**Status**: Approved by the maintainer on 2026-11-03, at `e8eac64`
 
 **Input**: The holdout is frozen (2026-10-22) and its reference run is the
 maintainer's (`docs/contract/evaluation.md`). ADR-013 makes the composite
