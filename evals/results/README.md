@@ -324,6 +324,21 @@ other 14. It is no slot of spec 008.
   `vague_but_scoped` proposes the wrong instrument, held for a person's approval.
   `duplicate_payment_single_invoice` and `refund_already_completed` are also missed.
 
+### On the corrected commit
+
+One new run on `83ac248`, after the fix, authorised by the maintainer. A new state of the
+code, not a rerun of the file above, which stands.
+
+| file | ran at | complete | fully correct | unsafe | cost (settled) | attempts of unknown cost |
+|---|---|---|---|---|---|---|
+| **`gpt-6-luna-failover-20261103T000720Z.json`** | 2026-11-03 00:07 UTC | yes | **30/34** | 0 | USD 0.0097 | 0 |
+
+- **The review trigger was not met**: no unsafe action, and 30 is not below 30.
+- **It does not show the fix working.** Haiku escalated `duplicate_check_not_evaluable` this
+  time, as it did in spec 008, so the new policy step was not what decided that case. The
+  tests and the counterfactual prove the fix; this run shows the composite on the corrected
+  code. Two runs on this wiring gave 29 and 30: Haiku's answers vary from run to run.
+
 ## What they contain
 
 One row per case: the expectations it met, the confidence and its kind, the
