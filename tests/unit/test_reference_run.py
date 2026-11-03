@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from app.decision.base import EngineRejected, EngineUnavailable
+from app.decision.base import EngineRejected
 from app.decision.bounded import BoundedEngine
 from app.decision.failover import PRIMARY_BOUNDS, SECONDARY_BOUNDS, FailoverEngine
 from app.decision.hosted import configuration
@@ -121,6 +121,9 @@ class World:
             str(self.private),
         ]
         return reference_run.main(argv, descriptors=False, legs=self.legs(), **extra)
+
+    def run_dir(self):
+        return reference_run.the_run(self.private)
 
     def freeze(self):
         return reference_run.freeze_hash(
@@ -245,7 +248,7 @@ class TestPrepare:
         assert held["state"] == "prepared"
         out = no_sentinel(capfd)
         assert "nothing was sent" in out
-        assert not (world.private / "attempts").exists()
+        assert not list(world.private.glob("reference-*"))
 
     def test_a_failing_check_says_nothing_case_level(self, world, capfd):
         world.cases.write_text(json.dumps([{"id": SENTINEL}]), encoding="utf-8")
@@ -275,7 +278,7 @@ class TestPrepare:
         world.cases.write_text("[]", encoding="utf-8")
         (world.fixtures / "customers.json").write_text("[]", encoding="utf-8")
         assert world.run() == 0
-        totals = json.loads((world.private / "totals.json").read_text(encoding="utf-8"))
+        totals = json.loads((world.run_dir() / "totals.json").read_text(encoding="utf-8"))
         assert totals["cases_run"] == 4
 
     def test_the_services_fixtures_are_unchanged(self):
@@ -294,8 +297,8 @@ class TestRun:
         assert "fully correct:" in out
         held = json.loads(reference_run.state_path().read_text(encoding="utf-8"))
         assert held["state"] == "consumed"
-        assert (world.private / "cases").is_dir()
-        assert list((world.private / "attempts").glob("*-start.json"))
+        assert (world.run_dir() / "cases").is_dir()
+        assert list((world.run_dir() / "attempts").glob("*-start.json"))
 
     def test_anything_but_the_words_stops_still_prepared(self, world):
         world.prepare()
@@ -353,7 +356,7 @@ class TestRun:
         world.luna_script = [outage("transport")] * 10
         world.haiku_script = [answer(model="claude-haiku-5-5")] * 10
         assert world.run() == 0
-        totals = json.loads((world.private / "totals.json").read_text(encoding="utf-8"))
+        totals = json.loads((world.run_dir() / "totals.json").read_text(encoding="utf-8"))
         assert totals["complete"] is True
         assert totals["luna_failed_haiku_answered"] >= 1
         assert totals["answered_by"].get("claude-haiku-5-5", 0) >= 1
@@ -376,9 +379,9 @@ class TestRun:
     def test_records_are_whole_files(self, world):
         world.prepare()
         world.run()
-        for path in (world.private / "cases").glob("*.json"):
+        for path in (world.run_dir() / "cases").glob("*.json"):
             json.loads(path.read_text(encoding="utf-8"))
-        assert not list((world.private / "cases").glob(".*"))
+        assert not list((world.run_dir() / "cases").glob(".*"))
 
     def test_nothing_is_written_in_the_repository(self, world):
         before = subprocess.run(
@@ -396,18 +399,18 @@ class TestTotals:
     def test_rebuild_gives_the_same_totals_and_calls_nothing(self, world):
         world.prepare()
         world.run()
-        first = json.loads((world.private / "totals.json").read_text(encoding="utf-8"))
+        first = json.loads((world.run_dir() / "totals.json").read_text(encoding="utf-8"))
         assert (
             reference_run.main(["rebuild", "--private", str(world.private)], descriptors=False) == 0
         )
-        assert json.loads((world.private / "totals.json").read_text(encoding="utf-8")) == first
+        assert json.loads((world.run_dir() / "totals.json").read_text(encoding="utf-8")) == first
         assert world.factories == 1
 
     def test_an_unsafe_action_comes_first(self, world, capfd, monkeypatch):
         world.prepare()
         world.run()
         capfd.readouterr()
-        for path in (world.private / "cases").glob("*.json"):
+        for path in (world.run_dir() / "cases").glob("*.json"):
             record = json.loads(path.read_text(encoding="utf-8"))
             record["outcome"]["unsafe"] = "planted"
             path.write_text(json.dumps(record), encoding="utf-8")
@@ -422,7 +425,7 @@ class TestTotals:
         world.run()
         cases = [
             json.loads(p.read_text(encoding="utf-8"))
-            for p in (world.private / "cases").glob("*.json")
+            for p in (world.run_dir() / "cases").glob("*.json")
         ]
         totals = reference_run.compute_totals(world.private)
         assert totals["rules_only"] == sum(1 for c in cases if not c["engine_called"])
@@ -430,7 +433,7 @@ class TestTotals:
     def test_an_open_attempt_stays_unknown(self, world):
         world.prepare()
         world.run()
-        for path in (world.private / "attempts").glob("*-end.json"):
+        for path in (world.run_dir() / "attempts").glob("*-end.json"):
             path.unlink()
             break
         totals = reference_run.compute_totals(world.private)
@@ -441,7 +444,7 @@ class TestTotals:
         world.run()
         cases = [
             json.loads(p.read_text(encoding="utf-8"))
-            for p in (world.private / "cases").glob("*.json")
+            for p in (world.run_dir() / "cases").glob("*.json")
         ]
         totals = reference_run.compute_totals(world.private)
         assert totals["sent_to_a_person"] == sum(
@@ -449,5 +452,135 @@ class TestTotals:
         )
 
 
-def test_an_outage_alone_never_needs_the_unavailable_import():
-    assert EngineUnavailable
+class TestReviewR301:
+    def test_an_argument_error_names_no_value(self, capfd):
+        with pytest.raises(SystemExit):
+            reference_run.main(["prepare", "--threshold", SENTINEL], descriptors=False)
+        out = no_sentinel(capfd)
+        assert "invalid arguments" in out
+
+    def test_a_linked_log_refuses(self, world, capfd):
+        target = REPO / "evals" / "not-a-log.txt"
+        try:
+            (world.private / "log.txt").symlink_to(target)
+        except OSError:
+            pytest.skip("links are not allowed here")
+        assert world.prepare() == 2
+        assert not target.exists()
+
+    def test_a_changed_account_refuses_the_run(self, world, monkeypatch):
+        world.prepare()
+        monkeypatch.setenv("OPENAI_PROJECT_ID", "proj_other")
+        assert world.run() == 2
+        held = json.loads(reference_run.state_path().read_text(encoding="utf-8"))
+        assert held["state"] == "prepared"
+
+    def test_a_competing_prepare_leaves_the_snapshot_alone(self, world):
+        world.prepare()
+        before = reference_run.inputs_hashes(world.private / "snapshot")
+        cases = json.loads(world.cases.read_text(encoding="utf-8"))
+        world.cases.write_text(json.dumps(cases[:2]), encoding="utf-8")
+        assert world.prepare() == 2
+        assert reference_run.inputs_hashes(world.private / "snapshot") == before
+
+    def test_the_run_reads_its_own_copy(self, world):
+        world.prepare()
+        snapshot = world.private / "snapshot" / "cases.json"
+
+        def factory(recorder):
+            snapshot.write_text("[]", encoding="utf-8")
+            return world.factory(recorder)
+
+        reference_run.main(
+            ["run", "--freeze", world.freeze(), "--private", str(world.private)],
+            descriptors=False,
+            ask=lambda prompt: "RUN ONCE",
+            engine_factory=factory,
+        )
+        totals = json.loads((world.run_dir() / "totals.json").read_text(encoding="utf-8"))
+        assert totals["cases_run"] == 4
+
+    def test_a_record_of_another_run_refuses(self, world):
+        world.prepare()
+        world.run()
+        stray = world.run_dir() / "cases" / "99999.json"
+        stray.write_text(json.dumps({"run_id": "other", "number": 99999}), encoding="utf-8")
+        with pytest.raises(reference_run.Refused):
+            reference_run.compute_totals(world.private)
+
+    def test_a_duplicated_case_refuses(self, world):
+        world.prepare()
+        world.run()
+        first = sorted((world.run_dir() / "cases").glob("*.json"))[0]
+        (world.run_dir() / "cases" / "00099.json").write_text(
+            first.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        with pytest.raises(reference_run.Refused):
+            reference_run.compute_totals(world.private)
+
+    def test_both_failed_only_when_a_person_got_it(self, world):
+        world.prepare()
+        world.luna_script = [outage("transport")] * 10
+        world.haiku_script = [outage("transport")] * 10
+        world.run()
+        totals = reference_run.compute_totals(world.private)
+        assert totals["both_failed"] <= totals["of_which_outage"]
+        assert totals["both_failed"] >= 1
+
+
+class TestTheRecorderBoundaries:
+    def recorder(self, tmp_path, ledger_recorder):
+        return reference_run.RoutingRecorder(
+            {"openai": ledger_recorder}, tmp_path / "attempts", tmp_path, "reference-x"
+        )
+
+    def start(self):
+        from app.decision.base import AttemptStart
+
+        return AttemptStart("a1", "i1", "d1", 1, "openai", "gpt-6-luna", "t", 100)
+
+    def test_a_refused_reservation_leaves_a_closed_record(self, tmp_path):
+        from evals.ledger import LedgerRefused
+
+        class Refusing:
+            cost = 0.0
+            open_reservations = {}
+
+            def started(self, attempt):
+                raise LedgerRefused("beyond")
+
+        routing = self.recorder(tmp_path, Refusing())
+        with pytest.raises(LedgerRefused):
+            routing.started(self.start())
+        end = json.loads((tmp_path / "attempts" / "a1-end.json").read_text(encoding="utf-8"))
+        assert end["outcome"] == "not_reserved"
+
+    def test_a_stop_at_settlement_still_writes_the_end(self, tmp_path):
+        from app.decision.base import AttemptEnd, AttemptOutcome
+        from evals.limits import RunStopped
+
+        class Stopping:
+            cost = 0.0
+            open_reservations = {"reference-x/a1": 1.0}
+
+            def started(self, attempt):
+                pass
+
+            def finished(self, attempt):
+                raise RunStopped("usage above the reservation")
+
+        routing = self.recorder(tmp_path, Stopping())
+        routing.started(self.start())
+        with pytest.raises(RunStopped):
+            routing.finished(AttemptEnd("a1", AttemptOutcome.ANSWERED, "t", 1))
+        end = json.loads((tmp_path / "attempts" / "a1-end.json").read_text(encoding="utf-8"))
+        assert end["ledger"] == "open"
+        assert end["settled_usd"] is None
+
+    def test_a_crash_before_the_end_reads_as_unknown(self, world):
+        world.prepare()
+        world.run()
+        for path in (world.run_dir() / "attempts").glob("*-end.json"):
+            path.unlink()
+        totals = reference_run.compute_totals(world.private)
+        assert totals["unfinished_attempts"] >= 1

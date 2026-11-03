@@ -127,7 +127,11 @@ class LedgerRecorder:
     a refusal sends nothing; settled after it. A reservation with no known cost
     stays spent. Attempts are kept for the result."""
 
-    def __init__(self, ledger, config, run_id: str, on_send=None) -> None:
+    def __init__(self, ledger, config, run_id: str, on_send=None, service_like=False) -> None:
+        #: The reference run handles a wrong model and an answer without usage
+        #: as the service does, and stops only on usage above a reservation
+        #: (specs/011-reference-run, FR-004, FR-008).
+        self._service_like = service_like
         self._ledger = ledger
         self._config = config
         self._run_id = run_id
@@ -167,9 +171,9 @@ class LedgerRecorder:
             cost, stop = settlement(answer, reserved, self._config)
             if cost is not None:
                 self._settle(ticket, cost)
-            if stop is not None:
+            if stop is not None and (not self._service_like or stop.startswith("usage above")):
                 raise RunStopped(f"{self._config.name}: {stop}")
-        if attempt.outcome is AttemptOutcome.WRONG_MODEL:
+        if attempt.outcome is AttemptOutcome.WRONG_MODEL and not self._service_like:
             # Its cost is kept; its answer never scored, as in `Governed`.
             raise RunStopped(f"{self._config.name}: answered by another model")
 

@@ -9,18 +9,19 @@ commands:
     python -m dotenv run -- python -m evals.reference_run run --freeze HASH --private DIR
     python -m evals.reference_run rebuild --private DIR
 
-`prepare` copies every input into the private folder once and writes the
-freeze record there, sending nothing. `run`, after the maintainer types
-RUN ONCE, spends the one authorisation before its first send and runs the
-snapshot through `gpt-6-luna+claude-haiku-5-5`, fallback on. `rebuild`
-recomputes the totals from the records, calling nothing.
+`prepare` copies every input into the private folder and writes the freeze
+record there, sending nothing. `run`, after the maintainer types RUN ONCE,
+spends the one authorisation before its first send, copies the approved inputs
+into a folder of its own, and runs them through `gpt-6-luna+claude-haiku-5-5`,
+fallback on. `rebuild` recomputes the totals from that run's records, calling
+nothing.
 
 Constitution, principle IX: a session that tunes the system does not read the
 cases. So nothing case-level leaves the private folder: before anything else,
 standard output, standard error, their file descriptors and every logger go to
 the folder's log, and only an allowlist -- the summary, the prompt, the totals,
 a refusal's category -- reaches the console. Only the standard library is
-imported before that.
+imported before that, and an argument error says only that it is one.
 """
 
 from __future__ import annotations
@@ -56,10 +57,26 @@ FIXTURE_NAMES = (
     "payments.json",
     "usage.json",
 )
+#: The configurations of the composite, in the order their locks are taken.
+CONFIGURATIONS = ("claude-haiku-5-5", "gpt-6-luna")
 
 
 class Refused(Exception):  # noqa: N818 -- a refusal, not a defect
     """The run may not go on. Its text is a category, never data."""
+
+
+def _console(line: str) -> None:
+    """The console before the lockdown: a category, never data."""
+    print(line, file=sys.__stdout__, flush=True)
+
+
+class _Parser(argparse.ArgumentParser):
+    """An argument error names no value: a path or a number given here could
+    be a case's."""
+
+    def error(self, message: str):  # noqa: ARG002 -- the message quotes the arguments
+        _console("refused: invalid arguments")
+        raise SystemExit(2)
 
 
 # -- lockdown ------------------------------------------------------------------
@@ -69,12 +86,14 @@ class Lockdown:
     """Every output into the private log, but an allowlisted console."""
 
     def __init__(self, private: Path, descriptors: bool = True) -> None:
+        self.private = private
         self.log_path = private / "log.txt"
         self._descriptors = descriptors
         self._saved: list = []
         self.console = None
 
     def __enter__(self) -> Lockdown:
+        contained(self.log_path, self.private)
         self._log = open(self.log_path, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
         sys.stdout.flush()
         sys.stderr.flush()
@@ -162,9 +181,13 @@ def private_folder(raw: str) -> Path:
         if (parent / ".git").exists():
             raise Refused("the private folder is inside a repository")
     for tree in _worktrees():
-        if folder == tree or tree in folder.parents:
+        if _same(folder, tree) or any(_same(tree, parent) for parent in folder.parents):
             raise Refused("the private folder is inside a worktree")
     return folder
+
+
+def _same(a: Path, b: Path) -> bool:
+    return os.path.normcase(str(a)) == os.path.normcase(str(b))
 
 
 def _worktrees() -> list[Path]:
@@ -181,12 +204,28 @@ def _worktrees() -> list[Path]:
     return trees
 
 
+def contained(path: Path, private: Path) -> Path:
+    """A destination inside the private folder, through no link: refused
+    otherwise, before anything is written."""
+    for part in (path, *path.parents):
+        if _same(part, private):
+            break
+        if part.is_symlink():
+            raise Refused("a link inside the private folder")
+    resolved = path.resolve()
+    if not (_same(resolved, private) or any(_same(p, private) for p in resolved.parents)):
+        raise Refused("a destination outside the private folder")
+    return path
+
+
 # -- the record files ----------------------------------------------------------
 
 
-def write_whole(path: Path, content: dict) -> None:
+def write_whole(path: Path, content: dict, private: Path) -> None:
     """A whole file or none: written aside, synced, renamed, folder synced."""
+    contained(path.parent, private)
     path.parent.mkdir(parents=True, exist_ok=True)
+    contained(path, private)
     handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-")
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as out:
@@ -208,11 +247,14 @@ def write_whole(path: Path, content: dict) -> None:
 def _read_all(folder: Path) -> list[dict]:
     if not folder.is_dir():
         return []
-    return [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(folder.glob("*.json"))
-        if not path.name.startswith(".")
-    ]
+    try:
+        return [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in sorted(folder.glob("*.json"))
+            if not path.name.startswith(".")
+        ]
+    except (OSError, ValueError):
+        raise Refused("a record is unreadable") from None
 
 
 def _sha256(data: bytes) -> str:
@@ -256,29 +298,37 @@ def read_state() -> dict | None:
 
 
 def write_state(content: dict) -> None:
-    write_whole(state_path(), content)
+    from evals.state import write_atomically
+
+    write_atomically(state_path(), content)
 
 
-# -- prepare -------------------------------------------------------------------
+# -- inputs --------------------------------------------------------------------
 
 
-def snapshot(cases: Path, fixtures: Path, private: Path) -> None:
-    """Copy every input once: from here on only the copy is read."""
+def copy_inputs(cases: Path, fixtures: Path, target: Path, private: Path) -> None:
+    """The case file, the repository's fixtures as `base/` and the holdout's
+    as `extra/`, copied into a new folder."""
     from app.providers.fake.fixtures import FIXTURES_DIR
 
-    target = private / "snapshot"
-    if target.exists():
-        import shutil
-
-        shutil.rmtree(target)
+    contained(target, private)
     (target / "base").mkdir(parents=True)
     (target / "extra").mkdir()
     (target / "cases.json").write_bytes(cases.read_bytes())
     for name in FIXTURE_NAMES:
         (target / "base" / name).write_bytes((FIXTURES_DIR / name).read_bytes())
     for path in sorted(fixtures.iterdir()):
-        if path.is_file():
-            (target / "extra" / path.name).write_bytes(path.read_bytes())
+        if path.is_dir():
+            raise Refused("the holdout's fixtures hold a folder")
+        (target / "extra" / path.name).write_bytes(path.read_bytes())
+
+
+def inputs_hashes(target: Path) -> dict[str, str]:
+    return {
+        str(path.relative_to(target)).replace("\\", "/"): _sha256(path.read_bytes())
+        for path in sorted(target.rglob("*"))
+        if path.is_file()
+    }
 
 
 def scoring_definition() -> str:
@@ -305,10 +355,29 @@ def repository_state() -> dict:
     }
 
 
-def freeze_record(
-    private: Path, threshold: float | None = None, budget: dict | None = None
-) -> dict:
-    """What the run is bound to, read from the snapshot."""
+def accounts_frozen() -> dict:
+    """Each configuration's declared account and billing account."""
+    from app.decision.hosted import configuration
+    from evals import accounts
+
+    held = {}
+    for name in CONFIGURATIONS:
+        config = configuration(name)
+        try:
+            accounts.declared(config)
+            held[name] = {
+                "identity": accounts.identity(config),
+                "billing_account": accounts.billing_account(config),
+            }
+        except accounts.AccountRefused:
+            raise Refused(f"{name}: the account is not declared") from None
+    return held
+
+
+def freeze_record(target: Path, threshold: float | None, budget: dict, accounts_held: dict) -> dict:
+    """What the run is bound to, read from a copy of the inputs."""
+    from dataclasses import asdict
+
     from app.api.deps import FAILOVER, HAIKU, LUNA
     from app.decision.failover import DEADLINE, POLICY, PRIMARY_BOUNDS, SECONDARY_BOUNDS
     from app.decision.hosted import PROMPT_VERSION, configuration
@@ -317,19 +386,13 @@ def freeze_record(
     from evals import runner
     from evals.first_calls import fingerprint
 
-    target = private / "snapshot"
     cases = json.loads((target / "cases.json").read_text(encoding="utf-8"))
-    files = {
-        str(path.relative_to(target)).replace("\\", "/"): _sha256(path.read_bytes())
-        for path in sorted(target.rglob("*"))
-        if path.is_file()
-    }
-    from dataclasses import asdict
-
+    files = inputs_hashes(target)
     return {
         "identity": IDENTITY,
         **repository_state(),
         "configurations": {name: fingerprint(configuration(name)) for name in (LUNA, HAIKU)},
+        "accounts": accounts_held,
         "composite": {
             "name": FAILOVER,
             "policy": POLICY,
@@ -389,11 +452,10 @@ class DryEngine:
         return escalation(EngineTelemetry(model_id="dry", prompt_version="dry"))
 
 
-def _cases_and_provider(private: Path):
+def _cases_and_provider(target: Path):
     from app.providers.fake.adapter import FakeBillingProvider
     from app.providers.fake.fixtures import load_from
 
-    target = private / "snapshot"
     cases = json.loads((target / "cases.json").read_text(encoding="utf-8"))
     provider = FakeBillingProvider(fixtures=load_from(target / "base", target / "extra"))
     return cases, provider
@@ -413,12 +475,12 @@ def _dispute(case: dict):
     )
 
 
-async def estimate(private: Path, legs) -> dict[str, float]:
+async def estimate(target: Path, legs) -> dict[str, float]:
     from app.api.deps import wire
     from app.application.investigate_dispute import DisputeInvestigator
     from evals import runner
 
-    cases, provider = _cases_and_provider(private)
+    cases, provider = _cases_and_provider(target)
     dry = DryEngine(legs)
     investigator = DisputeInvestigator(provider=provider, engine=wire(dry, provider))
     for case in cases:
@@ -437,60 +499,86 @@ def legs_for_budget():
     ]
 
 
-def admissible(budget: dict[str, float]) -> None:
-    """Both accounts declared, both first calls accepted, both envelopes room."""
+def admissible(budget: dict[str, float], accounts_held: dict, ledgers=None) -> None:
+    """Both accounts as frozen, no ambient setting, both first calls accepted,
+    and each envelope's room for its own budget."""
+    from app.decision import anthropic_hosted, openai_compatible
     from app.decision.hosted import configuration
     from evals import accounts
     from evals.first_calls import FirstCalls, FirstCallsRefused
     from evals.ledger import LedgerRefused, PrepaidLedger
 
-    for name in ("gpt-6-luna", "claude-haiku-5-5"):
+    if accounts_frozen() != accounts_held:
+        raise Refused("the declared accounts are not the frozen ones")
+    for module in (anthropic_hosted, openai_compatible):
+        if module.ambient_refusal() is not None:
+            raise Refused("an ambient SDK setting is set")
+    for name in CONFIGURATIONS:
         config = configuration(name)
+        account = accounts_held[name]["billing_account"]
+        if account not in budget:
+            raise Refused(f"{name}: no budget was frozen for its account")
         try:
-            accounts.declared(config)
             FirstCalls().admit_full_run(config)
-            left = PrepaidLedger(accounts.billing_account(config), config.currency).state()["left"]
+            ledger = (ledgers or {}).get(account) or PrepaidLedger(account, config.currency)
+            left = ledger.state()["left"]
         except (accounts.AccountRefused, FirstCallsRefused, LedgerRefused) as refusal:
             raise Refused(f"{name}: {type(refusal).__name__}") from None
-        if left < budget.get(accounts.billing_account(config), 0.0):
+        if left < budget[account]:
             raise Refused(f"{name}: the envelope cannot admit the estimated budget")
 
 
 def prepare(args, say, legs=None) -> int:
     import asyncio
+    import shutil
+    import uuid
 
     from evals.check import check
 
     private = Path(args.private)
-    snapshot(Path(args.cases), Path(args.fixtures), private)
-    target = private / "snapshot"
-    if check(target / "cases.json", fixtures=(target / "base", target / "extra")) != 0:
-        raise Refused("the check failed")
-    state = repository_state()
-    if state["clean_tree"] is not True:
-        raise Refused("the source tree is not clean")
-    if not state["uncertainty_fix"]:
-        raise Refused("the commit does not contain the uncertainty fix")
-    budget = asyncio.run(estimate(private, legs if legs is not None else legs_for_budget()))
-    admissible(budget)
-    record = freeze_record(private, args.threshold, budget)
-    digest = freeze_hash(record)
     with state_lock():
         held = read_state()
         if held is not None and held.get("state") != "prepared":
             raise Refused("the reference run was already consumed")
-        if held is not None and held.get("freeze_hash") != digest:
-            raise Refused("a reference run was prepared on other inputs")
-        write_whole(private / "freeze.json", record)
-        write_state(
-            {
-                "identity": IDENTITY,
-                "state": "prepared",
-                "freeze_hash": digest,
-                "case_sha256": record["case_sha256"],
-                "prepared_at": datetime.now(UTC).isoformat(),
-            }
-        )
+    staging = private / f".staging-{uuid.uuid4().hex}"
+    try:
+        copy_inputs(Path(args.cases), Path(args.fixtures), staging, private)
+        if check(staging / "cases.json", fixtures=(staging / "base", staging / "extra")) != 0:
+            raise Refused("the check failed")
+        state = repository_state()
+        if state["clean_tree"] is not True:
+            raise Refused("the source tree is not clean")
+        if not state["uncertainty_fix"]:
+            raise Refused("the commit does not contain the uncertainty fix")
+        accounts_held = accounts_frozen()
+        budget = asyncio.run(estimate(staging, legs if legs is not None else legs_for_budget()))
+        admissible(budget, accounts_held)
+        record = freeze_record(staging, args.threshold, budget, accounts_held)
+        digest = freeze_hash(record)
+        with state_lock():
+            held = read_state()
+            if held is not None and held.get("state") != "prepared":
+                raise Refused("the reference run was already consumed")
+            if held is not None and held.get("freeze_hash") != digest:
+                raise Refused("a reference run was prepared on other inputs")
+            snapshot = private / "snapshot"
+            contained(snapshot, private)
+            if snapshot.exists():
+                shutil.rmtree(snapshot)
+            os.replace(staging, snapshot)
+            write_whole(private / "freeze.json", record, private)
+            write_state(
+                {
+                    "identity": IDENTITY,
+                    "state": "prepared",
+                    "freeze_hash": digest,
+                    "case_sha256": record["case_sha256"],
+                    "prepared_at": datetime.now(UTC).isoformat(),
+                }
+            )
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
     say(f"freeze record: {digest}")
     say(f"cases: {record['case_count']}")
     for account, amount in sorted(budget.items()):
@@ -504,44 +592,79 @@ def prepare(args, say, legs=None) -> int:
 
 class RoutingRecorder:
     """Each provider's attempts to its own envelope, and each start and end as
-    a whole file in the private folder."""
+    a whole file of the run, bound to it, with the ledger's state."""
 
-    def __init__(self, recorders: dict, folder: Path) -> None:
+    def __init__(self, recorders: dict, folder: Path, private: Path, run_id: str) -> None:
         self._recorders = recorders
         self._folder = folder
+        self._private = private
+        self._run_id = run_id
         self._provider: dict[str, str] = {}
+
+    def _ticket(self, attempt_id: str) -> str:
+        # The LedgerRecorder's own ticket: deterministic, so a rebuild can match it.
+        return f"{self._run_id}/{attempt_id}"
 
     def started(self, attempt) -> None:
         recorder = self._recorders[attempt.provider]
-        recorder.started(attempt)
         self._provider[attempt.attempt_id] = attempt.provider
-        ticket = recorder._reserved[attempt.attempt_id][0]
+        # Before the reservation: a crash after it leaves a start with no end,
+        # read as possibly spent.
         write_whole(
             self._folder / f"{attempt.attempt_id}-start.json",
-            {**vars(attempt), "ticket": ticket},
+            {**vars(attempt), "run_id": self._run_id, "ticket": self._ticket(attempt.attempt_id)},
+            self._private,
         )
+        try:
+            recorder.started(attempt)
+        except BaseException:
+            write_whole(
+                self._folder / f"{attempt.attempt_id}-end.json",
+                {
+                    "attempt_id": attempt.attempt_id,
+                    "run_id": self._run_id,
+                    "outcome": "not_reserved",
+                    "ledger": "none",
+                    "settled_usd": 0.0,
+                },
+                self._private,
+            )
+            raise
 
     def finished(self, attempt) -> None:
-        write_whole(
-            self._folder / f"{attempt.attempt_id}-end.json",
-            {**vars(attempt), "outcome": attempt.outcome.value},
-        )
-        self._recorders[self._provider[attempt.attempt_id]].finished(attempt)
+        recorder = self._recorders[self._provider[attempt.attempt_id]]
+        ticket = self._ticket(attempt.attempt_id)
+        before = recorder.cost
+        try:
+            recorder.finished(attempt)
+        finally:
+            settled = ticket not in recorder.open_reservations
+            write_whole(
+                self._folder / f"{attempt.attempt_id}-end.json",
+                {
+                    **vars(attempt),
+                    "outcome": attempt.outcome.value,
+                    "run_id": self._run_id,
+                    "ledger": "settled" if settled else "open",
+                    "settled_usd": round(recorder.cost - before, 6) if settled else None,
+                },
+                self._private,
+            )
 
 
-async def execute(private: Path, recorder, account_runs, engine_factory=None) -> None:
-    """Every case of the snapshot through the composite, each outcome kept."""
+async def execute(run_dir: Path, private: Path, run_id: str, recorder, account_runs, factory=None):
+    """Every case of the run's own copy through the composite, each kept."""
     import asyncio
 
     from app.api.deps import _failover, wire
     from app.application.investigate_dispute import DisputeInvestigator
     from evals import runner
 
-    for run in account_runs:
-        if (wait := run.wait()) > 0:
+    for account_run in account_runs:
+        if (wait := account_run.wait()) > 0:
             await asyncio.sleep(wait)
-    cases, provider = _cases_and_provider(private)
-    engine = (engine_factory or _failover)(recorder=recorder)
+    cases, provider = _cases_and_provider(run_dir / "inputs")
+    engine = (factory or _failover)(recorder=recorder)
     investigator = DisputeInvestigator(provider=provider, engine=wire(engine, provider))
     try:
         for number, case in enumerate(cases, start=1):
@@ -549,8 +672,9 @@ async def execute(private: Path, recorder, account_runs, engine_factory=None) ->
             outcome = runner._evaluate(case, result)
             events = [event.event for event in result.events]
             write_whole(
-                private / "cases" / f"{number:05d}.json",
+                run_dir / "cases" / f"{number:05d}.json",
                 {
+                    "run_id": run_id,
                     "number": number,
                     "outcome": vars(outcome),
                     "fully_correct": outcome.ok,
@@ -560,6 +684,7 @@ async def execute(private: Path, recorder, account_runs, engine_factory=None) ->
                     "identity_failed": "decision_engine_identity_failed" in events,
                     "invocation_id": result.engine_invocation_id,
                 },
+                private,
             )
     finally:
         await engine.aclose()
@@ -567,78 +692,99 @@ async def execute(private: Path, recorder, account_runs, engine_factory=None) ->
 
 def run(args, say, ask=input, engine_factory=None) -> int:
     import asyncio
+    import shutil
 
     from app.decision.base import EngineRejected
     from app.decision.hosted import configuration
-    from evals import accounts
     from evals.ledger import LedgerRefused, PrepaidLedger
     from evals.limits import RunStopped
     from evals.service_run import LedgerRecorder
     from evals.state import AccountBusy, AccountRun
 
     private = Path(args.private)
-    if not (private / "snapshot").is_dir():
+    snapshot = private / "snapshot"
+    if not snapshot.is_dir():
         raise Refused("nothing was prepared in this folder")
     held = read_state()
     if held is None or held.get("state") != "prepared":
         raise Refused("no prepared reference run: consumed, or never prepared")
     stored = json.loads((private / "freeze.json").read_text(encoding="utf-8"))
-    record = freeze_record(private, stored.get("threshold"), stored.get("budget"))
-    digest = freeze_hash(record)
-    if digest != args.freeze or digest != held.get("freeze_hash"):
+    if freeze_hash(stored) != args.freeze or args.freeze != held.get("freeze_hash"):
+        raise Refused("the inputs are not the approved freeze record")
+
+    began = datetime.now(UTC)
+    run_id = f"reference-{began.strftime('%Y%m%dT%H%M%S.%fZ')}"
+    run_dir = private / run_id
+    contained(run_dir, private)
+    run_dir.mkdir()
+    # The run's own copy, checked against the freeze record: whatever happens to
+    # the snapshot from now on, these are the bytes that run.
+    shutil.copytree(snapshot, run_dir / "inputs")
+    record = freeze_record(
+        run_dir / "inputs", stored.get("threshold"), stored.get("budget"), stored.get("accounts")
+    )
+    if freeze_hash(record) != args.freeze:
         raise Refused("the inputs are not the approved freeze record")
     if record["clean_tree"] is not True or not record["uncertainty_fix"]:
         raise Refused("the source tree is not clean, or lacks the uncertainty fix")
 
     say(f"reference run: {record['composite']['name']}, {record['composite']['policy']}")
     say(f"cases: {record['case_count']}")
-    for account, amount in sorted((record["budget"] or {}).items()):
+    for account, amount in sorted(record["budget"].items()):
         say(f"estimated admission budget, {account}: {amount:.4f}")
     say(f"this spends the one reference run. Type {CONFIRMATION} to go on.")
     if ask("> ").strip() != CONFIRMATION:
         say("not confirmed: nothing was sent, the run stays prepared")
         return 2
 
-    configs = [configuration("claude-haiku-5-5"), configuration("gpt-6-luna")]
-    began = datetime.now(UTC)
-    with contextlib.ExitStack() as held_locks:
+    configs = [configuration(name) for name in CONFIGURATIONS]
+    accounts_held = record["accounts"]
+    with contextlib.ExitStack() as locks:
         try:
             runs = [
-                held_locks.enter_context(AccountRun(accounts.billing_account(config)))
+                locks.enter_context(AccountRun(accounts_held[config.name]["billing_account"]))
                 for config in configs
             ]
         except AccountBusy:
             raise Refused("an account is busy with another run") from None
         ledgers = {
-            config.vendor: PrepaidLedger(accounts.billing_account(config), config.currency)
+            accounts_held[config.name]["billing_account"]: PrepaidLedger(
+                accounts_held[config.name]["billing_account"], config.currency
+            )
             for config in configs
         }
         with state_lock():
             current = read_state()
             if current is None or current.get("state") != "prepared":
                 raise Refused("the reference run was consumed meanwhile")
-            if current.get("freeze_hash") != digest:
+            if current.get("freeze_hash") != args.freeze:
                 raise Refused("the inputs are not the approved freeze record")
-            for config in configs:
-                left = ledgers[config.vendor].state()["left"]
-                if left < (record["budget"] or {}).get(accounts.billing_account(config), 0.0):
-                    raise Refused(f"{config.name}: the envelope cannot admit the budget now")
+            admissible(record["budget"], accounts_held, ledgers)
             write_state({**current, "state": "consumed", "consumed_at": began.isoformat()})
 
-        write_whole(private / "status.json", {"state": "running", "started_at": began.isoformat()})
-        run_id = f"reference-{began.strftime('%Y%m%dT%H%M%S.%fZ')}"
+        write_whole(
+            run_dir / "status.json",
+            {"run_id": run_id, "state": "running", "started_at": began.isoformat()},
+            private,
+        )
         recorder = RoutingRecorder(
             {
                 config.vendor: LedgerRecorder(
-                    ledgers[config.vendor], config, run_id, runs[index].record_send
+                    ledgers[accounts_held[config.name]["billing_account"]],
+                    config,
+                    run_id,
+                    runs[index].record_send,
+                    service_like=True,
                 )
                 for index, config in enumerate(configs)
             },
-            private / "attempts",
+            run_dir / "attempts",
+            private,
+            run_id,
         )
         status = {"state": "complete"}
         try:
-            asyncio.run(execute(private, recorder, runs, engine_factory))
+            asyncio.run(execute(run_dir, private, run_id, recorder, runs, engine_factory))
         except (RunStopped, LedgerRefused, EngineRejected) as stop:
             status = {"state": "incomplete", "reason": type(stop).__name__}
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -646,9 +792,13 @@ def run(args, say, ask=input, engine_factory=None) -> int:
         except Exception as defect:
             status = {"state": "incomplete", "reason": f"internal error ({type(defect).__name__})"}
             traceback.print_exc()
-        write_whole(private / "status.json", {**status, "started_at": began.isoformat()})
+        write_whole(
+            run_dir / "status.json",
+            {**status, "run_id": run_id, "started_at": began.isoformat()},
+            private,
+        )
     totals = compute_totals(private)
-    write_whole(private / "totals.json", totals)
+    write_whole(run_dir / "totals.json", totals, private)
     report(totals, say)
     return 0 if totals["complete"] else 3
 
@@ -656,43 +806,64 @@ def run(args, say, ask=input, engine_factory=None) -> int:
 # -- totals ----------------------------------------------------------------------
 
 
-def compute_totals(private: Path) -> dict:
-    """From the records alone: no input reopened, no case re-scored."""
-    freeze = json.loads((private / "freeze.json").read_text(encoding="utf-8"))
-    status_path = private / "status.json"
-    status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
-    cases = _read_all(private / "cases")
-    starts = {r["attempt_id"]: r for r in _read_all(private / "attempts") if "ticket" in r}
-    ends = {r["attempt_id"]: r for r in _read_all(private / "attempts") if "ticket" not in r}
+def the_run(private: Path) -> Path:
+    runs = [path for path in private.glob("reference-*") if path.is_dir()]
+    if len(runs) != 1:
+        raise Refused("the private folder must hold exactly one run")
+    return runs[0]
 
-    by_invocation: dict[str, list[dict]] = {}
-    for attempt_id, start in starts.items():
-        by_invocation.setdefault(start["invocation_id"], []).append(
-            {**start, **ends.get(attempt_id, {"outcome": None})}
-        )
+
+def compute_totals(private: Path) -> dict:
+    """From the run's records alone: no input reopened, no case re-scored.
+    Records not bound to the run, duplicated or out of sequence refuse."""
+    run_dir = the_run(private)
+    run_id = run_dir.name
+    freeze = json.loads((private / "freeze.json").read_text(encoding="utf-8"))
+    status_path = run_dir / "status.json"
+    status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
+    cases = _read_all(run_dir / "cases")
+    attempts = _read_all(run_dir / "attempts")
+    if any(record.get("run_id") != run_id for record in [*cases, *attempts]):
+        raise Refused("a record does not belong to this run")
+    numbers = [case["number"] for case in cases]
+    if numbers != list(range(1, len(cases) + 1)) or len(cases) > freeze["case_count"]:
+        raise Refused("the case records are duplicated or out of sequence")
+    starts = {r["attempt_id"]: r for r in attempts if "ticket" in r}
+    ends = {r["attempt_id"]: r for r in attempts if "ticket" not in r}
+    if set(ends) - set(starts):
+        raise Refused("an attempt ends without a start")
+
+    second_leg = {s["invocation_id"]: s["attempt_id"] for s in starts.values() if s["number"] == 2}
     fell_back = both_failed = 0
-    for attempts in by_invocation.values():
-        second = [a for a in attempts if a["number"] == 2]
-        if second:
-            if second[0]["outcome"] == "answered":
-                fell_back += 1
-            else:
-                both_failed += 1
+    for case in cases:
+        attempt = second_leg.get(case["invocation_id"])
+        if attempt is None:
+            continue
+        if ends.get(attempt, {}).get("outcome") == "answered" and not case["outage"]:
+            fell_back += 1
+        elif case["outage"]:
+            both_failed += 1
 
     answered: dict[str, int] = {}
     for end in ends.values():
         if end["outcome"] == "answered" and end.get("returned_model"):
             answered[end["returned_model"]] = answered.get(end["returned_model"], 0) + 1
     spend: dict[str, dict] = {}
+    open_attempts = 0
     for attempt_id, start in starts.items():
         entry = spend.setdefault(start["provider"], {"settled_usd": 0.0, "unknown_attempts": 0})
-        cost = ends.get(attempt_id, {}).get("cost_micros")
-        if cost is None:
+        end = ends.get(attempt_id)
+        if end is None or end["ledger"] == "open":
             entry["unknown_attempts"] += 1
+            open_attempts += end is None
         else:
-            entry["settled_usd"] = round(entry["settled_usd"] + cost / 1e6, 6)
+            entry["settled_usd"] = round(entry["settled_usd"] + (end["settled_usd"] or 0.0), 6)
 
-    complete = status.get("state") == "complete" and len(cases) == freeze["case_count"]
+    complete = (
+        status.get("state") == "complete"
+        and status.get("run_id") == run_id
+        and len(cases) == freeze["case_count"]
+    )
     to_person = [c for c in cases if c["verdict"] in {"human_review", "requires_approval"}]
     return {
         "complete": complete,
@@ -709,6 +880,7 @@ def compute_totals(private: Path) -> dict:
         "luna_failed_haiku_answered": fell_back,
         "both_failed": both_failed,
         "invalid_answers": sum(1 for e in ends.values() if e["outcome"] == "unusable"),
+        "unfinished_attempts": open_attempts,
         "answered_by": answered,
         "spend": spend,
         "threshold": freeze.get("threshold"),
@@ -732,6 +904,7 @@ def report(totals: dict, say) -> None:
         "luna_failed_haiku_answered",
         "both_failed",
         "invalid_answers",
+        "unfinished_attempts",
     ):
         say(f"{key.replace('_', ' ')}: {totals[key]}")
     for model, count in sorted(totals["answered_by"].items()):
@@ -748,7 +921,7 @@ def report(totals: dict, say) -> None:
 def rebuild(args, say) -> int:
     private = Path(args.private)
     totals = compute_totals(private)
-    write_whole(private / "totals.json", totals)
+    write_whole(the_run(private) / "totals.json", totals, private)
     report(totals, say)
     return 0 if totals["complete"] else 3
 
@@ -757,47 +930,53 @@ def rebuild(args, say) -> int:
 
 
 def main(argv: list[str] | None = None, descriptors: bool = True, **hooks) -> int:
-    parser = argparse.ArgumentParser(prog="evals.reference_run")
-    commands = parser.add_subparsers(dest="command", required=True)
-    prep = commands.add_parser("prepare")
+    parser = _Parser(prog="evals.reference_run", add_help=False)
+    commands = parser.add_subparsers(dest="command", required=True, parser_class=_Parser)
+    prep = commands.add_parser("prepare", add_help=False)
     prep.add_argument("--cases", required=True)
     prep.add_argument("--fixtures", required=True)
     prep.add_argument("--private", required=True)
     prep.add_argument("--threshold", type=float, default=None)
-    go = commands.add_parser("run")
+    go = commands.add_parser("run", add_help=False)
     go.add_argument("--freeze", required=True)
     go.add_argument("--private", required=True)
-    again = commands.add_parser("rebuild")
+    again = commands.add_parser("rebuild", add_help=False)
     again.add_argument("--private", required=True)
     args = parser.parse_args(argv)
 
     try:
         refuse_tracing()
         args.private = str(private_folder(args.private))
+        lockdown = Lockdown(Path(args.private), descriptors=descriptors)
+        locked = lockdown.__enter__()
     except Refused as refusal:
-        print(f"refused: {refusal}")
+        _console(f"refused: {refusal}")
         return 2
-    with Lockdown(Path(args.private), descriptors=descriptors) as locked:
-        try:
-            import app.decision.anthropic_hosted  # noqa: F401
-            import app.decision.openai_compatible  # noqa: F401
-            from app.decision.hosted import silence_request_logging
+    except (OSError, KeyboardInterrupt):
+        _console("refused: the private folder cannot be used")
+        return 2
+    try:
+        import app.decision.anthropic_hosted  # noqa: F401
+        import app.decision.openai_compatible  # noqa: F401
+        from app.decision.hosted import silence_request_logging
 
-            for name in ("openai._base_client", "anthropic._base_client", "httpx", "httpcore"):
-                silence_request_logging(name)
-            refuse_tracing()
-            if args.command == "prepare":
-                return prepare(args, locked.say, hooks.get("legs"))
-            if args.command == "run":
-                return run(args, locked.say, hooks.get("ask", input), hooks.get("engine_factory"))
-            return rebuild(args, locked.say)
-        except Refused as refusal:
-            locked.say(f"refused: {refusal}")
-            return 2
-        except Exception as defect:
-            traceback.print_exc()
-            locked.say(f"stopped: {type(defect).__name__}. The private record: {args.private}")
-            return 1
+        for name in ("openai._base_client", "anthropic._base_client", "httpx", "httpcore"):
+            silence_request_logging(name)
+        refuse_tracing()
+        if args.command == "prepare":
+            return prepare(args, locked.say, hooks.get("legs"))
+        if args.command == "run":
+            return run(args, locked.say, hooks.get("ask", input), hooks.get("engine_factory"))
+        return rebuild(args, locked.say)
+    except Refused as refusal:
+        locked.say(f"refused: {refusal}")
+        return 2
+    except BaseException as defect:
+        traceback.print_exc()
+        locked.say(f"stopped: {type(defect).__name__}. The private record: {args.private}")
+        return 1
+    finally:
+        lockdown.__exit__(None, None, None)
 
 
 if __name__ == "__main__":
