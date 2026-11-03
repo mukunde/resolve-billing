@@ -528,6 +528,66 @@ class TestReviewR301:
         assert totals["both_failed"] >= 1
 
 
+class TestReviewR302:
+    def test_a_declined_run_leaves_nothing_behind(self, world):
+        world.prepare()
+        assert world.run(typed="no") == 2
+        assert not list(world.private.glob("reference-*"))
+        assert not list(world.private.glob(".pending-*"))
+        assert world.run() == 0
+        assert reference_run.compute_totals(world.private)["complete"] is True
+
+    def test_a_busy_account_leaves_nothing_behind(self, world, monkeypatch):
+        from evals.state import AccountBusy
+
+        world.prepare()
+
+        def busy(self):
+            raise AccountBusy("busy")
+
+        monkeypatch.setattr("evals.state.AccountRun.__enter__", busy)
+        assert world.run() == 2
+        assert not list(world.private.glob("reference-*"))
+
+    def test_the_probe_follows_no_link_and_keeps_existing_files(self, tmp_path):
+        kept = tmp_path / ".write-probe"
+        kept.write_text("keep", encoding="utf-8")
+        reference_run.private_folder(str(tmp_path))
+        assert kept.read_text(encoding="utf-8") == "keep"
+
+    def test_a_reservation_made_before_a_failure_stays_open(self, tmp_path):
+        class HalfDone:
+            cost = 0.0
+            open_reservations = {}
+
+            def __init__(self):
+                self._reserved = {}
+
+            def started(self, attempt):
+                self._reserved[attempt.attempt_id] = ("t", 1, 1.0)
+                raise OSError("the pace file")
+
+        routing = reference_run.RoutingRecorder(
+            {"openai": HalfDone()}, tmp_path / "attempts", tmp_path, "reference-x"
+        )
+        from app.decision.base import AttemptStart
+
+        with pytest.raises(OSError):
+            routing.started(AttemptStart("a1", "i1", "d1", 1, "openai", "m", "t", 1))
+        end = json.loads((tmp_path / "attempts" / "a1-end.json").read_text(encoding="utf-8"))
+        assert end["ledger"] == "open"
+        assert end["settled_usd"] is None
+
+    def test_a_duplicated_attempt_refuses(self, world):
+        world.prepare()
+        world.run()
+        end = sorted((world.run_dir() / "attempts").glob("*-end.json"))[0]
+        copy = end.with_name("zz-copy-end.json")
+        copy.write_text(end.read_text(encoding="utf-8"), encoding="utf-8")
+        with pytest.raises(reference_run.Refused):
+            reference_run.compute_totals(world.private)
+
+
 class TestTheRecorderBoundaries:
     def recorder(self, tmp_path, ledger_recorder):
         return reference_run.RoutingRecorder(
@@ -545,6 +605,7 @@ class TestTheRecorderBoundaries:
         class Refusing:
             cost = 0.0
             open_reservations = {}
+            _reserved = {}
 
             def started(self, attempt):
                 raise LedgerRefused("beyond")

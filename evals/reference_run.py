@@ -171,18 +171,19 @@ def private_folder(raw: str) -> Path:
         raise Refused("the private folder does not exist") from None
     if not folder.is_dir():
         raise Refused("the private folder is not a folder")
-    probe = folder / ".write-probe"
-    try:
-        probe.write_text("", encoding="utf-8")
-        probe.unlink()
-    except OSError:
-        raise Refused("the private folder is not writable") from None
     for parent in (folder, *folder.parents):
         if (parent / ".git").exists():
             raise Refused("the private folder is inside a repository")
     for tree in _worktrees():
         if _same(folder, tree) or any(_same(tree, parent) for parent in folder.parents):
             raise Refused("the private folder is inside a worktree")
+    try:
+        # A new file of its own: nothing existing is followed or truncated.
+        handle, probe = tempfile.mkstemp(dir=folder, prefix=".write-probe-")
+        os.close(handle)
+        os.unlink(probe)
+    except OSError:
+        raise Refused("the private folder is not writable") from None
     return folder
 
 
@@ -618,14 +619,17 @@ class RoutingRecorder:
         try:
             recorder.started(attempt)
         except BaseException:
+            # The reservation may have been made before the failure: its state
+            # is read from the recorder, never assumed.
+            reserved = attempt.attempt_id in recorder._reserved
             write_whole(
                 self._folder / f"{attempt.attempt_id}-end.json",
                 {
                     "attempt_id": attempt.attempt_id,
                     "run_id": self._run_id,
-                    "outcome": "not_reserved",
-                    "ledger": "none",
-                    "settled_usd": 0.0,
+                    "outcome": "interrupted" if reserved else "not_reserved",
+                    "ledger": "open" if reserved else "none",
+                    "settled_usd": None if reserved else 0.0,
                 },
                 self._private,
             )
@@ -691,15 +695,7 @@ async def execute(run_dir: Path, private: Path, run_id: str, recorder, account_r
 
 
 def run(args, say, ask=input, engine_factory=None) -> int:
-    import asyncio
     import shutil
-
-    from app.decision.base import EngineRejected
-    from app.decision.hosted import configuration
-    from evals.ledger import LedgerRefused, PrepaidLedger
-    from evals.limits import RunStopped
-    from evals.service_run import LedgerRecorder
-    from evals.state import AccountBusy, AccountRun
 
     private = Path(args.private)
     snapshot = private / "snapshot"
@@ -715,13 +711,36 @@ def run(args, say, ask=input, engine_factory=None) -> int:
     began = datetime.now(UTC)
     run_id = f"reference-{began.strftime('%Y%m%dT%H%M%S.%fZ')}"
     run_dir = private / run_id
+    pending = private / f".pending-{run_id}"
     contained(run_dir, private)
-    run_dir.mkdir()
+    contained(pending, private)
+    if any(path.is_dir() for path in private.glob("reference-*")):
+        raise Refused("this folder already holds a run")
+    pending.mkdir()
+    try:
+        return _run_from(args, say, ask, engine_factory, private, stored, began, run_id, pending)
+    finally:
+        if pending.exists():
+            shutil.rmtree(pending)
+
+
+def _run_from(args, say, ask, engine_factory, private, stored, began, run_id, pending) -> int:
+    import asyncio
+    import shutil
+
+    from app.decision.base import EngineRejected
+    from app.decision.hosted import configuration
+    from evals.ledger import LedgerRefused, PrepaidLedger
+    from evals.limits import RunStopped
+    from evals.service_run import LedgerRecorder
+    from evals.state import AccountBusy, AccountRun
+
+    run_dir = private / run_id
     # The run's own copy, checked against the freeze record: whatever happens to
     # the snapshot from now on, these are the bytes that run.
-    shutil.copytree(snapshot, run_dir / "inputs")
+    shutil.copytree(private / "snapshot", pending / "inputs")
     record = freeze_record(
-        run_dir / "inputs", stored.get("threshold"), stored.get("budget"), stored.get("accounts")
+        pending / "inputs", stored.get("threshold"), stored.get("budget"), stored.get("accounts")
     )
     if freeze_hash(record) != args.freeze:
         raise Refused("the inputs are not the approved freeze record")
@@ -760,7 +779,16 @@ def run(args, say, ask=input, engine_factory=None) -> int:
             if current.get("freeze_hash") != args.freeze:
                 raise Refused("the inputs are not the approved freeze record")
             admissible(record["budget"], accounts_held, ledgers)
-            write_state({**current, "state": "consumed", "consumed_at": began.isoformat()})
+            write_state(
+                {
+                    **current,
+                    "state": "consumed",
+                    "consumed_at": began.isoformat(),
+                    "run_id": run_id,
+                }
+            )
+        # Spent: the copy becomes the run's folder, the only one this folder holds.
+        os.replace(pending, run_dir)
 
         write_whole(
             run_dir / "status.json",
@@ -828,8 +856,12 @@ def compute_totals(private: Path) -> dict:
     numbers = [case["number"] for case in cases]
     if numbers != list(range(1, len(cases) + 1)) or len(cases) > freeze["case_count"]:
         raise Refused("the case records are duplicated or out of sequence")
-    starts = {r["attempt_id"]: r for r in attempts if "ticket" in r}
-    ends = {r["attempt_id"]: r for r in attempts if "ticket" not in r}
+    start_list = [r for r in attempts if "ticket" in r]
+    end_list = [r for r in attempts if "ticket" not in r]
+    starts = {r["attempt_id"]: r for r in start_list}
+    ends = {r["attempt_id"]: r for r in end_list}
+    if len(starts) != len(start_list) or len(ends) != len(end_list):
+        raise Refused("an attempt is recorded twice")
     if set(ends) - set(starts):
         raise Refused("an attempt ends without a start")
 
