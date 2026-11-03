@@ -19,6 +19,7 @@ from app.decision.base import FINANCIAL_ACTIONS, Classification, Decision, Recom
 from app.domain.enums import RuleCode, Severity
 from app.domain.models import RuleFinding
 from app.domain.money import Money
+from app.policies.correction import UNCERTAIN
 
 
 class Verdict(StrEnum):
@@ -201,6 +202,17 @@ class ActionPolicy:
                     "Le moteur n'a pas su classer le litige de façon exploitable "
                     f"({decision.classification.value})."
                 ),
+            )
+
+        # 4b. A check that could not conclude sends the case to a person, what
+        #     ever the engine answers: text sent unattended would rest on what
+        #     nobody established. The prompt asks for it; this holds when a
+        #     model asks the customer instead.
+        uncertain = next((f for f in findings if f.code in UNCERTAIN), None)
+        if uncertain is not None:
+            return ActionAuthorization(
+                verdict=Verdict.HUMAN_REVIEW,
+                reason=f"Un contrôle n'a pas pu conclure : {uncertain.code.value}.",
             )
 
         # 5. Everything else is a reply or a question: no money moves, and the

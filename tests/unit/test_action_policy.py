@@ -276,14 +276,16 @@ class TestUsageNobodyChecked:
         )
         assert auth.verdict is Verdict.HUMAN_REVIEW
 
-    def test_other_classifications_are_unchanged(self, policy):
+    def test_a_question_goes_to_a_person_too(self, policy):
+        """Automatic until the bug `uncertain-human-review`: a check that could
+        not conclude sends the case to a person, whatever the engine answers."""
         auth = policy.evaluate(
             decision(
                 Classification.INSUFFICIENT_INFORMATION, RecommendedAction.REQUEST_INFORMATION
             ),
             [self.usage_unavailable()],
         )
-        assert auth.verdict is Verdict.AUTO
+        assert auth.verdict is Verdict.HUMAN_REVIEW
 
 
 class TestWithheld:

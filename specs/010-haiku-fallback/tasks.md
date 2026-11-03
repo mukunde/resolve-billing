@@ -63,12 +63,12 @@
 
 - [x] T060 ADR-009, ADR-013 (reference configuration, attestations, the maintainer's statement),
   the contracts, operations, README, `.env.example`.
-- [ ] T061 Gates. Final diff to Codex, then to the maintainer by SHA. The PR.
+- [x] T061 Gates. Final diff to Codex, then to the maintainer by SHA. The PR.
 
 ## Phase 7: After the merge, with the maintainer's authorisation
 
-- [ ] T070 **[maintainer]** Authorises the measurement, on what is shown before launch.
-- [ ] T071 The measurement with Luna disabled (FR-012); stored and listed. SC-006's trigger,
+- [x] T070 **[maintainer]** Authorises the measurement, on what is shown before launch.
+- [x] T071 The measurement with Luna disabled (FR-012); stored and listed. SC-006's trigger,
   if met, goes to the maintainer, and it is not rerun to reach a score.
 - [ ] T072 **[maintainer]** The attestations, before the reference run (FR-013).
 - [ ] T073 **[maintainer]** The reference run, on the composite, fallback on.
