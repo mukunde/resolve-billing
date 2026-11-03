@@ -516,6 +516,8 @@ def admissible(budget: dict[str, float], accounts_held: dict, ledgers=None) -> N
             raise Refused("an ambient SDK setting is set")
     for name in CONFIGURATIONS:
         config = configuration(name)
+        if not os.environ.get(config.key_variable):
+            raise Refused(f"{name}: {config.key_variable} is not set")
         account = accounts_held[name]["billing_account"]
         if account not in budget:
             raise Refused(f"{name}: no budget was frozen for its account")

@@ -588,6 +588,17 @@ class TestReviewR302:
             reference_run.compute_totals(world.private)
 
 
+class TestReviewR303:
+    @pytest.mark.parametrize("key", ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"])
+    def test_a_missing_key_refuses_before_consumption(self, world, monkeypatch, key):
+        world.prepare()
+        monkeypatch.delenv(key)
+        assert world.run() == 2
+        held = json.loads(reference_run.state_path().read_text(encoding="utf-8"))
+        assert held["state"] == "prepared"
+        assert world.factories == 0
+
+
 class TestTheRecorderBoundaries:
     def recorder(self, tmp_path, ledger_recorder):
         return reference_run.RoutingRecorder(
