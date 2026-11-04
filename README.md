@@ -335,7 +335,8 @@ On the way, in order:
 1. **The engine-side half of the usage-gap decision**, in a measured prompt
    version; the outgoing-text check comes with the reply drafter.
 2. **The new blind holdout**, generated in an isolated environment and
-   adjudicated, then a reference run.
+   adjudicated, then a reference run, once, by the maintainer
+   ([`evals/reference_run.py`](evals/reference_run.py), spec 011).
 3. **Real integrations**: Stripe in test mode -- reading and writing
    done, their contract held on a seeded account -- then Pennylane as a
    second billing platform, and Qonto as evidence that a payment arrived.

@@ -89,8 +89,10 @@ def extra_fixtures_dir() -> Path | None:
     return path
 
 
-def _read(name: str, extra: Path | None = None) -> list[dict[str, Any]]:
-    entries = json.loads((FIXTURES_DIR / name).read_text(encoding="utf-8"))
+def _read(
+    name: str, extra: Path | None = None, base: Path = FIXTURES_DIR
+) -> list[dict[str, Any]]:
+    entries = json.loads((base / name).read_text(encoding="utf-8"))
     if extra is None or not (extra / name).is_file():
         return entries
     added = json.loads((extra / name).read_text(encoding="utf-8"))
@@ -202,13 +204,18 @@ def load_all() -> FixtureSet:
     Cached, so ``RESOLVE_EXTRA_FIXTURES_DIR`` is read on the first load; a
     test that changes it clears the cache.
     """
-    extra = extra_fixtures_dir()
+    return load_from(FIXTURES_DIR, extra_fixtures_dir())
+
+
+def load_from(base: Path, extra: Path | None) -> FixtureSet:
+    """The platform from two given directories, read now and not cached: the
+    reference run's snapshot (specs/011-reference-run), never the live files."""
     return FixtureSet(
-        customers=[_customer(raw) for raw in _read("customers.json", extra)],
-        subscriptions=[_subscription(raw) for raw in _read("subscriptions.json", extra)],
-        invoices=[_invoice(raw) for raw in _read("invoices.json", extra)],
-        payments=[_payment(raw) for raw in _read("payments.json", extra)],
-        usage=[_usage(raw) for raw in _read("usage.json", extra)],
+        customers=[_customer(raw) for raw in _read("customers.json", extra, base)],
+        subscriptions=[_subscription(raw) for raw in _read("subscriptions.json", extra, base)],
+        invoices=[_invoice(raw) for raw in _read("invoices.json", extra, base)],
+        payments=[_payment(raw) for raw in _read("payments.json", extra, base)],
+        usage=[_usage(raw) for raw in _read("usage.json", extra, base)],
     )
 
 

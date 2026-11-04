@@ -539,6 +539,25 @@ python -m dotenv run -- python -m evals.service_run --engine gpt-6-luna+claude-h
 Through the Anthropic envelope. A result below 30, or any unsafe action, goes to the
 maintainer in the same way.
 
+### The reference run (the maintainer alone)
+
+Once, on `main`, on a clean tree, by the maintainer: never by an agent on the real holdout.
+The private folder lies outside every repository and worktree; every case-level output goes
+there, and the console shows only totals. No `OTEL_` exporter variable may be set.
+
+```bash
+python -m dotenv run -- python -m evals.reference_run prepare --cases PATH --fixtures DIR --private DIR
+python -m dotenv run -- python -m evals.reference_run run --freeze HASH --private DIR
+python -m evals.reference_run rebuild --private DIR
+```
+
+`prepare` copies the cases and every fixture, writes `freeze.json`, prints its hash and the
+estimated admission budget, and sends nothing. Read the record, then `run` with its hash and
+type `RUN ONCE`: the authorisation is spent before the first send, whatever happens after. A
+refusal before that leaves it prepared. A stopped run is kept: `rebuild` recomputes its totals
+from the records, calling nothing. The one-shot state lives in
+`~/.resolve-billing/reference/`; nothing in the tool reopens it.
+
 ### Reconciling what we estimated against what we were billed
 
 ```bash
