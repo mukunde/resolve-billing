@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [x] No [NEEDS CLARIFICATION] markers remain
+- [ ] No [NEEDS CLARIFICATION] markers remain (Q1, the maintainer's)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -33,5 +33,5 @@
 
 - As in the house style, requirements name the repository's own guards and finding codes:
   they are the product's vocabulary, not an implementation choice.
-- Two labels are marked "proposed" in FR-001; the maintainer adjudicates every label before
-  implementation, those two included.
+- Q1 (the undisputed over-billing) is the maintainer's decision; he adjudicates every label before
+  implementation.

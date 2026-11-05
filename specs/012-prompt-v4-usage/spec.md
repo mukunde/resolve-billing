@@ -104,18 +104,26 @@ prompt version, commit and case-set hash; a report applies the declared rule to 
 
 - **FR-001**: The development set MUST gain these cases, each in a fixture world of its own,
   with labels proposed here and adjudicated by the maintainer before implementation. Each
-  states separately the classification, the system's proposed action, whether human approval
-  is required, whether an automatic reply is allowed, and the findings:
+  states separately the classification and the engine's recommendation (the prompt's half),
+  the system's proposed action, whether human approval is required and whether an automatic
+  reply is allowed (the code's half), and the findings:
 
-  | Case | Classification | Action | Human approval | Automatic reply | Findings |
-  |---|---|---|---|---|---|
-  | Over-billing disputed, French | `unknown` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
-  | Over-billing disputed, English | `unknown` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
-  | Over-billing disputed, terse | `unknown` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
-  | Control: the same dispute, usage corroborates the bill | `valid_invoice` | reply | no | yes | none |
-  | Over-billing present, complaint about something else | `unknown` (proposed) | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
-  | Under-billing, customer asks what the invoice covers | `valid_invoice` | reply | no | yes | none |
-  | Metered line, no comparable usage record, usage disputed | `unknown` (proposed) | none | yes | no | `USAGE_UNAVAILABLE` |
+  | Case | Classification | Engine recommends | System action | Human approval | Automatic reply | Findings |
+  |---|---|---|---|---|---|---|
+  | Over-billing disputed, French | `unknown` | `escalate` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
+  | Over-billing disputed, English | `unknown` | `escalate` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
+  | Over-billing disputed, terse | `unknown` | `escalate` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
+  | Control: the same dispute, usage corroborates the bill | `valid_invoice` | `explain_invoice` | reply | no | yes | none |
+  | Over-billing present, complaint about something else | [NEEDS CLARIFICATION: Q1] | | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
+  | Under-billing, customer asks what the invoice covers | `valid_invoice` | `explain_invoice` | reply | no | yes | none |
+  | Metered line, no comparable usage record, usage disputed | `unknown` | `escalate` | none | yes | no | `USAGE_UNAVAILABLE` |
+
+- **FR-001a**: The runner MUST score the engine's recommendation as its own check, beside
+  the system's proposed action, on every case that declares one: the policy can turn a
+  money recommendation on `unknown` into no action, so the system's action alone cannot show
+  that the engine escalated. A test MUST show that `unknown` + `propose_credit_note` on a case
+  expecting `escalate` fails that check. Cases that declare no recommendation are scored as
+  today.
 
 - **FR-002**: Where a case needs the absence of a finding or an audit event (under-billing: no
   usage finding reaches the engine or the reply, the `usage_under_billed` note is written), a
@@ -124,9 +132,11 @@ prompt version, commit and case-set hash; a report applies the declared rule to 
   the count of cases reaching the engine, the mock baseline and its floor, the coverage tables.
   No envelope or ledger is reset, and no guard is weakened.
 - **FR-004**: `decision_v4` MUST be `decision_v3` plus one section on usage, saying: a usage
-  finding is a fact like any other; usage billed above what was measured, disputed or not, is
-  `unknown` with `escalate`; never conclude the invoice is correct against it, or when usage
-  could not be checked; under-billing is not the customer's matter. No other line changes.
+  finding is a fact like any other; when the customer disputes usage billed above what was
+  measured, the answer is `unknown` with `escalate` (S1); never conclude the invoice is correct
+  against an over-billing, or when usage could not be checked (S1, S7); under-billing is not
+  the customer's matter. Whether an over-billing the customer does not dispute is also
+  `unknown` with `escalate` follows the maintainer's answer to Q1. No other line changes.
 - **FR-005**: The prompt version MUST be selectable per run by an explicit setting, recorded in
   every result, for the service's measurement path and the engines that read the prompt file.
   The service's default MUST stay v3 until the maintainer adopts v4.
