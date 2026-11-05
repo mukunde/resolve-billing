@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-05
 
-**Status**: Draft, for the maintainer's approval
+**Status**: Labels adjudicated by the maintainer on 2026-11-05; for his approval
 
 **Input**: Roadmap item 1, taxonomy S1 (decided 2026-10-19): a disputed usage gap with the
 finding present is `unknown` + escalate, a person looks; no money on it before S5's amounts;
@@ -28,6 +28,13 @@ reviewed by Codex (r313-r315) and approved by the maintainer on 2026-11-05.
 - Q: May the holdout's result inform v4? → A: No (ADR-013). Its failures are not read, and
   it is not rerun to show progress. The session writing v4 has never read the holdout
   (constitution, principle IX).
+- Q1: An over-billing the customer does not dispute (the message is about something else):
+  what does the engine answer? → A: `unknown` with `escalate`, as for a disputed one (option
+  A, the maintainer, 2026-11-05). An over-billing is a possible error in the customer's
+  favour that no code prices yet; the person who opens the case must see it first, whatever
+  the message is about. This widens S1, recorded in the taxonomy as his decision.
+- Q: The labels of FR-001? → A: Adjudicated by the maintainer on 2026-11-05, as the table
+  stands.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -103,7 +110,7 @@ prompt version, commit and case-set hash; a report applies the declared rule to 
 ### Functional Requirements
 
 - **FR-001**: The development set MUST gain these cases, each in a fixture world of its own,
-  with labels proposed here and adjudicated by the maintainer before implementation. Each
+  with labels adjudicated by the maintainer on 2026-11-05. Each
   states separately the classification and the engine's recommendation (the prompt's half),
   the system's proposed action, whether human approval is required and whether an automatic
   reply is allowed (the code's half), and the findings:
@@ -114,7 +121,7 @@ prompt version, commit and case-set hash; a report applies the declared rule to 
   | Over-billing disputed, English | `unknown` | `escalate` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
   | Over-billing disputed, terse | `unknown` | `escalate` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
   | Control: the same dispute, usage corroborates the bill | `valid_invoice` | `explain_invoice` | reply | no | yes | none |
-  | Over-billing present, complaint about something else | [NEEDS CLARIFICATION: Q1] | | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
+  | Over-billing present, complaint about something else | `unknown` | `escalate` | none | yes | no | `SUSPICIOUS_USAGE_DELTA` |
   | Under-billing, customer asks what the invoice covers | `valid_invoice` | `explain_invoice` | reply | no | yes | none |
   | Metered line, no comparable usage record, usage disputed | `unknown` | `escalate` | none | yes | no | `USAGE_UNAVAILABLE` |
 
@@ -132,11 +139,10 @@ prompt version, commit and case-set hash; a report applies the declared rule to 
   the count of cases reaching the engine, the mock baseline and its floor, the coverage tables.
   No envelope or ledger is reset, and no guard is weakened.
 - **FR-004**: `decision_v4` MUST be `decision_v3` plus one section on usage, saying: a usage
-  finding is a fact like any other; when the customer disputes usage billed above what was
-  measured, the answer is `unknown` with `escalate` (S1); never conclude the invoice is correct
-  against an over-billing, or when usage could not be checked (S1, S7); under-billing is not
-  the customer's matter. Whether an over-billing the customer does not dispute is also
-  `unknown` with `escalate` follows the maintainer's answer to Q1. No other line changes.
+  finding is a fact like any other; usage billed above what was measured is `unknown` with
+  `escalate`, whether the customer disputes it (S1) or writes about something else (Q1); never
+  conclude the invoice is correct against an over-billing, or when usage could not be checked
+  (S1, S7); under-billing is not the customer's matter. No other line changes.
 - **FR-005**: The prompt version MUST be selectable per run by an explicit setting, recorded in
   every result, for the service's measurement path and the engines that read the prompt file.
   The service's default MUST stay v3 until the maintainer adopts v4.
@@ -159,7 +165,7 @@ prompt version, commit and case-set hash; a report applies the declared rule to 
 - **FR-008**: If the maintainer adopts v4, the service's prompt moves to v4 in the same pull
   request as the results, and ADR-013 records that the holdout's reference measured v3.
 - **FR-009**: The contracts (decision engine, evaluation) and taxonomy S1 MUST say what is
-  built, in the same pull request.
+  built, in the same pull request; S1 records the maintainer's widening (Q1) with its date.
 - **FR-010**: CI MUST make no paid call. The holdout is neither read nor rerun.
 
 ### Key Entities
