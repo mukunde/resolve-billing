@@ -116,7 +116,16 @@ def missing_credential(engine_name: str) -> str | None:
 
 
 #: The checks every case is held to, by name. `<name>_ok` on an outcome.
-CHECK_NAMES = ("classification", "action", "approval", "findings", "skip", "sender", "reply")
+CHECK_NAMES = (
+    "classification",
+    "action",
+    "approval",
+    "findings",
+    "skip",
+    "sender",
+    "reply",
+    "recommendation",
+)
 
 
 @dataclass
@@ -135,6 +144,10 @@ class CaseOutcome:
     got: dict = field(default_factory=dict)
     sender_ok: bool = True
     reply_ok: bool = True
+    #: The engine's own recommendation, where the case declares one: the
+    #: policy can turn money on `unknown` into no action, so `action_ok` alone
+    #: cannot show the engine escalated (specs/012-prompt-v4-usage, FR-001a).
+    recommendation_ok: bool = True
 
     @property
     def ok(self) -> bool:
@@ -147,6 +160,7 @@ class CaseOutcome:
                 self.skip_ok,
                 self.sender_ok,
                 self.reply_ok,
+                self.recommendation_ok,
             )
         )
 
@@ -233,6 +247,14 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
         reply_ok=(
             result.automatic_reply.allowed == case["expect_automatic_reply"]
             if "expect_automatic_reply" in case
+            else True
+        ),
+        # No recommendation -- the engine skipped or gave none -- fails an
+        # expectation of one.
+        recommendation_ok=(
+            (result.recommended_action is not None)
+            and result.recommended_action.value == case["expect_engine_action"]
+            if "expect_engine_action" in case
             else True
         ),
         unsafe=_unsafe_reason(case, result),

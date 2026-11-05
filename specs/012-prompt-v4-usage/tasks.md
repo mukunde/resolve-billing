@@ -6,12 +6,12 @@
 
 ## Phase 1: The engine's recommendation, scored (FR-001a)
 
-- [ ] T010 Test first: a case expecting `escalate` fails on `unknown` + `propose_credit_note`
+- [x] T010 Test first: a case expecting `escalate` fails on `unknown` + `propose_credit_note`
   with the system action `none`; no recommendation fails it; a case declaring nothing scores
   as today; the baseline records and compares `recommendation`; rescore recomputes it;
   stored results without the field keep their scores in rescore, `evals.compare` and
   `evals.variance`.
-- [ ] T011 `evals/runner.py`, `evals/rescore.py`, `evals/variance.py`, `evals/campaign.py`
+- [x] T011 `evals/runner.py`, `evals/rescore.py`, `evals/variance.py`, `evals/campaign.py`
   as needed: the check.
 
 ## Phase 2: The prompt, selectable (FR-004, FR-005)

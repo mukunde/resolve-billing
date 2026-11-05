@@ -34,12 +34,13 @@ CHECKS = (
     "findings_ok",
     "skip_ok",
     "sender_ok",
+    "recommendation_ok",
 )
 
 #: Checks added after some result files were stored. Absent means passed:
 #: before the sender check existed, an unknown sender raised before any
 #: outcome was written, so every stored outcome is about a known one.
-ADDED_LATER = frozenset({"sender_ok"})
+ADDED_LATER = frozenset({"sender_ok", "recommendation_ok"})
 
 
 def fully_correct(outcome: dict) -> bool:

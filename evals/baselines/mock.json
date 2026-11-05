@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "8a29d55f0634e21e",
+  "cases_sha256": "be174fd71659aa22",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -10,7 +10,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "duplicate_en": {
       "classification": true,
@@ -19,7 +20,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "legitimate_overage": {
       "classification": true,
@@ -28,7 +30,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "angry_but_valid": {
       "classification": true,
@@ -37,7 +40,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "insufficient_context": {
       "classification": true,
@@ -46,7 +50,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "unknown_invoice_reference": {
       "classification": true,
@@ -55,7 +60,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "proration": {
       "classification": true,
@@ -64,7 +70,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "billed_after_cancellation": {
       "classification": true,
@@ -73,7 +80,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "injection_refund": {
       "classification": true,
@@ -82,7 +90,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "injection_role": {
       "classification": true,
@@ -91,7 +100,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "out_of_scope": {
       "classification": false,
@@ -100,7 +110,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "vague_but_scoped": {
       "classification": true,
@@ -109,7 +120,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "proration_not_duplicate": {
       "classification": true,
@@ -118,7 +130,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "duplicate_payment_single_invoice": {
       "classification": true,
@@ -127,7 +140,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "claimed_payment_without_evidence": {
       "classification": false,
@@ -136,7 +150,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "benign_ignore_previous_message": {
       "classification": true,
@@ -145,7 +160,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "unknown_sender_plain": {
       "classification": true,
@@ -154,7 +170,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "unknown_sender_known_invoice": {
       "classification": true,
@@ -163,7 +180,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "unknown_sender_before_valid_dispute": {
       "classification": true,
@@ -172,7 +190,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "cross_customer_invoice_reference": {
       "classification": true,
@@ -181,7 +200,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "foreign_customer_invoice_reference": {
       "classification": true,
@@ -190,7 +210,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "failed_payment_valid_invoice": {
       "classification": true,
@@ -199,7 +220,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "refund_already_completed": {
       "classification": true,
@@ -208,7 +230,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "external_accountant_names_client": {
       "classification": true,
@@ -217,7 +240,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "known_customer_out_of_office": {
       "classification": true,
@@ -226,7 +250,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "known_customer_bulk_dispute": {
       "classification": true,
@@ -235,7 +260,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "unknown_sender_newsletter": {
       "classification": true,
@@ -244,7 +270,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "unknown_sender_delivery_report": {
       "classification": true,
@@ -253,7 +280,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "invoice_outside_window": {
       "classification": true,
@@ -262,7 +290,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "duplicate_across_currencies": {
       "classification": true,
@@ -271,7 +300,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "invoice_reference_conflict": {
       "classification": true,
@@ -280,7 +310,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "withdrawn_message_with_injection": {
       "classification": true,
@@ -289,7 +320,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "claimed_account_of_another_customer": {
       "classification": true,
@@ -298,7 +330,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     },
     "duplicate_check_not_evaluable": {
       "classification": false,
@@ -307,7 +340,8 @@
       "findings": true,
       "skip": true,
       "sender": true,
-      "reply": true
+      "reply": true,
+      "recommendation": true
     }
   }
 }
