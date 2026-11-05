@@ -128,7 +128,7 @@ agent. Autonomy thresholds exist in the code and are off.
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
 | Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, reading and writing (a credit note; a refund as a refunding credit note, behind `STRIPE_WRITES=enabled`), its contract held on a seeded account ([contract](docs/contract/billing-platform.md)) | Pennylane; Qonto for payment evidence |
 | Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox; the message masked before the model | authentication results from a trusted gateway |
-| Evaluation | 34 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | a new blind holdout (being written outside this repository), an adversarial set, a set large enough to calibrate |
+| Evaluation | 34 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy | the reference run of the new blind holdout (the set is frozen and kept outside this repository), an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
 
 **Measured today** (mock engine, every push): **29/34 fully correct, 0/34
@@ -263,9 +263,12 @@ on development cases, stored and listed apart
 **Blind holdout.** A holdout is written by a model of another family than
 the engine, every label adjudicated by hand, never run in CI and never tuned
 against. The first one lived in this repository, where every session working
-on the system could read it; it has joined the development set, and a new one
-is being written in a separate private repository, with its own data. Until it
-is adjudicated and frozen there is no blind measurement.
+on the system could read it; it has joined the development set. Its
+replacement was written in an isolated environment, adjudicated by hand and
+frozen on 22 October 2026; it is kept in a separate private repository, with
+its own data. It has not been run: until its
+reference run has been made, once, and its result reported, there is no blind
+measurement.
 
 **The first measurement**, on the original twelve cases, 2026-09-21. The mock
 and v3 columns are as scored then; the v2 column is that run rescored against
@@ -334,8 +337,8 @@ On the way, in order:
 
 1. **The engine-side half of the usage-gap decision**, in a measured prompt
    version; the outgoing-text check comes with the reply drafter.
-2. **The new blind holdout**, generated in an isolated environment and
-   adjudicated, then a reference run, once, by the maintainer
+2. **The reference run of the new blind holdout**, which was generated in an
+   isolated environment, adjudicated and frozen: made once, by the maintainer
    ([`evals/reference_run.py`](evals/reference_run.py), spec 011).
 3. **Real integrations**: Stripe in test mode -- reading and writing
    done, their contract held on a seeded account -- then Pennylane as a
