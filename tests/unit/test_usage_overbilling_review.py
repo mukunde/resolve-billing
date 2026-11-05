@@ -100,7 +100,9 @@ class TestThePolicy:
         # The investigation removes it before the policy (taxonomy S1); were it
         # ever to arrive, it is the business's loss, not the customer's case.
         authorization = ActionPolicy().evaluate(
-            decision(Classification.INSUFFICIENT_INFORMATION, RecommendedAction.REQUEST_INFORMATION),
+            decision(
+                Classification.INSUFFICIENT_INFORMATION, RecommendedAction.REQUEST_INFORMATION
+            ),
             [usage_delta(direction="under")],
         )
         assert authorization.verdict is Verdict.AUTO
