@@ -217,9 +217,10 @@ class ActionPolicy:
 
         # 4c. Usage billed above what was measured is a possible error in the
         #     customer's favour that no code can price yet (taxonomy S1, S5): a
-        #     person looks, whatever the engine answers. The prompt asks for
-        #     an escalation; this holds when a model asks or explains instead.
-        #     Under-billing is the business's loss and never triggers it.
+        #     person looks, whatever the engine answers. No prompt asks for an
+        #     escalation yet, and when one does, this still holds for a model
+        #     that asks or explains instead. Under-billing is the business's
+        #     loss and never triggers it.
         if any(
             f.code is RuleCode.SUSPICIOUS_USAGE_DELTA and f.evidence.get("direction") != "under"
             for f in findings
