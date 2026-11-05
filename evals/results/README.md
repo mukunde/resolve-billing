@@ -345,3 +345,13 @@ One row per case: the expectations it met, the confidence and its kind, the
 cost in millionths of a dollar, the latency, and `got` — the classification,
 action, approval flag, findings and engine the system actually produced. No
 customer data beyond the synthetic fixtures in `fixtures/`, and no credentials.
+
+## The blind holdout's reference run (spec 011)
+
+`holdout-reference-totals.json` is the one reference run of the frozen holdout,
+made by the maintainer on 2026-11-05 at commit `fc378e5`, through
+`evals/reference_run.py --export`. Unlike every other file here it holds totals
+only: no case, no row, no message. The cases, the per-case records and the
+ledger stay in the maintainer's private folder. The file is bound to the freeze
+record's hash and the run's id, and it is committed as exported, byte for byte.
+The root README reads it.
