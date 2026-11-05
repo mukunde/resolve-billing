@@ -5,7 +5,7 @@ Twelve service runs on the development set, on one commit: Luna alone and the
 composite with Luna's leg disabled (Haiku), each under v3 and v4, three times.
 The rule, per leg:
 
-- no unsafe action on any v4 run;
+- no unsafe action on any run, v3's or v4's;
 - every new usage case meets its classification, the engine's recommendation
   and the system's action on every v4 run;
 - on the other cases, every outcome that differs between v3 and v4 is listed;
@@ -20,7 +20,9 @@ Three runs show variance; they do not establish non-degradation.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from collections import Counter
 from dataclasses import asdict
@@ -29,6 +31,8 @@ from pathlib import Path
 from app.api.deps import FAILOVER, HAIKU
 from app.decision.bounded import Bounds
 from app.decision.failover import SECONDARY_BOUNDS
+from app.decision.masking import MASKING_VERSION
+from app.decision.verdict import verdict_schema
 from evals import engines
 from evals.first_calls import fingerprint
 from evals.runner import CHECK_NAMES
@@ -81,6 +85,12 @@ def _expected(leg: str, prompt: str) -> tuple[dict, str]:
     return json.loads(json.dumps(asdict(bounds))), fingerprint(measured(name, prompt))
 
 
+def _schema_hash() -> str:
+    """The verdict schema's hash, as `evals.service_run` writes it."""
+    canonical = json.dumps(verdict_schema(), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()[:16]
+
+
 def _fully_correct(outcome: dict) -> bool:
     return all(outcome[check] for check in CHECKS)
 
@@ -128,6 +138,12 @@ def load(paths: list[Path]) -> dict[tuple[str, str], list[dict]]:
         raise Refused("the runs are not distinct: two share an attempt")
     if records and records[0].get("cases_sha256") != engines.DEVELOPMENT_SET_SHA256[:16]:
         raise Refused("the runs are not on today's development set")
+    if records and records[0].get("masking_version") != MASKING_VERSION:
+        raise Refused("the runs do not carry today's masking_version")
+    if records and records[0].get("schema_sha256") != _schema_hash():
+        raise Refused("the runs do not carry today's schema_sha256")
+    if records and not re.fullmatch(r"[0-9a-f]{7,40}", records[0].get("commit", "")):
+        raise Refused("the runs' commit is not a commit")
     grouped: dict[tuple[str, str], list[dict]] = {}
     for record in records:
         name = record["_file"]

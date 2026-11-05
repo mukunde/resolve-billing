@@ -9,6 +9,7 @@ import pytest
 from app.api.deps import FAILOVER
 from app.decision.bounded import Bounds
 from app.decision.failover import SECONDARY_BOUNDS
+from app.decision.masking import MASKING_VERSION
 from evals import engines, prompt_compare
 from evals.first_calls import fingerprint
 from evals.service_run import ENGINE, HAIKU, measured
@@ -63,9 +64,9 @@ def run(leg, prompt, n, *, overrides=None, wrong=(), unsafe=(), recommendations=
         "bounds": asdict(SECONDARY_BOUNDS if leg == "haiku" else Bounds()),
         "configuration_fingerprint": fingerprint(measured(name, prompt)),
         "prompt_version": prompt,
-        "masking_version": "m1",
-        "schema_sha256": "s1",
-        "commit": "abc123",
+        "masking_version": MASKING_VERSION,
+        "schema_sha256": prompt_compare._schema_hash(),
+        "commit": "abc1234",
         "clean_tree": True,
         "attempts": [{"attempt_id": f"{leg}-{prompt}-{n}-{i}"} for i in range(2)],
         "outcomes": [
@@ -175,6 +176,7 @@ class TestTheRefusals:
             {"cases_sha256": "other"},
             {"masking_version": "m2"},
             {"schema_sha256": "s2"},
+            {"commit": "abc1235"},
             {"run_kind": "hosted run"},
             {"prompt_version": None},
             {"bounds": {"attempts": 9}},
@@ -201,6 +203,17 @@ class TestTheRefusals:
         for record in records:
             record.pop(key)
         with pytest.raises(prompt_compare.Refused, match=key):
+            prompt_compare.compare(files(tmp_path, records))
+
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [("masking_version", "m1"), ("schema_sha256", "s1"), ("commit", "not-a-commit")],
+    )
+    def test_the_same_wrong_evidence_everywhere(self, key, value, tmp_path):
+        records = twelve()
+        for record in records:
+            record[key] = value
+        with pytest.raises(prompt_compare.Refused, match=key.split("_")[0]):
             prompt_compare.compare(files(tmp_path, records))
 
     def test_a_run_without_attempts(self, tmp_path):

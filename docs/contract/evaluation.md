@@ -33,7 +33,7 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
 - **The prompt comparison** (spec 012). `python -m evals.prompt_compare` takes
   twelve service runs -- Luna alone and Haiku's leg, under v3 and v4, three
   each, on one commit -- refuses any other set, and applies the rule declared
-  before the runs: no unsafe action under v4, every new usage case right on
+  before the runs: no unsafe action on any run, v3's or v4's, every new usage case right on
   every v4 run, and every other case's change listed, a case v3 always got
   right and v4 did not being a regression for the maintainer.
 - **The runner.** `python -m evals.runner --engine <name>` investigates every
