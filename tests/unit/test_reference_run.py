@@ -743,7 +743,8 @@ class TestTheExport:
         world.prepare()
         world.run()
         totals = {**reference_run.compute_totals(world.private), "case_ids": [SENTINEL]}
-        assert "case_ids" not in reference_run.export_payload(totals, world.private)
+        with pytest.raises(reference_run.Refused):
+            reference_run.export_payload(totals, world.private)
 
     def test_inside_the_private_folder_refuses(self, world):
         world.prepare()

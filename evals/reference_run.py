@@ -1022,6 +1022,9 @@ def export_payload(totals: dict, private: Path) -> dict:
     def count(value) -> bool:
         return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
+    allowed = {*_COUNTS, "complete", "stop", "answered_by", "spend", "threshold"}
+    if set(totals) != allowed:
+        raise Refused("the totals hold a key outside the allowlist")
     if not all(count(totals.get(key)) for key in _COUNTS):
         raise Refused("a total is not a count")
     if not isinstance(totals.get("complete"), bool):
