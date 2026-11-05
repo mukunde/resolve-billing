@@ -347,6 +347,13 @@ On the way, in order:
    monitoring and alerting, secrets management, signed images, tested
    backups, on free infrastructure, each behind a port so a real company can
    substitute its own.
+5. **A separate evaluator for the holdout**: the reference tool installed
+   where only it holds the cases, the vendor keys and its state, behind an
+   access boundary no agent can cross; a run started by a request the
+   maintainer approves, bound to the exact commit, freeze record and budget;
+   only the exported totals coming back, and few runs, so repeated scores do
+   not leak the cases. Until then the maintainer runs it by hand, with agent
+   sessions closed.
 6. **Later**: a reply drafter as a second port, a second engine evaluated
    head to head, a durable workflow engine once a spike justifies it, partial
    correction amounts once real billing data shows their shape.
