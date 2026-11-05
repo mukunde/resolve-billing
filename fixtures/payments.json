@@ -146,5 +146,61 @@
     "currency": "EUR",
     "state": "succeeded",
     "received_at": "2026-09-04T09:00:00"
+  },
+  {
+    "id": "pay_500",
+    "invoice_id": "inv_500",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-30T23:05:00"
+  },
+  {
+    "id": "pay_501",
+    "invoice_id": "inv_501",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-30T23:05:00"
+  },
+  {
+    "id": "pay_502",
+    "invoice_id": "inv_502",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-30T23:05:00"
+  },
+  {
+    "id": "pay_503",
+    "invoice_id": "inv_503",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-30T23:05:00"
+  },
+  {
+    "id": "pay_504",
+    "invoice_id": "inv_504",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-30T23:05:00"
+  },
+  {
+    "id": "pay_505",
+    "invoice_id": "inv_505",
+    "amount": "10.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-30T23:05:00"
+  },
+  {
+    "id": "pay_506",
+    "invoice_id": "inv_506",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-30T23:05:00"
   }
 ]

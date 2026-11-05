@@ -33,9 +33,11 @@ over; before that, `--preview` prints them and writes nothing.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import statistics
+import subprocess
 import sys
 from pathlib import Path
 
@@ -58,8 +60,23 @@ class ComparisonRefused(Exception):  # noqa: N818 -- a refusal, not a defect
     """A file is not one the manifest declared, or the campaign does not hold."""
 
 
-def development_case_ids() -> list[str]:
-    return [case["id"] for case in json.loads(engines.DEVELOPMENT_SET.read_bytes())]
+def development_case_ids(commit: str | None = None, expected: str | None = None) -> list[str]:
+    """The development cases' ids: as they stood at `commit`, when given -- the
+    campaign's own set, since the set has grown after it (specs/012-prompt-v4-usage)
+    -- checked against the hash the manifest recorded; today's otherwise."""
+    if commit is None:
+        return [case["id"] for case in json.loads(engines.DEVELOPMENT_SET.read_bytes())]
+    try:
+        data = subprocess.run(
+            ["git", "-C", str(campaign.REPO), "show", f"{commit}:evals/cases.json"],
+            capture_output=True,
+            check=True,
+        ).stdout.replace(b"\r\n", b"\n")
+    except (OSError, subprocess.CalledProcessError):
+        raise ComparisonRefused(f"the case set at {commit} cannot be read") from None
+    if expected is not None and not hashlib.sha256(data).hexdigest().startswith(expected):
+        raise ComparisonRefused(f"the case set at {commit} is not the one the manifest recorded")
+    return [case["id"] for case in json.loads(data)]
 
 
 def _fully_correct(outcome: dict) -> bool:
@@ -203,12 +220,16 @@ def _verdict(outcome: dict) -> str:
 
 
 def compare(manifest_path: Path, results_dir: Path, cases: list[str] | None = None) -> dict:
-    cases = cases if cases is not None else development_case_ids()
     try:
         c = Campaign(manifest_path, results_dir=results_dir)
         results = c.results()
     except CampaignRefused as refusal:
         raise ComparisonRefused(str(refusal)) from None
+    if cases is None:
+        cases = development_case_ids(
+            campaign.manifest_commit(manifest_path),
+            c.manifest.get("evidence", {}).get("cases_sha256"),
+        )
     _check_evidence(c, results)
     for held in results.values():
         _check_cases(held, cases)

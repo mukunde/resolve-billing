@@ -10,10 +10,32 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
 
 ## What the system relies on
 
-- **A development set.** `evals/cases.json`, 34 synthetic cases, each with a
-  `why` saying what it catches. They were read while the rules and the prompt
+- **A development set.** `evals/cases.json`, 41 synthetic cases, each with a
+  `why` saying what it catches; the seven on usage (spec 012) carry labels the
+  maintainer adjudicated on 2026-11-05. They were read while the rules and the prompt
   were written: a score on them says how well the system fits them.
   `evals/taxonomy.md` lists the decision boundaries covered and missed.
+- **The engine's own recommendation** (spec 012). A case may declare
+  `expect_engine_action`; the runner then scores the engine's recommendation as a
+  check of its own, beside the system's action, in the baseline and in "fully
+  correct": the policy can turn money recommended on `unknown` into no action,
+  and the system's action alone cannot show the engine escalated. No
+  recommendation fails it. A case that declares none scores as before; stored
+  results without the check keep their scores.
+- **A prompt per run** (spec 012). `--prompt` on the runner (Claude and the
+  hosted configurations; the mock refuses it) and on `evals.service_run`
+  chooses the prompt the engine sends, recorded in the result with the
+  configuration's fingerprint; the service's own is the default. Under another
+  prompt a configuration is another request: it needs its own accepted first
+  call, and two configurations sharing a limit are admitted under the same
+  prompt. Spec 008's comparison reads the case set as it stood at its
+  manifest's commit.
+- **The prompt comparison** (spec 012). `python -m evals.prompt_compare` takes
+  twelve service runs -- Luna alone and Haiku's leg, under v3 and v4, three
+  each, on one commit -- refuses any other set, and applies the rule declared
+  before the runs: no unsafe action under v4, every new usage case right on
+  every v4 run, and every other case's change listed, a case v3 always got
+  right and v4 did not being a regression for the maintainer.
 - **The runner.** `python -m evals.runner --engine <name>` investigates every
   case with the fake billing platform at a fixed evaluation date, and scores
   findings, classification, recommended action, the approval gate and
@@ -53,8 +75,9 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
   checkout under one lock per model: the maintainer declares each day
   once, before its first request, as the console shows it; each request is
   counted before it is sent, never refunded. A full run starts only if the
-  day's remaining requests cover the 20 cases that reach the engine times
-  the configuration's attempts; passing the limit, reaching an undeclared
+  day's remaining requests cover the 27 cases that reach the engine times
+  the configuration's attempts (since spec 012, more than Flash's 20 a day:
+  Flash has no full run on the free tier); passing the limit, reaching an undeclared
   day or a clock gone back stops the run before sending. Flash makes one
   attempt per case and an outage stops the run; Flash-Lite three, and an
   outage escalates the case. Reservations are estimated locally, never by a

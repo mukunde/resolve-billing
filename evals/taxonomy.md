@@ -225,10 +225,12 @@ invoice, and no blocking finding.
 **B12 — Usage within vs beyond tolerance** · case
 - A: billed usage within 25 % of expected → no finding. B: beyond, or
   positive usage against a zero baseline → `SUSPICIOUS_USAGE_DELTA`.
-- Dev: A `legitimate_overage`; B none.
-- The finding is defined and can be tested now; what it should lead to is
-  not (S1). An expected classification and action on side B waits for that
-  decision.
+- Dev: A `legitimate_overage`, `usage_corroborated_control`; B
+  `usage_overbilled_fr`, `usage_overbilled_en`, `usage_overbilled_terse`,
+  `usage_overbilled_other_complaint`, and `usage_underbilled_explanation`
+  (under-billing: the finding is set aside before the engine, an audit note).
+- What side B leads to is S1, decided: `unknown` and escalate, a person looks
+  (spec 012, labels adjudicated on 2026-11-05).
 - Tests: BV, CP.
 
 **B13 — Billing dispute vs out-of-scope request** · case
@@ -357,7 +359,8 @@ invoice, and no blocking finding.
 **B29 — Usage checked vs usage unavailable** · case, integration
 - A metered line with no usage record → `USAGE_UNAVAILABLE`; "the invoice is
   correct" then goes to a person.
-- Dev: none (`tests/integration/test_unusable_evidence.py`).
+- Dev: `usage_unavailable_disputed` (spec 012); also
+  `tests/integration/test_unusable_evidence.py`.
 - Tests: CP.
 
 ### Automated mail and automatic replies (ADR-011)
@@ -430,7 +433,7 @@ row says what kind of limit it is, what covers it today, and what could.
 | L8 | **Incomplete or stale context**: a provider read failure, the 180-day invoice lookback, missing usage data. "Not found" is not "does not exist" | Format (read failures); assertion (data missing from fixtures) | A failed read decides nothing and answers 503; an old invoice, missing usage: `tests/integration/test_unusable_evidence.py` | Fault injection against each real adapter |
 | L9 | **Engine failure**: timeout, refusal, output outside the schema | Format | Outages escalate and are recorded as such; errors fail visibly: `tests/unit/test_claude_outages.py` (with the SDK), `tests/integration/test_unusable_evidence.py` | The same against a real outage, in the pilot |
 | L10 | **Sender authentication**: a known address is a lookup, not proof of identity; delegated contacts | Product | Nothing; ADR-007 treats the address as a signal | Verified contacts, signed mail (DKIM/DMARC) at intake, a production identity design |
-| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 34 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
+| L11 | **The runner's own assertion limits**: expected findings are a required subset, so unexpected extra findings pass; engine skipping is checked only where a case declares it; one run of a sampling engine; 41 cases make a consistency check, not a measurement | Assertion | `tests/unit/test_eval_*.py` test the runner itself | Exact-findings mode; repeated runs with variance bands (`evals/variance.py`); a larger set |
 | L12 | **Production approval scope**: approver amount limits, second approval, separation of duties (ADR-009, described, not built) | Product | Nothing | To be specified and built before production |
 | L13 | **Real billing providers**: every case runs on the fake provider | Format | Contract tests of the fake | Adapter contract tests against sandboxes (Pennylane, Qonto) |
 | L14 | **Where mail headers come from**: automated mail is recognised from the headers the intake forwards; their provenance is not verified, and without them only the sender address is checked. Headers can only withhold a reply, never grant one | Format | `tests/unit/test_automated_mail.py` | The support tool or a trusted gateway supplying headers and authentication results (ADR-010, ADR-011) |
@@ -444,7 +447,7 @@ on a question before its decision is built.
 
 | | Decision | Built |
 |---|---|---|
-| S1 | A disputed usage gap with the finding present → `unknown` + escalate; no money founded on it before S5's amounts; under-billing → audit note only. A dedicated classification comes with partial amounts | in part: no money on it, an over-billing goes to a person whatever the engine answers (`.specify/bugs/usage-overbilling-review/`), under-billing is an audit note; the prompt instruction waits for a measured prompt version |
+| S1 | A disputed usage gap with the finding present → `unknown` + escalate; no money founded on it before S5's amounts; under-billing → audit note only. A dedicated classification comes with partial amounts | in part: no money on it, an over-billing goes to a person whatever the engine answers (`.specify/bugs/usage-overbilling-review/`), under-billing is an audit note. On 2026-11-05 the maintainer widened it: an over-billing the customer does not dispute is also `unknown` + escalate (spec 012, Q1). The prompt instruction is written (`decision_v4`) and waits for its measurement and the maintainer's decision |
 | S2 | Narrow exemption: "ignore my previous message" (the customer's own message) is not flagged; instructions, rules and prompts still are; the exemption covers that phrase only | yes |
 | S3 | Count corrections, not findings: distinct corrections on one invoice → human review, no amount | yes |
 | S4 | A refund needs a single settled payment covering it; draft, uncollectible and void invoices get no correction; no rule on paused, trialing, past-due subscriptions | yes |
@@ -540,7 +543,7 @@ example.
 | B09 | Which object is duplicated: invoice or payment | `duplicate_fr`, `duplicate_en`, `known_customer_bulk_dispute` | `duplicate_payment_single_invoice` |  | CP, CO | ML, EX |
 | B10 | Billed after cancellation: the cut-off | `billed_after_cancellation`, `vague_but_scoped` | none |  | BV | MU, EX |
 | B11 | Proration within vs beyond rounding tolerance | `proration_not_duplicate` | `proration`, `injection_role` (finding) |  | CP, BV | EX |
-| B12 | Usage within vs beyond tolerance | `legitimate_overage` | none |  | CP, BV | EX |
+| B12 | Usage within vs beyond tolerance | `legitimate_overage`, `usage_corroborated_control` | `usage_overbilled_fr`, `usage_overbilled_en`, `usage_overbilled_terse`, `usage_overbilled_other_complaint`, `usage_underbilled_explanation` |  | CP, BV | MU, EX |
 | B13 | Billing dispute vs out-of-scope request | `vague_but_scoped` | `out_of_scope` |  | CP, ML | EX |
 | B14 | Payment recorded vs payment merely claimed | not listed | `claimed_payment_without_evidence` |  | CP, CD | CD |
 | B15 | Failed collection vs invalid invoice | `failed_payment_valid_invoice` | none |  | CP, MU, CD | EX |
@@ -553,7 +556,7 @@ example.
 | B22 | Money recommended without an amount the code can stand behind | *one rule:* `proration`, `duplicate_check_not_evaluable` |  |  | not specified | EX |
 | B27 | Unknown reference vs the customer's own old invoice | `unknown_invoice_reference`, `cross_customer_invoice_reference`, `foreign_customer_invoice_reference` | `invoice_outside_window` |  | CP, BV | EX |
 | B28 | Comparable vs incomparable amounts | *one rule:* `duplicate_across_currencies` |  |  | CP, MU | EX |
-| B29 | Usage checked vs usage unavailable | *one rule:* none |  |  | CP | none |
+| B29 | Usage checked vs usage unavailable | *one rule:* `usage_unavailable_disputed` |  |  | CP | EX |
 | B24 | A person vs an automated response | not listed | `known_customer_out_of_office`, `unknown_sender_delivery_report` |  | CP, MU, AD | EX |
 | B25 | Investigated, but never answered automatically | *one rule:* `known_customer_bulk_dispute`, `unknown_sender_newsletter` |  |  | CP, MU | EX |
 | B26 | Who may receive an automatic reply | *one rule:* `legitimate_overage` (allowed), `unknown_sender_plain` (refused), `known_customer_out_of_office` (refused), `known_customer_bulk_dispute` (refused), `unknown_sender_newsletter` (refused), `unknown_sender_delivery_report` (refused), `invoice_outside_window` (refused), `duplicate_across_currencies` (refused), `invoice_reference_conflict` (allowed), `withdrawn_message_with_injection` (refused), `claimed_account_of_another_customer` (refused), `duplicate_check_not_evaluable` (refused) |  |  | CP | EX |
@@ -575,7 +578,7 @@ Cases per cell. **0** marks a type the boundary calls for with no case; an empty
 | B09 | **0** |  |  |  | 1 |  | **0** | 3 |
 | B10 |  | **0** | 1 |  |  |  |  | 1 |
 | B11 | **0** | **0** |  |  |  |  |  | 3 |
-| B12 | **0** | **0** |  |  |  |  |  | 1 |
+| B12 | **0** | **0** | 5 |  |  |  |  | 2 |
 | B13 | **0** |  |  |  | **0** |  |  | 2 |
 | B14 | **0** |  |  |  |  | 1 |  |  |
 | B15 | **0** |  | **0** |  |  | **0** |  | 1 |
@@ -588,14 +591,14 @@ Cases per cell. **0** marks a type the boundary calls for with no case; an empty
 | B22 |  |  |  |  |  |  |  | 2 |
 | B27 | **0** | **0** |  |  |  |  |  | 4 |
 | B28 | **0** |  | **0** |  |  |  |  | 1 |
-| B29 | **0** |  |  |  |  |  |  |  |
+| B29 | **0** |  |  |  |  |  |  | 1 |
 | B24 | **0** |  | **0** | **0** |  |  |  | 2 |
 | B25 | **0** |  | **0** |  |  |  |  | 2 |
 | B26 | **0** |  |  |  |  |  |  | 12 |
 
 ### B23, from the expectations
 
-Financial action expected: 6 cases, 6 with human approval. Non-financial: 28 cases, 16 without approval and 12 sent to a person anyway.
+Financial action expected: 6 cases, 6 with human approval. Non-financial: 35 cases, 18 without approval and 17 sent to a person anyway.
 
 ### Invariances
 

@@ -10,7 +10,7 @@ import pytest
 from app.decision.hosted import Answer, configuration
 from evals import engines, first_calls, runner, state
 from evals.first_calls import FirstCalls, FirstCallsRefused
-from tests.unit.test_evaluation_limits import Vendor, _no_wait, ok
+from tests.unit.test_evaluation_limits import Vendor, _no_wait, ok, roomy_flash
 
 PROJECT = "resolve-billing-eval"
 MISTRAL = ("mistral-medium-3-5", "mistral-medium-3-5-reasoning")
@@ -115,6 +115,7 @@ class TestAcceptance:
         assert "gemini-3.8-flash" in held()["first_calls"]
 
     def test_a_full_run_records_no_acceptance_field_as_true(self, tmp_path, monkeypatch):
+        roomy_flash(monkeypatch)
         run(monkeypatch, tmp_path, "gemini-3.8-flash", "--first-call-only")
         quota = state.STATE_DIR / f"quota-{PROJECT}.json"
         quota.unlink()  # a fresh quota day for the full run
@@ -193,7 +194,7 @@ class TestTheGate:
         if change == "field":
             config = replace(config, max_output_tokens=8192)
         elif change == "prompt_version":
-            monkeypatch.setattr("app.decision.hosted.PROMPT_VERSION", "decision_v4")
+            config = replace(config, prompt="decision_v4")
         elif change == "schema":
             monkeypatch.setattr(first_calls, "verdict_schema", lambda: {"type": "object"})
         elif change == "masking_version":
@@ -257,3 +258,32 @@ def _a_result():
     path = state.STATE_DIR.parent / "a-result.json"
     path.write_text("{}", encoding="utf-8")
     return path
+
+
+class TestUnderAnotherPrompt:
+    """specs/012-prompt-v4-usage: a first call under v4 is accepted for the v4
+    request, and admits that request's full run, not v3's."""
+
+    def test_a_v4_first_call_is_recorded_for_the_v4_request(self, tmp_path, monkeypatch):
+        name = "mistral-medium-3-5"
+        vendor = Always(name, None)
+        asked = []
+        monkeypatch.setitem(
+            engines.HOSTED_ENGINES,
+            name,
+            lambda prompt="decision_v3": asked.append(prompt) or vendor,
+        )
+        flags = ["--mistral-allowance-usd", "10", "--prompt", "decision_v4", "--first-call-only"]
+        target = tmp_path / f"{name}.json"
+        argv = ["runner", "--engine", name, "--data-terms", "unknown", "--json", str(target)]
+        monkeypatch.setattr("sys.argv", [*argv, *flags])
+        runner.main()
+
+        v4 = replace(configuration(name), prompt="decision_v4")
+        assert asked == ["decision_v4"]
+        assert held()["first_calls"][name]["fingerprint"] == first_calls.fingerprint(v4)
+        result = json.loads(sorted(tmp_path.glob(f"{name}-*.json"))[-1].read_text("utf-8"))
+        assert result["prompt_version"] == "decision_v4"
+        assert result["engine_version"] == f"{name}/decision_v4"
+        with pytest.raises(FirstCallsRefused):
+            FirstCalls().admit_full_run(configuration(name))

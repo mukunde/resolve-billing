@@ -374,13 +374,13 @@ class TestTheMeasurement:
             "claude-haiku-5-5",
         ]
         assert all(leg["fingerprint"] for leg in result["failover"]["legs"])
-        assert result["cases_run"] == 34
+        assert result["cases_run"] == 41
         assert self.admitted == ["claude-haiku-5-5"]
-        assert vendor.calls == 20
+        assert vendor.calls == 27
         assert {a["provider"] for a in result["attempts"]} == {"anthropic"}
         assert {a["number"] for a in result["attempts"]} == {2}
         assert set(result["answered_by"].values()) == {"claude-haiku-5-5"}
-        assert len(result["answered_by"]) == 20
+        assert len(result["answered_by"]) == 27
 
     def test_no_cost_stays_unknown(self, monkeypatch, tmp_path):
         _, result, _ = self.measured(
@@ -390,6 +390,41 @@ class TestTheMeasurement:
         assert result["cost"]["complete"] is True
         assert result["cost"]["settled_amount"] > 0
         assert self.book.spent
+
+    def test_the_prompt_reaches_haiku_and_the_record(self, monkeypatch, tmp_path):
+        """specs/012-prompt-v4-usage, FR-005: both legs recorded under the prompt."""
+        from dataclasses import replace
+
+        from evals.first_calls import fingerprint
+
+        vendor = Scripted("claude-haiku-5-5")
+        asked = []
+        monkeypatch.setitem(
+            engines.HOSTED_ENGINES,
+            "claude-haiku-5-5",
+            lambda prompt="decision_v3": asked.append(prompt) or vendor,
+        )
+        target = tmp_path / "composite.json"
+        service_run.main(
+            [
+                "--data-terms",
+                "contractual",
+                "--json",
+                str(target),
+                "--engine",
+                deps.FAILOVER,
+                "--primary-disabled",
+                "--prompt",
+                "decision_v4",
+            ]
+        )
+        result = json.loads(sorted(tmp_path.glob("composite-*.json"))[-1].read_text("utf-8"))
+        assert asked == ["decision_v4"]
+        assert result["prompt_version"] == "decision_v4"
+        assert result["engine_version"].endswith("/failover_v1/decision_v4")
+        for leg in result["failover"]["legs"]:
+            config = replace(service_run.configuration(leg["configuration"]), prompt="decision_v4")
+            assert leg["fingerprint"] == fingerprint(config)
 
     async def test_a_disabled_leg_is_a_known_zero(self):
         from app.decision.base import EngineUnavailable

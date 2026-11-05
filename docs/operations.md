@@ -199,7 +199,7 @@ The interesting assertion is not that the tests pass.
 
 ```yaml
 - run: >-
-    python -m evals.runner --engine mock --min-fully-correct 29
+    python -m evals.runner --engine mock --min-fully-correct 35
     --baseline evals/baselines/mock.json
 ```
 
@@ -356,8 +356,9 @@ does the runner: `gemini-3.8-flash` in `~/.resolve-billing/quota-<project>.json`
 project shares. A day is declared once per model, never lowered; each
 request is counted before it is sent and never refunded, failed ones
 included. A full run starts only if the day's remaining requests cover the
-20 cases that reach the engine times the configuration's attempts -- for
-Flash, an untouched day; for Flash-Lite, 60 remaining. A request that would
+27 cases that reach the engine times the configuration's attempts -- more
+than Flash's 20 a day since spec 012, so Flash has no full run on the free
+tier; for Flash-Lite, 81 remaining. A request that would
 pass the limit is not sent and the run stops ("daily quota exhausted (local
 count)"), as it does on reaching a day not declared -- a run crossing Pacific
 midnight -- and on a clock gone back. Flash makes one attempt per case and
@@ -538,6 +539,41 @@ python -m dotenv run -- python -m evals.service_run --engine gpt-6-luna+claude-h
 
 Through the Anthropic envelope. A result below 30, or any unsafe action, goes to the
 maintainer in the same way.
+
+### Prompt v3 against v4 (spec 012), on the maintainer's approval
+
+Development cases only, on one commit with a clean tree; the commands and their
+estimated cost are approved before the first one runs. First Luna and Haiku's leg
+under v3, three runs each, on their accepted first calls:
+
+```bash
+python -m dotenv run -- python -m evals.service_run --data-terms contractual --prompt decision_v3 --json evals/results/gpt-6-luna-v3.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.service_run --engine gpt-6-luna+claude-haiku-5-5 --primary-disabled --data-terms contractual --prompt decision_v3 --json evals/results/haiku-leg-v3.json
+```
+
+Then a first call under v4 for each (it replaces the v3 acceptance, recorded by
+configuration name):
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --prompt decision_v4 --data-terms contractual --first-call-only --json evals/results/gpt-6-luna-v4-first-call.json
+```
+
+```bash
+python -m dotenv run -- python -m evals.runner --engine claude-haiku-5-5 --prompt decision_v4 --data-terms contractual --first-call-only --json evals/results/claude-haiku-5-5-v4-first-call.json
+```
+
+Then the same two service runs with `--prompt decision_v4`, three each, and the
+comparison of the twelve:
+
+```bash
+python -m evals.prompt_compare evals/results/gpt-6-luna-v3-*.json evals/results/gpt-6-luna-v4-*.json evals/results/haiku-leg-v3-*.json evals/results/haiku-leg-v4-*.json --report evals/results/prompt-v4-comparison.md
+```
+
+A stopped run is kept and does not count; its replacement waits for the
+maintainer. After the measurement, a v3 run needs a new v3 first call.
 
 ### The reference run (the maintainer alone)
 

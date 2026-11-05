@@ -946,5 +946,171 @@
         "outcome": "refused"
       }
     ]
+  },
+  {
+    "id": "usage_overbilled_fr",
+    "why": "Spec 012. The customer disputes usage the invoice bills well above what was measured (60 blocks billed, 20 measured). S1: unknown and escalate, a person looks; no code prices the gap yet.",
+    "message": "Bonjour, notre facture de septembre compte 60 blocs d'appels API, alors que notre tableau de bord n'en montre qu'une vingtaine. Pouvez-vous verifier ?",
+    "customer_email": "lea@atelier-ardent.fr",
+    "invoice_id": "inv_500",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "SUSPICIOUS_USAGE_DELTA"
+    ],
+    "covers": [
+      {
+        "boundary": "B12",
+        "side": "B",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-05"
+  },
+  {
+    "id": "usage_overbilled_en",
+    "why": "Spec 012. The same over-billing, disputed in English. Only the wording and the language differ from usage_overbilled_fr.",
+    "message": "Hi, our September invoice bills 60 blocks of API calls, but our own logs show about 20. Could you check?",
+    "customer_email": "ops@harbor-freight.fr",
+    "invoice_id": "inv_501",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "SUSPICIOUS_USAGE_DELTA"
+    ],
+    "covers": [
+      {
+        "boundary": "B12",
+        "side": "B",
+        "type": "MU",
+        "with": "usage_overbilled_fr",
+        "varies": "the message's language"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-05"
+  },
+  {
+    "id": "usage_overbilled_terse",
+    "why": "Spec 012. The same over-billing, disputed in five words: the instruction must hold without the figures in the message.",
+    "message": "Trop d'appels API factures.",
+    "customer_email": "paul@cimes-conseil.fr",
+    "invoice_id": "inv_502",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "SUSPICIOUS_USAGE_DELTA"
+    ],
+    "covers": [
+      {
+        "boundary": "B12",
+        "side": "B",
+        "type": "MU",
+        "with": "usage_overbilled_fr",
+        "varies": "the message's length"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-05"
+  },
+  {
+    "id": "usage_corroborated_control",
+    "why": "Spec 012, the control. usage_overbilled_fr's dispute, word for word, in a world where the usage measured (58) corroborates the 60 billed, within tolerance: no finding, the invoice is correct. An instruction that escalated every usage complaint fails here.",
+    "message": "Bonjour, notre facture de septembre compte 60 blocs d'appels API, alors que notre tableau de bord n'en montre qu'une vingtaine. Pouvez-vous verifier ?",
+    "customer_email": "nina@dune-media.fr",
+    "invoice_id": "inv_503",
+    "expect_classification": "valid_invoice",
+    "expect_engine_action": "explain_invoice",
+    "expect_action": "reply",
+    "expect_human_approval": false,
+    "expect_automatic_reply": true,
+    "expect_findings": [],
+    "covers": [
+      {
+        "boundary": "B12",
+        "side": "A",
+        "type": "MU",
+        "with": "usage_overbilled_fr",
+        "varies": "the usage record"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-05"
+  },
+  {
+    "id": "usage_overbilled_other_complaint",
+    "why": "Spec 012, Q1. The invoice over-bills usage, but the customer writes about the collection date. The maintainer decided (2026-11-05) that an over-billing is unknown and escalate whatever the message is about: the person who opens the case must see it first.",
+    "message": "Bonjour, pourquoi le prelevement de septembre est-il passe le 30 et pas le 1er du mois ?",
+    "customer_email": "hugo@erable-bois.fr",
+    "invoice_id": "inv_504",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "SUSPICIOUS_USAGE_DELTA"
+    ],
+    "covers": [
+      {
+        "boundary": "B12",
+        "side": "B",
+        "type": "MU",
+        "with": "usage_overbilled_fr",
+        "varies": "what the message is about"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-05"
+  },
+  {
+    "id": "usage_underbilled_explanation",
+    "why": "Spec 012. The invoice bills less usage than was measured (20 billed, 60 measured). Under-billing is the business's loss, an audit note: no finding reaches the engine or the reply (S1), and the invoice is explained as it stands.",
+    "message": "Bonjour, pouvez-vous m'expliquer a quoi correspond la facture de septembre ?",
+    "customer_email": "ines@fjord-data.fr",
+    "invoice_id": "inv_505",
+    "expect_classification": "valid_invoice",
+    "expect_engine_action": "explain_invoice",
+    "expect_action": "reply",
+    "expect_human_approval": false,
+    "expect_automatic_reply": true,
+    "expect_findings": [],
+    "covers": [
+      {
+        "boundary": "B12",
+        "side": "B",
+        "type": "MU",
+        "with": "usage_overbilled_fr",
+        "varies": "the direction of the gap"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-05"
+  },
+  {
+    "id": "usage_unavailable_disputed",
+    "why": "Spec 012. The usage record covers August, the metered line September: the usage cannot be checked (USAGE_UNAVAILABLE), and the customer disputes it. A usage nobody could check is not a usage that is right: unknown and escalate (S1, S7).",
+    "message": "Bonjour, le nombre d'appels API facture en septembre me semble faux.",
+    "customer_email": "marc@galet-design.fr",
+    "invoice_id": "inv_506",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "USAGE_UNAVAILABLE"
+    ],
+    "covers": [
+      {
+        "boundary": "B29",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-05"
   }
 ]

@@ -36,6 +36,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Spec 008's comparison reads the case set at its manifest's commit
+          # (specs/012-prompt-v4-usage): the history must be there.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -57,7 +61,7 @@ jobs:
       # when the mock genuinely improves; never lower it to make a build pass.
       - name: Evaluation set, mock engine
         run: >-
-          python -m evals.runner --engine mock --min-fully-correct 29
+          python -m evals.runner --engine mock --min-fully-correct 35
           --baseline evals/baselines/mock.json
 
       # The coverage tables of the taxonomy are generated from the case tags:

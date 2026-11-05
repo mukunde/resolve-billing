@@ -31,8 +31,9 @@ from pydantic import ValidationError
 
 from app.decision.anonymise import anonymise
 from app.decision.base import Decision, EngineTelemetry, EngineUnavailable
-from app.decision.claude import PROMPT_PATH, PROMPT_VERSION
+from app.decision.claude import PROMPT_VERSION  # noqa: F401 -- the service's, re-exported
 from app.decision.masking import ReferenceFinder, mask_message
+from app.decision.prompts import DEFAULT_PROMPT, prompt_text
 from app.decision.verdict import ModelVerdict, escalation, verdict_schema
 from app.domain.models import BillingContext, Dispute, RuleFinding
 
@@ -154,10 +155,13 @@ class Configuration:
     #: not the requested id; None: the requested id. Exact: another snapshot
     #: stops the run.
     returned_model: str | None = None
+    #: The prompt the requests carry: the service's unless a measurement
+    #: chooses another (specs/012-prompt-v4-usage, FR-005).
+    prompt: str = DEFAULT_PROMPT
 
     @property
     def prompt_version(self) -> str:
-        return f"{self.name}/{PROMPT_VERSION}"
+        return f"{self.name}/{self.prompt}"
 
 
 def _gemini(
@@ -466,7 +470,7 @@ class HostedEngine:
         self.config = config
         self.name = config.name
         self.version = config.prompt_version
-        self._system = PROMPT_PATH.read_text(encoding="utf-8")
+        self._system = prompt_text(config.prompt)
         #: How the billing platform writes an invoice reference, to mask the
         #: ones a message cites (D10). Wired from the provider.
         self.invoice_references = invoice_references

@@ -46,7 +46,7 @@ The product's current behaviour is described under
 ```bash
 ruff check .
 pytest
-python -m evals.runner --engine mock --min-fully-correct 29 --baseline evals/baselines/mock.json
+python -m evals.runner --engine mock --min-fully-correct 35 --baseline evals/baselines/mock.json
 ```
 
 The floor and baseline are the ones CI enforces; a change that moves a case

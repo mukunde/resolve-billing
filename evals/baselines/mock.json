@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "be174fd71659aa22",
+  "cases_sha256": "6051b0da7afba064",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -342,6 +342,76 @@
       "sender": true,
       "reply": true,
       "recommendation": true
+    },
+    "usage_overbilled_fr": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "usage_overbilled_en": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "usage_overbilled_terse": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "usage_corroborated_control": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "usage_overbilled_other_complaint": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "usage_underbilled_explanation": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "usage_unavailable_disputed": {
+      "classification": false,
+      "action": false,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": false
     }
   }
 }

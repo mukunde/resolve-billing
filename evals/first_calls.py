@@ -27,7 +27,7 @@ import json
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -69,6 +69,9 @@ ADDED_SINCE_SPEC_004 = {
     "check_identity": False,
     "release_status": None,
     "returned_model": None,
+    #: specs/012-prompt-v4-usage: v3, the prompt every earlier first call sent,
+    #: keeps their fingerprints; another prompt is another request.
+    "prompt": "decision_v3",
 }
 
 
@@ -121,8 +124,10 @@ class FirstCalls:
         account's limits -- has an accepted first call matching it now."""
         required = [config]
         if config.shared_limits is not None:
+            # The siblings under the same prompt: each one's acceptance is for
+            # the request it will send alongside this one.
             required += [
-                other
+                replace(other, prompt=config.prompt)
                 for other in CONFIGURATIONS.values()
                 if other.shared_limits == config.shared_limits and other.name != config.name
             ]

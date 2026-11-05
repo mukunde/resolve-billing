@@ -17,22 +17,24 @@ import hashlib
 import json
 import os
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from app.api import deps
 from app.decision.hosted import CONFIGURATIONS
+from app.decision.prompts import DEFAULT_PROMPT
 from app.providers.fake.fixtures import EXTRA_FIXTURES_ENV
 
 #: The development set, and the hash of its committed bytes (line endings
 #: normalised to LF, as git stores them). Changing the cases is a deliberate
 #: update of this constant; a test holds them together.
 DEVELOPMENT_SET = Path(__file__).parent / "cases.json"
-DEVELOPMENT_SET_SHA256 = "4dc2740be58d04b73bde24d903ab76f5997f9701157ab7c0d64a9a31c71e9c99"
+DEVELOPMENT_SET_SHA256 = "3c563bead7b371b39e400cc33ed7ad6f8cfacd23b80e97438574841df9ac1f96"
 
 #: How many development cases reach the engine (the others are settled by
 #: the rules first): a run's daily quota is sized on it. Pinned by a test
 #: that counts them; a change of the development set updates both.
-ENGINE_CASES = 20
+ENGINE_CASES = 27
 
 #: The engines evaluated on free tiers.
 HOSTED = frozenset(CONFIGURATIONS)
@@ -45,17 +47,24 @@ CREDENTIALS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _hosted(name: str) -> Callable[[], object]:
-    def build():
-        from app.decision.vendors import client_for
+def _hosted(name: str) -> Callable[..., object]:
+    def build(prompt: str = DEFAULT_PROMPT):
+        from app.decision import vendors
 
-        return client_for(CONFIGURATIONS[name])
+        return vendors.client_for(replace(CONFIGURATIONS[name], prompt=prompt))
 
     return build
 
 
 #: How each engine evaluated on a free tier is built.
-HOSTED_ENGINES: dict[str, Callable[[], object]] = {name: _hosted(name) for name in HOSTED}
+HOSTED_ENGINES: dict[str, Callable[..., object]] = {name: _hosted(name) for name in HOSTED}
+
+
+def hosted_engine(name: str, prompt: str = DEFAULT_PROMPT):
+    """A hosted configuration's engine, sending `prompt` (specs/012-prompt-v4-usage).
+    The service's prompt is built as it always was."""
+    build = HOSTED_ENGINES[name]
+    return build() if prompt == DEFAULT_PROMPT else build(prompt=prompt)
 
 
 #: The service's engines the runner never builds: no guard, limit or envelope

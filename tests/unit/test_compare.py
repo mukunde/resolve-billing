@@ -318,7 +318,7 @@ class TestOutputs:
         book.all_rounds({A: three()})
         manifest = write_manifest(tmp_path, names=(A,))
 
-        monkeypatch.setattr(compare, "development_case_ids", lambda: CASES)
+        monkeypatch.setattr(compare, "development_case_ids", lambda *_: CASES)
 
         compare.main([str(manifest), "--results", str(book.dir)])
 
@@ -330,7 +330,7 @@ class TestOutputs:
         book = Book(tmp_path)
         book.run(A, 1)
         manifest = write_manifest(tmp_path, names=(A,))
-        monkeypatch.setattr(compare, "development_case_ids", lambda: CASES)
+        monkeypatch.setattr(compare, "development_case_ids", lambda *_: CASES)
 
         assert compare.main([str(manifest), "--results", str(book.dir), "--preview"]) == 0
         assert compare.main([str(manifest), "--results", str(book.dir)]) == 2
@@ -494,3 +494,51 @@ class TestMissingEvidence:
 
         assert result["campaign_spend_unknown_attempts"] == 1
         assert result["candidates"][A]["completing"] is False
+
+
+def _manifest_commit() -> str | None:
+    """The manifest's real commit, asked of git directly: the module's fixture
+    stands a fake one in for `campaign.manifest_commit`."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(campaign.REPO), "log", "-1", "--first-parent", "--format=%H",
+             "--", str(campaign.MANIFEST)],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return out or None
+
+
+class TestTheCampaignsOwnCaseSet:
+    """specs/012-prompt-v4-usage: the development set grew after spec 008; its
+    comparison reads the set as it stood at the manifest's commit."""
+
+    def test_the_stored_campaign_still_compares(self, monkeypatch):
+        commit = _manifest_commit()
+        if commit is None:
+            pytest.skip("no git history: CI fetches it whole")
+        monkeypatch.setattr(campaign, "manifest_commit", lambda *_: commit)
+        result = compare.compare(campaign.MANIFEST, campaign.RESULTS_DIR)
+        assert result["campaign_over"]
+
+    def test_its_ids_are_the_thirty_four(self):
+        commit = _manifest_commit()
+        if commit is None:
+            pytest.skip("no git history: CI fetches it whole")
+        ids = compare.development_case_ids(commit, "4dc2740be58d04b7")
+        assert len(ids) == 34
+        assert not any(i.startswith("usage_") for i in ids)
+
+    def test_another_set_than_the_recorded_one_is_refused(self):
+        commit = _manifest_commit()
+        if commit is None:
+            pytest.skip("no git history: CI fetches it whole")
+        with pytest.raises(compare.ComparisonRefused, match="not the one the manifest recorded"):
+            compare.development_case_ids(commit, "0000000000000000")
+
+    def test_an_unreadable_commit_is_refused(self):
+        with pytest.raises(compare.ComparisonRefused, match="cannot be read"):
+            compare.development_case_ids("0" * 40)
