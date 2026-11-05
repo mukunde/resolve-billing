@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-05
 
-**Status**: Labels adjudicated by the maintainer on 2026-11-05; for his approval
+**Status**: Approved by the maintainer on 2026-11-05, at `8dffc7c` (labels adjudicated the same day)
 
 **Input**: Roadmap item 1, taxonomy S1 (decided 2026-10-19): a disputed usage gap with the
 finding present is `unknown` + escalate, a person looks; no money on it before S5's amounts;
