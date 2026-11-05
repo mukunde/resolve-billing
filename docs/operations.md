@@ -555,14 +555,15 @@ python -m dotenv run -- python -m evals.service_run --engine gpt-6-luna+claude-h
 ```
 
 Then a first call under v4 for each (it replaces the v3 acceptance, recorded by
-configuration name):
+configuration name), its file named apart so that the comparison's patterns below
+match the twelve service runs and nothing else:
 
 ```bash
-python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --prompt decision_v4 --data-terms contractual --first-call-only --json evals/results/gpt-6-luna-v4-first-call.json
+python -m dotenv run -- python -m evals.runner --engine gpt-6-luna --prompt decision_v4 --data-terms contractual --first-call-only --json evals/results/first-call-v4-gpt-6-luna.json
 ```
 
 ```bash
-python -m dotenv run -- python -m evals.runner --engine claude-haiku-5-5 --prompt decision_v4 --data-terms contractual --first-call-only --json evals/results/claude-haiku-5-5-v4-first-call.json
+python -m dotenv run -- python -m evals.runner --engine claude-haiku-5-5 --prompt decision_v4 --data-terms contractual --first-call-only --json evals/results/first-call-v4-claude-haiku-5-5.json
 ```
 
 Then the same two service runs with `--prompt decision_v4`, three each, and the

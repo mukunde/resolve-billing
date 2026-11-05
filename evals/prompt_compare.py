@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from app.decision.bounded import Bounds
 from app.decision.failover import SECONDARY_BOUNDS
 from evals import engines
 from evals.first_calls import fingerprint
+from evals.runner import CHECK_NAMES
 from evals.service_run import ENGINE, RUN_KIND, measured
 
 PROMPTS = ("decision_v3", "decision_v4")
@@ -51,6 +53,9 @@ NEW_CASE_CHECKS = ("classification_ok", "recommendation_ok", "action_ok")
 
 #: What an outcome is, for telling v3 and v4 apart.
 OUTCOME = ("classification", "recommended_action", "action", "approval", "automatic_reply")
+
+#: Every check a stored outcome carries; all must be there, as booleans.
+CHECKS = tuple(f"{name}_ok" for name in CHECK_NAMES)
 
 STATEMENT = "Three runs show variance; they do not establish non-degradation."
 
@@ -77,7 +82,18 @@ def _expected(leg: str, prompt: str) -> tuple[dict, str]:
 
 
 def _fully_correct(outcome: dict) -> bool:
-    return all(value for key, value in outcome.items() if key.endswith("_ok"))
+    return all(outcome[check] for check in CHECKS)
+
+
+def _valid_outcome(outcome) -> bool:
+    """Every check, a boolean; the unsafe flag; what the system did."""
+    return (
+        isinstance(outcome, dict)
+        and all(isinstance(outcome.get(check), bool) for check in CHECKS)
+        and (outcome.get("unsafe") is None or isinstance(outcome.get("unsafe"), str))
+        and isinstance(outcome.get("got"), dict)
+        and all(key in outcome["got"] for key in OUTCOME)
+    )
 
 
 def load(paths: list[Path]) -> dict[tuple[str, str], list[dict]]:
@@ -94,8 +110,22 @@ def load(paths: list[Path]) -> dict[tuple[str, str], list[dict]]:
         raise Refused("the runs are not distinct: a file is given twice")
     shared = ("commit", "cases_sha256", "masking_version", "schema_sha256")
     for key in shared:
-        if len({r.get(key) for r in records}) != 1:
+        values = {r.get(key) for r in records}
+        if len(values) != 1 or not all(isinstance(v, str) and v for v in values):
             raise Refused(f"the runs do not share one {key}")
+    # A run is its attempts: a copy with another start is still the same run.
+    attempt_ids = []
+    for record in records:
+        attempts = record.get("attempts")
+        if not isinstance(attempts, list) or not attempts:
+            raise Refused(f"{record['_file']}: records no attempt")
+        for attempt in attempts:
+            ident = attempt.get("attempt_id") if isinstance(attempt, dict) else None
+            if not isinstance(ident, str) or not ident:
+                raise Refused(f"{record['_file']}: an attempt without its id")
+            attempt_ids.append(ident)
+    if len(set(attempt_ids)) != len(attempt_ids):
+        raise Refused("the runs are not distinct: two share an attempt")
     if records and records[0].get("cases_sha256") != engines.DEVELOPMENT_SET_SHA256[:16]:
         raise Refused("the runs are not on today's development set")
     grouped: dict[tuple[str, str], list[dict]] = {}
@@ -120,7 +150,10 @@ def load(paths: list[Path]) -> dict[tuple[str, str], list[dict]]:
             raise Refused(f"{name}: not the leg's bounds")
         if record.get("configuration_fingerprint") != expected:
             raise Refused(f"{name}: not the configuration this leg sends under {prompt}")
-        ids = [o.get("case_id") for o in record.get("outcomes", [])]
+        outcomes = record.get("outcomes", [])
+        if not all(_valid_outcome(o) for o in outcomes):
+            raise Refused(f"{name}: an outcome without its checks or what the system did")
+        ids = [o.get("case_id") for o in outcomes]
         if sorted(ids) != case_ids:
             raise Refused(f"{name}: does not hold the development cases, each once")
         grouped.setdefault((leg, prompt), []).append(record)
@@ -139,8 +172,13 @@ def _by_case(runs: list[dict]) -> dict[str, list[dict]]:
     return held
 
 
-def _seen(outcomes: list[dict]) -> set[tuple]:
-    return {tuple(o.get("got", {}).get(k) for k in OUTCOME) for o in outcomes}
+def _seen(outcomes: list[dict]) -> Counter:
+    """What the system did, with how often: frequencies count, not only kinds."""
+    return Counter(tuple(o["got"][k] for k in OUTCOME) for o in outcomes)
+
+
+def _shown(seen: Counter) -> list[str]:
+    return [f"{n}x {' / '.join(str(v) for v in key)}" for key, n in sorted(seen.items(), key=str)]
 
 
 def compare_leg(v3: list[dict], v4: list[dict]) -> dict:
@@ -152,17 +190,32 @@ def compare_leg(v3: list[dict], v4: list[dict]) -> dict:
     missed = sorted(
         case
         for case in NEW_CASES
-        if any(not all(o.get(check, False) for check in NEW_CASE_CHECKS) for o in after[case])
+        if any(not all(o[check] for check in NEW_CASE_CHECKS) for o in after[case])
     )
+    new_cases = {
+        case: [
+            {k: o["got"][k] for k in ("classification", "recommended_action", "action")}
+            for o in after[case]
+        ]
+        for case in NEW_CASES
+    }
     old = [case for case in sorted(before) if case not in NEW_CASES]
-    changed = sorted(case for case in old if _seen(before[case]) != _seen(after[case]))
+    changed = {
+        case: {
+            "decision_v3": _shown(_seen(before[case])),
+            "decision_v4": _shown(_seen(after[case])),
+        }
+        for case in old
+        if _seen(before[case]) != _seen(after[case])
+    }
     regressions = sorted(
         case
         for case in old
         if all(_fully_correct(o) for o in before[case])
         and not all(_fully_correct(o) for o in after[case])
     )
-    if any(unsafe["decision_v4"]) or missed:
+    # The rule: no unsafe action on any run, v3's included.
+    if any(unsafe["decision_v3"]) or any(unsafe["decision_v4"]) or missed:
         verdict = "do not adopt"
     elif regressions:
         verdict = "regression: the maintainer decides"
@@ -172,6 +225,7 @@ def compare_leg(v3: list[dict], v4: list[dict]) -> dict:
         "verdict": verdict,
         "unsafe": unsafe,
         "new_cases_missed": missed,
+        "new_cases_v4": new_cases,
         "changed": changed,
         "regressions": regressions,
         "fully_correct": {
@@ -219,10 +273,27 @@ def markdown(report: dict) -> str:
             + (", ".join(held["new_cases_missed"]) or "none"),
             "- regressions (right on all three v3 runs, wrong on a v4 run): "
             + (", ".join(held["regressions"]) or "none"),
-            "- other cases whose outcome differs between v3 and v4: "
-            + (", ".join(held["changed"]) or "none"),
+            "",
+            "New usage cases under v4, run by run (classification / recommendation / action):",
             "",
         ]
+        for case, runs in held["new_cases_v4"].items():
+            shown = "; ".join(" / ".join(str(v) for v in r.values()) for r in runs)
+            lines.append(f"- `{case}`: {shown}")
+        lines += [
+            "",
+            "Other cases whose outcomes differ between v3 and v4 (counts over three runs; "
+            "classification / recommendation / action / approval / automatic reply):",
+            "",
+        ]
+        if not held["changed"]:
+            lines.append("- none")
+        for case, seen in held["changed"].items():
+            lines.append(
+                f"- `{case}`: v3 {'; '.join(seen['decision_v3'])} | "
+                f"v4 {'; '.join(seen['decision_v4'])}"
+            )
+        lines.append("")
     return "\n".join(lines)
 
 

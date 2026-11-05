@@ -67,6 +67,7 @@ def run(leg, prompt, n, *, overrides=None, wrong=(), unsafe=(), recommendations=
         "schema_sha256": "s1",
         "commit": "abc123",
         "clean_tree": True,
+        "attempts": [{"attempt_id": f"{leg}-{prompt}-{n}-{i}"} for i in range(2)],
         "outcomes": [
             outcome(
                 c,
@@ -109,6 +110,27 @@ class TestTheVerdicts:
     def test_an_unsafe_action_under_v4_blocks(self, tmp_path):
         report = prompt_compare.compare(files(tmp_path, twelve(unsafe={"duplicate_fr"})))
         assert report["legs"]["luna"]["verdict"] == "do not adopt"
+
+    def test_an_unsafe_action_under_v3_blocks_too(self, tmp_path):
+        """FR-007: no unsafe action on every run, whichever prompt."""
+        records = twelve()
+        records[0] = run("luna", "decision_v3", 0, unsafe={"duplicate_fr"})
+        report = prompt_compare.compare(files(tmp_path, records))
+        assert report["legs"]["luna"]["verdict"] == "do not adopt"
+
+    def test_a_change_in_frequency_is_listed(self, tmp_path):
+        records = twelve()
+        case = CASE_IDS[0]
+        # v3: right twice, wrong once; v4: right once, wrong twice. Same kinds.
+        records[0]["outcomes"][0] = outcome(case, right=False)
+        records[3]["outcomes"][0] = outcome(case, right=False)
+        records[4]["outcomes"][0] = outcome(case, right=False)
+        report = prompt_compare.compare(files(tmp_path, records))
+        assert case in report["legs"]["luna"]["changed"]
+
+    def test_the_report_shows_each_new_case_run_by_run(self, tmp_path):
+        text = prompt_compare.markdown(prompt_compare.compare(files(tmp_path, twelve())))
+        assert "`usage_overbilled_fr`: unknown / escalate / none; unknown" in text
 
     def test_a_new_case_missed_blocks(self, tmp_path):
         report = prompt_compare.compare(files(tmp_path, twelve(wrong={NEW[0]})))
@@ -163,6 +185,35 @@ class TestTheRefusals:
         records = twelve()
         records[5].update(overrides)
         with pytest.raises(prompt_compare.Refused):
+            prompt_compare.compare(files(tmp_path, records))
+
+    def test_a_copied_run_with_another_start(self, tmp_path):
+        records = twelve()
+        copy = json.loads(json.dumps(records[0]))
+        copy["ran_at"] = "2026-11-06T09:00:00+00:00"
+        records[1] = copy
+        with pytest.raises(prompt_compare.Refused, match="distinct"):
+            prompt_compare.compare(files(tmp_path, records))
+
+    @pytest.mark.parametrize("key", ["commit", "masking_version", "schema_sha256"])
+    def test_evidence_missing_everywhere(self, key, tmp_path):
+        records = twelve()
+        for record in records:
+            record.pop(key)
+        with pytest.raises(prompt_compare.Refused, match=key):
+            prompt_compare.compare(files(tmp_path, records))
+
+    def test_a_run_without_attempts(self, tmp_path):
+        records = twelve()
+        records[4]["attempts"] = []
+        with pytest.raises(prompt_compare.Refused, match="attempt"):
+            prompt_compare.compare(files(tmp_path, records))
+
+    @pytest.mark.parametrize("drop", ["recommendation_ok", "got"])
+    def test_an_outcome_without_its_checks(self, drop, tmp_path):
+        records = twelve()
+        records[3]["outcomes"][0].pop(drop)
+        with pytest.raises(prompt_compare.Refused, match="outcome"):
             prompt_compare.compare(files(tmp_path, records))
 
     def test_a_duplicated_run(self, tmp_path):
