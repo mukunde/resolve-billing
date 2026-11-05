@@ -55,6 +55,14 @@ test makes a paid call, and no test reads the holdout.
 - [x] T050 ADR-009, ADR-013, the evaluation contract, operations, README.
 - [ ] T051 Gates. Final diff to Codex, then to the maintainer by SHA. The PR.
 
+## Phase 5a: The totals export (FR-011a, 2026-11-05)
+
+- [x] T055 Test first: the export holds only the allowlisted totals, bound to the freeze hash,
+  the commit and the run; no sentinel; a planted key, a free-text stop or model, an unknown
+  provider refuses it; a path inside the private folder, through a link, or not `.json` refuses
+  it; `rebuild` exports the same totals.
+- [x] T056 `evals/reference_run.py`: `--export` on `run` and `rebuild`.
+
 ## Phase 6: After the merge, the maintainer alone
 
 - [ ] T060 **[maintainer]** `prepare`, reads the freeze record.
