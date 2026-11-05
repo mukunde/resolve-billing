@@ -551,6 +551,10 @@ python -m dotenv run -- python -m evals.reference_run run --freeze HASH --privat
 python -m evals.reference_run rebuild --private DIR
 ```
 
+Add `--export PATH.json` to `run` or `rebuild` to write the totals, and only them, to a file
+outside the private folder, for example in `evals/results/`: an allowlist, bound to the freeze
+record's hash, the commit and the run. Committing it is the maintainer's decision.
+
 `prepare` copies the cases and every fixture, writes `freeze.json`, prints its hash and the
 estimated admission budget, and sends nothing. Read the record, then `run` with its hash and
 type `RUN ONCE`: the authorisation is spent before the first send, whatever happens after. A

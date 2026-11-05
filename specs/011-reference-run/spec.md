@@ -180,6 +180,12 @@ incomplete run never reports a score over the full set.
   threshold MUST be recorded in the freeze record, or none applies.
 - **FR-011**: A summary of totals only MAY be committed, by the maintainer's decision, with the
   freeze record's hashes. Nothing case-level is committed.
+- **FR-011a** (amendment, 2026-11-05): `run` and `rebuild` MAY export the totals to a `.json`
+  file the maintainer names, outside the private folder, through no link, written whole, so
+  that nobody copies them by hand. The export is an allowlist: the counts, completion, a stop
+  from a closed set of categories, answering models that read as model ids, spend by known
+  provider, the threshold, bound to the identity, the freeze record's hash, the commit and the
+  run. Any other key or value refuses the export. Committing it stays the maintainer's decision.
 - **FR-012**: ADR-009 MUST authorise OpenAI and Anthropic on the holdout's masked payload, for
   this run, on the maintainer's attestation. ADR-013 MUST record the attestation, its date and
   its four points.

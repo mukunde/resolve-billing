@@ -32,6 +32,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -830,6 +831,8 @@ def _run_from(args, say, ask, engine_factory, private, stored, began, run_id, pe
     totals = compute_totals(private)
     write_whole(run_dir / "totals.json", totals, private)
     report(totals, say)
+    if args.export:
+        export(totals, private, Path(args.export), say)
     return 0 if totals["complete"] else 3
 
 
@@ -957,7 +960,118 @@ def rebuild(args, say) -> int:
     totals = compute_totals(private)
     write_whole(the_run(private) / "totals.json", totals, private)
     report(totals, say)
+    if args.export:
+        export(totals, private, Path(args.export), say)
     return 0 if totals["complete"] else 3
+
+
+#: What may leave the private folder: these keys, with these types, and
+#: nothing else (spec 011, FR-011a).
+_COUNTS = (
+    "cases_total",
+    "cases_run",
+    "cases_not_run",
+    "rules_only",
+    "fully_correct",
+    "unsafe",
+    "sent_to_a_person",
+    "of_which_outage",
+    "of_which_identity_failure",
+    "luna_failed_haiku_answered",
+    "both_failed",
+    "invalid_answers",
+    "unfinished_attempts",
+)
+_PROVIDERS = frozenset({"openai", "anthropic"})
+_STOPS = re.compile(
+    r"RunStopped|LedgerRefused|EngineRejected|EngineRefused|interrupted"
+    r"|internal error \([A-Za-z_][A-Za-z0-9_]*\)|the run never ended on record"
+)
+
+
+def export_payload(totals: dict, private: Path) -> dict:
+    """The totals as they may leave: an allowlist, each value checked, bound to
+    the freeze record and the run. Anything else refuses the export."""
+    from app.decision.hosted import MODEL_ID
+
+    def count(value) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    if not all(count(totals.get(key)) for key in _COUNTS):
+        raise Refused("a total is not a count")
+    if not isinstance(totals.get("complete"), bool):
+        raise Refused("completion is not a flag")
+    stop = totals.get("stop")
+    if not (stop is None or (isinstance(stop, str) and _STOPS.fullmatch(stop))):
+        raise Refused("the stop is not a known category")
+    answered = totals.get("answered_by")
+    if not isinstance(answered, dict) or not all(
+        isinstance(model, str) and MODEL_ID.fullmatch(model) and count(n)
+        for model, n in answered.items()
+    ):
+        raise Refused("an answering model is not a model id")
+    spend = totals.get("spend")
+    if not isinstance(spend, dict) or not all(
+        provider in _PROVIDERS
+        and isinstance(entry, dict)
+        and set(entry) == {"settled_usd", "unknown_attempts"}
+        and isinstance(entry["settled_usd"], int | float)
+        and not isinstance(entry["settled_usd"], bool)
+        and entry["settled_usd"] >= 0
+        and count(entry["unknown_attempts"])
+        for provider, entry in spend.items()
+    ):
+        raise Refused("a spend is not a known provider's amount")
+    threshold = totals.get("threshold")
+    if not (
+        threshold is None
+        or (isinstance(threshold, int | float) and not isinstance(threshold, bool))
+    ):
+        raise Refused("the threshold is not a number")
+    freeze = json.loads((private / "freeze.json").read_text(encoding="utf-8"))
+    return {
+        "identity": IDENTITY,
+        "freeze_hash": freeze_hash(freeze),
+        "commit": freeze["commit"],
+        "run_id": the_run(private).name,
+        "exported_at": datetime.now(UTC).isoformat(),
+        "complete": totals["complete"],
+        "stop": stop,
+        **{key: totals[key] for key in _COUNTS},
+        "answered_by": dict(sorted(answered.items())),
+        "spend": {provider: dict(entry) for provider, entry in sorted(spend.items())},
+        "threshold": threshold,
+    }
+
+
+def export(totals: dict, private: Path, target: Path, say) -> None:
+    """The totals, and nothing else, to a file outside the private folder,
+    written whole: what the maintainer lets the repository and the tuning
+    session read."""
+    payload = export_payload(totals, private)
+    try:
+        parent = target.parent.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise Refused("the export's folder does not exist") from None
+    destination = parent / target.name
+    if _same(parent, private) or any(_same(p, private) for p in parent.parents):
+        raise Refused("the export goes inside the private folder")
+    if destination.is_symlink() or any(p.is_symlink() for p in (target, *target.parents)):
+        raise Refused("the export's path holds a link")
+    if destination.suffix != ".json":
+        raise Refused("the export is a .json file")
+    handle, temporary = tempfile.mkstemp(dir=parent, prefix=f".{destination.name}-")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            json.dump(payload, out, indent=1, sort_keys=False)
+            out.write("\n")
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temporary, destination)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+    say("totals exported")
 
 
 # -- entry -----------------------------------------------------------------------
@@ -974,8 +1088,10 @@ def main(argv: list[str] | None = None, descriptors: bool = True, **hooks) -> in
     go = commands.add_parser("run", add_help=False)
     go.add_argument("--freeze", required=True)
     go.add_argument("--private", required=True)
+    go.add_argument("--export", default=None)
     again = commands.add_parser("rebuild", add_help=False)
     again.add_argument("--private", required=True)
+    again.add_argument("--export", default=None)
     args = parser.parse_args(argv)
 
     try:

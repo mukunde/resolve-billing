@@ -656,3 +656,115 @@ class TestTheRecorderBoundaries:
             path.unlink()
         totals = reference_run.compute_totals(world.private)
         assert totals["unfinished_attempts"] >= 1
+
+
+class TestTheExport:
+    """Totals only, to a file outside the private folder (FR-011a)."""
+
+    def exported(self, world, tmp_path, command="run"):
+        target = tmp_path / "out" / "totals.json"
+        target.parent.mkdir()
+        world.prepare()
+        if command == "run":
+            code = reference_run.main(
+                [
+                    "run",
+                    "--freeze",
+                    world.freeze(),
+                    "--private",
+                    str(world.private),
+                    "--export",
+                    str(target),
+                ],
+                descriptors=False,
+                ask=lambda prompt: "RUN ONCE",
+                engine_factory=world.factory,
+            )
+        else:
+            world.run()
+            code = reference_run.main(
+                ["rebuild", "--private", str(world.private), "--export", str(target)],
+                descriptors=False,
+            )
+        return code, target
+
+    def test_only_the_allowlisted_totals_leave(self, world, tmp_path, capfd):
+        code, target = self.exported(world, tmp_path)
+        assert code == 0
+        text = target.read_text(encoding="utf-8")
+        assert SENTINEL not in text
+        payload = json.loads(text)
+        assert set(payload) == {
+            "identity",
+            "freeze_hash",
+            "commit",
+            "run_id",
+            "exported_at",
+            "complete",
+            "stop",
+            *reference_run._COUNTS,
+            "answered_by",
+            "spend",
+            "threshold",
+        }
+        assert payload["freeze_hash"] == world.freeze()
+        assert payload["run_id"] == world.run_dir().name
+        assert "totals exported" in no_sentinel(capfd)
+
+    def test_rebuild_exports_the_same_totals(self, world, tmp_path):
+        code, target = self.exported(world, tmp_path, command="rebuild")
+        assert code == 0
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        totals = reference_run.compute_totals(world.private)
+        assert all(payload[key] == totals[key] for key in reference_run._COUNTS)
+
+    @pytest.mark.parametrize(
+        "planted",
+        [
+            {"stop": f"{SENTINEL} stopped"},
+            {"answered_by": {f"{SENTINEL} model": 1}},
+            {"spend": {SENTINEL: {"settled_usd": 0.0, "unknown_attempts": 0}}},
+            {"fully_correct": SENTINEL},
+            {"threshold": SENTINEL},
+        ],
+    )
+    def test_anything_else_refuses(self, world, planted):
+        world.prepare()
+        world.run()
+        totals = {**reference_run.compute_totals(world.private), **planted}
+        with pytest.raises(reference_run.Refused):
+            reference_run.export_payload(totals, world.private)
+
+    def test_an_extra_key_never_leaves(self, world):
+        world.prepare()
+        world.run()
+        totals = {**reference_run.compute_totals(world.private), "case_ids": [SENTINEL]}
+        assert "case_ids" not in reference_run.export_payload(totals, world.private)
+
+    def test_inside_the_private_folder_refuses(self, world):
+        world.prepare()
+        world.run()
+        totals = reference_run.compute_totals(world.private)
+        with pytest.raises(reference_run.Refused):
+            reference_run.export(totals, world.private, world.private / "t.json", print)
+
+    def test_not_json_refuses(self, world, tmp_path):
+        world.prepare()
+        world.run()
+        totals = reference_run.compute_totals(world.private)
+        with pytest.raises(reference_run.Refused):
+            reference_run.export(totals, world.private, tmp_path / "t.txt", print)
+
+    def test_through_a_link_refuses(self, world, tmp_path):
+        world.prepare()
+        world.run()
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        try:
+            link.symlink_to(real, target_is_directory=True)
+        except OSError:
+            pytest.skip("links are not allowed here")
+        totals = reference_run.compute_totals(world.private)
+        with pytest.raises(reference_run.Refused):
+            reference_run.export(totals, world.private, link / "t.json", print)
