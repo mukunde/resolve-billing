@@ -60,19 +60,30 @@ Then, deliberately and each with its test:
   the new cases the mock gets right, never lowered;
 - `evals/coverage` tables, regenerated and checked.
 
-Spec 008's campaign is closed; its manifest keeps the old hash, as written. No envelope,
-ledger or state file is touched.
+Spec 008's campaign is closed; its manifest keeps the old hash, as written. Its comparison
+stays reproducible: `evals.compare.development_case_ids()` reads the case ids from the case
+file as it stood at the manifest's commit (`git show <commit>:evals/cases.json`), not from
+today's file, so its complete 34-case results are still admitted and never scored against
+the enlarged set; a test runs it on the stored spec 008 results. No envelope, ledger or
+state file is touched.
 
 ### 2. The engine's recommendation, scored (FR-001a)
 
-`CaseOutcome` gains `recommendation_ok: bool = True`. `_evaluate` sets it to
-`result.recommended_action.value == case["expect_engine_action"]` when the case declares
-one, `True` otherwise; `ok` includes it. A rules-only case declaring it would compare with
-no recommendation and fail: none of the new cases is rules-only. `evals.rescore` and the
-comparison readers accept results written before the field (missing reads as `True`).
+`CaseOutcome` gains `recommendation_ok: bool = True`, and `CHECK_NAMES` gains
+`recommendation`, so the case-by-case baseline holds it too. `_evaluate` sets it, when the
+case declares `expect_engine_action`, to whether the engine's recommendation equals it; no
+recommendation (the engine skipped, or none returned) fails the expectation. A case
+declaring nothing scores `True`, as today; `ok` includes the check. `evals.rescore`
+recomputes it from the stored `got.recommended_action` where the case declares one. The
+readers of stored results (rescore, `evals.compare`, whose checks derive from
+`campaign.OUTCOME_FIELDS`, `evals.variance`, whose list of checks added later gains it, and
+the comparison tool) read a missing field as `True`, so results written before it keep
+their scores.
 
 Tests: a case expecting `escalate` fails on `unknown` + `propose_credit_note` although its
-system action is `none` (the counterexample); a case declaring nothing scores as today.
+system action is `none` (the counterexample); no recommendation fails it; a case declaring
+nothing scores as today; the baseline records and compares the new check; rescore
+recomputes it.
 
 ### 3. The prompt, selectable (FR-004, FR-005)
 
@@ -90,8 +101,11 @@ system action is `none` (the counterexample); a case declaring nothing scores as
 - `HostedEngine` reads `prompt_text(config.prompt)`; the Anthropic-hosted engine inherits
   it; `ClaudeEngine` takes `prompt=DEFAULT_PROMPT`. A test holds the Claude and
   Anthropic-hosted requests equal under each prompt.
-- `--prompt {decision_v3,decision_v4}`, default `decision_v3`, on `evals.runner` (for the
-  prepaid engines, first calls included) and `evals.service_run`. It builds the engine
+- `--prompt {decision_v3,decision_v4}`, default `decision_v3`, on `evals.runner` and
+  `evals.service_run`. The runner applies it to `claude` (the service's Claude engine,
+  built with that prompt) and to every hosted configuration, prepaid and free-tier, first
+  calls included; the mock reads no prompt, and the runner refuses `--prompt decision_v4`
+  with it rather than ignoring the flag. It builds a hosted engine
   from `dataclasses.replace(configuration(name), prompt=...)`; the composite's version
   string and the result's `prompt_version`, `engine_version` and
   `configuration_fingerprint` follow it. `evals.reference_run` keeps v3, as frozen.
@@ -100,9 +114,18 @@ system action is `none` (the counterexample); a case declaring nothing scores as
 
 ### 4. The comparison tool (FR-007), before any paid run
 
-`evals/prompt_compare.py`: given the twelve result files, it refuses unless each is a
-complete service run, all on one commit and one case-set hash, three per (leg, prompt),
-each naming its prompt. Per leg it reports:
+`evals/prompt_compare.py`: given the twelve result files, it refuses unless:
+
+- each is a complete service run (`run_kind`, `complete`, no stop, nothing not attempted),
+  on one commit with a clean tree, one case-set hash, one masking version and one schema;
+- each file is a distinct run (distinct `ran_at` and file, no two with the same attempts);
+- each holds exactly the development set's case ids, each once;
+- per leg and prompt there are three, and each names its prompt, its engine, its bounds and
+  its configuration fingerprint, the fingerprint being the one that leg and prompt produce
+  on that commit (Luna alone with spec 009's bounds; the composite with Luna's leg disabled
+  and spec 010's secondary bounds).
+
+Counter-tests, written before the paid runs, cover each refusal. Per leg it reports:
 
 - unsafe actions, per run;
 - each new case's classification, recommendation and system action, per v4 run;
