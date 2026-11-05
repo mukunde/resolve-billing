@@ -147,7 +147,8 @@ prompt version, commit and case-set hash; a report applies the declared rule to 
   cost are shown to the maintainer before any paid call.
 - **FR-007**: The adoption rule, per leg, fixed before the runs:
   - 0 unsafe actions on every run;
-  - every new case meets its classification and action on every v4 run;
+  - every new case meets its classification, the engine's recommendation and the system's
+    action on every v4 run;
   - on the 34 existing cases, every outcome that differs between v3 and v4 (classification,
     action, approval, automatic reply) is listed case by case; a case v3 got right on all its
     runs and v4 got wrong on any run is a regression, which goes to the maintainer; v4 is not
@@ -174,8 +175,8 @@ prompt version, commit and case-set hash; a report applies the declared rule to 
 - **SC-001**: Every new case produces its declared findings under the mock; the 34 existing
   cases keep their recorded outcomes.
 - **SC-002**: Twelve complete runs, or the maintainer's decision on any incomplete one.
-- **SC-003**: Under v4, every new case meets its classification and action on every run of
-  each leg, with no unsafe action.
+- **SC-003**: Under v4, every new case meets its classification, the engine's recommendation
+  and the system's action on every run of each leg, with no unsafe action.
 - **SC-004**: The report lists every changed outcome on the 34 existing cases, and the
   maintainer's decision closes the slice: v4 adopted on both legs, or the service stays on v3.
 
