@@ -295,7 +295,7 @@ or the invoice reference. That service, its audit file and Jaeger are gone: this
 paragraph is the record of that check, not a file to inspect.
 
 Nothing here reaches OpenAI's terms for real data, and nothing here is the
-holdout reference run: ADR-013 lists what that run waits for.
+holdout reference run, made later and reported below.
 
 ## The composite with Luna's leg disabled (spec 010)
 
@@ -351,7 +351,8 @@ customer data beyond the synthetic fixtures in `fixtures/`, and no credentials.
 `holdout-reference-totals.json` is the one reference run of the frozen holdout,
 made by the maintainer on 2026-11-05 at commit `fc378e5`, through
 `evals/reference_run.py --export`. Unlike every other file here it holds totals
-only: no case, no row, no message. The cases, the per-case records and the
-ledger stay in the maintainer's private folder. The file is bound to the freeze
+only: no case, no row, no message. The cases and the per-case records stay in the
+maintainer's private folder; the prepaid ledgers stay in the maintainer's home
+folder (`~/.resolve-billing/`). The file is bound to the freeze
 record's hash and the run's id, and it is committed as exported, byte for byte.
 The root README reads it.

@@ -188,8 +188,10 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
 ## Not guaranteed today
 
 - That a development score predicts behaviour on unseen disputes.
-- A blind figure: none is published until the frozen holdout's reference
-  run.
+- That the blind figure establishes deployment quality: the frozen holdout's one
+  reference run (2026-11-05, totals only, in
+  `evals/results/holdout-reference-totals.json`) is a descriptive reference on 20
+  cases, read as ADR-013 declared before it.
 - Calibration: the sets are too small to calibrate a confidence.
 - That a free-tier figure is comparable to Claude's beyond the development
   set, or that its estimated cost is what the account was billed: the
