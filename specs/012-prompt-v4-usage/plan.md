@@ -1,113 +1,158 @@
-# Implementation Plan: [FEATURE]
+# Implementation Plan: Prompt v4, the engine's half of the usage gap
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-
-**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
-
-**Note**: This template is filled in by the `/speckit-plan` command; its definition describes the execution workflow.
+**Branch**: `012-prompt-v4-usage` | **Date**: 2026-11-05 | **Spec**: [spec.md](spec.md), approved by the maintainer at `8dffc7c`
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+Seven development cases on usage, a runner check on the engine's own recommendation, a
+prompt `decision_v4` selectable per run, a comparison tool that applies the declared rule,
+then twelve paid runs, approved before they start. The service's default prompt stays v3
+until the maintainer adopts v4. Like specs 008 to 011, this plan is one file.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
-
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
-
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
-
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
-
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
-
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
-
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
-
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
-
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+Python 3.12 (CI), 3.13 locally. No new dependency. Cases and fixtures are the existing JSON
+files; results are the existing service-run JSON. CI makes no paid call. The paid runs use
+the existing prepaid envelopes, ledgers, account locks and first-call records under
+`~/.resolve-billing/`, none of them reset.
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+| Principle | How this plan meets it |
+|---|---|
+| I, II, V | No rule or policy changes; step 4c stays as merged. The prompt widens nothing a model may set off: it asks for more escalation, never less. |
+| VII | The payload, masking and schema are unchanged; only the system prompt's text differs. |
+| VIII | New cases make the instruction measurable; the rule is fixed and tested before the runs; every run is stored. |
+| IX | Development cases only. This session never read the holdout; its result is not read for v4, and it is not rerun. |
+| Sensitive | The evaluation gates change (new check, new cases, new floor): final-diff approval. Adopting v4 changes what the service sends: the maintainer's decision, in the results' pull request. |
 
-[Gates determined based on constitution file]
+## Design
 
-## Project Structure
+### 1. The cases (FR-001, FR-002, FR-003)
 
-### Documentation (this feature)
+Seven cases appended to `evals/cases.json`, in the table's order, each with `why`,
+`covers` and `label_source: "maintainer, 2026-11-05"`. Each has its own customer,
+subscription, metered invoice and usage record in `fixtures/`, so that no existing case's
+world moves:
 
-```text
-specs/[###-feature]/
-├── plan.md              # This file (/speckit-plan command output)
-├── research.md          # Phase 0 output (/speckit-plan command)
-├── data-model.md        # Phase 1 output (/speckit-plan command)
-├── quickstart.md        # Phase 1 output (/speckit-plan command)
-├── contracts/           # Phase 1 output (/speckit-plan command)
-└── tasks.md             # Phase 2 output (/speckit-tasks command - NOT created by /speckit-plan)
-```
+- three disputed over-billings (French, English, terse), the same world shape, usage
+  measured well below the billed quantity;
+- the control: the French dispute's wording, a world whose usage matches the bill;
+- an over-billing with a message about the collection date;
+- an under-billing: usage measured above the billed quantity, a message asking what the
+  invoice covers;
+- a metered line whose usage record covers another period, the usage disputed.
 
-### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
+They declare `expect_classification`, `expect_engine_action` (new, section 2),
+`expect_action`, `expect_human_approval`, `expect_automatic_reply` and `expect_findings`,
+as the spec's table says. A unit test runs the under-billing case through the
+investigation and asserts that no usage finding reaches the engine or the result, and that
+the `usage_under_billed` event is in the trace (FR-002).
 
-```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
+Then, deliberately and each with its test:
 
-tests/
-├── contract/
-├── integration/
-└── unit/
+- `evals.engines.DEVELOPMENT_SET_SHA256`, the new file's hash;
+- `evals.engines.ENGINE_CASES`, counted from the mock run (every new case is expected to
+  reach the engine: 27), the test that counts them updated;
+- `evals/baselines/mock.json`, regenerated; the 34 existing cases keep their checks, case
+  by case, and the diff shows it;
+- the CI floor (`--min-fully-correct` in the workflow and `docs/operations.md`), raised by
+  the new cases the mock gets right, never lowered;
+- `evals/coverage` tables, regenerated and checked.
 
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
+Spec 008's campaign is closed; its manifest keeps the old hash, as written. No envelope,
+ledger or state file is touched.
 
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
+### 2. The engine's recommendation, scored (FR-001a)
 
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
+`CaseOutcome` gains `recommendation_ok: bool = True`. `_evaluate` sets it to
+`result.recommended_action.value == case["expect_engine_action"]` when the case declares
+one, `True` otherwise; `ok` includes it. A rules-only case declaring it would compare with
+no recommendation and fail: none of the new cases is rules-only. `evals.rescore` and the
+comparison readers accept results written before the field (missing reads as `True`).
 
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
-```
+Tests: a case expecting `escalate` fails on `unknown` + `propose_credit_note` although its
+system action is `none` (the counterexample); a case declaring nothing scores as today.
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+### 3. The prompt, selectable (FR-004, FR-005)
 
-## Complexity Tracking
+- `app/decision/prompts/decision_v4.md`: `decision_v3.md` with one section, "Usage", added
+  after "The deterministic findings come first", carrying FR-004's four sentences. A test
+  holds the two files equal but for that section.
+- `app/decision/prompts.py` (new): `PROMPTS = {"decision_v3": path, "decision_v4": path}`
+  and `DEFAULT_PROMPT = "decision_v3"`; `prompt_text(version)` refuses an unknown one.
+  `claude.PROMPT_VERSION` and `PROMPT_PATH` become the default's, so every importer keeps
+  reading the service's prompt.
+- `Configuration` gains `prompt: str = DEFAULT_PROMPT`; `prompt_version` returns
+  `f"{name}/{prompt}"`. `first_calls.ADDED_SINCE_SPEC_004` lists `"prompt": "decision_v3"`,
+  so every v3 fingerprint stays the one its first call was accepted on: a test pins the
+  current fingerprints of Luna and Haiku before and after.
+- `HostedEngine` reads `prompt_text(config.prompt)`; the Anthropic-hosted engine inherits
+  it; `ClaudeEngine` takes `prompt=DEFAULT_PROMPT`. A test holds the Claude and
+  Anthropic-hosted requests equal under each prompt.
+- `--prompt {decision_v3,decision_v4}`, default `decision_v3`, on `evals.runner` (for the
+  prepaid engines, first calls included) and `evals.service_run`. It builds the engine
+  from `dataclasses.replace(configuration(name), prompt=...)`; the composite's version
+  string and the result's `prompt_version`, `engine_version` and
+  `configuration_fingerprint` follow it. `evals.reference_run` keeps v3, as frozen.
+- The service (`app/api/deps.py`) reads `DEFAULT_PROMPT` and nothing else: no environment
+  variable chooses a prompt in the service.
 
-> **Fill ONLY if Constitution Check has violations that must be justified**
+### 4. The comparison tool (FR-007), before any paid run
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+`evals/prompt_compare.py`: given the twelve result files, it refuses unless each is a
+complete service run, all on one commit and one case-set hash, three per (leg, prompt),
+each naming its prompt. Per leg it reports:
+
+- unsafe actions, per run;
+- each new case's classification, recommendation and system action, per v4 run;
+- on the 34 existing cases, every case whose outcome (classification, recommendation,
+  action, approval, automatic reply) differs between any v3 run and any v4 run, listed;
+  a regression is a case all three v3 runs got fully right and any v4 run did not;
+- a verdict: `adopt`, `do not adopt` (an unsafe action, or a new case missed), or
+  `regression: the maintainer decides`, with the regressions named;
+- the sentence: three runs show variance, they do not establish non-degradation.
+
+Tested on synthetic result files for each verdict, for an incomplete run, a mixed commit
+and a missing prompt. It writes a Markdown report next to the results.
+
+### 5. The runs (FR-006), on the maintainer's approval
+
+On the commit that holds sections 1 to 4, with a clean tree, in this order:
+
+1. Luna v3, three service runs; Haiku v3 (`--primary-disabled`), three runs. Both
+   configurations' v3 first calls are already accepted, and their fingerprints do not move.
+2. A v4 first call for each: `evals.runner --engine gpt-6-luna --prompt decision_v4
+   --first-call-only`, and the same for `claude-haiku-5-5`. First calls are recorded by
+   configuration name, so this replaces the v3 acceptance; no state is reset.
+3. Luna v4, three runs; Haiku v4, three runs.
+4. `python -m evals.prompt_compare` on the twelve files.
+
+Before step 1, the exact commands and the estimated cost, from the last runs' settled
+costs per case, are shown to the maintainer, and nothing runs without his yes. A run that
+stops is kept and does not count; a replacement waits for his approval. After the
+measurement, a v3 run needs a new v3 first call, by the same procedure.
+
+### 6. Contracts, taxonomy, adoption (FR-008, FR-009)
+
+- `docs/contract/evaluation.md`: the recommendation check; the case count; `--prompt`.
+- `docs/contract/decision-engine.md`: the prompt is selectable per run, the service on the
+  default; `decision_v4` exists, measured, adopted or not.
+- `evals/taxonomy.md` S1: the instruction built and measured; the maintainer's widening
+  (Q1, 2026-11-05).
+- If adopted: `DEFAULT_PROMPT` moves to v4 in the results' pull request, with ADR-013 noting
+  that the holdout's reference measured v3, and the README's figures updated. If not: the
+  default stays, and the results and report are committed as they are.
+
+## Delivery
+
+Two pull requests: the first holds sections 1 to 4 and the contract changes that do not
+depend on the result, with no paid call; the second holds the twelve results, the report,
+and the adoption or not, after the maintainer's decision.
+
+## Gates
+
+`ruff check .`, `python -m pytest`, `python -m evals.runner --engine mock
+--min-fully-correct <new floor> --baseline evals/baselines/mock.json`,
+`python -m evals.coverage --check`. Codex reviews every diff; the maintainer approves the
+final SHA of each pull request.
