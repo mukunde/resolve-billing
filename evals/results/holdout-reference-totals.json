@@ -1,0 +1,32 @@
+{
+ "identity": "holdout-2026-10-22",
+ "freeze_hash": "9795d00890b12dbe9f974c8d8b84c77da64641a106d8ac4b38afc6d2ca34e762",
+ "commit": "fc378e5c29e21c5be1fa9a91f0f6ab0cfcb4899d",
+ "run_id": "reference-20261105T191845.238683Z",
+ "exported_at": "2026-11-05T19:19:57.816876+00:00",
+ "complete": true,
+ "stop": null,
+ "cases_total": 20,
+ "cases_run": 20,
+ "cases_not_run": 0,
+ "rules_only": 5,
+ "fully_correct": 15,
+ "unsafe": 0,
+ "sent_to_a_person": 14,
+ "of_which_outage": 0,
+ "of_which_identity_failure": 0,
+ "luna_failed_haiku_answered": 0,
+ "both_failed": 0,
+ "invalid_answers": 0,
+ "unfinished_attempts": 0,
+ "answered_by": {
+  "gpt-6-luna": 15
+ },
+ "spend": {
+  "openai": {
+   "settled_usd": 0.003662,
+   "unknown_attempts": 0
+  }
+ },
+ "threshold": null
+}

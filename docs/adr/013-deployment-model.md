@@ -128,6 +128,15 @@ and one unsafe action, by a hole in the action policy that
 `.specify/bugs/uncertain-human-review/` closes. The maintainer keeps the composite, and
 the reference run waits for that fix and one measurement on the corrected commit.
 
+**Made, 2026-11-05.** The three conditions above, the fix and the measurement on the
+corrected commit (30/34) were met first. The maintainer then made the reference run once,
+at commit `fc378e5`, and exported its totals only
+([`evals/results/holdout-reference-totals.json`](../../evals/results/holdout-reference-totals.json)):
+20 cases run, complete, 15 fully correct, no unsafe action, 14 sent to a person, every
+engine answer from `gpt-6-luna`, no fallback, outage or invalid answer, no threshold in the
+freeze record. Read as declared above; with no unsafe action, nothing pauses the adoption.
+The paragraphs above stay as the record of what the run waited for.
+
 Spec 008's outcome does not change. Its rules were frozen before the runs, and
 `qwen3.6-35b-a3b`'s removal stands, although this fix would have stopped the reply that
 removed it.
