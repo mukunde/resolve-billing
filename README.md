@@ -264,8 +264,9 @@ on development cases, stored and listed apart
 the engine, every label adjudicated by hand, never run in CI and never tuned
 against. The first one lived in this repository, where every session working
 on the system could read it; it has joined the development set. Its
-replacement was written and adjudicated in a separate private repository, with
-its own data, and frozen on 22 October 2026. It has not been run: until its
+replacement was written in an isolated environment, adjudicated by hand and
+frozen on 22 October 2026; it is kept in a separate private repository, with
+its own data. It has not been run: until its
 reference run has been made, once, and its result reported, there is no blind
 measurement.
 
