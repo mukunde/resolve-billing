@@ -820,8 +820,9 @@ def _run_from(args, say, ask, engine_factory, private, stored, began, run_id, pe
             status = {"state": "incomplete", "reason": type(stop).__name__}
         except (KeyboardInterrupt, asyncio.CancelledError):
             status = {"state": "incomplete", "reason": "interrupted"}
-        except Exception as defect:
-            status = {"state": "incomplete", "reason": f"internal error ({type(defect).__name__})"}
+        except Exception:
+            # The defect's type goes to the private log with its traceback.
+            status = {"state": "incomplete", "reason": "internal error"}
             traceback.print_exc()
         write_whole(
             run_dir / "status.json",
@@ -983,16 +984,40 @@ _COUNTS = (
     "unfinished_attempts",
 )
 _PROVIDERS = frozenset({"openai", "anthropic"})
-_STOPS = re.compile(
-    r"RunStopped|LedgerRefused|EngineRejected|EngineRefused|interrupted"
-    r"|internal error \([A-Za-z_][A-Za-z0-9_]*\)|the run never ended on record"
+#: The stop categories, closed: nothing else is exported.
+_STOPS = frozenset(
+    {
+        "RunStopped",
+        "LedgerRefused",
+        "EngineRejected",
+        "EngineRefused",
+        "interrupted",
+        "internal error",
+        "the run never ended on record",
+    }
 )
+_COMMIT = re.compile(r"[0-9a-f]{6,40}")
+_RUN_ID = re.compile(r"reference-\d{8}T\d{6}\.\d{6}Z")
+
+
+def _answering_models() -> frozenset[str]:
+    """The only identities the composite accepts: its two configurations'."""
+    from app.decision.hosted import configuration
+
+    return frozenset(
+        (configuration(name).returned_model or configuration(name).model) for name in CONFIGURATIONS
+    )
+
+
+def _finite(value) -> bool:
+    import math
+
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def export_payload(totals: dict, private: Path) -> dict:
     """The totals as they may leave: an allowlist, each value checked, bound to
     the freeze record and the run. Anything else refuses the export."""
-    from app.decision.hosted import MODEL_ID
 
     def count(value) -> bool:
         return isinstance(value, int) and not isinstance(value, bool) and value >= 0
@@ -1002,38 +1027,50 @@ def export_payload(totals: dict, private: Path) -> dict:
     if not isinstance(totals.get("complete"), bool):
         raise Refused("completion is not a flag")
     stop = totals.get("stop")
-    if not (stop is None or (isinstance(stop, str) and _STOPS.fullmatch(stop))):
+    if not (stop is None or stop in _STOPS):
         raise Refused("the stop is not a known category")
     answered = totals.get("answered_by")
+    models = _answering_models()
     if not isinstance(answered, dict) or not all(
-        isinstance(model, str) and MODEL_ID.fullmatch(model) and count(n)
-        for model, n in answered.items()
+        model in models and count(n) for model, n in answered.items()
     ):
-        raise Refused("an answering model is not a model id")
+        raise Refused("an answering model is not one of the composite's")
     spend = totals.get("spend")
     if not isinstance(spend, dict) or not all(
         provider in _PROVIDERS
         and isinstance(entry, dict)
         and set(entry) == {"settled_usd", "unknown_attempts"}
-        and isinstance(entry["settled_usd"], int | float)
-        and not isinstance(entry["settled_usd"], bool)
+        and _finite(entry["settled_usd"])
         and entry["settled_usd"] >= 0
         and count(entry["unknown_attempts"])
         for provider, entry in spend.items()
     ):
         raise Refused("a spend is not a known provider's amount")
     threshold = totals.get("threshold")
-    if not (
-        threshold is None
-        or (isinstance(threshold, int | float) and not isinstance(threshold, bool))
-    ):
+    if not (threshold is None or _finite(threshold)):
         raise Refused("the threshold is not a number")
     freeze = json.loads((private / "freeze.json").read_text(encoding="utf-8"))
+    digest = freeze_hash(freeze)
+    run_id = the_run(private).name
+    held = read_state()
+    # The totals leave bound to what was consumed: the freeze record and the run
+    # the state names, not whatever the folder holds now.
+    if (
+        held is None
+        or held.get("state") != "consumed"
+        or held.get("freeze_hash") != digest
+        or held.get("run_id") != run_id
+    ):
+        raise Refused("the export does not match the consumed reference run")
+    if not (isinstance(freeze.get("commit"), str) and _COMMIT.fullmatch(freeze["commit"])):
+        raise Refused("the frozen commit is not a commit")
+    if not _RUN_ID.fullmatch(run_id):
+        raise Refused("the run is not a reference run")
     return {
         "identity": IDENTITY,
-        "freeze_hash": freeze_hash(freeze),
+        "freeze_hash": digest,
         "commit": freeze["commit"],
-        "run_id": the_run(private).name,
+        "run_id": run_id,
         "exported_at": datetime.now(UTC).isoformat(),
         "complete": totals["complete"],
         "stop": stop,
@@ -1063,7 +1100,7 @@ def export(totals: dict, private: Path, target: Path, say) -> None:
     handle, temporary = tempfile.mkstemp(dir=parent, prefix=f".{destination.name}-")
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as out:
-            json.dump(payload, out, indent=1, sort_keys=False)
+            json.dump(payload, out, indent=1, allow_nan=False)
             out.write("\n")
             out.flush()
             os.fsync(out.fileno())

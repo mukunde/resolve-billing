@@ -726,6 +726,10 @@ class TestTheExport:
             {"spend": {SENTINEL: {"settled_usd": 0.0, "unknown_attempts": 0}}},
             {"fully_correct": SENTINEL},
             {"threshold": SENTINEL},
+            {"stop": "internal error (private_case_id)"},
+            {"answered_by": {"private_case_id": 1}},
+            {"threshold": float("nan")},
+            {"spend": {"openai": {"settled_usd": float("inf"), "unknown_attempts": 0}}},
         ],
     )
     def test_anything_else_refuses(self, world, planted):
@@ -768,3 +772,38 @@ class TestTheExport:
         totals = reference_run.compute_totals(world.private)
         with pytest.raises(reference_run.Refused):
             reference_run.export(totals, world.private, link / "t.json", print)
+
+
+class TestTheExportBinding:
+    def test_an_edited_freeze_record_refuses(self, world):
+        world.prepare()
+        world.run()
+        path = world.private / "freeze.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record["threshold"] = 99
+        path.write_text(json.dumps(record), encoding="utf-8")
+        totals = reference_run.compute_totals(world.private)
+        with pytest.raises(reference_run.Refused):
+            reference_run.export_payload(totals, world.private)
+
+    def test_a_defect_exports_a_category_only(self, world, tmp_path):
+        world.prepare()
+        world.luna_script = [RuntimeError(SENTINEL)]
+        target = tmp_path / "out.json"
+        reference_run.main(
+            [
+                "run",
+                "--freeze",
+                world.freeze(),
+                "--private",
+                str(world.private),
+                "--export",
+                str(target),
+            ],
+            descriptors=False,
+            ask=lambda prompt: "RUN ONCE",
+            engine_factory=world.factory,
+        )
+        payload = json.loads(target.read_text(encoding="utf-8"))
+        assert payload["stop"] == "internal error"
+        assert SENTINEL not in target.read_text(encoding="utf-8")

@@ -178,6 +178,12 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
   `evals/reference_run.py` (spec 011): every input copied and frozen before any send, the
   authorisation spent before the first one, every case-level output in his private folder,
   and only totals on the console. The development guards stay as they are.
+  `--export PATH.json` on `run` or `rebuild` writes the totals, whole, to a file outside the
+  private folder: counts, completion, a stop from a closed set, the composite's two model
+  identities, spend by known provider, the threshold, all finite, bound to the consumed
+  freeze record's hash, its commit and the run the one-shot state names. Any other key,
+  value, path inside the private folder, link, or a freeze record or run that does not match
+  the consumed state refuses the export.
 
 ## Not guaranteed today
 
