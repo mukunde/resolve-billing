@@ -22,6 +22,12 @@ approvals bound to what was shown, writes on a real platform) and ADR-009
   `USAGE_UNAVAILABLE` among the findings, the verdict is human review, whatever
   the engine classified or asked, so no automatic reply leaves either
   (`.specify/bugs/uncertain-human-review/`).
+- **Usage billed above what was measured goes to a person.** With a
+  `SUSPICIOUS_USAGE_DELTA` finding that is not an under-billing, the verdict is
+  human review, whatever the engine classified or asked, so no automatic reply
+  leaves and no amount is proposed (taxonomy S1;
+  `.specify/bugs/usage-overbilling-review/`). Under-billing never reaches the
+  policy: it is an audit note.
 - **One action per correction.** An action is queued with an idempotency key
   derived from what it is -- platform, invoice, type, amount and currency --
   so the same proposal queued twice is one action, and the key is the one

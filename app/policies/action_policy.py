@@ -215,6 +215,21 @@ class ActionPolicy:
                 reason=f"Un contrôle n'a pas pu conclure : {uncertain.code.value}.",
             )
 
+        # 4c. Usage billed above what was measured is a possible error in the
+        #     customer's favour that no code can price yet (taxonomy S1, S5): a
+        #     person looks, whatever the engine answers. No prompt asks for an
+        #     escalation yet, and when one does, this still holds for a model
+        #     that asks or explains instead. Under-billing is the business's
+        #     loss and never triggers it.
+        if any(
+            f.code is RuleCode.SUSPICIOUS_USAGE_DELTA and f.evidence.get("direction") != "under"
+            for f in findings
+        ):
+            return ActionAuthorization(
+                verdict=Verdict.HUMAN_REVIEW,
+                reason="L'usage facturé dépasse nettement l'usage mesuré : une personne examine.",
+            )
+
         # 5. Everything else is a reply or a question: no money moves, and the
         #    draft is reviewed before it is sent anyway.
         return ActionAuthorization(

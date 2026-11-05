@@ -444,7 +444,7 @@ on a question before its decision is built.
 
 | | Decision | Built |
 |---|---|---|
-| S1 | A disputed usage gap with the finding present → `unknown` + escalate; no money founded on it before S5's amounts; under-billing → audit note only. A dedicated classification comes with partial amounts | in part: no money on it, "valid invoice" against an over-billing goes to a person, under-billing is an audit note; the prompt instruction waits for a measured prompt version |
+| S1 | A disputed usage gap with the finding present → `unknown` + escalate; no money founded on it before S5's amounts; under-billing → audit note only. A dedicated classification comes with partial amounts | in part: no money on it, an over-billing goes to a person whatever the engine answers (`.specify/bugs/usage-overbilling-review/`), under-billing is an audit note; the prompt instruction waits for a measured prompt version |
 | S2 | Narrow exemption: "ignore my previous message" (the customer's own message) is not flagged; instructions, rules and prompts still are; the exemption covers that phrase only | yes |
 | S3 | Count corrections, not findings: distinct corrections on one invoice → human review, no amount | yes |
 | S4 | A refund needs a single settled payment covering it; draft, uncollectible and void invoices get no correction; no rule on paused, trialing, past-due subscriptions | yes |
