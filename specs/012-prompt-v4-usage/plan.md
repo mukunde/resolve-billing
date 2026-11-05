@@ -1,6 +1,6 @@
 # Implementation Plan: Prompt v4, the engine's half of the usage gap
 
-**Branch**: `012-prompt-v4-usage` | **Date**: 2026-11-05 | **Spec**: [spec.md](spec.md), approved by the maintainer at `8dffc7c`
+**Branch**: `012-prompt-v4-usage` | **Date**: 2026-11-05 | **Spec**: [spec.md](spec.md), approved by the maintainer at `8dffc7c` | **Plan**: approved by the maintainer on 2026-11-05, at `d2b86f4`
 
 ## Summary
 
