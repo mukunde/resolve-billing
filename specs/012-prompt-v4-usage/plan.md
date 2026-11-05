@@ -109,6 +109,10 @@ recomputes it.
   from `dataclasses.replace(configuration(name), prompt=...)`; the composite's version
   string and the result's `prompt_version`, `engine_version` and
   `configuration_fingerprint` follow it. `evals.reference_run` keeps v3, as frozen.
+- `FirstCalls.admit_full_run(config)` builds the configurations sharing a limit with
+  `config` from `CONFIGURATIONS`; it builds them with `config.prompt` instead, so that two
+  siblings accepted under v4 admit each other's full runs. A test accepts and admits both
+  Mistral siblings under v4, and keeps v3's behaviour as it is.
 - The service (`app/api/deps.py`) reads `DEFAULT_PROMPT` and nothing else: no environment
   variable chooses a prompt in the service.
 
