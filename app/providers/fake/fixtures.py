@@ -38,11 +38,14 @@ from app.domain.models import (
     Customer,
     Invoice,
     InvoiceLine,
+    LineTax,
     Payment,
     Subscription,
     Usage,
 )
 from app.domain.money import Money
+from app.providers.base import ProviderUnsupported
+from app.providers.tax import reconcile, untaxed_unless_charged
 
 FIXTURES_DIR = Path(__file__).resolve().parents[3] / "fixtures"
 
@@ -161,19 +164,36 @@ def _line(raw: dict[str, Any], currency: str) -> InvoiceLine:
         period_start=_at(raw.get("period_start")),
         period_end=_at(raw.get("period_end")),
         metric=raw.get("metric"),
+        # Optional (specs/013-invoice-tax): the tax posted on the line, in the
+        # fixtures' own vocabulary -- decimal strings in major units.
+        taxes=tuple(
+            LineTax(
+                amount=_money(tax, "amount", currency),
+                rate=Decimal(tax["rate"]),
+                reason=tax.get("reason"),
+            )
+            for tax in raw.get("taxes", [])
+        ),
     )
 
 
 def _invoice(raw: dict[str, Any]) -> Invoice:
+    """An invoice, its tax reconciled (FR-002). The fake holds only data the
+    domain represents: a shape it refuses fails the load, loudly."""
     currency = raw["currency"]
+    if raw.get("prices_include_tax"):
+        raise ProviderUnsupported("tax_inclusive")
+    total = _money(raw, "amount", currency)
+    lines = untaxed_unless_charged([_line(line, currency) for line in raw.get("lines", [])])
+    reconcile(lines, total)
     return Invoice(
         id=raw["id"],
         customer_id=raw["customer_id"],
         subscription_id=raw.get("subscription_id"),
-        total=_money(raw, "amount", currency),
+        total=total,
         status=InvoiceStatus(raw["state"]),
         issued_at=_at(raw["issued_at"]),
-        lines=[_line(line, currency) for line in raw.get("lines", [])],
+        lines=lines,
     )
 
 
