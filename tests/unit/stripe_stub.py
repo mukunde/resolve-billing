@@ -275,7 +275,16 @@ class Account:
         from tests.unit import stripe_payloads as stripe
 
         invoice = next(i for i in self.invoices if i["id"] == params["invoice"])
-        amount = params["amount"]
+        if "lines" in params:
+            # Line by line, as Stripe reverses each line with its tax (spec 013).
+            by_id = {line["id"]: line for line in invoice["lines"]["data"]}
+            amount = sum(
+                by_id[item["invoice_line_item"]]["amount"]
+                + sum(tax["amount"] for tax in by_id[item["invoice_line_item"]].get("taxes") or ())
+                for item in params["lines"]
+            )
+        else:
+            amount = params["amount"]
         refunded = params.get("refund_amount", 0)
         after_payment = invoice["status"] == "paid"
         return stripe.credit_note(

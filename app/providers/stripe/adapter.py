@@ -275,6 +275,20 @@ class StripeBillingProvider:
                     raise ProviderOutcomeUnknown("invoice_read") from None
                 if allocation not in mapping.allocations(payload):
                     raise ProviderRejected("invoice_state")
+                lines = None
+                if mapping.taxed_payload(payload):
+                    # A taxed invoice is credited line by line, every line
+                    # read to the end (specs/013-invoice-tax, FR-010).
+                    try:
+                        whole = await self.reader.invoice(invoice_id, every_line=True)
+                    except (
+                        ProviderUnavailable,
+                        ProviderConfigurationError,
+                        ProviderUnsupported,
+                        NotFound,
+                    ):
+                        raise ProviderOutcomeUnknown("invoice_read") from None
+                    lines = mapping.credit_lines(whole, amount_minor)
                 if self._now() >= send_by:
                     raise NotSent("window_passed")
                 answer = await self._writer.create_credit_note(
@@ -285,6 +299,7 @@ class StripeBillingProvider:
                         idempotency_key,
                         action_id,
                         action_type,
+                        lines=lines,
                     ),
                     idempotency_key,
                 )

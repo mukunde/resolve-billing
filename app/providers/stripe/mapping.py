@@ -29,7 +29,12 @@ from app.domain.models import (
     Usage,
 )
 from app.domain.money import Money
-from app.providers.base import Allocation, ProviderAction, ProviderUnsupported
+from app.providers.base import (
+    Allocation,
+    ProviderAction,
+    ProviderRejected,
+    ProviderUnsupported,
+)
 from app.providers.tax import reconcile, untaxed_unless_charged
 
 Payload = Mapping[str, Any]
@@ -537,13 +542,19 @@ def credit_note_params(
     idempotency_key: str,
     action_id: str,
     action_type: str,
+    lines: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The one request: a credit note for the whole amount, allocated as
     planned, carrying the action's key, identifier and type and nothing of
-    the case -- no memo, no reason, no mail to the customer (FR-013)."""
+    the case -- no memo, no reason, no mail to the customer (FR-013).
+
+    On a taxed invoice the credit note names the invoice's lines instead of
+    an amount, so that Stripe reverses each line with its tax
+    (specs/013-invoice-tax, FR-010); an untaxed invoice's request is as
+    before, byte for byte."""
     params: dict[str, Any] = {
         "invoice": invoice_id,
-        "amount": amount_minor,
+        **({"lines": lines} if lines is not None else {"amount": amount_minor}),
         "email_type": "none",
         "metadata": {
             KEY_FIELD: idempotency_key,
@@ -557,6 +568,40 @@ def credit_note_params(
     elif allocation == "refund":
         params["refund_amount"] = amount_minor
     return params
+
+
+def taxed_payload(payload: Payload) -> bool:
+    """Whether Stripe posts any tax on the invoice: its per-rate totals cover
+    every line, read or not."""
+    return any(tax["amount"] for tax in payload.get("total_taxes") or ())
+
+
+def credit_lines(payload: Payload, amount_minor: int) -> list[dict[str, Any]]:
+    """Every line of a taxed invoice, whole, as credit note lines -- or
+    `invoice_state` when they do not make the approved amount including tax,
+    or a quantity is not a whole number (a credit note line takes an integer).
+    `payload` holds every line (FR-010)."""
+    lines = []
+    total = 0
+    for line in payload["lines"]["data"]:
+        quantity = line.get("quantity_decimal")
+        if quantity is None:
+            quantity = line.get("quantity")
+        if quantity is None or _decimal(quantity) != _decimal(quantity).to_integral_value():
+            raise ProviderRejected("invoice_state")
+        total += _required(line.get("amount")) + sum(
+            tax["amount"] for tax in line.get("taxes") or ()
+        )
+        lines.append(
+            {
+                "type": "invoice_line_item",
+                "invoice_line_item": _required(line.get("id")),
+                "quantity": int(_decimal(quantity)),
+            }
+        )
+    if total != amount_minor:
+        raise ProviderRejected("invoice_state")
+    return lines
 
 
 def provider_action(credit_note: Payload, observed_at: datetime) -> ProviderAction:

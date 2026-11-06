@@ -511,3 +511,85 @@ class TestTheAllocationBelongsToTheInstrument:
             await send(writer(held), action_type, allocation)
 
         assert sent(held) == []
+
+
+def taxed_invoice(lines: list[dict] | None = None, **changes) -> dict:
+    """Paid, 49.00 + 9.80 of VAT a line unless said otherwise (spec 013)."""
+    data = lines if lines is not None else [stripe.line(taxes=[stripe.tax()])]
+    excluding = sum(line["amount"] for line in data)
+    tax = sum(t["amount"] for line in data for t in line.get("taxes") or ())
+    return stripe.invoice(
+        data,
+        total=excluding + tax,
+        amount_paid=excluding + tax,
+        total_excluding_tax=excluding,
+        total_taxes=[t for line in data for t in line.get("taxes") or ()],
+        **changes,
+    )
+
+
+def taxed_account(invoice: dict) -> stub.Account:
+    held = account(invoice)
+    held.tax_rates = {"txr_RbVat20000001": {"id": "txr_RbVat20000001", "percentage": 20.0}}
+    return held
+
+
+class TestATaxedInvoice:
+    """specs/013-invoice-tax, FR-010: credited line by line, so that Stripe
+    reverses each line with its tax; every line read; the lines make the
+    approved amount including tax, or nothing is sent."""
+
+    async def test_a_credit_note_names_every_line_and_no_amount(self):
+        held = taxed_account(taxed_invoice())
+
+        made = await send(writer(held), "credit_note", "customer_balance", amount=5880)
+
+        (params,) = sent(held)
+        assert "amount" not in params
+        assert params["lines"] == [
+            {"type": "invoice_line_item", "invoice_line_item": "il_RbWorld0000001", "quantity": 1}
+        ]
+        assert params["credit_amount"] == 5880
+        assert made.amount_minor == 5880
+
+    async def test_a_refund_refunds_the_total_including_tax(self):
+        held = taxed_account(taxed_invoice())
+
+        await send(writer(held), "refund", "refund", amount=5880)
+
+        (params,) = sent(held)
+        assert params["refund_amount"] == 5880
+        assert "amount" not in params
+
+    async def test_every_line_is_read_past_the_first_page(self):
+        lines = [stripe.line(id=f"il_{n}", taxes=[stripe.tax()]) for n in range(3)]
+        held = taxed_account(taxed_invoice(lines))
+
+        await send(writer(held), "credit_note", "customer_balance", amount=3 * 5880)
+
+        (params,) = sent(held)
+        assert [item["invoice_line_item"] for item in params["lines"]] == ["il_0", "il_1", "il_2"]
+
+    async def test_lines_that_do_not_make_the_approved_amount_send_nothing(self):
+        held = taxed_account(taxed_invoice())
+
+        with pytest.raises(ProviderRejected, match="invoice_state"):
+            await send(writer(held), "credit_note", "customer_balance", amount=4900)
+        assert sent(held) == []
+
+    async def test_a_fractional_quantity_sends_nothing(self):
+        line = stripe.line(taxes=[stripe.tax()], quantity_decimal="1.5")
+        held = taxed_account(taxed_invoice([line]))
+
+        with pytest.raises(ProviderRejected, match="invoice_state"):
+            await send(writer(held), "credit_note", "customer_balance", amount=5880)
+        assert sent(held) == []
+
+    async def test_an_untaxed_invoice_sends_its_amount_as_before(self):
+        held = account()
+
+        await send(writer(held), "credit_note", "customer_balance")
+
+        (params,) = sent(held)
+        assert params["amount"] == 4900
+        assert "lines" not in params
