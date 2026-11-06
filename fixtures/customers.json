@@ -160,5 +160,11 @@
     "email": "ines@sorbier.fr",
     "currency": "EUR",
     "display_name": "Sorbier SAS"
+  },
+  {
+    "id": "cus_tilleul",
+    "email": "paul@tilleul-conseil.fr",
+    "currency": "EUR",
+    "display_name": "Tilleul Conseil"
   }
 ]

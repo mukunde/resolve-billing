@@ -165,3 +165,54 @@ class TestSevenAPlatformThatCannotWrite:
             with pytest.raises(PlatformCannotWrite):
                 await write()
         assert await writing.untouched(invoice)
+
+
+class TestOnATaxedInvoice:
+    """specs/013-invoice-tax, FR-010: the same properties on an invoice with
+    VAT, written for its total including tax, and found again."""
+
+    async def test_a_credit_note_on_a_paid_invoice_credits_its_total(self, writing):
+        invoice = await fresh(writing, "taxed_credit_paid")
+        key = key_for(invoice, "taxed_credit_paid")
+        total = (await writing.provider.get_invoice(invoice)).total
+
+        made = await send(writing, "credit_note", invoice, key)
+
+        assert made.allocation == "customer_balance"
+        assert made.amount_minor == total.amount_minor
+        (found,) = await writing.provider.find_action(key, invoice)
+        assert found.amount_minor == total.amount_minor
+        if writing.credit_notes is not None:
+            (note,) = await writing.credit_notes(invoice)
+            assert sum(t["amount"] for t in note["total_taxes"]) > 0
+
+    async def test_a_credit_note_on_an_open_invoice_lowers_what_is_due(self, writing):
+        invoice = await fresh(writing, "taxed_credit_open")
+
+        made = await send(writing, "credit_note", invoice, key_for(invoice, "taxed_credit_open"))
+
+        assert made.allocation == "reduce_due"
+        if writing.credit_notes is not None:
+            raw = await writing.provider.reader.invoice(invoice, every_line=False)
+            assert raw["amount_remaining"] == raw["total"] - made.amount_minor
+
+    async def test_a_refund_refunds_the_total_including_tax(self, writing):
+        invoice = await fresh(writing, "taxed_refund")
+        total = (await writing.provider.get_invoice(invoice)).total
+
+        made = await send(writing, "refund", invoice, key_for(invoice, "taxed_refund"))
+
+        assert (made.action_type, made.amount_minor) == ("refund", total.amount_minor)
+        if writing.credit_notes is not None:
+            (note,) = await writing.credit_notes(invoice)
+            assert sum(r["amount_refunded"] for r in note["refunds"]) == total.amount_minor
+
+    async def test_credit_notes_and_refunds_together_stay_within_it(self, writing):
+        invoice = await fresh(writing, "taxed_cap")
+        await send(writing, "credit_note", invoice, key_for(invoice, "taxed_cap", "credit"))
+        beyond = key_for(invoice, "taxed_cap", "refund")
+
+        with pytest.raises(ProviderRejected):
+            await send(writing, "refund", invoice, beyond)
+
+        assert await writing.provider.find_action(beyond, invoice) == []

@@ -1569,6 +1569,11 @@ class WriteRun:
                     "pricing": {"price": seeder.prices["rb_pro_once"]},
                     "period": {"start": dates.start, "end": dates.end},
                     "metadata": {**generation, STEP: f"{step}/item"},
+                    **(
+                        {"tax_rates": [seeder.tax_rate_id]}
+                        if purpose in worlds.TAXED_WRITE_PURPOSES
+                        else {}
+                    ),
                 },
                 key=f"{step}/item",
             )

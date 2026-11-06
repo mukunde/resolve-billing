@@ -737,5 +737,31 @@
         ]
       }
     ]
+  },
+  {
+    "id": "inv_640",
+    "customer_id": "cus_tilleul",
+    "subscription_id": "sub_640",
+    "amount": "58.80",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-10-01T09:00:00",
+    "_comment": "Spec 013 : facture ouverte, rien d'encaisse, 49 HT + TVA 20 % (contrat d'ecriture).",
+    "lines": [
+      {
+        "label": "Abonnement Pro - octobre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-10-01T00:00:00",
+        "period_end": "2026-11-01T00:00:00",
+        "taxes": [
+          {
+            "rate": "20",
+            "amount": "9.80"
+          }
+        ]
+      }
+    ]
   }
 ]

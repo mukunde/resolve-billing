@@ -104,7 +104,15 @@ WRITE_PURPOSES = {
     "cap": "paid",  # property 5: credit notes and refunds within the invoice
     "refund_open": "open",  # property 6: a refund refused before sending
     "execute_refund": "paid",  # SC-002: a refund through the execution service
+    # specs/013-invoice-tax: the same properties on invoices with VAT at 20 %.
+    "taxed_credit_paid": "paid",
+    "taxed_credit_open": "open",
+    "taxed_refund": "paid",
+    "taxed_cap": "paid",
 }
+
+#: The write purposes whose invoice carries VAT at 20 % (specs/013).
+TAXED_WRITE_PURPOSES = frozenset(p for p in WRITE_PURPOSES if p.startswith("taxed_"))
 
 #: What each write invoice totals, in cents.
 WRITE_TOTAL = 4900

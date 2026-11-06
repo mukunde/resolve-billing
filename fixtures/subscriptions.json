@@ -323,5 +323,17 @@
     "period_start": "2026-09-01T00:00:00",
     "period_end": "2026-10-01T00:00:00",
     "cancelled_at": null
+  },
+  {
+    "id": "sub_640",
+    "customer_id": "cus_tilleul",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-10-01T00:00:00",
+    "period_start": "2026-10-01T00:00:00",
+    "period_end": "2026-11-01T00:00:00",
+    "cancelled_at": null
   }
 ]
