@@ -356,3 +356,32 @@ maintainer's private folder; the prepaid ledgers stay in the maintainer's home
 folder (`~/.resolve-billing/`). The file is bound to the freeze
 record's hash and the run's id, and it is committed as exported, byte for byte.
 The root README reads it.
+
+## Prompt v3 against v4 (spec 012)
+
+Twelve service runs of the 41 development cases on commit `7b4f864`, on
+2026-11-06, authorised by the maintainer: Luna alone (`gpt-6-luna-v3-*`,
+`gpt-6-luna-v4-*`) and the composite with Luna's leg disabled, that is Haiku
+(`haiku-leg-v3-*`, `haiku-leg-v4-*`), three runs per prompt, every run complete,
+no cost unknown, $0.109 in all with the two v4 first calls
+(`first-call-v4-*`). `prompt-v4-comparison.md` is `evals.prompt_compare` applied
+to them, by the rule declared in the spec before the runs. Regression scores on
+cases that shaped the prompt, not a measure on unseen disputes; three runs show
+variance, they do not establish non-degradation.
+
+| | fully correct, v3 | fully correct, v4 | unsafe | new cases under v4 | verdict |
+|---|---|---|---|---|---|
+| Luna | 37, 36, 38 | 35, 38, 37 | 0 | all right, every run | regression for the maintainer (two cases, one run each) |
+| Haiku's leg | 36, 35, 37 | 35, 36, 35 | 0 | the control escalated on every run | do not adopt |
+
+The prompt is one file for both legs: v4 is not adopted and the service stays
+on v3 (maintainer, 2026-11-06). Read case by case, over three runs each, as
+observed differences rather than established effects of the prompt: under v3
+both legs already escalated every over-billing. Among the new usage cases, the
+one that moved toward its label is the usage nobody could check, escalated on
+3 of 3 v4 runs by both legs, against 2 of 3 v3 runs for Luna (a question to the
+customer on the third) and 0 of 3 for Haiku (a question every time). Haiku
+escalated the control -- usage matching the bill -- on 3 of 3 v4 runs, against
+2 of 3 under v3, and proposed a credit note instead of a refund on
+`billed_after_cancellation` on 3 of 3 v4 runs, against none under v3. The first calls now accepted are the v4
+ones: a v3 run on these configurations needs a new first call.
