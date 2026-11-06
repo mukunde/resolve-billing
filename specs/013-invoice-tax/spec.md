@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-06
 
-**Status**: Draft -- for the maintainer's approval
+**Status**: Draft -- clarifications answered by the maintainer on 2026-11-06; for his approval
 
 **Input**: Roadmap item 3 (real integrations), order A decided by the maintainer on
 2026-11-06 (coordination decision 45, framing reviewed by Codex r335-r336): tax comes into the
@@ -43,24 +43,24 @@ explicit approval of the final diff.
   decision. Prices are agreed excluding tax in B2B, so two invoices are the same charge when
   their amounts excluding tax and their tax are the same; money moves including tax, so a
   payment is matched against the total including tax.
-- Q: [NEEDS CLARIFICATION: Q1] Does this slice let Stripe write on a taxed invoice -- both
-  instruments, a credit note and a refund (on Stripe a refunding credit note, built by the
-  same request)? Recommended: yes, both, a whole-invoice write built line by line so that
-  Stripe reverses each line's tax, held on a fresh write contract run; until that run, a
-  taxed invoice is refused for writing (`invoice_state`). The alternative: reads only on
-  taxed invoices, both writes refused until a later slice.
-- Q: [NEEDS CLARIFICATION: Q2] Which tax shapes are supported? Recommended: tax-exclusive
-  lines, one or several rates on one invoice, as posted by the platform; refused, each with a
-  reason: prices that include tax (`tax_inclusive`), posted amounts that do not reconcile
-  (`tax_mismatch`, FR-002), tax on an invoice without lines. A line with no
-  tax charged -- exempt, out of scope, reverse charge -- is read as a line with no tax, as
-  today, its reason kept when the platform states one; the maintainer's decision 45 listed
-  reverse charge among the shapes refused, which this recommendation revisits.
-- Q: [NEEDS CLARIFICATION: Q3] Is the slice measured on a hosted engine? Recommended: yes,
-  after the mock: one service run of the enlarged development set on Luna (estimated cost
-  under $0.02, the commands and cost shown before), because taxed invoices change what the
-  engine receives; no change of prompt. The alternative: the mock only, the hosted
-  measurement deferred to Pennylane's slice.
+- Q1: Does this slice let Stripe write on a taxed invoice -- both instruments, a credit note
+  and a refund (on Stripe a refunding credit note, built by the same request)? → A: Yes,
+  both (the maintainer, 2026-11-06). A whole-invoice write is built line by line so that
+  Stripe reverses each line's tax, and it is held on a fresh write contract run made by the
+  maintainer before the pull request is merged. If that run does not hold, the slice ships
+  with both writes on a taxed invoice refused before sending (`invoice_state`), and says so.
+- Q2: Which tax shapes are supported? → A: Tax-exclusive lines, one or several rates on one
+  invoice, as posted by the platform (the maintainer, 2026-11-06). Refused, each with a
+  reason: prices that include tax (`tax_inclusive`); posted amounts that do not reconcile,
+  tax on an invoice without lines included (`tax_mismatch`, FR-002). A line with no tax
+  charged -- exempt, out of scope, reverse charge -- is read as a line with no tax, as
+  today, its reason kept when the platform states one. This revises coordination decision
+  45, which listed reverse charge among the shapes refused: with no tax charged, the amounts
+  are right as they stand.
+- Q3: Is the slice measured on a hosted engine? → A: Yes (the maintainer, 2026-11-06): after
+  the mock, one service run of the enlarged development set on Luna, with no change of
+  prompt, because taxed invoices change what the engine receives. The commands and their
+  estimated cost (under $0.02) are shown to the maintainer before the run.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -162,7 +162,7 @@ VIII).
   tax amount without a readable rate is
   `missing_field`. Prices that include tax MUST be refused (`tax_inclusive`). The posted tax
   is authoritative against its rate: a rounding difference between a rate applied to an
-  amount and the tax posted is not checked. [Q2 may change this list.]
+  amount and the tax posted is not checked (Q2).
 - **FR-003**: Stripe's mapper MUST read tax-exclusive tax amounts and rates instead of
   refusing them, for the shapes FR-001/FR-002 support; `invoice_tax` is retired from the
   closed set only if no shape still needs it.
@@ -187,12 +187,12 @@ VIII).
 - **FR-009**: What the engine receives MUST carry a taxed invoice's amounts excluding tax, its
   tax and its total; for an invoice without tax it MUST be byte for byte what it is today, so
   existing results and the holdout's reference stay comparable.
-- **FR-010**: Stripe writes on taxed invoices, credit note and refund: [Q1]. If allowed, a
+- **FR-010**: Stripe MUST write on taxed invoices, credit note and refund (Q1): a
   whole-invoice write reverses each line with its tax; the write's answer and `find_action`
   are checked against the approved amount including tax and the allocation planned; the
   platform's cap on what an invoice gives back (credit notes and refunds together) is shown
-  on a taxed invoice by the contract run. If not, both are refused before sending
-  (`invoice_state`).
+  on a taxed invoice by the maintainer's write contract run. If that run does not hold,
+  both are refused before sending (`invoice_state`) and the contract says so.
 - **FR-011**: New development cases, at least: a taxed duplicate (FR), a taxed invoice after
   cancellation (EN), a taxed payment collected twice, and the control of scenario US1-2 (same
   total including tax, different amounts excluding tax: not a duplicate). Their labels are
@@ -234,7 +234,7 @@ VIII).
   and the cases.
 - **SC-003**: The Stripe contract run on taxed worlds matches the fake on findings, amounts
   including tax, verdict and approval, and refuses each unsupported shape with its reason.
-- **SC-004**: [Q3] If decided, the service run on Luna gives no unsafe action, and its
+- **SC-004**: The service run on Luna (Q3) gives no unsafe action, and its
   outcomes on the new cases are reported case by case to the maintainer.
 
 ## Assumptions
