@@ -280,10 +280,26 @@ class TestTheStoredComparison:
     def test_spec_012s_report_is_reproduced_from_its_runs(self):
         """The set grew after spec 012 (spec 013): its runs are compared on
         their own cases, read at their commit through git."""
-        runs = sorted(RESULTS.glob("gpt-6-luna-v[34]-2026*.json")) + sorted(
-            RESULTS.glob("haiku-leg-v[34]-2026*.json")
-        )
-        assert len(runs) == 12
+        # Named one by one: later runs of the same configurations (spec 013's
+        # Luna run) sit beside them.
+        runs = [
+            RESULTS / f"{leg}-{prompt}-20261106T{at}Z.json"
+            for leg, prompt, at in (
+                ("gpt-6-luna", "v3", "004625"),
+                ("gpt-6-luna", "v3", "004940"),
+                ("gpt-6-luna", "v3", "005243"),
+                ("gpt-6-luna", "v4", "005638"),
+                ("gpt-6-luna", "v4", "005929"),
+                ("gpt-6-luna", "v4", "010218"),
+                ("haiku-leg", "v3", "004808"),
+                ("haiku-leg", "v3", "005124"),
+                ("haiku-leg", "v3", "005423"),
+                ("haiku-leg", "v4", "005814"),
+                ("haiku-leg", "v4", "010103"),
+                ("haiku-leg", "v4", "010353"),
+            )
+        ]
+        assert all(run.exists() for run in runs)
         stored = (RESULTS / "prompt-v4-comparison.md").read_text(encoding="utf-8")
         report = prompt_compare.markdown(prompt_compare.compare(runs))
         # The file was written with a final newline; the text is the same.
