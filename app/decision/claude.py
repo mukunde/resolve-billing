@@ -25,7 +25,6 @@ from __future__ import annotations
 import json
 import os
 import time
-from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -38,6 +37,7 @@ from app.decision.base import (
     EngineUnavailable,
 )
 from app.decision.masking import MASKING_VERSION, ReferenceFinder, mask_message
+from app.decision.prompts import DEFAULT_PROMPT, prompt_path, prompt_text
 from app.decision.verdict import ModelVerdict, escalation, verdict_schema
 from app.domain.models import BillingContext, Dispute, RuleFinding
 from app.observability import tracing
@@ -58,7 +58,8 @@ from app.observability import tracing
 #: rules' job done with worse tools. And it classified anyway at confidence
 #: 0.60 and 0.62, where the prompt already asked it to withdraw; both of those
 #: answers were wrong.
-PROMPT_PATH = Path(__file__).parent / "prompts" / "decision_v3.md"
+#: The service's prompt; another is chosen per measurement (`app/decision/prompts.py`).
+PROMPT_PATH = prompt_path(DEFAULT_PROMPT)
 
 #: HTTP statuses that mean "try later", not "your request is wrong":
 #: a timeout, a conflict, rate limiting, and the 5xx range of a failing or
@@ -109,7 +110,7 @@ def _outage(error: Exception) -> str | None:
     return None
 
 
-PROMPT_VERSION = "decision_v3"
+PROMPT_VERSION = DEFAULT_PROMPT
 
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_MAX_TOKENS = 8192
@@ -190,16 +191,18 @@ class ClaudeDecisionEngine:
         effort: str = "low",
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         invoice_references: ReferenceFinder | None = None,
+        prompt: str = DEFAULT_PROMPT,
     ) -> None:
         self.model = model or os.getenv("CLAUDE_MODEL", DEFAULT_MODEL)
+        self._prompt = prompt
         # The masking travels with the prompt: both shape what the model reads.
-        self.version = f"{self.model}/{PROMPT_VERSION}+{MASKING_VERSION}"
+        self.version = f"{self.model}/{prompt}+{MASKING_VERSION}"
         self._max_tokens = max_tokens
         # Classification is not a task that repays deep thinking; the money is
         # in the deterministic findings, which have already run. Raise this
         # only if the evaluation suite shows it buys accuracy.
         self._effort = effort
-        self._system = PROMPT_PATH.read_text(encoding="utf-8")
+        self._system = prompt_text(prompt)
         self._client = client if client is not None else _default_client(timeout_seconds)
         #: How the billing platform writes an invoice reference, to mask the
         #: ones a message cites (D10). Wired from the provider in `deps`.
@@ -237,7 +240,7 @@ class ClaudeDecisionEngine:
             f"chat {self.model}",
             **tracing.chat_attributes(
                 model=self.model,
-                prompt_version=PROMPT_VERSION,
+                prompt_version=self._prompt,
                 max_tokens=self._max_tokens,
             ),
         ) as current:
@@ -351,7 +354,7 @@ class ClaudeDecisionEngine:
         cost = estimate_cost_micros(self.model, input_tokens, output_tokens)
         return EngineTelemetry(
             model_id=self.model,
-            prompt_version=PROMPT_VERSION,
+            prompt_version=self._prompt,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cache_read_input_tokens=cached,

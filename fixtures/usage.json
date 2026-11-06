@@ -20,5 +20,54 @@
     "quantity": "1200",
     "period_start": "2026-09-01T00:00:00",
     "period_end": "2026-10-01T00:00:00"
+  },
+  {
+    "subscription_id": "sub_500",
+    "metric": "api_call_blocks_100",
+    "quantity": "20",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00"
+  },
+  {
+    "subscription_id": "sub_501",
+    "metric": "api_call_blocks_100",
+    "quantity": "20",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00"
+  },
+  {
+    "subscription_id": "sub_502",
+    "metric": "api_call_blocks_100",
+    "quantity": "20",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00"
+  },
+  {
+    "subscription_id": "sub_503",
+    "metric": "api_call_blocks_100",
+    "quantity": "58",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00"
+  },
+  {
+    "subscription_id": "sub_504",
+    "metric": "api_call_blocks_100",
+    "quantity": "20",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00"
+  },
+  {
+    "subscription_id": "sub_505",
+    "metric": "api_call_blocks_100",
+    "quantity": "60",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00"
+  },
+  {
+    "subscription_id": "sub_506",
+    "metric": "api_call_blocks_100",
+    "quantity": "20",
+    "period_start": "2026-08-01T00:00:00",
+    "period_end": "2026-09-01T00:00:00"
   }
 ]

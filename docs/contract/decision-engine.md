@@ -54,8 +54,13 @@ the evaluation runner alone, on free tiers, and more on prepaid accounts
 - **The output shape is constrained server-side and validated again on
   arrival.** An answer that does not fit, is cut off or is empty goes to a
   person.
-- **The prompt is a versioned file** (`decision_v3` today); a changed prompt
-  is a new version.
+- **The prompt is a versioned file**; a changed prompt is a new version
+  (`app/decision/prompts.py`). The service sends `decision_v3`, its default,
+  and no setting of the service chooses another. `decision_v4` is v3 plus one
+  section on usage (spec 012): an over-billing is `unknown` with `escalate`,
+  disputed or not; never "valid" against it or against usage nobody could
+  check. A measurement chooses it explicitly, per run; the default moves only
+  on the maintainer's decision, taken on that measurement.
 - **Traces carry counts and ids**, never the prompt, the context or prose.
 - **One request per dispute**, no loop, no tool.
 

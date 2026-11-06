@@ -27,14 +27,14 @@ import json
 import os
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 from app.decision.base import EngineRejected
-from app.decision.claude import PROMPT_VERSION
-from app.decision.hosted import GEMINI_PRICES, configuration
+from app.decision.hosted import GEMINI_PRICES, Configuration, configuration
 from app.decision.masking import MASKING_VERSION
+from app.decision.prompts import DEFAULT_PROMPT
 from app.decision.verdict import verdict_schema
 from evals import accounts, campaign, engines
 from evals.accounts import QUOTA_PROJECT, AccountRefused
@@ -65,6 +65,11 @@ STATEMENT = (
 NOT_SCORED = frozenset({"not_sent_oversized", "unavailable"})
 
 
+def run_configuration(record: HostedRun) -> Configuration:
+    """The configuration as this run sends it."""
+    return replace(configuration(record.engine_name), prompt=record.prompt)
+
+
 @dataclass
 class HostedRun:
     engine_name: str
@@ -77,6 +82,8 @@ class HostedRun:
     stopped_at: str | None = None
     not_attempted: list[str] = field(default_factory=list)
     governed: Governed | None = None
+    #: The prompt this run sends (specs/012-prompt-v4-usage); the service's by default.
+    prompt: str = DEFAULT_PROMPT
     finished: float | None = None
     #: The comparison's slot and attempt, for a counted run.
     slot: str | None = None
@@ -113,7 +120,7 @@ async def run(
     from app.providers.fake.adapter import FakeBillingProvider
     from evals import runner
 
-    config = configuration(record.engine_name)
+    config = run_configuration(record)
     provider = FakeBillingProvider()
     # Nothing is attempted until a case begins: whatever stops the run
     # before then leaves every case unattempted.
@@ -123,7 +130,7 @@ async def run(
         print(f"waiting {wait:.0f} s for the previous run's quota window", file=sys.stderr)
         await asyncio.sleep(wait)
     governed = Governed(
-        engines.HOSTED_ENGINES[record.engine_name](),
+        engines.hosted_engine(record.engine_name, record.prompt),
         # One run per account at a time: the limiter Mistral's models share
         # is this run's alone.
         limiters_for(config, shared={}),
@@ -262,7 +269,10 @@ def main(args, cases: list[dict], parser) -> int:
         parser.error(f"--json is required for {args.engine}: its run is always kept")
     if args.runs != 1 or args.baseline or args.write_baseline or args.min_fully_correct:
         parser.error(f"{args.engine} runs once, with no baseline and no floor")
-    config = configuration(args.engine)
+    prompt = getattr(args, "prompt", DEFAULT_PROMPT)
+    if args.slot is not None and prompt != DEFAULT_PROMPT:
+        parser.error("--slot runs spec 008's comparison, on the prompt it froze")
+    config = replace(configuration(args.engine), prompt=prompt)
     if config.vendor != "mistral" and args.mistral_allowance_usd is not None:
         parser.error("--mistral-allowance-usd is for the Mistral configurations")
     if config.currency is None and args.envelope is not None:
@@ -308,6 +318,7 @@ def main(args, cases: list[dict], parser) -> int:
         datetime.now(UTC),
         total=len(cases),
         not_attempted=[case["id"] for case in cases],
+        prompt=prompt,
     )
     started = time.monotonic()
 
@@ -424,7 +435,7 @@ def write(
     started: float,
     quota: DailyQuota | None = None,
 ) -> Path:
-    config = configuration(record.engine_name)
+    config = run_configuration(record)
     governed = record.governed
     if config.price_per_mtok is None:
         cost = {"basis": "estimated zero under the free quota", "source": GEMINI_PRICES}
@@ -500,7 +511,7 @@ def write(
         "commit": repo["commit"],
         "clean_tree": repo["clean_tree"],
         "configuration_fingerprint": fingerprint(config),
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": record.prompt,
     }
     if record.slot is not None:
         payload |= {

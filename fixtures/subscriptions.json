@@ -191,5 +191,89 @@
     "period_start": "2026-09-01T00:00:00",
     "period_end": "2026-10-01T00:00:00",
     "cancelled_at": null
+  },
+  {
+    "id": "sub_500",
+    "customer_id": "cus_ardent",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_501",
+    "customer_id": "cus_harbor",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_502",
+    "customer_id": "cus_cimes",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_503",
+    "customer_id": "cus_dune",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_504",
+    "customer_id": "cus_erable",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_505",
+    "customer_id": "cus_fjord",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_506",
+    "customer_id": "cus_galet",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
   }
 ]

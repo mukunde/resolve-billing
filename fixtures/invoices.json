@@ -434,5 +434,152 @@
         "amount": "39.00"
       }
     ]
+  },
+  {
+    "id": "inv_500",
+    "customer_id": "cus_ardent",
+    "subscription_id": "sub_500",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Spec 012: usage case world.",
+    "lines": [
+      {
+        "label": "Depassement d'usage - 60 blocs de 100 appels API",
+        "metric": "api_call_blocks_100",
+        "quantity": "60",
+        "unit_amount": "0.50",
+        "amount": "30.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_501",
+    "customer_id": "cus_harbor",
+    "subscription_id": "sub_501",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Spec 012: usage case world.",
+    "lines": [
+      {
+        "label": "Depassement d'usage - 60 blocs de 100 appels API",
+        "metric": "api_call_blocks_100",
+        "quantity": "60",
+        "unit_amount": "0.50",
+        "amount": "30.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_502",
+    "customer_id": "cus_cimes",
+    "subscription_id": "sub_502",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Spec 012: usage case world.",
+    "lines": [
+      {
+        "label": "Depassement d'usage - 60 blocs de 100 appels API",
+        "metric": "api_call_blocks_100",
+        "quantity": "60",
+        "unit_amount": "0.50",
+        "amount": "30.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_503",
+    "customer_id": "cus_dune",
+    "subscription_id": "sub_503",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Spec 012: usage case world.",
+    "lines": [
+      {
+        "label": "Depassement d'usage - 60 blocs de 100 appels API",
+        "metric": "api_call_blocks_100",
+        "quantity": "60",
+        "unit_amount": "0.50",
+        "amount": "30.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_504",
+    "customer_id": "cus_erable",
+    "subscription_id": "sub_504",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Spec 012: usage case world.",
+    "lines": [
+      {
+        "label": "Depassement d'usage - 60 blocs de 100 appels API",
+        "metric": "api_call_blocks_100",
+        "quantity": "60",
+        "unit_amount": "0.50",
+        "amount": "30.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_505",
+    "customer_id": "cus_fjord",
+    "subscription_id": "sub_505",
+    "amount": "10.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Spec 012: usage case world.",
+    "lines": [
+      {
+        "label": "Depassement d'usage - 20 blocs de 100 appels API",
+        "metric": "api_call_blocks_100",
+        "quantity": "20",
+        "unit_amount": "0.50",
+        "amount": "10.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_506",
+    "customer_id": "cus_galet",
+    "subscription_id": "sub_506",
+    "amount": "30.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-30T23:00:00",
+    "_comment": "Spec 012: usage case world.",
+    "lines": [
+      {
+        "label": "Depassement d'usage - 60 blocs de 100 appels API",
+        "metric": "api_call_blocks_100",
+        "quantity": "60",
+        "unit_amount": "0.50",
+        "amount": "30.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
   }
 ]

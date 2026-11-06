@@ -17,7 +17,7 @@ from tests.unit.test_claude_engine import (  # noqa: F401 -- the fixtures are us
     dispute,
     findings,
 )
-from tests.unit.test_evaluation_limits import Vendor, _no_wait, governed, ok
+from tests.unit.test_evaluation_limits import Vendor, _no_wait, governed, ok, roomy_flash
 
 PROJECT = "resolve-billing-eval"
 
@@ -186,19 +186,37 @@ def always():
 
 
 class TestAGeminiRun:
+    def test_flash_s_real_day_no_longer_holds_a_full_run(self, tmp_path, monkeypatch, capsys):
+        """Spec 012: 27 cases reach the engine, Flash allows 20 requests a day."""
+        built = []
+        status, result = run_gemini(
+            monkeypatch,
+            tmp_path,
+            lambda: built.append(1) or always(),
+            "--gemini-requests-used-today",
+            "0",
+        )
+
+        assert status == 2
+        assert built == []
+        assert result is None
+        assert "needs 27 of the 20 requests" in capsys.readouterr().err
+
     def test_a_full_run_on_a_fresh_declared_day(self, tmp_path, monkeypatch):
+        roomy_flash(monkeypatch)
         status, result = run_gemini(
             monkeypatch, tmp_path, always, "--gemini-requests-used-today", "0"
         )
 
+        cases = engines.ENGINE_CASES
         assert result["complete"] is True
-        assert result["sends"] == 20
+        assert result["sends"] == cases
         quota = result["daily_quota"]
         assert quota["project"] == PROJECT
-        assert quota["limit"] == 20
+        assert quota["limit"] == cases
         assert quota["timezone"] == "America/Los_Angeles"
-        assert quota["run_sends"] == 20
-        assert list(quota["days"].values()) == [{"declared": 0, "sent": 20}]
+        assert quota["run_sends"] == cases
+        assert list(quota["days"].values()) == [{"declared": 0, "sent": cases}]
         assert "dedicated project" in quota["assumptions"]
         assert result["reservation_estimator"] == "utf8-bytes-v1"
         assert result["smoke_test"] is False
@@ -226,7 +244,10 @@ class TestAGeminiRun:
         assert "not declared" in capsys.readouterr().err
 
     def test_a_day_declared_earlier_needs_no_flag(self, tmp_path, monkeypatch):
-        DailyQuota(PROJECT, 20, "America/Los_Angeles", model="gemini-3.8-flash").declare(0)
+        roomy_flash(monkeypatch)
+        DailyQuota(
+            PROJECT, engines.ENGINE_CASES, "America/Los_Angeles", model="gemini-3.8-flash"
+        ).declare(0)
 
         status, result = run_gemini(monkeypatch, tmp_path, always)
 
@@ -380,11 +401,11 @@ class TestAFirstCallRefusedBeforeSending:
         assert result["complete"] is False
         assert result["stop_reason"].startswith("not sent: the quota refused")
         assert expected in result["stop_reason"]
-        assert len(result["not_attempted"]) == 34
+        assert len(result["not_attempted"]) == 41
 
 
 class TestTheDevelopmentSet:
-    def test_twenty_cases_reach_the_engine(self):
+    def test_twenty_seven_cases_reach_the_engine(self):
         """A pinned count: the day's quota is sized on it. A change of the
         development set updates it in the same commit."""
         import asyncio
@@ -420,7 +441,7 @@ class TestTheDevelopmentSet:
 
         asyncio.run(run_all())
 
-        assert len(reached) == engines.ENGINE_CASES == 20
+        assert len(reached) == engines.ENGINE_CASES == 27
 
 
 def test_the_state_folder_is_the_test_s_own():

@@ -41,6 +41,7 @@ from pathlib import Path
 
 from app.application.investigate_dispute import DisputeInvestigator, InvestigationResult
 from app.decision.base import Classification
+from app.decision.prompts import DEFAULT_PROMPT, PROMPTS
 from app.domain.enums import SenderStatus
 from app.domain.models import Dispute
 from app.providers.fake.adapter import FakeBillingProvider
@@ -115,8 +116,29 @@ def missing_credential(engine_name: str) -> str | None:
     )
 
 
+#: The engines that read the prompt file, and so may send another
+#: (specs/012-prompt-v4-usage): the service's Claude engine and every hosted
+#: configuration. The mock reads none.
+PROMPTED = ("claude", *sorted(engines.HOSTED))
+
+
+def _claude_engine(prompt: str):
+    from app.decision.claude import ClaudeDecisionEngine
+
+    return ClaudeDecisionEngine(prompt=prompt)
+
+
 #: The checks every case is held to, by name. `<name>_ok` on an outcome.
-CHECK_NAMES = ("classification", "action", "approval", "findings", "skip", "sender", "reply")
+CHECK_NAMES = (
+    "classification",
+    "action",
+    "approval",
+    "findings",
+    "skip",
+    "sender",
+    "reply",
+    "recommendation",
+)
 
 
 @dataclass
@@ -135,6 +157,10 @@ class CaseOutcome:
     got: dict = field(default_factory=dict)
     sender_ok: bool = True
     reply_ok: bool = True
+    #: The engine's own recommendation, where the case declares one: the
+    #: policy can turn money on `unknown` into no action, so `action_ok` alone
+    #: cannot show the engine escalated (specs/012-prompt-v4-usage, FR-001a).
+    recommendation_ok: bool = True
 
     @property
     def ok(self) -> bool:
@@ -147,6 +173,7 @@ class CaseOutcome:
                 self.skip_ok,
                 self.sender_ok,
                 self.reply_ok,
+                self.recommendation_ok,
             )
         )
 
@@ -235,6 +262,14 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
             if "expect_automatic_reply" in case
             else True
         ),
+        # No recommendation -- the engine skipped or gave none -- fails an
+        # expectation of one.
+        recommendation_ok=(
+            (result.recommended_action is not None)
+            and result.recommended_action.value == case["expect_engine_action"]
+            if "expect_engine_action" in case
+            else True
+        ),
         unsafe=_unsafe_reason(case, result),
         confidence=result.confidence,
         confidence_kind=result.confidence_kind,
@@ -260,7 +295,10 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
 
 
 async def run(
-    engine_name: str, cases_path: Path = CASES_PATH, cases: list[dict] | None = None
+    engine_name: str,
+    cases_path: Path = CASES_PATH,
+    cases: list[dict] | None = None,
+    prompt: str = DEFAULT_PROMPT,
 ) -> tuple[list[CaseOutcome], str]:
     """Run the case set, and report which engine version produced it.
 
@@ -282,7 +320,10 @@ async def run(
     if cases is None:
         cases = json.loads(cases_path.read_text(encoding="utf-8"))
     provider = FakeBillingProvider()
-    engine = wire(available[engine_name](), provider)
+    if prompt != DEFAULT_PROMPT and engine_name not in PROMPTED:
+        raise ValueError(f"{engine_name} reads no prompt")
+    built = _claude_engine(prompt) if engine_name == "claude" else available[engine_name]()
+    engine = wire(built, provider)
     investigator = DisputeInvestigator(provider=provider, engine=engine)
 
     outcomes = []
@@ -568,6 +609,12 @@ def main() -> int:
         help="run a slot of the comparison's manifest (specs/008-deployment-model-choice)",
     )
     parser.add_argument(
+        "--prompt",
+        choices=sorted(PROMPTS),
+        default=DEFAULT_PROMPT,
+        help="the prompt the engine sends (specs/012-prompt-v4-usage); the service's by default",
+    )
+    parser.add_argument(
         "--envelope",
         type=float,
         help="declare (or raise) a prepaid account's envelope, in its currency",
@@ -608,6 +655,11 @@ def main() -> int:
             "--data-terms, --first-call-only and the allowance, envelope and quota "
             "declarations are for the engines evaluated outside the service"
         )
+    if args.prompt != DEFAULT_PROMPT and args.engine not in PROMPTED:
+        # An engine that reads no prompt file would run unchanged under the flag.
+        parser.error(
+            f"{args.engine} reads no prompt: --prompt is for claude and the hosted configurations"
+        )
     if (missing := missing_credential(args.engine)) is not None:
         sys.exit(missing)
 
@@ -617,7 +669,9 @@ def main() -> int:
     for index in range(args.runs):
         ran_at = datetime.now(UTC).isoformat()
         try:
-            outcomes, engine_version = asyncio.run(run(args.engine, args.cases, guarded))
+            outcomes, engine_version = asyncio.run(
+                run(args.engine, args.cases, guarded, prompt=args.prompt)
+            )
         except EngineRejected as refusal:
             # A configuration or account problem, not a result: the series
             # stops whole and nothing is written -- earlier complete runs

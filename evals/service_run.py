@@ -26,7 +26,7 @@ import hashlib
 import json
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,7 +40,6 @@ from app.decision.base import (
     EngineUnavailable,
 )
 from app.decision.bounded import BoundedEngine, Bounds
-from app.decision.claude import PROMPT_VERSION
 from app.decision.failover import (
     DEADLINE,
     POLICY,
@@ -50,6 +49,7 @@ from app.decision.failover import (
 )
 from app.decision.hosted import Answer, configuration
 from app.decision.masking import MASKING_VERSION
+from app.decision.prompts import DEFAULT_PROMPT, PROMPTS
 from app.decision.verdict import verdict_schema
 from evals import accounts, campaign, engines
 from evals.first_calls import FirstCalls, FirstCallsRefused, fingerprint
@@ -75,10 +75,20 @@ REFUSED_UNPROCESSED = frozenset(
 ANSWERED = frozenset({AttemptOutcome.ANSWERED, AttemptOutcome.UNUSABLE, AttemptOutcome.WRONG_MODEL})
 
 
-FAILOVER_VERSION = f"{FAILOVER}/{POLICY}/{PROMPT_VERSION}"
+def failover_version(prompt: str = DEFAULT_PROMPT) -> str:
+    return f"{FAILOVER}/{POLICY}/{prompt}"
 
 
-def failover_record() -> dict:
+#: The service's composite, as the service names it.
+FAILOVER_VERSION = failover_version()
+
+
+def measured(name: str, prompt: str):
+    """A configuration as this run sends it: under `prompt`."""
+    return replace(configuration(name), prompt=prompt)
+
+
+def failover_record(prompt: str = DEFAULT_PROMPT) -> dict:
     """The composite measured: its policy and both legs, each by fingerprint."""
     legs = ((ENGINE, PRIMARY_BOUNDS), (HAIKU, SECONDARY_BOUNDS))
     return {
@@ -87,7 +97,7 @@ def failover_record() -> dict:
         "legs": [
             {
                 "configuration": name,
-                "fingerprint": fingerprint(configuration(name)),
+                "fingerprint": fingerprint(measured(name, prompt)),
                 "bounds": asdict(bounds),
             }
             for name, bounds in legs
@@ -196,15 +206,16 @@ async def run(record: dict, cases: list[dict], recorder: LedgerRecorder, account
     if (wait := account.wait()) > 0:
         print(f"waiting {wait:.0f} s for the previous run's quota window", file=sys.stderr)
         await asyncio.sleep(wait)
+    prompt = record["prompt"]
     if record["engine"] == FAILOVER:
         wrapper = FailoverEngine(
-            DisabledLeg(configuration(ENGINE)),
-            BoundedEngine(engines.HOSTED_ENGINES[HAIKU](), recorder, bounds=bounds),
+            DisabledLeg(measured(ENGINE, prompt)),
+            BoundedEngine(engines.hosted_engine(HAIKU, prompt), recorder, bounds=bounds),
             name=FAILOVER,
-            version=FAILOVER_VERSION,
+            version=failover_version(prompt),
         )
     else:
-        wrapper = BoundedEngine(engines.HOSTED_ENGINES[ENGINE](), recorder, bounds=bounds)
+        wrapper = BoundedEngine(engines.hosted_engine(ENGINE, prompt), recorder, bounds=bounds)
     provider = FakeBillingProvider()
     investigator = DisputeInvestigator(provider=provider, engine=wire(wrapper, provider))
     try:
@@ -255,7 +266,7 @@ def write(record: dict, recorder: LedgerRecorder, ledger, config, args, started:
         "failover": record["failover"],
         "data_terms": args.data_terms,
         "configuration_fingerprint": fingerprint(config),
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": record["prompt"],
         "masking_version": MASKING_VERSION,
         "schema_sha256": hashlib.sha256(
             json.dumps(verdict_schema(), sort_keys=True).encode("utf-8")
@@ -291,6 +302,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", type=Path, default=engines.DEVELOPMENT_SET)
     parser.add_argument("--engine", choices=(ENGINE, FAILOVER), default=ENGINE)
     parser.add_argument(
+        "--prompt",
+        choices=sorted(PROMPTS),
+        default=DEFAULT_PROMPT,
+        help="the prompt the engine sends (specs/012-prompt-v4-usage); the service's by default",
+    )
+    parser.add_argument(
         "--primary-disabled",
         action="store_true",
         help="the composite only: measure its wiring with Luna's leg out",
@@ -299,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
     if (args.engine == FAILOVER) != args.primary_disabled:
         parser.error(f"{FAILOVER} runs with --primary-disabled, and nothing else does")
 
-    config = configuration(HAIKU if args.engine == FAILOVER else ENGINE)
+    config = measured(HAIKU if args.engine == FAILOVER else ENGINE, args.prompt)
     try:
         cases = engines.development_cases(args.cases)
         FirstCalls().admit_full_run(config)
@@ -319,8 +336,11 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     record = {
         "engine": args.engine,
-        "engine_version": FAILOVER_VERSION if args.engine == FAILOVER else config.prompt_version,
-        "failover": failover_record() if args.engine == FAILOVER else None,
+        "engine_version": (
+            failover_version(args.prompt) if args.engine == FAILOVER else config.prompt_version
+        ),
+        "failover": failover_record(args.prompt) if args.engine == FAILOVER else None,
+        "prompt": args.prompt,
         "started_at": began,
         "total": len(cases),
         "outcomes": [],

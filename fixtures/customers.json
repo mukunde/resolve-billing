@@ -94,5 +94,47 @@
     "email": "compta@lumen-studio.fr",
     "currency": "EUR",
     "display_name": "Lumen Studio"
+  },
+  {
+    "id": "cus_ardent",
+    "email": "lea@atelier-ardent.fr",
+    "currency": "EUR",
+    "display_name": "Atelier Ardent"
+  },
+  {
+    "id": "cus_harbor",
+    "email": "ops@harbor-freight.fr",
+    "currency": "EUR",
+    "display_name": "Harbor Freight"
+  },
+  {
+    "id": "cus_cimes",
+    "email": "paul@cimes-conseil.fr",
+    "currency": "EUR",
+    "display_name": "Cimes Conseil"
+  },
+  {
+    "id": "cus_dune",
+    "email": "nina@dune-media.fr",
+    "currency": "EUR",
+    "display_name": "Dune Media"
+  },
+  {
+    "id": "cus_erable",
+    "email": "hugo@erable-bois.fr",
+    "currency": "EUR",
+    "display_name": "Erable Bois"
+  },
+  {
+    "id": "cus_fjord",
+    "email": "ines@fjord-data.fr",
+    "currency": "EUR",
+    "display_name": "Fjord Data"
+  },
+  {
+    "id": "cus_galet",
+    "email": "marc@galet-design.fr",
+    "currency": "EUR",
+    "display_name": "Galet Design"
   }
 ]

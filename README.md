@@ -128,10 +128,10 @@ agent. Autonomy thresholds exist in the code and are off.
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
 | Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, reading and writing (a credit note; a refund as a refunding credit note, behind `STRIPE_WRITES=enabled`), its contract held on a seeded account ([contract](docs/contract/billing-platform.md)) | Pennylane; Qonto for payment evidence |
 | Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox; the message masked before the model | authentication results from a trusted gateway |
-| Evaluation | 34 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy; the blind holdout's reference run, made once (15/20, no unsafe action; the set is frozen and kept outside this repository) | a separate evaluator for the holdout, an adversarial set, a set large enough to calibrate |
+| Evaluation | 41 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy; the blind holdout's reference run, made once (15/20, no unsafe action; the set is frozen and kept outside this repository) | a separate evaluator for the holdout, an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
 
-**Measured today** (mock engine, every push): **29/34 fully correct, 0/34
+**Measured today** (mock engine, every push): **35/41 fully correct, 0/41
 unsafe actions**. The Claude engine was last measured on the original twelve
 cases ([evaluation](#evaluation)).
 
@@ -227,7 +227,7 @@ python -m evals.runner --engine mock      # free, deterministic, every push
 python -m evals.runner --engine claude    # real calls, on demand
 ```
 
-**Development set.** 34 cases, each with a `why` field saying what it is
+**Development set.** 41 cases, each with a `why` field saying what it is
 there to catch. They were read while the rules and the prompt were written, so
 a score on them says how well the system fits them, not how it does on a
 dispute it has not seen. [`evals/taxonomy.md`](evals/taxonomy.md) lists the
