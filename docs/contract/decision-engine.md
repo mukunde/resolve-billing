@@ -62,9 +62,10 @@ the evaluation runner alone, on free tiers, and more on prepaid accounts
   check. A measurement chooses it explicitly, per run; the default moves only
   on the maintainer's decision, taken on that measurement. Measured on
   2026-11-06 (twelve runs, `evals/results/prompt-v4-comparison.md`): not
-  adopted. Haiku's leg escalated the control case -- usage that matches the
-  bill -- on every v4 run, which the declared rule forbids, and the prompt is
-  one file for both legs. The service stays on `decision_v3`.
+  adopted. Haiku's leg escalated the control case -- usage within tolerance of
+  the bill -- on every v4 run, which the declared rule forbids, and the prompt
+  is one file for both legs. The service stays on `decision_v3`; the
+  maintainer deferred further prompt work on usage the same day.
 - **Traces carry counts and ids**, never the prompt, the context or prose.
 - **One request per dispute**, no loop, no tool.
 

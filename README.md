@@ -208,8 +208,10 @@ What the system does not do yet, said plainly.
   [ADR-009](docs/adr/009-trust-boundaries.md#disclosure-channel-by-channel-2026-10-19)),
   and the engine-side half of the usage-gap decision (a prompt instruction:
   `decision_v4` was measured on 2026-11-06 and not adopted, the fallback model
-  escalating usage that matched the bill; until a prompt passes, the action
-  policy sends every over-billing to a person whatever the engine answers). The decisions and their status are
+  escalating a complaint whose usage was within tolerance of the bill; the
+  maintainer deferred it the same day, the requirement kept open; meanwhile the
+  action policy sends every over-billing and every unchecked usage to a person
+  whatever the engine answers). The decisions and their status are
   in [`evals/taxonomy.md`](evals/taxonomy.md#4-specification-questions).
 - **What a good evaluation score does not cover**: approval expiry,
   concurrent execution and uncertain provider outcomes are out of reach of an
@@ -352,10 +354,11 @@ expired approval, a repeated delivery, and a timeout after a write.
 
 On the way, in order:
 
-1. **The engine-side half of the usage-gap decision**, in a measured prompt
-   version: `decision_v4` was measured and not adopted (spec 012); the next
-   version must keep the control case right on both legs. The outgoing-text
-   check comes with the reply drafter.
+1. **The engine-side half of the usage-gap decision**: deferred by the
+   maintainer on 2026-11-06, the requirement kept open. `decision_v4` was
+   measured and not adopted (spec 012); any later prompt is held to the seven
+   usage cases, the control included, on both legs. The outgoing-text check
+   comes with the reply drafter.
 2. **The reference run of the new blind holdout**: made on 5 November 2026,
    once, by the maintainer
    ([`evals/reference_run.py`](evals/reference_run.py), spec 011); its totals
