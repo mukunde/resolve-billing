@@ -56,14 +56,14 @@ First pull request: Phases 1 to 5, no paid call.
 
 ## Phase 6: The runs (FR-006), on the maintainer's approval
 
-- [ ] T060 Show the commands and the estimated cost; wait for the maintainer's yes.
-- [ ] T061 Luna v3 and Haiku v3, three runs each.
-- [ ] T062 v4 first calls, Luna and Haiku.
-- [ ] T063 Luna v4 and Haiku v4, three runs each.
-- [ ] T064 The comparison report.
+- [x] T060 Show the commands and the estimated cost; wait for the maintainer's yes.
+- [x] T061 Luna v3 and Haiku v3, three runs each.
+- [x] T062 v4 first calls, Luna and Haiku.
+- [x] T063 Luna v4 and Haiku v4, three runs each.
+- [x] T064 The comparison report.
 
 ## Phase 7: The decision (FR-007, FR-008)
 
-- [ ] T070 The maintainer decides per leg. Adopted: `DEFAULT_PROMPT` to v4, ADR-013's note,
+- [x] T070 The maintainer decides per leg. Adopted: `DEFAULT_PROMPT` to v4, ADR-013's note,
   the README. Not adopted: the default stays.
-- [ ] T071 Second pull request: the results, the report, the decision.
+- [x] T071 Second pull request: the results, the report, the decision.
