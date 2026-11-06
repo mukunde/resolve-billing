@@ -123,29 +123,39 @@ def anonymise(context: BillingContext, findings: list[RuleFinding]) -> tuple[dic
             for s in context.subscriptions
         ],
         "invoices": [
-            {
-                "ref": names.alias(i.id, "INVOICE"),
-                "subscription_ref": (
-                    names.alias(i.subscription_id, "SUBSCRIPTION") if i.subscription_id else None
-                ),
-                "status": i.status.value,
-                "issued_at": i.issued_at.isoformat(),
-                "total_minor": i.total.amount_minor,
-                "currency": i.total.currency,
-                "lines": [
-                    {
-                        "description": line.description,
-                        "quantity": str(line.quantity),
-                        "amount_minor": line.amount.amount_minor,
-                        "metric": line.metric,
-                        "period_start": (
-                            line.period_start.isoformat() if line.period_start else None
-                        ),
-                        "period_end": line.period_end.isoformat() if line.period_end else None,
-                    }
-                    for line in i.lines
-                ],
-            }
+            _with_tax(
+                i,
+                {
+                    "ref": names.alias(i.id, "INVOICE"),
+                    "subscription_ref": (
+                        names.alias(i.subscription_id, "SUBSCRIPTION")
+                        if i.subscription_id
+                        else None
+                    ),
+                    "status": i.status.value,
+                    "issued_at": i.issued_at.isoformat(),
+                    "total_minor": i.total.amount_minor,
+                    "currency": i.total.currency,
+                    "lines": [
+                        _line_with_tax(
+                            line,
+                            {
+                                "description": line.description,
+                                "quantity": str(line.quantity),
+                                "amount_minor": line.amount.amount_minor,
+                                "metric": line.metric,
+                                "period_start": (
+                                    line.period_start.isoformat() if line.period_start else None
+                                ),
+                                "period_end": line.period_end.isoformat()
+                                if line.period_end
+                                else None,
+                            },
+                        )
+                        for line in i.lines
+                    ],
+                },
+            )
             for i in context.invoices
         ],
         "payments": [
@@ -179,6 +189,28 @@ def anonymise(context: BillingContext, findings: list[RuleFinding]) -> tuple[dic
         ],
     }
     return payload, names
+
+
+def _with_tax(invoice, entry: dict) -> dict:
+    """A taxed invoice also carries its amount excluding tax and its tax by
+    rate; an untaxed one is sent exactly as before (specs/013-invoice-tax,
+    FR-009). Amounts and rates, nothing that names anyone."""
+    if invoice.taxed:
+        entry["excluding_tax_minor"] = invoice.amount_excluding_tax.amount_minor
+        entry["taxes"] = [
+            {"rate": format(rate, "f"), "amount_minor": amount.amount_minor}
+            for rate, amount in invoice.tax_by_rate.items()
+        ]
+    return entry
+
+
+def _line_with_tax(line, entry: dict) -> dict:
+    if line.taxes:
+        entry["taxes"] = [
+            {"rate": format(tax.rate, "f"), "amount_minor": tax.amount.amount_minor}
+            for tax in line.taxes
+        ]
+    return entry
 
 
 def _alias_evidence(evidence: dict, names: Pseudonyms) -> dict:
