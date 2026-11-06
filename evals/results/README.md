@@ -385,3 +385,23 @@ escalated the control -- usage within tolerance of the bill -- on 3 of 3 v4 runs
 2 of 3 under v3, and proposed a credit note instead of a refund on
 `billed_after_cancellation` on 3 of 3 v4 runs, against none under v3. The first calls now accepted are the v4
 ones: a v3 run on these configurations needs a new first call.
+
+## Tax on invoices, measured on Luna (spec 013)
+
+One service run of the 45 development cases on commit `def7dfa`, on
+2026-11-06, authorised by the maintainer (spec 013, Q3): Luna, prompt v3,
+`gpt-6-luna-v3-20261106T200748Z.json`, after a new v3 first call
+(`first-call-v3-gpt-6-luna-20261106T200719Z.json`), every case run, no cost
+unknown, $0.0065 in all. A regression score on cases that shaped the system,
+not a measure on unseen disputes; one run shows no variance.
+
+41/45 fully correct, no unsafe action, every engine call answered by Luna. The
+four taxed cases met their labels: `taxed_duplicate_fr` a credit note,
+`taxed_billed_after_cancellation_en` a refund, `taxed_duplicate_payment` a
+refund, `taxed_same_total_control` a reply to a valid invoice. The four
+misses are existing cases. Three were missed on every one of spec 012's three
+Luna v3 runs too: `duplicate_payment_single_invoice` (a credit note
+recommended where a refund is expected, so no action; its taxed counterpart
+was right in this run), `claimed_payment_without_evidence` and
+`refund_already_completed`. `known_customer_bulk_dispute` was missed on one of
+those three runs (an escalation instead of a credit note), as here.
