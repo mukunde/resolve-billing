@@ -202,5 +202,59 @@
     "currency": "EUR",
     "state": "succeeded",
     "received_at": "2026-09-30T23:05:00"
+  },
+  {
+    "id": "pay_600",
+    "invoice_id": "inv_600",
+    "amount": "120.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-01T09:05:00",
+    "_comment": "Spec 013 : inv_600 reglee."
+  },
+  {
+    "id": "pay_601",
+    "invoice_id": "inv_601",
+    "amount": "120.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T04:20:00",
+    "_comment": "Spec 013 : inv_601 reglee aussi."
+  },
+  {
+    "id": "pay_610",
+    "invoice_id": "inv_610",
+    "amount": "58.80",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-01T09:05:00",
+    "_comment": "Spec 013 : inv_610 reglee."
+  },
+  {
+    "id": "pay_620",
+    "invoice_id": "inv_620",
+    "amount": "58.80",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T08:15:00",
+    "_comment": "Spec 013 : premier encaissement."
+  },
+  {
+    "id": "pay_621",
+    "invoice_id": "inv_620",
+    "amount": "58.80",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-02T08:19:00",
+    "_comment": "Spec 013 : second encaissement."
+  },
+  {
+    "id": "pay_630",
+    "invoice_id": "inv_630",
+    "amount": "120.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-01T09:05:00",
+    "_comment": "Spec 013 : inv_630 reglee."
   }
 ]

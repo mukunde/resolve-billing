@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_serializer
 
 from app.application.events import AuditEvent, AuditSink, event
 from app.decision.base import (
@@ -44,6 +44,7 @@ from app.domain.models import (
     Invoice,
     InvoiceOwner,
     RuleFinding,
+    TaxBreakdown,
 )
 from app.domain.money import Money
 from app.domain.rules import (
@@ -96,6 +97,17 @@ class ProposedAction(BaseModel):
 
     type: Literal["credit_note", "refund", "reply", "request_information", "none"]
     amount: Money | None = None
+    tax_breakdown: TaxBreakdown | None = None
+    """What the amount is made of, when the invoice carries tax
+    (specs/013-invoice-tax, FR-007). None otherwise, and then not serialised,
+    so an untaxed proposal reads exactly as before."""
+
+    @model_serializer(mode="wrap")
+    def _without_absent_breakdown(self, handler):
+        data = handler(self)
+        if self.tax_breakdown is None:
+            data.pop("tax_breakdown", None)
+        return data
 
 
 class InvestigationResult(BaseModel):
@@ -365,6 +377,7 @@ class DisputeInvestigator:
             amount=amount,
             reason=result.explanation,
             provider=self._provider.name,
+            tax_breakdown=result.proposed_action.tax_breakdown,
         )
         trace.append(event("action_queued", action_id=action.action_id, state=action.state.value))
         return action.action_id
@@ -802,7 +815,11 @@ def _proposed_action(
                 else "refund"
             )
             correction = correction_for(kind, invoice, findings, context.payments)
-            return ProposedAction(type=kind, amount=correction.amount), correction.withheld
+            breakdown = TaxBreakdown.of(invoice) if correction.amount is not None else None
+            return (
+                ProposedAction(type=kind, amount=correction.amount, tax_breakdown=breakdown),
+                correction.withheld,
+            )
         case RecommendedAction.EXPLAIN_INVOICE:
             return ProposedAction(type="reply"), None
         case RecommendedAction.REQUEST_INFORMATION:

@@ -41,6 +41,7 @@ from app.api.deps import get_actions, get_approvals, get_audit
 from app.api.templating import render as _page
 from app.application.execute_action import ApprovalService
 from app.domain.enums import ActionState
+from app.domain.models import TaxBreakdown
 from app.domain.money import Money
 from app.infrastructure.actions import (
     IllegalTransition,
@@ -86,6 +87,11 @@ async def review_page(
 
     run = audit.run(action.run_id)
     calibrated = run is not None and run["confidence_kind"] == "calibrated"
+    # The breakdown shown is the one recorded with the proposal; if the
+    # invoice no longer carries it, nothing is offered for approval
+    # (specs/013-invoice-tax, FR-007).
+    if not await approvals.tax_breakdown_holds(action):
+        return HTMLResponse(_stale(action), status_code=409)
 
     return HTMLResponse(
         _page(
@@ -97,6 +103,7 @@ async def review_page(
             invoice_id=action.invoice_id,
             action_type=action.action_type,
             amount_display=_money(action.amount),
+            tax_display=_tax(action),
             classification=run["classification"] if run else "—",
             findings=_findings(run),
             engine=(
@@ -182,7 +189,7 @@ def _decided(action: PendingAction, decision: str, resumed: bool) -> str:
         banner_fg="#ffffff",
         action_id=action.action_id,
         state=action.state.value,
-        amount_display=_money(action.amount),
+        amount_display=_money(action.amount) + _tax_suffix(action),
         decided_by=action.approved_by or "—",
         provider_action_id=action.provider_action_id or "—",
         footnote=note,
@@ -201,7 +208,7 @@ def _already_decided(action: PendingAction) -> str:
         banner_fg="#ffffff",
         action_id=action.action_id,
         state=action.state.value,
-        amount_display=_money(action.amount),
+        amount_display=_money(action.amount) + _tax_suffix(action),
         decided_by=action.approved_by or "—",
         provider_action_id=action.provider_action_id or "—",
         footnote=(
@@ -221,6 +228,44 @@ def _deadline(action: PendingAction) -> str:
 
 def _money(amount: Money) -> str:
     return f"{amount.to_decimal():,.2f} {amount.currency}".replace(",", " ")
+
+
+def _tax(action: PendingAction) -> str:
+    """HT, the tax by rate and TTC, as proposed; empty when untaxed."""
+    return tax_text(action.tax_breakdown)
+
+
+def tax_text(breakdown: TaxBreakdown | None) -> str:
+    """A breakdown in words, for a page; empty for none."""
+    if breakdown is None:
+        return ""
+    taxes = " · ".join(
+        f"TVA {format(rate, 'f').replace('.', ',')} % : {_money(amount)}"
+        for rate, amount in breakdown.taxes
+    )
+    return f"HT : {_money(breakdown.excluding_tax)} · {taxes} · TTC : {_money(breakdown.total)}"
+
+
+def _tax_suffix(action: PendingAction) -> str:
+    detail = _tax(action)
+    return f" ({detail})" if detail else ""
+
+
+def _stale(action: PendingAction) -> str:
+    """The invoice's tax is not the one proposed: shown, not approvable."""
+    return _page(
+        "review_done.html",
+        headline="Proposition périmée",
+        subhead="La TVA de la facture n'est plus celle de la proposition.",
+        banner_bg="#475569",
+        banner_fg="#ffffff",
+        action_id=action.action_id,
+        state=action.state.value,
+        amount_display=_money(action.amount) + _tax_suffix(action),
+        decided_by="—",
+        provider_action_id="—",
+        footnote="Le litige est à réexaminer sur la facture telle qu'elle est.",
+    )
 
 
 def _findings(run) -> str:

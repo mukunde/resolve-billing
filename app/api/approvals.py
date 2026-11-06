@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_serializer
 
 from app.api.auth import Anyone, Approver, Service
 from app.api.deps import get_actions, get_approvals, get_attempts, get_audit
@@ -55,6 +55,16 @@ class ActionOut(BaseModel):
     #: While the action awaits a decision: what an approval must name,
     #: the fingerprint of the proposal and of its invoice as they stand.
     proposal: str | None = None
+    #: What the amount was made of when proposed, on a taxed invoice; absent
+    #: otherwise (specs/013-invoice-tax, FR-007).
+    tax_breakdown: dict | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_breakdown(self, handler):
+        data = handler(self)
+        if self.tax_breakdown is None:
+            data.pop("tax_breakdown", None)
+        return data
 
     @classmethod
     def of(cls, action: PendingAction, proposal: str | None = None) -> ActionOut:
@@ -77,6 +87,9 @@ class ActionOut(BaseModel):
             provider_status_at=action.provider_status_at,
             attention=action.attention,
             proposal=proposal,
+            tax_breakdown=(
+                action.tax_breakdown.to_record() if action.tax_breakdown is not None else None
+            ),
         )
 
 

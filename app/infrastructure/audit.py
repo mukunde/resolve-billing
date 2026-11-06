@@ -76,7 +76,11 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     -- For an engine that records its attempts (`engine_attempts`); NULL
     -- otherwise. Above zero, `cost_micros` is a lower bound.
     engine_invocation_id     TEXT,
-    unknown_cost_attempts    INTEGER
+    unknown_cost_attempts    INTEGER,
+
+    -- What the proposed amount is made of, on a taxed invoice: JSON
+    -- (specs/013-invoice-tax, FR-007). NULL otherwise.
+    tax_breakdown            TEXT
 );
 
 CREATE TABLE IF NOT EXISTS agent_events (
@@ -138,6 +142,7 @@ class SqliteAuditRepository:
             ("sender", "TEXT"),
             ("engine_invocation_id", "TEXT"),
             ("unknown_cost_attempts", "INTEGER"),
+            ("tax_breakdown", "TEXT"),
         ):
             if column not in held:
                 self._connection.execute(
@@ -178,7 +183,7 @@ class SqliteAuditRepository:
                     model_id, prompt_version,
                     input_tokens, cache_read_input_tokens, output_tokens,
                     cost_micros, pricing_as_of, latency_ms,
-                    engine_invocation_id, unknown_cost_attempts
+                    engine_invocation_id, unknown_cost_attempts, tax_breakdown
                 ) VALUES (
                     :run_id, :created_at,
                     :billing_provider, :decision_engine, :decision_engine_version,
@@ -190,7 +195,7 @@ class SqliteAuditRepository:
                     :model_id, :prompt_version,
                     :input_tokens, :cache_read_input_tokens, :output_tokens,
                     :cost_micros, :pricing_as_of, :latency_ms,
-                    :engine_invocation_id, :unknown_cost_attempts
+                    :engine_invocation_id, :unknown_cost_attempts, :tax_breakdown
                 )
                 """,
                 {
@@ -236,6 +241,11 @@ class SqliteAuditRepository:
                     "unknown_cost_attempts": (
                         telemetry.unknown_cost_attempts
                         if telemetry and telemetry.invocation_id
+                        else None
+                    ),
+                    "tax_breakdown": (
+                        json.dumps(action.tax_breakdown.to_record(), sort_keys=True)
+                        if action.tax_breakdown is not None
                         else None
                     ),
                 },

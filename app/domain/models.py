@@ -203,6 +203,31 @@ class TaxBreakdown(BaseModel):
             total=invoice.total,
         )
 
+    def to_record(self) -> dict:
+        """The breakdown as it is stored with an action and a run row, and
+        shown by the APIs: minor units and rates as strings."""
+        return {
+            "currency": self.total.currency,
+            "excluding_tax_minor": self.excluding_tax.amount_minor,
+            "taxes": [
+                {"rate": format(rate, "f"), "amount_minor": amount.amount_minor}
+                for rate, amount in self.taxes
+            ],
+            "total_minor": self.total.amount_minor,
+        }
+
+    @classmethod
+    def from_record(cls, record: dict) -> TaxBreakdown:
+        currency = record["currency"]
+        return cls(
+            excluding_tax=Money(amount_minor=record["excluding_tax_minor"], currency=currency),
+            taxes=tuple(
+                (Decimal(tax["rate"]), Money(amount_minor=tax["amount_minor"], currency=currency))
+                for tax in record["taxes"]
+            ),
+            total=Money(amount_minor=record["total_minor"], currency=currency),
+        )
+
 
 class InvoiceOwner(NamedTuple):
     """Whose an invoice is, and nothing else about it.

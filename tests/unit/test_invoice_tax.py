@@ -142,3 +142,13 @@ class TestTheReconciliation:
             [line(100, ("20", 20)), line(50, ("0", 0), reason="reverse_charge")]
         )
         assert lines[1].taxes[0].reason == "reverse_charge"
+
+
+def test_a_breakdown_survives_its_record():
+    inv = invoice(line(10000, ("20", 2000)), line(5000, ("5.5", 275)), total=17275)
+    breakdown = TaxBreakdown.of(inv)
+    assert TaxBreakdown.from_record(breakdown.to_record()) == breakdown
+    assert breakdown.to_record()["taxes"] == [
+        {"rate": "5.5", "amount_minor": 275},
+        {"rate": "20", "amount_minor": 2000},
+    ]

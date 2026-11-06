@@ -136,5 +136,29 @@
     "email": "marc@galet-design.fr",
     "currency": "EUR",
     "display_name": "Galet Design"
+  },
+  {
+    "id": "cus_vega",
+    "email": "lea@vega-conseil.fr",
+    "currency": "EUR",
+    "display_name": "Vega Conseil"
+  },
+  {
+    "id": "cus_ostrea",
+    "email": "nina@ostrea-labs.eu",
+    "currency": "EUR",
+    "display_name": "Ostrea Labs"
+  },
+  {
+    "id": "cus_pelican",
+    "email": "hugo@pelican-studio.fr",
+    "currency": "EUR",
+    "display_name": "Pelican Studio"
+  },
+  {
+    "id": "cus_sorbier",
+    "email": "ines@sorbier.fr",
+    "currency": "EUR",
+    "display_name": "Sorbier SAS"
   }
 ]
