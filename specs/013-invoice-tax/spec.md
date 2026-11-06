@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-06
 
-**Status**: Approved by the maintainer on 2026-11-06, at `b6d407c` (clarifications answered the same day)
+**Status**: Approved by the maintainer on 2026-11-06, at `b6d407c` (clarifications answered the same day). Built (PR 49, `def7dfa`); measured on Luna the same day, the four taxed cases right, no unsafe action (`evals/results/README.md`). The maintainer's Stripe contract runs are to come
 
 **Input**: Roadmap item 3 (real integrations), order A decided by the maintainer on
 2026-11-06 (coordination decision 45, framing reviewed by Codex r335-r336): tax comes into the
