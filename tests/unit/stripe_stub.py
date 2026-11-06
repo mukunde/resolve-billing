@@ -32,6 +32,7 @@ READS: dict[str, tuple[str, ...]] = {
     "v1.invoice_payments.list_async": ("params", "options"),
     "v1.prices.retrieve_async": ("price", "params", "options"),
     "v1.billing.meters.retrieve_async": ("id", "params", "options"),
+    "v1.tax_rates.retrieve_async": ("tax_rate", "params", "options"),
     "v1.billing.meters.event_summaries.list_async": ("id", "params", "options"),
     "v1.credit_notes.list_async": ("params", "options"),
 }
@@ -107,6 +108,7 @@ class Account:
         self.invoice_payments: list[dict] = []
         self.prices: dict[str, dict] = {}
         self.meters: dict[str, dict] = {}
+        self.tax_rates: dict[str, dict] = {}
         #: (customer id, summary): summaries are read per customer.
         self.summaries: list[tuple[str, dict]] = []
         self.calls: list[tuple[str, tuple, dict]] = []
@@ -228,6 +230,11 @@ class Account:
         if price_id not in self.prices:
             raise missing("price")
         return self.prices[price_id]
+
+    def _tax_rates_retrieve(self, tax_rate_id, params):
+        if tax_rate_id not in self.tax_rates:
+            raise missing("tax_rate")
+        return self.tax_rates[tax_rate_id]
 
     def _billing_meters_retrieve(self, meter_id, params):
         if meter_id not in self.meters:

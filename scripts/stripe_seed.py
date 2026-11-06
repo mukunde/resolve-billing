@@ -70,6 +70,9 @@ TARGET_TOTALS = {
     "billed_after_cancellation": 4900,
     "failed_payment": 4900,
     "usage": 2350,
+    # 100.00 + 20 % and 49.00 + 20 % (specs/013-invoice-tax).
+    "taxed_duplicate": 12000,
+    "taxed_billed_after_cancellation": 5880,
 }
 TARGET_STATUSES = {
     "duplicate": InvoiceStatus.PAID,
@@ -77,6 +80,8 @@ TARGET_STATUSES = {
     "billed_after_cancellation": InvoiceStatus.PAID,
     "failed_payment": InvoiceStatus.OPEN,
     "usage": InvoiceStatus.PAID,
+    "taxed_duplicate": InvoiceStatus.PAID,
+    "taxed_billed_after_cancellation": InvoiceStatus.PAID,
 }
 
 #: The usage world's blocks of 100 API calls, at 0.50 each: 23.50.
@@ -140,6 +145,8 @@ METER = {
 }
 COUPON = {"id": "rb_ten_percent", "percent_off": 10, "duration": "forever"}
 TAX_RATE = {"display_name": "TVA", "percentage": 20, "inclusive": False}
+#: Prices that include tax: the world refused `tax_inclusive` (specs/013).
+TAX_RATE_INCLUSIVE = {"display_name": "TVA TTC", "percentage": 20, "inclusive": True}
 MONTHLY = {"interval": "month"}
 PRICES: dict[str, dict[str, Any]] = {
     "rb_pro_monthly": {"product": "rb_pro", "unit_amount": 4900, "recurring": MONTHLY},
@@ -156,6 +163,9 @@ PRICES: dict[str, dict[str, Any]] = {
         "recurring": MONTHLY,
     },
     "rb_enterprise_once": {"product": "rb_enterprise", "unit_amount": 9900},
+    # 100.00 excluding tax, as the taxed duplicate's fake counterpart (specs/013).
+    "rb_team_monthly": {"product": "rb_team", "unit_amount": 10000, "recurring": MONTHLY},
+    "rb_team_once": {"product": "rb_team", "unit_amount": 10000},
     "rb_addon_monthly": {"product": "rb_addon", "unit_amount": 1000, "recurring": MONTHLY},
     # The meter is filled in once it exists.
     "rb_blocks_metered": {
@@ -377,6 +387,7 @@ class Seeder:
         self.prices: dict[str, str] = {}
         self.meter_id: str | None = None
         self.tax_rate_id: str | None = None
+        self.inclusive_tax_rate_id: str | None = None
         self.manifest: dict = {}
 
     async def run(self) -> list[Outcome]:
@@ -656,18 +667,24 @@ class Seeder:
         if terms != (COUPON["percent_off"], COUPON["duration"], None):
             raise Collision(f"the coupon {COUPON['id']} exists with other terms")
 
-        tag = "shared/tax_rate"
+        self.tax_rate_id = await self._tax_rate("shared/tax_rate", TAX_RATE)
+        self.inclusive_tax_rate_id = await self._tax_rate(
+            "shared/tax_rate_inclusive", TAX_RATE_INCLUSIVE
+        )
+
+    async def _tax_rate(self, tag: str, spec: dict) -> str:
         rates = await self.every(self.v1.tax_rates.list_async, params={"active": True})
         rate = next((r for r in rates if (r.get("metadata") or {}).get(STEP) == tag), None)
         if rate is None:
             rate = await self.call(
                 self.v1.tax_rates.create_async,
-                params={**TAX_RATE, "metadata": {STEP: tag}},
+                params={**spec, "metadata": {STEP: tag}},
                 key=tag,
             )
-        if (Decimal(str(rate.get("percentage"))), rate.get("inclusive")) != (Decimal(20), False):
+        terms = (Decimal(str(rate.get("percentage"))), rate.get("inclusive"))
+        if terms != (Decimal(spec["percentage"]), spec["inclusive"]):
             raise Collision("the seed's tax rate exists with other terms")
-        self.tax_rate_id = rate["id"]
+        return rate["id"]
 
     # -- the primitives --------------------------------------------------------
 
@@ -909,6 +926,7 @@ class World:
         period: tuple[int, int],
         price: str | None = None,
         amount: int | None = None,
+        tax_rates: list[str] | None = None,
     ) -> dict:
         """An invoice item on the subscription, for an explicit period."""
         params: dict[str, Any] = {
@@ -916,6 +934,8 @@ class World:
             "subscription": subscription["id"],
             "period": {"start": period[0], "end": period[1]},
         }
+        if tax_rates is not None:
+            params["tax_rates"] = tax_rates
         if price is not None:
             params["pricing"] = {"price": self.price(price)}
         else:
@@ -1116,9 +1136,84 @@ def _first_invoice_of(*prices: str, card: str | None = None, **extra: Any) -> Bu
     return build
 
 
-async def _tax(w: World) -> str:
+async def _taxed_duplicate(w: World) -> str:
+    """The duplicate, 100.00 + 20 % (specs/013-invoice-tax)."""
     rate = w.seeder.tax_rate_id
+    subscription = await w.subscription(
+        "subscription", "rb_team_monthly", default_tax_rates=[rate]
+    )
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
+    await w.advance(w.dates.start + DAY)
+    await w.item(
+        "item",
+        subscription=subscription,
+        period=(w.dates.start, w.dates.end),
+        price="rb_team_once",
+        tax_rates=[rate],
+    )
+    return (await w.paid(await w.invoice("invoice", subscription)))["id"]
+
+
+async def _taxed_billed_after_cancellation(w: World) -> str:
+    """Billed after cancellation, 49.00 + 20 % (specs/013-invoice-tax)."""
+    rate = w.seeder.tax_rate_id
+    subscription = await w.subscription(
+        "subscription", "rb_pro_monthly", default_tax_rates=[rate]
+    )
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
+    await w.advance(w.dates.start - DAY)
+    await w.item(
+        "item",
+        subscription=subscription,
+        period=(w.dates.start, w.dates.end),
+        price="rb_pro_once",
+        tax_rates=[rate],
+    )
+    subscription = await w.cancelled(subscription)
+    return (await w.paid(await w.taken("final_invoice", subscription)))["id"]
+
+
+async def _tax_inclusive(w: World) -> str:
+    rate = w.seeder.inclusive_tax_rate_id
     return await _first_invoice_of("rb_pro_monthly", default_tax_rates=[rate])(w)
+
+
+async def _tax_mismatch(w: World) -> str:
+    """A taxed invoice with a shipping cost: its total holds an amount no
+    line carries, so its figures do not reconcile (specs/013, FR-002)."""
+    rate = w.seeder.tax_rate_id
+    subscription = await w.subscription(
+        "subscription", "rb_pro_monthly", default_tax_rates=[rate]
+    )
+    await w.paid(await w.taken("first_invoice", subscription, reason=CREATED))
+    await w.advance(w.dates.start + DAY)
+    await w.item(
+        "item",
+        subscription=subscription,
+        period=(w.dates.start, w.dates.end),
+        price="rb_pro_once",
+        tax_rates=[rate],
+    )
+    invoice = await w.once(
+        "invoice",
+        find=w.v1.invoices.list_async,
+        where={"customer": w.customer_id},
+        create=w.v1.invoices.create_async,
+        params={
+            "customer": w.customer_id,
+            "subscription": subscription["id"],
+            "auto_advance": False,
+            "shipping_cost": {
+                "shipping_rate_data": {
+                    "display_name": "Livraison",
+                    "type": "fixed_amount",
+                    "fixed_amount": {"amount": 500, "currency": CURRENCY},
+                    "tax_behavior": "exclusive",
+                }
+            },
+        },
+    )
+    return (await w.finalized(invoice))["id"]
 
 
 async def _negative_line(w: World) -> str:
@@ -1174,6 +1269,8 @@ BUILDERS: dict[str, Builder] = {
     "billed_after_cancellation": _billed_after_cancellation,
     "failed_payment": _failed_payment,
     "usage": _usage,
+    "taxed_duplicate": _taxed_duplicate,
+    "taxed_billed_after_cancellation": _taxed_billed_after_cancellation,
     "unsupported_mixed_item_periods": _first_invoice_of(
         "rb_pro_monthly", "rb_pro_yearly", billing_mode={"type": "flexible"}
     ),
@@ -1181,7 +1278,6 @@ BUILDERS: dict[str, Builder] = {
     "unsupported_subscription_status": _first_invoice_of(
         "rb_pro_monthly", card=DECLINING_CARD, payment_behavior="default_incomplete"
     ),
-    "unsupported_invoice_tax": _tax,
     "unsupported_invoice_discount": _first_invoice_of(
         "rb_pro_monthly", discounts=[{"coupon": COUPON["id"]}]
     ),
@@ -1189,6 +1285,8 @@ BUILDERS: dict[str, Builder] = {
     "unsupported_fractional_unit_price": _first_invoice_of("rb_pro_fractional"),
     "unsupported_partial_refund": _partial_refund,
     "unsupported_invoice_credit": _invoice_credit,
+    "unsupported_tax_inclusive": _tax_inclusive,
+    "unsupported_tax_mismatch": _tax_mismatch,
 }
 
 
@@ -1300,6 +1398,24 @@ async def _usage_read(w: World, target: Invoice) -> list[str]:
     return usage_facts(target, await w.seeder.provider.get_usage(target.subscription_id, period))
 
 
+def tax_facts(target: Invoice) -> list[str]:
+    """A taxed world's target carries 20 % on its amount excluding tax."""
+    rates = target.tax_by_rate
+    if list(rates) != [Decimal(20)]:
+        return [f"its tax rates are {sorted(map(str, rates))}, not 20 %"]
+    if rates[Decimal(20)].amount_minor * 5 != target.amount_excluding_tax.amount_minor:
+        return ["its tax is not 20 % of its amount excluding tax"]
+    return []
+
+
+async def _taxed_duplicate_read(w: World, target: Invoice) -> list[str]:
+    return tax_facts(target) + await _duplicate_read(w, target)
+
+
+async def _taxed_cancellation_read(w: World, target: Invoice) -> list[str]:
+    return tax_facts(target) + await _cancellation_read(w, target)
+
+
 def _supported(name: str, read: Callable[[World, Invoice], Awaitable[list[str]]]) -> Check:
     async def check(w: World, target_id: str) -> list[str]:
         try:
@@ -1342,6 +1458,10 @@ CHECKS: dict[str, Check] = {
     "billed_after_cancellation": _supported("billed_after_cancellation", _cancellation_read),
     "failed_payment": _supported("failed_payment", _failed_payment_read),
     "usage": _supported("usage", _usage_read),
+    "taxed_duplicate": _supported("taxed_duplicate", _taxed_duplicate_read),
+    "taxed_billed_after_cancellation": _supported(
+        "taxed_billed_after_cancellation", _taxed_cancellation_read
+    ),
     **{w.name: _unsupported for w in worlds.UNSUPPORTED},
 }
 

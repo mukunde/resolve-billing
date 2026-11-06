@@ -190,6 +190,9 @@ class StripeReader:
     async def meter(self, meter_id: str) -> dict:
         return await self._call(self._v1.billing.meters.retrieve_async, meter_id)
 
+    async def tax_rate(self, tax_rate_id: str) -> dict:
+        return await self._call(self._v1.tax_rates.retrieve_async, tax_rate_id)
+
     async def credit_notes(self, invoice_id: str) -> list[dict]:
         """Every credit note of the invoice, its refunds expanded."""
         return await self._every(

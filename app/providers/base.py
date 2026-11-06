@@ -36,7 +36,6 @@ UNSUPPORTED_REASONS = frozenset(
         "multiple_prices",
         "subscription_status",
         "cancellation_without_end",
-        "invoice_tax",
         "invoice_discount",
         "negative_line",
         "fractional_unit_price",

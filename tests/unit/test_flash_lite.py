@@ -104,7 +104,7 @@ class TestAdmission:
             quota(FLASH, 20, declared=1).admit_full_run(20 * 1)
         quota(FLASH, 20, declared=None)  # another day's state would be another test
 
-    @pytest.mark.parametrize(("used", "admitted"), [(419, True), (420, False)])
+    @pytest.mark.parametrize(("used", "admitted"), [(407, True), (408, False)])
     def test_flash_lite_needs_its_cases_times_its_attempts(self, used, admitted):
         book = quota(LITE, 500, declared=used)
 

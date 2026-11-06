@@ -3,6 +3,7 @@
 
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 import pytest
 
@@ -10,11 +11,28 @@ from app.api.deps import FAILOVER
 from app.decision.bounded import Bounds
 from app.decision.failover import SECONDARY_BOUNDS
 from app.decision.masking import MASKING_VERSION
-from evals import engines, prompt_compare
+from evals import compare, engines, prompt_compare
 from evals.first_calls import fingerprint
 from evals.service_run import ENGINE, HAIKU, measured
 
 CASE_IDS = [c["id"] for c in json.loads(engines.DEVELOPMENT_SET.read_bytes())]
+RESULTS = Path(__file__).resolve().parents[2] / "evals" / "results"
+
+
+@pytest.fixture(autouse=True)
+def todays_cases_at_the_synthetic_commit(monkeypatch):
+    """The synthetic runs name commit `abc1234`, which git does not hold: the
+    set they read there is today's, under today's hash."""
+    real = compare.development_case_ids
+
+    def at(commit, expected):
+        if commit != "abc1234":
+            return real(commit, expected)
+        if expected != engines.DEVELOPMENT_SET_SHA256[:16]:
+            raise compare.ComparisonRefused("not the set the runs recorded")
+        return CASE_IDS
+
+    monkeypatch.setattr(compare, "development_case_ids", at)
 NEW = prompt_compare.NEW_CASES
 EXPECTED = {c["id"]: c for c in json.loads(engines.DEVELOPMENT_SET.read_bytes())}
 
@@ -256,6 +274,20 @@ class TestTheRefusals:
         records[6]["primary_disabled"] = False
         with pytest.raises(prompt_compare.Refused):
             prompt_compare.compare(files(tmp_path, records))
+
+
+class TestTheStoredComparison:
+    def test_spec_012s_report_is_reproduced_from_its_runs(self):
+        """The set grew after spec 012 (spec 013): its runs are compared on
+        their own cases, read at their commit through git."""
+        runs = sorted(RESULTS.glob("gpt-6-luna-v[34]-2026*.json")) + sorted(
+            RESULTS.glob("haiku-leg-v[34]-2026*.json")
+        )
+        assert len(runs) == 12
+        stored = (RESULTS / "prompt-v4-comparison.md").read_text(encoding="utf-8")
+        report = prompt_compare.markdown(prompt_compare.compare(runs))
+        # The file was written with a final newline; the text is the same.
+        assert report.rstrip().splitlines() == stored.rstrip().splitlines()
 
 
 class TestTheCommand:

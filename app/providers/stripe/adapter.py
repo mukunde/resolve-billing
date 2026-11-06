@@ -335,19 +335,24 @@ class StripeBillingProvider:
 
 
 class _Lookups:
-    """Prices and meters, read once per port call (plan section 4)."""
+    """Prices, meters and tax rates, read once per port call (plan section 4)."""
 
     def __init__(self, reader: StripeReader) -> None:
         self._reader = reader
         self._prices: dict[str, dict] = {}
         self._meters: dict[str, dict] = {}
+        self._tax_rates: dict[str, dict] = {}
 
     async def invoice(self, payload: dict) -> Invoice:
         for price_id in mapping.line_price_ids(payload) - self._prices.keys():
             self._prices[price_id] = await _dependency(self._reader.price, price_id)
         for meter_id in mapping.line_meter_ids(payload, self._prices) - self._meters.keys():
             self._meters[meter_id] = await _dependency(self._reader.meter, meter_id)
-        return mapping.invoice(payload, self._prices, self._meters)
+        # Only a taxed invoice names rates to read (specs/013-invoice-tax): an
+        # untaxed one costs no more reads than before.
+        for rate_id in mapping.tax_rate_ids(payload) - self._tax_rates.keys():
+            self._tax_rates[rate_id] = await _dependency(self._reader.tax_rate, rate_id)
+        return mapping.invoice(payload, self._prices, self._meters, self._tax_rates)
 
 
 async def _dependency(read, identifier: str) -> dict:

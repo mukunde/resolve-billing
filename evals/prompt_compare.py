@@ -33,7 +33,7 @@ from app.decision.bounded import Bounds
 from app.decision.failover import SECONDARY_BOUNDS
 from app.decision.masking import MASKING_VERSION
 from app.decision.verdict import verdict_schema
-from evals import engines
+from evals import compare as comparison
 from evals.first_calls import fingerprint
 from evals.runner import CHECK_NAMES
 from evals.service_run import ENGINE, RUN_KIND, measured
@@ -108,7 +108,6 @@ def _valid_outcome(outcome) -> bool:
 
 def load(paths: list[Path]) -> dict[tuple[str, str], list[dict]]:
     """The runs by (leg, prompt), or a refusal."""
-    case_ids = sorted(c["id"] for c in json.loads(engines.DEVELOPMENT_SET.read_bytes()))
     records = []
     for path in paths:
         record = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -136,14 +135,23 @@ def load(paths: list[Path]) -> dict[tuple[str, str], list[dict]]:
             attempt_ids.append(ident)
     if len(set(attempt_ids)) != len(attempt_ids):
         raise Refused("the runs are not distinct: two share an attempt")
-    if records and records[0].get("cases_sha256") != engines.DEVELOPMENT_SET_SHA256[:16]:
-        raise Refused("the runs are not on today's development set")
     if records and records[0].get("masking_version") != MASKING_VERSION:
         raise Refused("the runs do not carry today's masking_version")
     if records and records[0].get("schema_sha256") != _schema_hash():
         raise Refused("the runs do not carry today's schema_sha256")
     if records and not re.fullmatch(r"[0-9a-f]{7,40}", records[0].get("commit", "")):
         raise Refused("the runs' commit is not a commit")
+    # The development set as it stood at the runs' commit, checked against the
+    # hash they recorded: the set grows after a measurement (specs/013), and
+    # the comparison is of the runs' own cases.
+    case_ids: list[str] = []
+    if records:
+        try:
+            case_ids = sorted(
+                comparison.development_case_ids(records[0]["commit"], records[0]["cases_sha256"])
+            )
+        except comparison.ComparisonRefused as refusal:
+            raise Refused(f"the runs' development set: {refusal}") from None
     grouped: dict[tuple[str, str], list[dict]] = {}
     for record in records:
         name = record["_file"]

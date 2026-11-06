@@ -1112,5 +1112,110 @@
       }
     ],
     "label_source": "maintainer, 2026-11-05"
+  },
+  {
+    "id": "taxed_duplicate_fr",
+    "why": "Spec 013. duplicate_fr's dispute on invoices with VAT: two invoices of 100.00 + 20.00 VAT at 20 % for the same September period. Same amount excluding tax, same tax at each rate: a duplicate, credited whole, 120.00 including tax, its breakdown shown.",
+    "message": "Je crois que j'ai ete facture deux fois pour le mois de septembre.",
+    "customer_email": "lea@vega-conseil.fr",
+    "invoice_id": "inv_601",
+    "expect_classification": "duplicate_billing",
+    "expect_engine_action": "propose_credit_note",
+    "expect_action": "credit_note",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "DUPLICATE_INVOICE"
+    ],
+    "covers": [
+      {
+        "boundary": "B07",
+        "side": "A",
+        "type": "MU",
+        "with": "duplicate_fr",
+        "varies": "VAT at 20 % on both invoices"
+      },
+      {
+        "boundary": "B30",
+        "side": "A",
+        "type": "CP",
+        "with": "taxed_same_total_control",
+        "varies": "the amount excluding tax and the rate, the same total"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-06"
+  },
+  {
+    "id": "taxed_billed_after_cancellation_en",
+    "why": "Spec 013. billed_after_cancellation in English, with VAT: cancelled in August, a September invoice of 49.00 + 9.80 VAT at 20 %, paid. Refunded whole, 58.80 including tax.",
+    "message": "I cancelled in August, why is there an invoice for September?",
+    "customer_email": "nina@ostrea-labs.eu",
+    "invoice_id": "inv_610",
+    "expect_classification": "billing_after_cancellation",
+    "expect_engine_action": "propose_refund",
+    "expect_action": "refund",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "INVOICE_AFTER_CANCELLATION"
+    ],
+    "covers": [
+      {
+        "boundary": "B10",
+        "side": "A",
+        "type": "MU",
+        "with": "billed_after_cancellation",
+        "varies": "VAT at 20 %, the message in English"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-06"
+  },
+  {
+    "id": "taxed_duplicate_payment",
+    "why": "Spec 013. duplicate_payment_single_invoice with VAT: one invoice of 49.00 + 9.80 VAT, collected twice at 58.80. Payments are matched including tax; the extra one is refunded, 58.80.",
+    "message": "Bonjour, je vois deux prelevements de 58,80 EUR pour la meme facture inv_620. Pouvez-vous rembourser le second ?",
+    "customer_email": "hugo@pelican-studio.fr",
+    "invoice_id": "inv_620",
+    "expect_classification": "duplicate_billing",
+    "expect_engine_action": "propose_refund",
+    "expect_action": "refund",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "DUPLICATE_PAYMENT"
+    ],
+    "covers": [
+      {
+        "boundary": "B09",
+        "side": "B",
+        "type": "MU",
+        "with": "duplicate_payment_single_invoice",
+        "varies": "VAT at 20 %, paid including tax"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-06"
+  },
+  {
+    "id": "taxed_same_total_control",
+    "why": "Spec 013, the control. Two invoices for the same September period, both 120.00 including tax: 100.00 + 20 % and 113.74 + 5.5 %. Not the same charge excluding tax: no duplicate. Beyond that, adjudicated at plan approval (option a): what prompt v3 says when no finding is present.",
+    "message": "Je crois que j'ai ete facture deux fois pour le mois de septembre.",
+    "customer_email": "ines@sorbier.fr",
+    "invoice_id": "inv_631",
+    "expect_classification": "valid_invoice",
+    "expect_engine_action": "explain_invoice",
+    "expect_action": "reply",
+    "expect_human_approval": false,
+    "expect_automatic_reply": true,
+    "expect_findings": [],
+    "covers": [
+      {
+        "boundary": "B30",
+        "side": "B",
+        "type": "CP",
+        "with": "taxed_duplicate_fr",
+        "varies": "the amount excluding tax and the rate, the same total"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-06"
   }
 ]

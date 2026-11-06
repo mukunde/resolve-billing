@@ -544,7 +544,7 @@ class TestNothingTwice:
         )
         assert len(account.objects["v1.billing.meters"]) == 1
         assert len(account.objects["v1.coupons"]) == 1
-        assert len(account.objects["v1.tax_rates"]) == 1
+        assert len(account.objects["v1.tax_rates"]) == 2  # exclusive, inclusive (spec 013)
 
     async def test_two_runs_at_once_make_each_object_once(self):
         """The account yields on every request, so the two runs interleave:

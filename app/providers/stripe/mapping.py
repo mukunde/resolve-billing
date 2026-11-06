@@ -19,9 +19,18 @@ from decimal import Decimal
 from typing import Any
 
 from app.domain.enums import InvoiceStatus, PaymentStatus, SubscriptionStatus
-from app.domain.models import Customer, Invoice, InvoiceLine, Payment, Subscription, Usage
+from app.domain.models import (
+    Customer,
+    Invoice,
+    InvoiceLine,
+    LineTax,
+    Payment,
+    Subscription,
+    Usage,
+)
 from app.domain.money import Money
 from app.providers.base import Allocation, ProviderAction, ProviderUnsupported
+from app.providers.tax import reconcile, untaxed_unless_charged
 
 Payload = Mapping[str, Any]
 
@@ -166,18 +175,20 @@ def issued_at(payload: Payload) -> datetime:
 
 
 def invoice(
-    payload: Payload, prices: Mapping[str, Payload], meters: Mapping[str, Payload]
+    payload: Payload,
+    prices: Mapping[str, Payload],
+    meters: Mapping[str, Payload],
+    tax_rates: Mapping[str, Payload] | None = None,
 ) -> Invoice:
-    """`prices` and `meters` hold, by id, those the lines name without sending
-    them (`line_price_ids`, `line_meter_ids`)."""
+    """`prices`, `meters` and `tax_rates` hold, by id, those the invoice names
+    without sending them (`line_price_ids`, `line_meter_ids`, `tax_rate_ids`)."""
     try:
         status = InvoiceStatus(payload["status"])
     except ValueError:
         # A status this version does not know is a field the mapping cannot read.
         raise ProviderUnsupported("missing_field") from None
     currency = _currency(payload.get("currency"))
-    if any(tax["amount"] for tax in payload.get("total_taxes") or ()):
-        raise ProviderUnsupported("invoice_tax")
+    rates = tax_rates or {}
     if any(discount["amount"] for discount in payload.get("total_discount_amounts") or ()):
         raise ProviderUnsupported("invoice_discount")
     _refuse_pretax_credits(payload.get("total_pretax_credit_amounts"))
@@ -185,15 +196,73 @@ def invoice(
     parent = payload.get("parent") or {}
     details = parent.get("subscription_details") or {}
     subscription_id = details.get("subscription")
+    total = Money(amount_minor=_required(payload.get("total")), currency=currency)
+    lines = untaxed_unless_charged(
+        [_line(line, currency, prices, meters, rates) for line in payload["lines"]["data"]]
+    )
+    # Tax: reconciled against what Stripe posts at invoice level (specs/013,
+    # FR-002). A tax not carried by the lines -- on a shipping cost, say --
+    # does not reconcile.
+    total_taxes = payload.get("total_taxes") or ()
+    _refuse_inclusive(total_taxes)
+    excluding = payload.get("total_excluding_tax")
+    reconcile(
+        lines,
+        total,
+        excluding_tax=(
+            Money(amount_minor=excluding, currency=currency) if excluding is not None else None
+        ),
+        tax_by_rate=[
+            (_rate(tax, rates), Money(amount_minor=tax["amount"], currency=currency))
+            for tax in total_taxes
+            if tax["amount"]
+        ],
+    )
     return Invoice(
         id=payload["id"],
         customer_id=identifier(_required(payload.get("customer"))),
         subscription_id=identifier(subscription_id) if subscription_id else None,
-        total=Money(amount_minor=_required(payload.get("total")), currency=currency),
+        total=total,
         status=status,
         issued_at=issued_at(payload),
-        lines=[_line(line, currency, prices, meters) for line in payload["lines"]["data"]],
+        lines=lines,
     )
+
+
+def _refuse_inclusive(taxes: Iterable[Payload]) -> None:
+    """Prices that include tax are not held by the domain (`tax_inclusive`)."""
+    if any(tax["amount"] and tax.get("tax_behavior") == "inclusive" for tax in taxes):
+        raise ProviderUnsupported("tax_inclusive")
+
+
+def _rate(tax: Payload, rates: Mapping[str, Payload]) -> Decimal:
+    """The percentage of the tax rate a tax entry names (`missing_field` when
+    it names none, or one without a percentage)."""
+    details = tax.get("tax_rate_details") or {}
+    rate_id = details.get("tax_rate")
+    if rate_id is None:
+        raise ProviderUnsupported("missing_field")
+    rate = rates.get(rate_id) if isinstance(rate_id, str) else rate_id
+    if rate is None or rate.get("percentage") is None:
+        raise ProviderUnsupported("missing_field")
+    return Decimal(str(rate["percentage"]))
+
+
+def tax_rate_ids(payload: Payload) -> set[str]:
+    """Tax rates a taxed invoice names by id: the adapter reads them. None
+    for an invoice whose tax is zero everywhere -- it is untaxed, and read
+    exactly as before (FR-009)."""
+    entries = list(payload.get("total_taxes") or ())
+    for line in payload["lines"]["data"]:
+        entries.extend(line.get("taxes") or ())
+    if not any(tax["amount"] for tax in entries):
+        return set()
+    ids = set()
+    for tax in entries:
+        rate = (tax.get("tax_rate_details") or {}).get("tax_rate")
+        if isinstance(rate, str):
+            ids.add(rate)
+    return ids
 
 
 def _line(
@@ -201,12 +270,13 @@ def _line(
     currency: str,
     prices: Mapping[str, Payload],
     meters: Mapping[str, Payload],
+    rates: Mapping[str, Payload],
 ) -> InvoiceLine:
     amount = _required(payload.get("amount"))
     if amount < 0:
         raise ProviderUnsupported("negative_line")
-    if any(tax["amount"] for tax in payload.get("taxes") or ()):
-        raise ProviderUnsupported("invoice_tax")
+    taxes = payload.get("taxes") or ()
+    _refuse_inclusive(taxes)
     if any(discount["amount"] for discount in payload.get("discount_amounts") or ()):
         raise ProviderUnsupported("invoice_discount")
     _refuse_pretax_credits(payload.get("pretax_credit_amounts"))
@@ -229,6 +299,25 @@ def _line(
         period_start=_at(period.get("start")),
         period_end=_at(period.get("end")),
         metric=_metric(_line_price(payload, prices), meters),
+        taxes=_line_taxes(taxes, currency, rates),
+    )
+
+
+def _line_taxes(
+    taxes: Iterable[Payload], currency: str, rates: Mapping[str, Payload]
+) -> tuple[LineTax, ...]:
+    """The tax entries of a line. On an untaxed invoice every entry is zero
+    and the rates are not read: `untaxed_unless_charged` then drops them."""
+    entries = list(taxes)
+    if not entries:
+        return ()
+    return tuple(
+        LineTax(
+            amount=Money(amount_minor=tax["amount"], currency=currency),
+            rate=_rate(tax, rates) if rates or tax["amount"] else Decimal(0),
+            reason=tax.get("taxability_reason"),
+        )
+        for tax in entries
     )
 
 

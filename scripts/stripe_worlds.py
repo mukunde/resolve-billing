@@ -40,6 +40,9 @@ SUPPORTED = (
     World("billed_after_cancellation", counterpart="billed_after_cancellation"),
     World("failed_payment", counterpart="failed_payment_valid_invoice"),
     World("usage", counterpart="legitimate_overage"),
+    # specs/013-invoice-tax: the same disputes, with VAT at 20 %.
+    World("taxed_duplicate", counterpart="taxed_duplicate_fr"),
+    World("taxed_billed_after_cancellation", counterpart="taxed_billed_after_cancellation_en"),
 )
 
 UNSUPPORTED = tuple(
@@ -48,12 +51,15 @@ UNSUPPORTED = tuple(
         "mixed_item_periods",
         "multiple_prices",
         "subscription_status",
-        "invoice_tax",
         "invoice_discount",
         "negative_line",
         "fractional_unit_price",
         "partial_refund",
         "invoice_credit",
+        # specs/013-invoice-tax: prices including tax, and tax the lines do
+        # not carry alone (a taxed shipping cost).
+        "tax_inclusive",
+        "tax_mismatch",
     )
 )
 
