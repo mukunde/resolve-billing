@@ -635,3 +635,22 @@ class TestCreditNote:
         payload = stripe.credit_note()
         del payload["refunds"]
         assert written(payload).status is None
+
+
+class TestExpandedRates:
+    def test_a_zero_entry_keeps_its_expanded_rate_on_a_taxed_invoice(self):
+        """r344: rates expanded inline leave the lookup empty; a zero entry on
+        a taxed invoice keeps its own rate, never 0 %."""
+        expanded_20 = {**stripe.tax(), "tax_rate_details": {"tax_rate": {"percentage": 20.0}}}
+        zero_55 = {
+            **stripe.tax(amount=0),
+            "tax_rate_details": {"tax_rate": {"percentage": 5.5}},
+            "taxability_reason": "reverse_charge",
+        }
+        lines = [
+            stripe.line(taxes=[expanded_20]),
+            stripe.line(id="il_2", amount=1000, unit_amount_decimal="1000", taxes=[zero_55]),
+        ]
+        read = taxed(lines, rates={})
+        assert read.lines[1].taxes[0].rate == Decimal("5.5")
+        assert read.lines[1].taxes[0].reason == "reverse_charge"

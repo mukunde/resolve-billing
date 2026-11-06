@@ -128,3 +128,21 @@ class TestAnApprovalHoldsForTheTaxShown:
 
         assert response.status_code == 409
         assert get_provider().executed_actions == []
+
+
+class TestTheApiOffersNoStaleProposal:
+    def test_a_tax_changed_before_reading_the_action_gives_no_fingerprint(self, client):
+        """r344: the API does not offer a fingerprint beside a breakdown the
+        invoice no longer carries."""
+        action_id = investigate(client, TAXED)["action_id"]
+        change_tax("inv_601", "5.5", 550)
+
+        action = client.get(f"/api/v1/actions/{action_id}").json()
+
+        assert action["proposal"] is None
+        assert action["stale"] is True
+        assert action["tax_breakdown"] == BREAKDOWN
+
+    def test_an_untaxed_action_carries_no_stale_flag(self, client):
+        action_id = investigate(client, UNTAXED)["action_id"]
+        assert "stale" not in client.get(f"/api/v1/actions/{action_id}").json()

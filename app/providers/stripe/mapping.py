@@ -202,8 +202,12 @@ def invoice(
     details = parent.get("subscription_details") or {}
     subscription_id = details.get("subscription")
     total = Money(amount_minor=_required(payload.get("total")), currency=currency)
+    taxed = _charges_tax(payload)
     lines = untaxed_unless_charged(
-        [_line(line, currency, prices, meters, rates) for line in payload["lines"]["data"]]
+        [
+            _line(line, currency, prices, meters, rates, taxed)
+            for line in payload["lines"]["data"]
+        ]
     )
     # Tax: reconciled against what Stripe posts at invoice level (specs/013,
     # FR-002). A tax not carried by the lines -- on a shipping cost, say --
@@ -253,14 +257,25 @@ def _rate(tax: Payload, rates: Mapping[str, Payload]) -> Decimal:
     return Decimal(str(rate["percentage"]))
 
 
+def _tax_entries(payload: Payload) -> list[Payload]:
+    entries = list(payload.get("total_taxes") or ())
+    for line in payload["lines"]["data"]:
+        entries.extend(line.get("taxes") or ())
+    return entries
+
+
+def _charges_tax(payload: Payload) -> bool:
+    """Whether any tax entry of the invoice, on a line or in a total, is not
+    zero: the invoice is then taxed, and every entry's rate is read."""
+    return any(tax["amount"] for tax in _tax_entries(payload))
+
+
 def tax_rate_ids(payload: Payload) -> set[str]:
     """Tax rates a taxed invoice names by id: the adapter reads them. None
     for an invoice whose tax is zero everywhere -- it is untaxed, and read
     exactly as before (FR-009)."""
-    entries = list(payload.get("total_taxes") or ())
-    for line in payload["lines"]["data"]:
-        entries.extend(line.get("taxes") or ())
-    if not any(tax["amount"] for tax in entries):
+    entries = _tax_entries(payload)
+    if not _charges_tax(payload):
         return set()
     ids = set()
     for tax in entries:
@@ -276,6 +291,7 @@ def _line(
     prices: Mapping[str, Payload],
     meters: Mapping[str, Payload],
     rates: Mapping[str, Payload],
+    taxed: bool = False,
 ) -> InvoiceLine:
     amount = _required(payload.get("amount"))
     if amount < 0:
@@ -304,22 +320,23 @@ def _line(
         period_start=_at(period.get("start")),
         period_end=_at(period.get("end")),
         metric=_metric(_line_price(payload, prices), meters),
-        taxes=_line_taxes(taxes, currency, rates),
+        taxes=_line_taxes(taxes, currency, rates, taxed),
     )
 
 
 def _line_taxes(
-    taxes: Iterable[Payload], currency: str, rates: Mapping[str, Payload]
+    taxes: Iterable[Payload], currency: str, rates: Mapping[str, Payload], taxed: bool
 ) -> tuple[LineTax, ...]:
-    """The tax entries of a line. On an untaxed invoice every entry is zero
-    and the rates are not read: `untaxed_unless_charged` then drops them."""
+    """The tax entries of a line, each with its rate, zero ones included, on
+    a taxed invoice. On an untaxed invoice every entry is zero and no rate is
+    read: `untaxed_unless_charged` then drops them."""
     entries = list(taxes)
     if not entries:
         return ()
     return tuple(
         LineTax(
             amount=Money(amount_minor=tax["amount"], currency=currency),
-            rate=_rate(tax, rates) if rates or tax["amount"] else Decimal(0),
+            rate=_rate(tax, rates) if taxed else Decimal(0),
             reason=tax.get("taxability_reason"),
         )
         for tax in entries

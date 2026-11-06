@@ -83,9 +83,16 @@ class ApprovalService:
         invoice = await self._provider.find_invoice(action.invoice_id)
         return self._fingerprint(action, invoice)
 
-    async def tax_breakdown_holds(self, action: PendingAction) -> bool:
-        """Whether the invoice still carries the tax recorded with the proposal."""
-        return breakdown_holds(action, await self._provider.find_invoice(action.invoice_id))
+    async def presented(self, action: PendingAction) -> str | None:
+        """What an approval must name, read once with the invoice: the
+        proposal's fingerprint -- or None when the invoice no longer carries
+        the tax recorded with the proposal, which is then not offered for
+        approval at all (specs/013-invoice-tax, FR-007).
+        """
+        invoice = await self._provider.find_invoice(action.invoice_id)
+        if not breakdown_holds(action, invoice):
+            return None
+        return self._fingerprint(action, invoice)
 
     @staticmethod
     def _fingerprint(action: PendingAction, invoice) -> str:

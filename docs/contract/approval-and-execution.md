@@ -96,7 +96,8 @@ approvals bound to what was shown, writes on a real platform) and ADR-009
   recorded or shown. Before the page offers a decision and before an
   approval is recorded, the breakdown is compared with the invoice as the
   platform holds it now: if its tax is not the one proposed, the page shows
-  the proposal as stale and the approval is refused, the action expiring to
+  the proposal as stale, `GET /actions/{id}` answers `stale: true` with no
+  proposal fingerprint, and the approval is refused, the action expiring to
   be investigated again. A tax changed after approval changes the
   fingerprint, and execution is refused as for any change to the invoice.
   The correction itself is the invoice's total including tax, capped there,

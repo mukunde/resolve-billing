@@ -89,8 +89,9 @@ async def review_page(
     calibrated = run is not None and run["confidence_kind"] == "calibrated"
     # The breakdown shown is the one recorded with the proposal; if the
     # invoice no longer carries it, nothing is offered for approval
-    # (specs/013-invoice-tax, FR-007).
-    if not await approvals.tax_breakdown_holds(action):
+    # (specs/013-invoice-tax, FR-007). One read gives both.
+    proposal = await approvals.presented(action)
+    if proposal is None:
         return HTMLResponse(_stale(action), status_code=409)
 
     return HTMLResponse(
@@ -126,7 +127,7 @@ async def review_page(
             policy=run["authorization_reason"] if run else "",
             # What the approver is shown, as a value the decision carries
             # back: an approval binds to this proposal on this invoice. D13.
-            proposal=await approvals.proposal_fingerprint(action),
+            proposal=proposal,
             deadline=_deadline(action),
         )
     )
