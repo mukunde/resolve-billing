@@ -28,6 +28,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import ActionState
+from app.domain.models import TaxBreakdown
 from app.infrastructure.actions import (
     INCIDENTS,
     IllegalTransition,
@@ -52,6 +53,13 @@ from app.providers.base import (
 STALE_CLAIM = timedelta(minutes=5)
 
 
+def breakdown_holds(action: PendingAction, invoice) -> bool:
+    """Whether the invoice read now carries the tax breakdown recorded with
+    the proposal -- None on both sides for an untaxed one."""
+    current = TaxBreakdown.of(invoice) if invoice is not None else None
+    return current == action.tax_breakdown
+
+
 class ApprovalService:
     def __init__(
         self,
@@ -73,6 +81,21 @@ class ApprovalService:
         platform, not from a copy of ours, so a change made there shows.
         """
         invoice = await self._provider.find_invoice(action.invoice_id)
+        return self._fingerprint(action, invoice)
+
+    async def presented(self, action: PendingAction) -> str | None:
+        """What an approval must name, read once with the invoice: the
+        proposal's fingerprint -- or None when the invoice no longer carries
+        the tax recorded with the proposal, which is then not offered for
+        approval at all (specs/013-invoice-tax, FR-007).
+        """
+        invoice = await self._provider.find_invoice(action.invoice_id)
+        if not breakdown_holds(action, invoice):
+            return None
+        return self._fingerprint(action, invoice)
+
+    @staticmethod
+    def _fingerprint(action: PendingAction, invoice) -> str:
         material = {
             "action_type": action.action_type,
             "invoice_id": action.invoice_id,
@@ -98,7 +121,26 @@ class ApprovalService:
         # Past its deadline, the request is expired and the transition
         # below refuses it.
         action = self.expire_if_overdue(action_id)
-        current = await self.proposal_fingerprint(action)
+        invoice = await self._provider.find_invoice(action.invoice_id)
+        current = self._fingerprint(action, invoice)
+        if action.state is ActionState.PENDING_APPROVAL and not breakdown_holds(action, invoice):
+            # The tax shown is the one recorded when the proposal was made;
+            # an invoice whose tax is no longer that one is not what was
+            # proposed (specs/013-invoice-tax, FR-007).
+            self._actions.transition(
+                action_id,
+                ActionState.EXPIRED,
+                resolution=(
+                    "the invoice's tax is no longer the one proposed; "
+                    "approval refused, to be investigated again"
+                ),
+            )
+            raise IllegalTransition(
+                action_id,
+                ActionState.EXPIRED,
+                ActionState.APPROVED,
+                why="(the invoice's tax changed after the proposal)",
+            )
         if action.state is ActionState.PENDING_APPROVAL and presented != current:
             self._actions.transition(
                 action_id,

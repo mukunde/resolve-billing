@@ -71,7 +71,7 @@ class TestARun:
         assert code in (0, 1)
         assert result["complete"] is True
         assert result["run_kind"] == "service run"
-        assert result["cases_run"] == result["cases_total"] == 41
+        assert result["cases_run"] == result["cases_total"] == 45
         assert result["engine"] == "gpt-6-luna"
         assert result["configuration_fingerprint"]
         assert all(attempt["outcome"] == "answered" for attempt in result["attempts"])

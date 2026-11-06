@@ -27,7 +27,9 @@ from fastapi.responses import HTMLResponse
 
 from app.api.auth import Anyone
 from app.api.deps import get_attempts, get_audit
+from app.api.review import tax_text
 from app.api.templating import Safe, escape, render
+from app.domain.models import TaxBreakdown
 from app.infrastructure.attempts import SqliteAttemptStore
 from app.infrastructure.audit import SqliteAuditRepository
 
@@ -77,7 +79,7 @@ async def run_page(
             confidence_kind=run["confidence_kind"],
             engine=_engine(run),
             findings=_findings(run),
-            verdict=run["verdict"],
+            verdict=run["verdict"] + _tax(run),
             authorization_reason=run["authorization_reason"] or "—",
             explanation=run["explanation"] or "—",
             trace=_trace(events),
@@ -96,6 +98,14 @@ async def run_page(
 #
 # Each returns Safe, so each is responsible for escaping what came from the
 # database. They take rows and hand back markup; nothing else builds markup.
+
+
+def _tax(run) -> str:
+    """The proposed amount's breakdown, on a taxed invoice; nothing otherwise
+    (specs/013-invoice-tax, FR-007). Plain text: `render` escapes it."""
+    if not run["tax_breakdown"]:
+        return ""
+    return " — " + tax_text(TaxBreakdown.from_record(json.loads(run["tax_breakdown"])))
 
 
 def _engine(run) -> str:

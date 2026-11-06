@@ -40,6 +40,9 @@ SUPPORTED = (
     World("billed_after_cancellation", counterpart="billed_after_cancellation"),
     World("failed_payment", counterpart="failed_payment_valid_invoice"),
     World("usage", counterpart="legitimate_overage"),
+    # specs/013-invoice-tax: the same disputes, with VAT at 20 %.
+    World("taxed_duplicate", counterpart="taxed_duplicate_fr"),
+    World("taxed_billed_after_cancellation", counterpart="taxed_billed_after_cancellation_en"),
 )
 
 UNSUPPORTED = tuple(
@@ -48,12 +51,15 @@ UNSUPPORTED = tuple(
         "mixed_item_periods",
         "multiple_prices",
         "subscription_status",
-        "invoice_tax",
         "invoice_discount",
         "negative_line",
         "fractional_unit_price",
         "partial_refund",
         "invoice_credit",
+        # specs/013-invoice-tax: prices including tax, and tax the lines do
+        # not carry alone (a taxed shipping cost).
+        "tax_inclusive",
+        "tax_mismatch",
     )
 )
 
@@ -98,7 +104,15 @@ WRITE_PURPOSES = {
     "cap": "paid",  # property 5: credit notes and refunds within the invoice
     "refund_open": "open",  # property 6: a refund refused before sending
     "execute_refund": "paid",  # SC-002: a refund through the execution service
+    # specs/013-invoice-tax: the same properties on invoices with VAT at 20 %.
+    "taxed_credit_paid": "paid",
+    "taxed_credit_open": "open",
+    "taxed_refund": "paid",
+    "taxed_cap": "paid",
 }
+
+#: The write purposes whose invoice carries VAT at 20 % (specs/013).
+TAXED_WRITE_PURPOSES = frozenset(p for p in WRITE_PURPOSES if p.startswith("taxed_"))
 
 #: What each write invoice totals, in cents.
 WRITE_TOTAL = 4900

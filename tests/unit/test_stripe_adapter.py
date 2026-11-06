@@ -46,6 +46,16 @@ def account(**kwargs) -> stub.Account:
     return held
 
 
+def taxed_invoice() -> dict:
+    """A 49.00 line with 9.80 of VAT at 20 %, its totals as Stripe posts them."""
+    return stripe.invoice(
+        [stripe.line(taxes=[stripe.tax()])],
+        total=5880,
+        total_excluding_tax=4900,
+        total_taxes=[stripe.tax()],
+    )
+
+
 def provider(held: stub.Account, budget: float = 5.0) -> StripeBillingProvider:
     return StripeBillingProvider(StripeReader(stub.StubSdk(held)), budget=budget)
 
@@ -267,6 +277,40 @@ class TestInvoices:
         held.prices[stripe.METERED_PRICE] = stripe.metered_price()
         with pytest.raises(ProviderUnsupported, match="missing_field"):
             await provider(held).find_invoice(stripe.INVOICE)
+
+    async def test_a_taxed_invoice_reads_its_rate_once(self):
+        """specs/013-invoice-tax: an untaxed invoice reads no rate."""
+        held = account()
+        held.invoices = [taxed_invoice()]
+        held.tax_rates = {"txr_RbVat20000001": {"id": "txr_RbVat20000001", "percentage": 20.0}}
+        invoice = await provider(held).get_invoice(stripe.INVOICE)
+        assert invoice.total.amount_minor == 5880
+        assert len(held.calls_to("v1.tax_rates.retrieve_async")) == 1
+
+    async def test_an_untaxed_invoice_reads_no_rate(self):
+        held = account()
+        await provider(held).get_invoice(stripe.INVOICE)
+        assert held.calls_to("v1.tax_rates.retrieve_async") == []
+
+    async def test_a_rate_stripe_cannot_find_never_makes_the_invoice_absent(self):
+        held = account()
+        held.invoices = [taxed_invoice()]
+        with pytest.raises(ProviderUnsupported, match="missing_field"):
+            await provider(held).find_invoice(stripe.INVOICE)
+
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (stub.APIConnectionError(SENTINEL), ProviderUnavailable),
+            (stub.PermissionError(SENTINEL), ProviderConfigurationError),
+        ],
+    )
+    async def test_a_rate_that_fails_to_read_keeps_its_category(self, error, expected):
+        held = account()
+        held.invoices = [taxed_invoice()]
+        held.failures["v1.tax_rates.retrieve_async"] = error
+        with pytest.raises(expected):
+            await provider(held).get_invoice(stripe.INVOICE)
 
     async def test_a_price_is_read_once_per_call(self):
         held = account()

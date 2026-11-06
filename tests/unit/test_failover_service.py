@@ -374,13 +374,13 @@ class TestTheMeasurement:
             "claude-haiku-5-5",
         ]
         assert all(leg["fingerprint"] for leg in result["failover"]["legs"])
-        assert result["cases_run"] == 41
+        assert result["cases_run"] == 45
         assert self.admitted == ["claude-haiku-5-5"]
-        assert vendor.calls == 27
+        assert vendor.calls == 31
         assert {a["provider"] for a in result["attempts"]} == {"anthropic"}
         assert {a["number"] for a in result["attempts"]} == {2}
         assert set(result["answered_by"].values()) == {"claude-haiku-5-5"}
-        assert len(result["answered_by"]) == 27
+        assert len(result["answered_by"]) == 31
 
     def test_no_cost_stays_unknown(self, monkeypatch, tmp_path):
         _, result, _ = self.measured(

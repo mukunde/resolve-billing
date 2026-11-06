@@ -581,5 +581,187 @@
         "period_end": "2026-10-01T00:00:00"
       }
     ]
+  },
+  {
+    "id": "inv_600",
+    "customer_id": "cus_vega",
+    "subscription_id": "sub_600",
+    "amount": "120.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 013 : facture de septembre, 100 HT + TVA 20 %.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "100.00",
+        "amount": "100.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00",
+        "taxes": [
+          {
+            "rate": "20",
+            "amount": "20.00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inv_601",
+    "customer_id": "cus_vega",
+    "subscription_id": "sub_600",
+    "amount": "120.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-02T04:12:00",
+    "_comment": "Spec 013 : relance du batch, meme periode, meme montant HT et meme TVA.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "100.00",
+        "amount": "100.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00",
+        "taxes": [
+          {
+            "rate": "20",
+            "amount": "20.00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inv_610",
+    "customer_id": "cus_ostrea",
+    "subscription_id": "sub_610",
+    "amount": "58.80",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 013 : facture de septembre apres resiliation en aout, 49 HT + TVA 20 %.",
+    "lines": [
+      {
+        "label": "Pro plan - September 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00",
+        "taxes": [
+          {
+            "rate": "20",
+            "amount": "9.80"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inv_620",
+    "customer_id": "cus_pelican",
+    "subscription_id": "sub_620",
+    "amount": "58.80",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 013 : facture de septembre, 49 HT + TVA 20 %, encaissee deux fois.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00",
+        "taxes": [
+          {
+            "rate": "20",
+            "amount": "9.80"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inv_630",
+    "customer_id": "cus_sorbier",
+    "subscription_id": "sub_630",
+    "amount": "120.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 013 : septembre, 100 HT + TVA 20 %.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "100.00",
+        "amount": "100.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00",
+        "taxes": [
+          {
+            "rate": "20",
+            "amount": "20.00"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inv_631",
+    "customer_id": "cus_sorbier",
+    "subscription_id": "sub_630",
+    "amount": "120.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-02T09:00:00",
+    "_comment": "Spec 013 : septembre, meme TTC mais 113,74 HT + TVA 5,5 % : pas un doublon.",
+    "lines": [
+      {
+        "label": "Abonnement Pro - septembre 2026 - formation",
+        "quantity": "1",
+        "unit_amount": "113.74",
+        "amount": "113.74",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00",
+        "taxes": [
+          {
+            "rate": "5.5",
+            "amount": "6.26"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inv_640",
+    "customer_id": "cus_tilleul",
+    "subscription_id": "sub_640",
+    "amount": "58.80",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-10-01T09:00:00",
+    "_comment": "Spec 013 : facture ouverte, rien d'encaisse, 49 HT + TVA 20 % (contrat d'ecriture).",
+    "lines": [
+      {
+        "label": "Abonnement Pro - octobre 2026",
+        "quantity": "1",
+        "unit_amount": "49.00",
+        "amount": "49.00",
+        "period_start": "2026-10-01T00:00:00",
+        "period_end": "2026-11-01T00:00:00",
+        "taxes": [
+          {
+            "rate": "20",
+            "amount": "9.80"
+          }
+        ]
+      }
+    ]
   }
 ]

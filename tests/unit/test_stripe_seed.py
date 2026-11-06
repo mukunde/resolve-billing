@@ -126,6 +126,18 @@ class TestThePreconditions:
         assert seed.duplicate_facts(fake("inv_002"), acme) == []
         assert seed.duplicate_facts(fake("inv_002"), [fake("inv_002")])
 
+    def test_taxed_duplicate(self):
+        """specs/013-invoice-tax: 20 % on both, a duplicate."""
+        vega = [i for i in FAKE._invoices if i.customer_id == "cus_vega"]
+        assert seed.tax_facts(fake("inv_601")) == []
+        assert seed.duplicate_facts(fake("inv_601"), vega) == []
+        assert seed.tax_facts(fake("inv_631"))  # 5.5 %: not the world's rate
+        assert seed.tax_facts(fake("inv_002"))  # untaxed
+
+    def test_taxed_cancellation(self):
+        assert seed.tax_facts(fake("inv_610")) == []
+        assert seed.cancellation_facts(fake("inv_610"), sub("sub_610")) == []
+
     def test_proration(self):
         assert seed.proration_facts(fake("inv_020"), sub("sub_99")) == []
         assert seed.proration_facts(fake("inv_001"), sub("sub_77"))
@@ -544,7 +556,7 @@ class TestNothingTwice:
         )
         assert len(account.objects["v1.billing.meters"]) == 1
         assert len(account.objects["v1.coupons"]) == 1
-        assert len(account.objects["v1.tax_rates"]) == 1
+        assert len(account.objects["v1.tax_rates"]) == 2  # exclusive, inclusive (spec 013)
 
     async def test_two_runs_at_once_make_each_object_once(self):
         """The account yields on every request, so the two runs interleave:

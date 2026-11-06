@@ -15,6 +15,7 @@ timeout finds the original action instead of issuing a second one.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
@@ -24,6 +25,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.domain.enums import ActionState
 from app.domain.exceptions import BillingDomainError
+from app.domain.models import TaxBreakdown
 from app.domain.money import Money
 
 SCHEMA = """
@@ -72,7 +74,10 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     provider_status     TEXT,
     provider_status_at  TEXT,
     -- Why the action needs a person, if it does (ATTENTION).
-    attention           TEXT
+    attention           TEXT,
+    -- What the amount was made of when proposed, on a taxed invoice: JSON
+    -- (specs/013-invoice-tax, FR-007). NULL on an untaxed one.
+    tax_breakdown       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_run ON pending_actions(run_id);
@@ -208,6 +213,7 @@ class PendingAction(BaseModel):
     provider_status: str | None = None
     provider_status_at: datetime | None = None
     attention: str | None = None
+    tax_breakdown: TaxBreakdown | None = None
 
     def expired(self, now: datetime | None = None) -> bool:
         """Past the deadline for a decision."""
@@ -256,6 +262,7 @@ class SqliteActionStore:
             ("provider_status", "TEXT"),
             ("provider_status_at", "TEXT"),
             ("attention", "TEXT"),
+            ("tax_breakdown", "TEXT"),
         ):
             if column not in held:
                 self._connection.execute(f"ALTER TABLE pending_actions ADD COLUMN {column} {ddl}")
@@ -281,6 +288,7 @@ class SqliteActionStore:
         reason: str,
         provider: str,
         ttl: timedelta | None = None,
+        tax_breakdown: TaxBreakdown | None = None,
     ) -> PendingAction:
         """Register an action awaiting a human.
 
@@ -303,8 +311,8 @@ class SqliteActionStore:
                 (action_id, run_id, created_at, updated_at, state, action_type,
                  invoice_id, amount_minor, currency, reason, idempotency_key,
                  resume_url, approved_by, provider_action_id, failure_reason,
-                 expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)
+                 expires_at, tax_breakdown)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
                 """,
                 (
                     action_id,
@@ -319,6 +327,11 @@ class SqliteActionStore:
                     reason,
                     key,
                     expires_at,
+                    (
+                        json.dumps(tax_breakdown.to_record(), sort_keys=True)
+                        if tax_breakdown is not None
+                        else None
+                    ),
                 ),
             )
         return self.get(action_id)
@@ -554,4 +567,9 @@ def _to_action(row: sqlite3.Row) -> PendingAction:
         provider_status=row["provider_status"],
         provider_status_at=_moment(row["provider_status_at"]),
         attention=row["attention"],
+        tax_breakdown=(
+            TaxBreakdown.from_record(json.loads(row["tax_breakdown"]))
+            if row["tax_breakdown"]
+            else None
+        ),
     )

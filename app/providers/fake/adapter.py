@@ -16,7 +16,7 @@ import re
 from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import InvoiceStatus, PaymentStatus
-from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
+from app.domain.models import Customer, Invoice, InvoiceLine, Payment, Subscription, Usage
 from app.providers.base import (
     ALLOCATIONS,
     Allocation,
@@ -357,6 +357,7 @@ class FakeBillingProvider:
         *,
         total_minor: int | None = None,
         status: InvoiceStatus | None = None,
+        lines: list[InvoiceLine] | None = None,
     ) -> Invoice:
         """Change an invoice behind the application's back, as someone
         working in the platform's own console would."""
@@ -366,6 +367,8 @@ class FakeBillingProvider:
             update["total"] = invoice.total.model_copy(update={"amount_minor": total_minor})
         if status is not None:
             update["status"] = status
+        if lines is not None:
+            update["lines"] = lines
         changed = invoice.model_copy(update=update)
         self._invoices[self._invoices.index(invoice)] = changed
         return changed

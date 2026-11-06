@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_serializer
 
 from app.api.auth import Anyone, Approver, Service
 from app.api.deps import get_actions, get_approvals, get_attempts, get_audit
@@ -55,6 +55,21 @@ class ActionOut(BaseModel):
     #: While the action awaits a decision: what an approval must name,
     #: the fingerprint of the proposal and of its invoice as they stand.
     proposal: str | None = None
+    #: What the amount was made of when proposed, on a taxed invoice; absent
+    #: otherwise (specs/013-invoice-tax, FR-007).
+    tax_breakdown: dict | None = None
+    #: The invoice's tax is no longer the one proposed: nothing to approve.
+    #: Absent unless true.
+    stale: bool = False
+
+    @model_serializer(mode="wrap")
+    def _without_absent_breakdown(self, handler):
+        data = handler(self)
+        if self.tax_breakdown is None:
+            data.pop("tax_breakdown", None)
+        if not self.stale:
+            data.pop("stale", None)
+        return data
 
     @classmethod
     def of(cls, action: PendingAction, proposal: str | None = None) -> ActionOut:
@@ -77,6 +92,9 @@ class ActionOut(BaseModel):
             provider_status_at=action.provider_status_at,
             attention=action.attention,
             proposal=proposal,
+            tax_breakdown=(
+                action.tax_breakdown.to_record() if action.tax_breakdown is not None else None
+            ),
         )
 
 
@@ -186,7 +204,12 @@ async def read_action(
     action = await _guard(lambda: approvals.expire_if_overdue(action_id))
     if action.state is not ActionState.PENDING_APPROVAL:
         return ActionOut.of(action)
-    return ActionOut.of(action, await approvals.proposal_fingerprint(action))
+    # No fingerprint for a proposal whose invoice no longer carries the tax
+    # recorded with it: it is shown as stale, not offered (specs/013, FR-007).
+    proposal = await approvals.presented(action)
+    if proposal is None:
+        return ActionOut.of(action).model_copy(update={"stale": True})
+    return ActionOut.of(action, proposal)
 
 
 @router.get("/runs/{run_id}")

@@ -88,6 +88,21 @@ approvals bound to what was shown, writes on a real platform) and ADR-009
   and on the fake), checked before the claim and again by the adapter at
   the point of sending. Past it, nothing is sent again for that action.
 
+- **What a taxed amount is made of** (specs/013-invoice-tax). A proposal
+  on an invoice with tax records, when it is made, its breakdown -- amount
+  excluding tax, tax by rate, total including tax -- with the action and the
+  run row. The dispute API, the approvals API, the review page, the decided
+  pages and the run page show it; on an untaxed invoice nothing new is
+  recorded or shown. Before the page offers a decision and before an
+  approval is recorded, the breakdown is compared with the invoice as the
+  platform holds it now: if its tax is not the one proposed, the page shows
+  the proposal as stale, `GET /actions/{id}` answers `stale: true` with no
+  proposal fingerprint, and the approval is refused, the action expiring to
+  be investigated again. A tax changed after approval changes the
+  fingerprint, and execution is refused as for any change to the invoice.
+  The correction itself is the invoice's total including tax, capped there,
+  credit notes and refunds together.
+
 ## States
 
 ```text

@@ -199,7 +199,7 @@ The interesting assertion is not that the tests pass.
 
 ```yaml
 - run: >-
-    python -m evals.runner --engine mock --min-fully-correct 35
+    python -m evals.runner --engine mock --min-fully-correct 38
     --baseline evals/baselines/mock.json
 ```
 
@@ -356,9 +356,9 @@ does the runner: `gemini-3.8-flash` in `~/.resolve-billing/quota-<project>.json`
 project shares. A day is declared once per model, never lowered; each
 request is counted before it is sent and never refunded, failed ones
 included. A full run starts only if the day's remaining requests cover the
-27 cases that reach the engine times the configuration's attempts -- more
+31 cases that reach the engine times the configuration's attempts -- more
 than Flash's 20 a day since spec 012, so Flash has no full run on the free
-tier; for Flash-Lite, 81 remaining. A request that would
+tier; for Flash-Lite, 93 remaining (spec 013). A request that would
 pass the limit is not sent and the run stops ("daily quota exhausted (local
 count)"), as it does on reaching a day not declared -- a run crossing Pacific
 midnight -- and on a clock gone back. Flash makes one attempt per case and

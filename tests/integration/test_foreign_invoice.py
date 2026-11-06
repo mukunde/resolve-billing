@@ -30,7 +30,7 @@ class Taxed(FakeBillingProvider):
     async def find_invoice(self, invoice_id):
         self.full_reads.append(invoice_id)
         if invoice_id in ("inv_010", "inv_299"):
-            raise ProviderUnsupported("invoice_tax")
+            raise ProviderUnsupported("invoice_discount")
         return await super().find_invoice(invoice_id)
 
     async def get_invoice(self, invoice_id):

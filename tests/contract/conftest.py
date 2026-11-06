@@ -253,6 +253,11 @@ FAKE_WRITE_INVOICES = {
     "cap": "inv_002",
     "refund_open": "inv_040",
     "execute_refund": "inv_171",
+    # specs/013-invoice-tax: the taxed worlds' invoices, VAT at 20 %.
+    "taxed_credit_paid": "inv_600",
+    "taxed_credit_open": "inv_640",
+    "taxed_refund": "inv_610",
+    "taxed_cap": "inv_601",
 }
 
 

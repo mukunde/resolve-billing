@@ -13,7 +13,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_serializer
 
 from app.api.auth import Service
 from app.api.deps import get_investigator
@@ -62,6 +62,16 @@ class ActionOut(BaseModel):
     type: str
     amount_minor: int | None = None
     currency: str | None = None
+    #: What the amount is made of, on a taxed invoice; absent otherwise, so an
+    #: untaxed proposal reads as before (specs/013-invoice-tax, FR-007).
+    tax_breakdown: dict | None = None
+
+    @model_serializer(mode="wrap")
+    def _without_absent_breakdown(self, handler):
+        data = handler(self)
+        if self.tax_breakdown is None:
+            data.pop("tax_breakdown", None)
+        return data
 
     @classmethod
     def of(cls, action: ProposedAction) -> ActionOut:
@@ -69,6 +79,9 @@ class ActionOut(BaseModel):
             type=action.type,
             amount_minor=action.amount.amount_minor if action.amount else None,
             currency=action.amount.currency if action.amount else None,
+            tax_breakdown=(
+                action.tax_breakdown.to_record() if action.tax_breakdown is not None else None
+            ),
         )
 
 

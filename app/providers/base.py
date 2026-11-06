@@ -36,7 +36,6 @@ UNSUPPORTED_REASONS = frozenset(
         "multiple_prices",
         "subscription_status",
         "cancellation_without_end",
-        "invoice_tax",
         "invoice_discount",
         "negative_line",
         "fractional_unit_price",
@@ -46,6 +45,10 @@ UNSUPPORTED_REASONS = frozenset(
         "unrepresentable_period",
         "missing_field",
         "invoice_credit",
+        # specs/013-invoice-tax: posted tax figures that disagree, and prices
+        # that include tax.
+        "tax_mismatch",
+        "tax_inclusive",
     }
 )
 

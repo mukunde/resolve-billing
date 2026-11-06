@@ -89,7 +89,7 @@ class TestTheDevelopmentSetOnly:
 
         cases = engines.development_cases(engines.DEVELOPMENT_SET)
 
-        assert len(cases) == 41
+        assert len(cases) == 45
 
     def test_another_path_is_refused(self, tmp_path, monkeypatch):
         monkeypatch.delenv("RESOLVE_EXTRA_FIXTURES_DIR", raising=False)

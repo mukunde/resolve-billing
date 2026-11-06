@@ -114,6 +114,11 @@ def detect_duplicate_invoice(target: Invoice, recent: list[Invoice]) -> RuleFind
     Equal totals and overlapping periods on one subscription is the signature
     of a double charge. Voided invoices are ignored: a cancelled duplicate
     never took the customer's money.
+
+    When either invoice carries tax, the charge is compared as agreed --
+    excluding tax -- and by rate: equal amounts excluding tax and the same tax
+    at each rate (specs/013-invoice-tax, FR-005). Two untaxed invoices are
+    compared as before.
     """
     if target.status is InvoiceStatus.VOID or target.subscription_id is None:
         return None
@@ -126,6 +131,14 @@ def detect_duplicate_invoice(target: Invoice, recent: list[Invoice]) -> RuleFind
         if other.subscription_id != target.subscription_id:
             continue
         if other.total != target.total:
+            continue
+        # The rates first: they differ whenever only one invoice is taxed, and
+        # an untaxed invoice's lines are never summed (they may be in several
+        # currencies, which `currency_mismatch` reports).
+        if (target.taxed or other.taxed) and (
+            other.tax_by_rate != target.tax_by_rate
+            or other.amount_excluding_tax != target.amount_excluding_tax
+        ):
             continue
         if not target.overlaps_period_of(other):
             continue

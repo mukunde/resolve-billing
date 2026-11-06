@@ -32,6 +32,7 @@ READS: dict[str, tuple[str, ...]] = {
     "v1.invoice_payments.list_async": ("params", "options"),
     "v1.prices.retrieve_async": ("price", "params", "options"),
     "v1.billing.meters.retrieve_async": ("id", "params", "options"),
+    "v1.tax_rates.retrieve_async": ("tax_rate", "params", "options"),
     "v1.billing.meters.event_summaries.list_async": ("id", "params", "options"),
     "v1.credit_notes.list_async": ("params", "options"),
 }
@@ -107,6 +108,7 @@ class Account:
         self.invoice_payments: list[dict] = []
         self.prices: dict[str, dict] = {}
         self.meters: dict[str, dict] = {}
+        self.tax_rates: dict[str, dict] = {}
         #: (customer id, summary): summaries are read per customer.
         self.summaries: list[tuple[str, dict]] = []
         self.calls: list[tuple[str, tuple, dict]] = []
@@ -229,6 +231,11 @@ class Account:
             raise missing("price")
         return self.prices[price_id]
 
+    def _tax_rates_retrieve(self, tax_rate_id, params):
+        if tax_rate_id not in self.tax_rates:
+            raise missing("tax_rate")
+        return self.tax_rates[tax_rate_id]
+
     def _billing_meters_retrieve(self, meter_id, params):
         if meter_id not in self.meters:
             raise missing("meter")
@@ -268,7 +275,16 @@ class Account:
         from tests.unit import stripe_payloads as stripe
 
         invoice = next(i for i in self.invoices if i["id"] == params["invoice"])
-        amount = params["amount"]
+        if "lines" in params:
+            # Line by line, as Stripe reverses each line with its tax (spec 013).
+            by_id = {line["id"]: line for line in invoice["lines"]["data"]}
+            amount = sum(
+                by_id[item["invoice_line_item"]]["amount"]
+                + sum(tax["amount"] for tax in by_id[item["invoice_line_item"]].get("taxes") or ())
+                for item in params["lines"]
+            )
+        else:
+            amount = params["amount"]
         refunded = params.get("refund_amount", 0)
         after_payment = invoice["status"] == "paid"
         return stripe.credit_note(

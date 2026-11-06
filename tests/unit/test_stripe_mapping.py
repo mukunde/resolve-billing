@@ -34,6 +34,86 @@ def invoice(lines=None, prices=None, meters=None, **changes):
     )
 
 
+RATES = {"txr_RbVat20000001": {"id": "txr_RbVat20000001", "percentage": 20.0}}
+
+
+def taxed(lines=None, rates=RATES, **changes):
+    """A taxed invoice: a 49.00 line with 9.80 of VAT at 20 % unless said
+    otherwise, its totals as Stripe posts them."""
+    data = lines if lines is not None else [stripe.line(taxes=[stripe.tax()])]
+    excluding = sum(item["amount"] for item in data)
+    tax = sum(t["amount"] for item in data for t in item.get("taxes") or ())
+    posted = {
+        "total": excluding + tax,
+        "total_excluding_tax": excluding,
+        "total_taxes": [t for item in data for t in item.get("taxes") or ()],
+    }
+    payload = stripe.invoice(data, **{**posted, **changes})
+    return mapping.invoice(payload, {stripe.PRICE: stripe.price()}, {}, rates)
+
+
+class TestTax:
+    """specs/013-invoice-tax, FR-001 to FR-003."""
+
+    def test_a_taxed_invoice_is_read(self):
+        read = taxed()
+        assert read.total.amount_minor == 5880
+        assert read.amount_excluding_tax.amount_minor == 4900
+        assert read.tax_by_rate == {Decimal("20"): Money(amount_minor=980, currency="EUR")}
+        assert read.lines[0].taxes[0].reason == "standard_rated"
+
+    def test_two_rates(self):
+        lines = [
+            stripe.line(taxes=[stripe.tax()]),
+            stripe.line(
+                amount=1000,
+                unit_amount_decimal="1000",
+                taxes=[{**stripe.tax(amount=55), "tax_rate_details": {"tax_rate": "txr_low"}}],
+            ),
+        ]
+        rates = {**RATES, "txr_low": {"id": "txr_low", "percentage": 5.5}}
+        read = taxed(lines, rates)
+        assert read.tax_by_rate == {
+            Decimal("5.5"): Money(amount_minor=55, currency="EUR"),
+            Decimal("20"): Money(amount_minor=980, currency="EUR"),
+        }
+
+    def test_a_total_that_does_not_reconcile(self):
+        with refused("tax_mismatch"):
+            taxed(total=5881)
+
+    def test_a_per_rate_total_that_does_not_reconcile(self):
+        with refused("tax_mismatch"):
+            taxed(total_taxes=[stripe.tax(amount=981)])
+
+    def test_an_amount_excluding_tax_that_does_not_reconcile(self):
+        with refused("tax_mismatch"):
+            taxed(total_excluding_tax=4899)
+
+    def test_a_rate_that_cannot_be_read(self):
+        with refused("missing_field"):
+            taxed(rates={})
+
+    def test_a_rate_without_a_percentage(self):
+        with refused("missing_field"):
+            taxed(rates={"txr_RbVat20000001": {"id": "txr_RbVat20000001"}})
+
+    def test_an_untaxed_invoice_names_no_rate_to_read(self):
+        payload = stripe.invoice([stripe.line(taxes=[stripe.tax(amount=0)])])
+        assert mapping.tax_rate_ids(payload) == set()
+
+    def test_a_taxed_invoice_names_its_rates(self):
+        payload = stripe.invoice(
+            [stripe.line(taxes=[stripe.tax()])], total_taxes=[stripe.tax()]
+        )
+        assert mapping.tax_rate_ids(payload) == {"txr_RbVat20000001"}
+
+    def test_zero_tax_on_an_untaxed_invoice_reads_as_before(self):
+        read = invoice([stripe.line(taxes=[stripe.tax(amount=0)])])
+        assert read.lines[0].taxes == ()
+        assert "taxes" not in read.lines[0].model_dump()
+
+
 class TestCustomer:
     def test_identifier_address_as_written_currency_upper_case_and_name(self):
         customer = mapping.customer(stripe.customer())
@@ -204,14 +284,21 @@ class TestInvoice:
     def test_an_invoice_outside_a_subscription_has_none(self):
         assert invoice(parent=None).subscription_id is None
 
-    @pytest.mark.parametrize("behavior", ["exclusive", "inclusive"])
-    def test_tax_on_the_invoice_is_refused(self, behavior):
-        with refused("invoice_tax"):
-            invoice(total_taxes=[stripe.tax(behavior=behavior)])
+    def test_tax_on_the_invoice_alone_does_not_reconcile(self):
+        """Tax Stripe posts with no line carrying it -- on a shipping cost,
+        say -- is `tax_mismatch` (specs/013-invoice-tax, FR-002)."""
+        with refused("tax_mismatch"):
+            taxed([stripe.line()], total_taxes=[stripe.tax()], total=5880)
 
-    def test_tax_on_a_line_is_refused(self):
-        with refused("invoice_tax"):
-            invoice([stripe.line(taxes=[stripe.tax(behavior="inclusive")])])
+    @pytest.mark.parametrize("where", ["line", "invoice"])
+    def test_prices_including_tax_are_refused(self, where):
+        inclusive = stripe.tax(behavior="inclusive")
+        if where == "line":
+            with refused("tax_inclusive"):
+                taxed([stripe.line(taxes=[inclusive])])
+        else:
+            with refused("tax_inclusive"):
+                taxed(total_taxes=[inclusive])
 
     def test_a_tax_entry_of_zero_is_no_tax(self):
         assert invoice(total_taxes=[stripe.tax(amount=0)]).total.amount_minor == 4900
@@ -548,3 +635,22 @@ class TestCreditNote:
         payload = stripe.credit_note()
         del payload["refunds"]
         assert written(payload).status is None
+
+
+class TestExpandedRates:
+    def test_a_zero_entry_keeps_its_expanded_rate_on_a_taxed_invoice(self):
+        """r344: rates expanded inline leave the lookup empty; a zero entry on
+        a taxed invoice keeps its own rate, never 0 %."""
+        expanded_20 = {**stripe.tax(), "tax_rate_details": {"tax_rate": {"percentage": 20.0}}}
+        zero_55 = {
+            **stripe.tax(amount=0),
+            "tax_rate_details": {"tax_rate": {"percentage": 5.5}},
+            "taxability_reason": "reverse_charge",
+        }
+        lines = [
+            stripe.line(taxes=[expanded_20]),
+            stripe.line(id="il_2", amount=1000, unit_amount_decimal="1000", taxes=[zero_55]),
+        ]
+        read = taxed(lines, rates={})
+        assert read.lines[1].taxes[0].rate == Decimal("5.5")
+        assert read.lines[1].taxes[0].reason == "reverse_charge"

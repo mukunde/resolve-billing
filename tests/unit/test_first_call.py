@@ -187,7 +187,7 @@ def always():
 
 class TestAGeminiRun:
     def test_flash_s_real_day_no_longer_holds_a_full_run(self, tmp_path, monkeypatch, capsys):
-        """Spec 012: 27 cases reach the engine, Flash allows 20 requests a day."""
+        """Spec 013: 31 cases reach the engine, Flash allows 20 requests a day."""
         built = []
         status, result = run_gemini(
             monkeypatch,
@@ -200,7 +200,7 @@ class TestAGeminiRun:
         assert status == 2
         assert built == []
         assert result is None
-        assert "needs 27 of the 20 requests" in capsys.readouterr().err
+        assert "needs 31 of the 20 requests" in capsys.readouterr().err
 
     def test_a_full_run_on_a_fresh_declared_day(self, tmp_path, monkeypatch):
         roomy_flash(monkeypatch)
@@ -401,7 +401,7 @@ class TestAFirstCallRefusedBeforeSending:
         assert result["complete"] is False
         assert result["stop_reason"].startswith("not sent: the quota refused")
         assert expected in result["stop_reason"]
-        assert len(result["not_attempted"]) == 41
+        assert len(result["not_attempted"]) == 45
 
 
 class TestTheDevelopmentSet:
@@ -441,7 +441,7 @@ class TestTheDevelopmentSet:
 
         asyncio.run(run_all())
 
-        assert len(reached) == engines.ENGINE_CASES == 27
+        assert len(reached) == engines.ENGINE_CASES == 31
 
 
 def test_the_state_folder_is_the_test_s_own():

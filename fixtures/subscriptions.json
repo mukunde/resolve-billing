@@ -275,5 +275,65 @@
     "period_start": "2026-09-01T00:00:00",
     "period_end": "2026-10-01T00:00:00",
     "cancelled_at": null
+  },
+  {
+    "id": "sub_600",
+    "customer_id": "cus_vega",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_610",
+    "customer_id": "cus_ostrea",
+    "state": "cancelled",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": "2026-08-20T16:30:00"
+  },
+  {
+    "id": "sub_620",
+    "customer_id": "cus_pelican",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_630",
+    "customer_id": "cus_sorbier",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-09-01T00:00:00",
+    "period_start": "2026-09-01T00:00:00",
+    "period_end": "2026-10-01T00:00:00",
+    "cancelled_at": null
+  },
+  {
+    "id": "sub_640",
+    "customer_id": "cus_tilleul",
+    "state": "active",
+    "plan": "pro_monthly",
+    "interval": "month",
+    "interval_count": 1,
+    "anchor": "2026-10-01T00:00:00",
+    "period_start": "2026-10-01T00:00:00",
+    "period_end": "2026-11-01T00:00:00",
+    "cancelled_at": null
   }
 ]

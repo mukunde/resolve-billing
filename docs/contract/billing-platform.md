@@ -82,6 +82,21 @@ CI, the demo and the evaluation run on; and **Stripe**, selected with
   invoice it settles, its amount and its state (pending, succeeded, failed,
   refunded). A succeeded payment carries what was collected; a pending or
   failed one what was asked, never read as money received.
+- **Tax, as the platform posts it** (specs/013-invoice-tax). A line's
+  `amount` is excluding tax; the tax posted on it is in `taxes`, each entry
+  an amount and its rate (a percentage, never multiplied by anything here),
+  with the platform's taxability reason when it states one. An invoice's
+  amount excluding tax and its tax by rate are derived from its lines; its
+  `total` is including tax. On an invoice carrying tax, the mapper reconciles
+  what the platform posts -- every line and tax amount in the invoice's
+  currency, the amount excluding tax, the tax by rate, the total -- and
+  refuses `tax_mismatch` when they disagree (a tax no line carries, such as
+  a taxed shipping cost, included); prices that include tax are
+  `tax_inclusive`; a tax amount without a readable rate is `missing_field`.
+  An invoice whose tax is zero everywhere is untaxed: its zero entries are
+  dropped and it is read exactly as before tax existed. On Stripe a taxed
+  invoice's rates are read from its tax rate objects, once per rate; an
+  untaxed invoice reads none.
 - **References as the platform writes them.** Optionally,
   `invoice_references(text)` and `invoice_reference_spans(text)` find the
   invoice references a message cites, normalised to the platform's own
@@ -94,10 +109,12 @@ CI, the demo and the evaluation run on; and **Stripe**, selected with
 
 The closed set of reasons, each refused rather than approximated:
 `mixed_item_periods`, `multiple_prices`, `subscription_status`,
-`cancellation_without_end`, `invoice_tax`, `invoice_discount`,
+`cancellation_without_end`, `invoice_discount`,
 `invoice_credit`, `negative_line`, `fractional_unit_price`, `partial_refund`,
 `multi_invoice_payment`, `unplaced_payment`, `unrepresentable_period`,
-`missing_field`. A new reason is a decision, with its tests.
+`missing_field`, `tax_mismatch`, `tax_inclusive`. A new reason is a decision,
+with its tests. `invoice_tax` was retired by spec 013: tax is read, and what
+does not reconcile is `tax_mismatch`.
 
 ## Writes
 
@@ -170,6 +187,16 @@ the restricted test key given the write permissions it needs:
   idempotency error (400, 404), an authentication or permission refusal
   (401, 403), and the adapter's own refusals before sending. Everything
   else is an unknown outcome. Categories only, never Stripe's text.
+- **A taxed invoice, line by line** (specs/013-invoice-tax). On an invoice
+  with tax, the credit note names every line of the invoice, whole, instead
+  of an amount, so that Stripe reverses each line with its tax; every line is
+  read to the end, and before sending the lines' amounts with their tax must
+  make the approved amount including tax, or nothing is sent
+  (`invoice_state`); a fractional quantity is refused too (a credit note line
+  takes an integer). `credit_amount` and `refund_amount` are the total
+  including tax. An untaxed invoice's request is unchanged, byte for byte.
+  The credit note's `amount`, including tax, is checked against the approved
+  amount.
 - **Found again by listing.** `find_action` lists the invoice's credit notes
   to the end, their refunds expanded, and keeps those whose metadata holds
   the key; never Stripe's search. It needs no writer.
@@ -237,6 +264,10 @@ The fake: `tests/unit/test_fake_provider.py`, `tests/unit/test_extra_fixtures.py
 `tests/integration/test_foreign_invoice.py`. Stripe, without network:
 `tests/unit/test_stripe_mapping.py`, `tests/unit/test_stripe_adapter.py`,
 `tests/unit/test_stripe_writes.py`, `tests/unit/test_provider_wiring.py`.
+Tax (spec 013): `tests/unit/test_invoice_tax.py`, `tests/unit/test_tax_rules.py`,
+`tests/unit/test_tax_payload.py`, `tests/unit/test_untaxed_bytes.py`,
+`tests/integration/test_tax_breakdown.py`, and the taxed tests of the Stripe
+files above.
 Both, against the contract: `tests/contract/` -- the fake in CI, Stripe
 locally on a seeded account, with the read-only key, and with
 `STRIPE_WRITES=enabled` on a fresh write run for the write properties

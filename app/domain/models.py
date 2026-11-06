@@ -11,7 +11,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, model_serializer
 
 from app.domain.enums import (
     InvoiceStatus,
@@ -57,6 +57,28 @@ class Subscription(BaseModel):
         return (self.current_period_end - self.current_period_start) // timedelta(seconds=1)
 
 
+def canonical_rate(rate: Decimal) -> Decimal:
+    """A rate in one written form, so that 20, 20.0 and 20.00 are one rate."""
+    return Decimal(format(rate.normalize(), "f"))
+
+
+class LineTax(BaseModel):
+    """A tax amount the platform posted on a line, at its rate
+    (specs/013-invoice-tax, FR-001).
+
+    Posted, never computed: the rate is what the platform says it applied, and
+    nothing here multiplies by it. ``rate`` is a percentage (``20`` for 20 %).
+    ``reason`` is the platform's own word for why no tax, or a reduced one, was
+    charged (reverse charge, exempt...), kept as text when it states one.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    amount: Money
+    rate: Decimal
+    reason: str | None = None
+
+
 class InvoiceLine(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -64,11 +86,23 @@ class InvoiceLine(BaseModel):
     quantity: Decimal
     unit_amount: Money
     amount: Money
+    """Excluding tax: the tax posted on the line is in `taxes`."""
     period_start: AwareDatetime | None = None
     period_end: AwareDatetime | None = None
     metric: str | None = None
     """Set on usage-based lines, so metered usage can be compared to what was
     billed. ``None`` on a flat subscription line."""
+    taxes: tuple[LineTax, ...] = ()
+    """The tax posted on the line, one entry per rate. Empty on an untaxed
+    invoice, whose lines then serialise exactly as before tax existed (FR-008,
+    FR-009)."""
+
+    @model_serializer(mode="wrap")
+    def _without_empty_taxes(self, handler):
+        data = handler(self)
+        if not self.taxes:
+            data.pop("taxes", None)
+        return data
 
     @property
     def period_seconds(self) -> int | None:
@@ -87,6 +121,42 @@ class Invoice(BaseModel):
     status: InvoiceStatus
     issued_at: AwareDatetime
     lines: list[InvoiceLine] = []
+
+    # -- tax (specs/013-invoice-tax) -------------------------------------
+    # Derived from the lines, never stored: the mapper has reconciled what the
+    # platform posts against them before the invoice exists (FR-002).
+
+    @property
+    def taxed(self) -> bool:
+        """Whether any line carries a tax amount other than zero."""
+        return any(tax.amount.amount_minor != 0 for line in self.lines for tax in line.taxes)
+
+    @property
+    def amount_excluding_tax(self) -> Money:
+        """The sum of the lines, in the invoice's currency."""
+        total = Money.zero(self.total.currency)
+        for line in self.lines:
+            total = total + line.amount
+        return total
+
+    @property
+    def tax_by_rate(self) -> dict[Decimal, Money]:
+        """Tax amounts by rate, zero ones left out, whatever the order of lines."""
+        by_rate: dict[Decimal, Money] = {}
+        for line in self.lines:
+            for tax in line.taxes:
+                if tax.amount.amount_minor == 0:
+                    continue
+                rate = canonical_rate(tax.rate)
+                by_rate[rate] = by_rate.get(rate, Money.zero(self.total.currency)) + tax.amount
+        return dict(sorted(by_rate.items()))
+
+    @property
+    def tax_total(self) -> Money:
+        total = Money.zero(self.total.currency)
+        for amount in self.tax_by_rate.values():
+            total = total + amount
+        return total
 
     @property
     def period_start(self) -> AwareDatetime | None:
@@ -109,6 +179,54 @@ class Invoice(BaseModel):
         if None in (self.period_start, self.period_end, other.period_start, other.period_end):
             return False
         return self.period_start < other.period_end and other.period_start < self.period_end
+
+
+class TaxBreakdown(BaseModel):
+    """What a proposal on a taxed invoice stands on, recorded when it is made
+    and shown to the approver (specs/013-invoice-tax, FR-007)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    excluding_tax: Money
+    taxes: tuple[tuple[Decimal, Money], ...]
+    """(rate, amount), ordered by rate."""
+    total: Money
+
+    @classmethod
+    def of(cls, invoice: Invoice) -> TaxBreakdown | None:
+        """The breakdown of a taxed invoice; None for an untaxed one."""
+        if not invoice.taxed:
+            return None
+        return cls(
+            excluding_tax=invoice.amount_excluding_tax,
+            taxes=tuple(invoice.tax_by_rate.items()),
+            total=invoice.total,
+        )
+
+    def to_record(self) -> dict:
+        """The breakdown as it is stored with an action and a run row, and
+        shown by the APIs: minor units and rates as strings."""
+        return {
+            "currency": self.total.currency,
+            "excluding_tax_minor": self.excluding_tax.amount_minor,
+            "taxes": [
+                {"rate": format(rate, "f"), "amount_minor": amount.amount_minor}
+                for rate, amount in self.taxes
+            ],
+            "total_minor": self.total.amount_minor,
+        }
+
+    @classmethod
+    def from_record(cls, record: dict) -> TaxBreakdown:
+        currency = record["currency"]
+        return cls(
+            excluding_tax=Money(amount_minor=record["excluding_tax_minor"], currency=currency),
+            taxes=tuple(
+                (Decimal(tax["rate"]), Money(amount_minor=tax["amount_minor"], currency=currency))
+                for tax in record["taxes"]
+            ),
+            total=Money(amount_minor=record["total_minor"], currency=currency),
+        )
 
 
 class InvoiceOwner(NamedTuple):

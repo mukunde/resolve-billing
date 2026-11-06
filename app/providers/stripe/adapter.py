@@ -275,6 +275,20 @@ class StripeBillingProvider:
                     raise ProviderOutcomeUnknown("invoice_read") from None
                 if allocation not in mapping.allocations(payload):
                     raise ProviderRejected("invoice_state")
+                lines = None
+                if mapping.taxed_payload(payload):
+                    # A taxed invoice is credited line by line, every line
+                    # read to the end (specs/013-invoice-tax, FR-010).
+                    try:
+                        whole = await self.reader.invoice(invoice_id, every_line=True)
+                    except (
+                        ProviderUnavailable,
+                        ProviderConfigurationError,
+                        ProviderUnsupported,
+                        NotFound,
+                    ):
+                        raise ProviderOutcomeUnknown("invoice_read") from None
+                    lines = mapping.credit_lines(whole, amount_minor)
                 if self._now() >= send_by:
                     raise NotSent("window_passed")
                 answer = await self._writer.create_credit_note(
@@ -285,6 +299,7 @@ class StripeBillingProvider:
                         idempotency_key,
                         action_id,
                         action_type,
+                        lines=lines,
                     ),
                     idempotency_key,
                 )
@@ -335,19 +350,24 @@ class StripeBillingProvider:
 
 
 class _Lookups:
-    """Prices and meters, read once per port call (plan section 4)."""
+    """Prices, meters and tax rates, read once per port call (plan section 4)."""
 
     def __init__(self, reader: StripeReader) -> None:
         self._reader = reader
         self._prices: dict[str, dict] = {}
         self._meters: dict[str, dict] = {}
+        self._tax_rates: dict[str, dict] = {}
 
     async def invoice(self, payload: dict) -> Invoice:
         for price_id in mapping.line_price_ids(payload) - self._prices.keys():
             self._prices[price_id] = await _dependency(self._reader.price, price_id)
         for meter_id in mapping.line_meter_ids(payload, self._prices) - self._meters.keys():
             self._meters[meter_id] = await _dependency(self._reader.meter, meter_id)
-        return mapping.invoice(payload, self._prices, self._meters)
+        # Only a taxed invoice names rates to read (specs/013-invoice-tax): an
+        # untaxed one costs no more reads than before.
+        for rate_id in mapping.tax_rate_ids(payload) - self._tax_rates.keys():
+            self._tax_rates[rate_id] = await _dependency(self._reader.tax_rate, rate_id)
+        return mapping.invoice(payload, self._prices, self._meters, self._tax_rates)
 
 
 async def _dependency(read, identifier: str) -> dict:
