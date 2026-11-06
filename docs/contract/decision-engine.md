@@ -48,7 +48,10 @@ the evaluation runner alone, on free tiers, and more on prepaid accounts
 ## The Claude engine
 
 - **The model never sees a real identifier.** The context and findings are
-  pseudonymised (`anonymise`); the message is masked for the formats the
+  pseudonymised (`anonymise`) -- a taxed invoice also carries its amount
+  excluding tax and its tax by rate, and its lines their tax, amounts and
+  rates only; an untaxed invoice is sent exactly as before (spec 013) --;
+  the message is masked for the formats the
   masking recognises (`mask_message`, D10); references it cites are mapped
   back, and those not issued are dropped.
 - **The output shape is constrained server-side and validated again on

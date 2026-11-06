@@ -123,3 +123,16 @@ execution service needs to check a write, on any platform:
 
 The fake follows each of these; the vocabulary is the domain's, and a
 platform's own -- Stripe's credit note fields -- stays in its adapter.
+
+## Amendment, 2026-11-06 -- tax, as the platform posts it
+
+With spec 013 the domain holds tax: a line's amount stays excluding tax, and
+the tax posted on it is a list of amounts with their rates (`LineTax`); an
+invoice's amount excluding tax and its tax by rate are derived from its lines,
+its `total` being including tax. Every mapper reconciles what its platform
+posts before a taxed invoice exists (`app/providers/tax.py`): a disagreement
+is `tax_mismatch`, prices including tax `tax_inclusive`; `invoice_tax` is
+retired. An untaxed invoice is mapped, serialised, fingerprinted and sent to
+the engine exactly as before, so nothing measured before the change moves. A
+platform's tax vocabulary -- Stripe's `total_taxes`, its tax rate objects --
+stays in its mapper.

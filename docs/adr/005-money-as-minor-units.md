@@ -70,3 +70,14 @@ Where a rule must compare amounts in different currencies -- an invoice's
 lines, its payments, another live invoice for the same period -- it does not
 conclude. `CURRENCY_MISMATCH` says so, no amount is proposed, and a person
 reviews. Several currencies on one account are not an anomaly (taxonomy S10).
+
+## Amendment, 2026-11-06 -- tax amounts are posted, not computed
+
+Tax amounts are `Money` in the invoice's currency, crossing into the domain
+through the one rounding function like every other amount. A rate is a
+`Decimal` percentage that nothing here multiplies: the platform's posted tax
+is authoritative, and a rounding difference between a rate applied to an
+amount and the tax posted is not checked (spec 013, FR-002). A correction on a
+taxed invoice is the whole invoice's total including tax. Computing tax at a
+rate -- and its rounding -- becomes a decision of its own with partial
+corrections.

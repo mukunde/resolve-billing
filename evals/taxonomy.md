@@ -461,7 +461,7 @@ on a question before its decision is built.
 | S2 | Narrow exemption: "ignore my previous message" (the customer's own message) is not flagged; instructions, rules and prompts still are; the exemption covers that phrase only | yes |
 | S3 | Count corrections, not findings: distinct corrections on one invoice → human review, no amount | yes |
 | S4 | A refund needs a single settled payment covering it; draft, uncollectible and void invoices get no correction; no rule on paused, trialing, past-due subscriptions | yes |
-| S5 | Money only when the whole invoice is the error; partial corrections → human review without an amount. Partial amounts: computed by code from the findings, never above what remains, specified with the real connectors | provisional rule yes, amounts no |
+| S5 | Money only when the whole invoice is the error; partial corrections → human review without an amount. Partial amounts: computed by code from the findings, never above what remains, specified with the real connectors | provisional rule yes, amounts no. On a taxed invoice (spec 013) the whole-invoice amount is the total including tax, the tax reversed as posted, nothing computed at a rate; a partial amount on a taxed invoice will need the tax at the line's rate |
 | S6 | The message cites recognised invoice references, none of them the designated one → ask which | yes |
 | S7 | An unknown reference is looked up directly within the customer; an old invoice → human review; a provider read failure fails visibly | yes |
 | S8 | Confidence below 0.70 → human review in code; engine outages → escalate, recorded as such | yes |

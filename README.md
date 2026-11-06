@@ -123,15 +123,15 @@ agent. Autonomy thresholds exist in the code and are off.
 | Area | Built and tested | Planned |
 |---|---|---|
 | Investigation | rules, closed classification, Claude engine and a free mock behind one port, versioned prompt (v3) | second engine (Vertex), reply drafter |
-| Money | amount computed by code for whole-invoice errors; refused money shown as none; refund only against a settled payment; corrections capped at the invoice | partial amounts, specified with real billing data |
+| Money | amount computed by code for whole-invoice errors, including tax, its breakdown shown to the approver; refused money shown as none; refund only against a settled payment; corrections capped at the invoice | partial amounts, specified with real billing data |
 | Approval and execution | authenticated approvers, proposal fingerprint, 72 h expiry, idempotent execution, uncertain outcomes reconciled with the platform within its idempotency window, the platform's answer checked before a write is recorded, incidents left to a person ([contract](docs/contract/approval-and-execution.md)) | identity provider (OIDC) instead of a configured list |
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
 | Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, reading and writing (a credit note; a refund as a refunding credit note, behind `STRIPE_WRITES=enabled`), its contract held on a seeded account ([contract](docs/contract/billing-platform.md)) | Pennylane; Qonto for payment evidence |
 | Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox; the message masked before the model | authentication results from a trusted gateway |
-| Evaluation | 41 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy; the blind holdout's reference run, made once (15/20, no unsafe action; the set is frozen and kept outside this repository) | a separate evaluator for the holdout, an adversarial set, a set large enough to calibrate |
+| Evaluation | 45 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy; the blind holdout's reference run, made once (15/20, no unsafe action; the set is frozen and kept outside this repository) | a separate evaluator for the holdout, an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
 
-**Measured today** (mock engine, every push): **35/41 fully correct, 0/41
+**Measured today** (mock engine, every push): **38/45 fully correct, 0/45
 unsafe actions**. The Claude engine was last measured on the original twelve
 cases ([evaluation](#evaluation)).
 
@@ -186,9 +186,10 @@ What the system does not do yet, said plainly.
   can be investigated on a Stripe test account's data; an approved
   correction is written there only with `STRIPE_WRITES=enabled`, as one
   credit note for the whole amount, on an invoice open with nothing paid or
-  paid in full. Data the domain cannot represent yet -- tax, discounts,
-  credits, partial refunds, mixed periods -- is refused with its reason,
-  never approximated. The demo, CI and the evaluation still run on fake
+  paid in full. Tax is read as the platform posts it, on lines excluding
+  tax (spec 013); prices including tax, tax figures that do not reconcile,
+  discounts, credits, partial refunds, mixed periods are refused with their
+  reason, never approximated. The demo, CI and the evaluation still run on fake
   data.
 - **Masking is not anonymisation.** Before the model, identifiers, the
   customer's address and name, bank, card and phone numbers are masked in
@@ -231,7 +232,7 @@ python -m evals.runner --engine mock      # free, deterministic, every push
 python -m evals.runner --engine claude    # real calls, on demand
 ```
 
-**Development set.** 41 cases, each with a `why` field saying what it is
+**Development set.** 45 cases, each with a `why` field saying what it is
 there to catch. They were read while the rules and the prompt were written, so
 a score on them says how well the system fits them, not how it does on a
 dispute it has not seen. [`evals/taxonomy.md`](evals/taxonomy.md) lists the

@@ -10,7 +10,7 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
 
 ## What the system relies on
 
-- **A development set.** `evals/cases.json`, 41 synthetic cases, each with a
+- **A development set.** `evals/cases.json`, 45 synthetic cases, each with a
   `why` saying what it catches; the seven on usage (spec 012) carry labels the
   maintainer adjudicated on 2026-11-05. They were read while the rules and the prompt
   were written: a score on them says how well the system fits them.
@@ -75,7 +75,7 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
   checkout under one lock per model: the maintainer declares each day
   once, before its first request, as the console shows it; each request is
   counted before it is sent, never refunded. A full run starts only if the
-  day's remaining requests cover the 27 cases that reach the engine times
+  day's remaining requests cover the 31 cases that reach the engine times
   the configuration's attempts (since spec 012, more than Flash's 20 a day:
   Flash has no full run on the free tier); passing the limit, reaching an undeclared
   day or a clock gone back stops the run before sending. Flash makes one
