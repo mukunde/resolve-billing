@@ -375,10 +375,13 @@ variance, they do not establish non-degradation.
 | Haiku's leg | 36, 35, 37 | 35, 36, 35 | 0 | the control escalated on every run | do not adopt |
 
 The prompt is one file for both legs: v4 is not adopted and the service stays
-on v3 (maintainer, 2026-11-06). Read case by case: under v3 both legs already
-escalated every over-billing; v4's one gain is the usage nobody could check,
-escalated on every run by both instead of a question to the customer; its cost
-is Haiku escalating the control -- usage matching the bill -- three times out of
-three (two out of three under v3), and proposing a credit note instead of a
-refund on `billed_after_cancellation`. The first calls now accepted are the v4
+on v3 (maintainer, 2026-11-06). Read case by case, over three runs each, as
+observed differences rather than established effects of the prompt: under v3
+both legs already escalated every over-billing. Among the new usage cases, the
+one that moved toward its label is the usage nobody could check, escalated on
+3 of 3 v4 runs by both legs, against 2 of 3 v3 runs for Luna (a question to the
+customer on the third) and 0 of 3 for Haiku (a question every time). Haiku
+escalated the control -- usage matching the bill -- on 3 of 3 v4 runs, against
+2 of 3 under v3, and proposed a credit note instead of a refund on
+`billed_after_cancellation` on 3 of 3 v4 runs, against none under v3. The first calls now accepted are the v4
 ones: a v3 run on these configurations needs a new first call.
