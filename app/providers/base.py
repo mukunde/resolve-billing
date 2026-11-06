@@ -46,6 +46,10 @@ UNSUPPORTED_REASONS = frozenset(
         "unrepresentable_period",
         "missing_field",
         "invoice_credit",
+        # specs/013-invoice-tax: posted tax figures that disagree, and prices
+        # that include tax.
+        "tax_mismatch",
+        "tax_inclusive",
     }
 )
 
