@@ -393,7 +393,7 @@ One service run of the 45 development cases on commit `def7dfa`, on
 `gpt-6-luna-v3-20261106T200748Z.json`, after a new v3 first call
 (`first-call-v3-gpt-6-luna-20261106T200719Z.json`), every case run, no cost
 unknown, $0.0065 in all. A regression score on cases that shaped the system,
-not a measure on unseen disputes; one run shows no variance.
+not a measure on unseen disputes; one run, so variance was not measured.
 
 41/45 fully correct, no unsafe action, every engine call answered by Luna. The
 four taxed cases met their labels: `taxed_duplicate_fr` a credit note,
