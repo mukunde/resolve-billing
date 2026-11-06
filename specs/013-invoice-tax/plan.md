@@ -191,6 +191,10 @@ does; a test reproduces the stored `prompt-v4-comparison.md` from the stored res
   tax does not sit on its lines alone -- a taxed shipping cost (`shipping_cost`) -- is
   seeded and refused `tax_mismatch`. Only deliberately inconsistent posted figures, which
   Stripe does not produce, are left to mapping tests, approved as such.
+  *At implementation:* no two-rate world is seeded on Stripe; two rates are covered by the
+  mapping, adapter and rule tests (approved by the maintainer on 2026-11-06). No taxed
+  duplicate-payment world is seeded either: no untaxed one exists on Stripe (one invoice,
+  two collections, is not built there); the case is held by the fake and the unit tests.
 
 ### 9. Documents (FR-013)
 
