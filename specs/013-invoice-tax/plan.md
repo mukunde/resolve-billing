@@ -1,6 +1,6 @@
 # Implementation Plan: Tax on invoices
 
-**Branch**: `013-invoice-tax` | **Date**: 2026-11-06 | **Spec**: [spec.md](spec.md), approved by the maintainer at `b6d407c` | **Plan**: draft, for the maintainer's approval
+**Branch**: `013-invoice-tax` | **Date**: 2026-11-06 | **Spec**: [spec.md](spec.md), approved by the maintainer at `b6d407c` | **Plan**: approved by the maintainer on 2026-11-06, at `1dcb37d` (control (a); the zero-tax reason deviation approved and folded into the spec)
 
 ## Summary
 
@@ -156,7 +156,7 @@ invoices and payments in `fixtures/` (no existing world moves), `label_source:
 | `taxed_duplicate_fr` | two invoices, same subscription and September period, 100.00 + 20.00 VAT at 20 % = 120.00 EUR each | « Facturé deux fois pour septembre ? » | `duplicate_billing`, `credit_note`, approval, findings `DUPLICATE_INVOICE`; proposal 120.00 EUR with breakdown |
 | `taxed_billed_after_cancellation_en` | subscription cancelled in August, September invoice 49.00 + 9.80 = 58.80 EUR, paid | "I cancelled in August, why a September invoice?" | `billing_after_cancellation`, `refund`, approval, `INVOICE_AFTER_CANCELLATION`; 58.80 EUR |
 | `taxed_duplicate_payment` | one invoice 49.00 + 9.80 = 58.80 EUR, two succeeded payments of 58.80 | « Deux prélèvements de 58,80 € pour la même facture » | `duplicate_billing`, `refund`, approval, `DUPLICATE_PAYMENT`; 58.80 EUR |
-| `taxed_same_total_control` | two invoices, same subscription and period, both 120.00 EUR including tax: 100.00 + 20.00 at 20 %, and 113.74 + 6.26 at 5.5 % | « Facturé deux fois pour septembre ? » | no finding (not a duplicate); the rest to adjudicate, below |
+| `taxed_same_total_control` | two invoices, same subscription and period, both 120.00 EUR including tax: 100.00 + 20.00 at 20 %, and 113.74 + 6.26 at 5.5 % | « Facturé deux fois pour septembre ? » | no finding (not a duplicate); `valid_invoice`, `reply`, no approval (adjudicated: (a)) |
 
 The control's labels beyond "no duplicate finding" are the maintainer's to adjudicate; US1-2
 decides only that no duplicate is found. Two answers:

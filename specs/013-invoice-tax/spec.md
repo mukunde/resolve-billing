@@ -54,9 +54,14 @@ explicit approval of the final diff.
   reason: prices that include tax (`tax_inclusive`); posted amounts that do not reconcile,
   tax on an invoice without lines included (`tax_mismatch`, FR-002). A line with no tax
   charged -- exempt, out of scope, reverse charge -- is read as a line with no tax, as
-  today, its reason kept when the platform states one. This revises coordination decision
+  today; its reason is kept when the platform states one and the invoice carries tax
+  elsewhere, and not on an invoice with no tax at all, whose bytes stay unchanged (amended
+  by the maintainer on 2026-11-06, at plan approval). This revises coordination decision
   45, which listed reverse charge among the shapes refused: with no tax charged, the amounts
   are right as they stand.
+- Q: (2026-11-06, at plan approval) The control `taxed_same_total_control`, beyond "no
+  duplicate"? → A: `valid_invoice` with `reply`, no approval: what prompt v3 says when no
+  finding is present; no new engine requirement (the maintainer, option (a)).
 - Q3: Is the slice measured on a hosted engine? → A: Yes (the maintainer, 2026-11-06): after
   the mock, one service run of the enlarged development set on Luna, with no change of
   prompt, because taxed invoices change what the engine receives. The commands and their
