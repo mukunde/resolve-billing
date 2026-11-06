@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-06
 
-**Status**: Draft -- clarifications answered by the maintainer on 2026-11-06; for his approval
+**Status**: Approved by the maintainer on 2026-11-06, at `b6d407c` (clarifications answered the same day)
 
 **Input**: Roadmap item 3 (real integrations), order A decided by the maintainer on
 2026-11-06 (coordination decision 45, framing reviewed by Codex r335-r336): tax comes into the
