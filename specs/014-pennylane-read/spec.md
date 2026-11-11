@@ -54,6 +54,13 @@ approval of the final diff.
   `prepared`, `submitted`, `pending_submission`, `pending_customer_approval`,
   `resubmission_requested`, `draft`, `found`, `not_found` → pending; `charged_back` and
   any status not listed → refused. An invoice `cancelled` with no credit note → void.
+  What this convention also assumes, stated so it is visible: a collection still
+  `confirmed` or `paid_out` has not been refunded, and a `refunded` one was refunded in
+  full. Its effect: a refund Pennylane records elsewhere than on the payment's status -- a
+  partial refund in particular -- would not be seen, and a refund or a duplicate payment
+  could be proposed on money already given back; the approver sees it before anything
+  moves (II), and a refund made by credit note is caught, the invoice then being refused
+  (`invoice_credit`).
 - Q: Invoice references? → A: Option (a): numbers resolved in this slice, within the
   customer's invoices already loaded; a number outside them is not resolved.
 - Q: A customer with several addresses? → A: Refused (`multiple_addresses`).
@@ -126,8 +133,8 @@ the fake and Stripe unchanged.
 2. **Given** a message citing a loaded invoice's number, **When** sent to an engine,
    **Then** the number is replaced by its alias.
 3. **Given** a number outside the loaded invoices, **When** investigated, **Then** it is not
-   resolved, not masked, and the trace says a number was left unresolved -- the number
-   itself not written there.
+   recognised: neither resolved nor masked, read as text -- no rule can tell an unloaded
+   number from other words, Pennylane's numbering being each company's own.
 
 ### User Story 3 - The contract is held on a seeded sandbox (Priority: P1)
 
@@ -155,8 +162,8 @@ is the maintainer's.
   invoice could hide a duplicate); outside it, it is not mapped.
 - A quote, proforma or order in the invoice list: not an invoice, left out; named as the
   disputed invoice, refused (`invoice_status`).
-- An invoice of a cancelled subscription whose lines carry no period: refused
-  (`missing_field`), so the after-cancellation check never falls back on the issue instant.
+- An invoice of a cancelled subscription with a line lacking a complete, forward-running
+  period (no dates, one date, reversed dates): refused (`missing_field`).
 - The same payment id under two invoices: refused (`multi_invoice_payment`).
 - A 429 within the read's time budget: waited out as `retry-after` asks; beyond the budget,
   `ProviderUnavailable`.
@@ -181,16 +188,25 @@ is the maintainer's.
   `archived`, `incomplete` and any unlisted status refused (`invoice_status`, a new
   reason); quotes, proformas and orders left out of lists and refused when named; credit
   notes told by `credited_invoice` (never by status) and never mapped as invoices; an
-  invoice with any credit note against it refused (`invoice_credit`); invoices created from
+  invoice with any credit note against it refused (`invoice_credit`), the customer's
+  credit notes read to the end, whatever their date (a credit note outside the window, or
+  `cancelled`, still counts); invoices created from
   ledger entries included; the window's `since` applied after the date conversion.
 - **FR-004**: Lines: period by the line-period convention, none without
-  `imputation_dates`; tax through spec 013 -- `vat_rate` by an explicit table
-  (`FR_200` → 20, `FR_55` → 5.5...), `exempt` and the other no-tax codes read as no tax
-  charged with the code as the reason, `mixed` and any unlisted code refused (`tax_code`, a
-  new reason), posted figures reconciled by `app/providers/tax.py`; a non-zero discount
+  `imputation_dates`; tax through spec 013, `vat_rate` by a closed table: `FR_200` → 20,
+  `FR_100` → 10, `FR_55` → 5.5, `FR_21` → 2.1 (metropolitan France), and `exempt` → no tax
+  charged, the code kept as the reason, its posted tax required to be zero (else
+  `tax_mismatch`); every other code, `mixed` and the intra-community, cross-border and
+  export codes included, refused (`tax_code`, a new reason) until a later decision; zero
+  entries on a wholly untaxed invoice dropped as spec 013 does; posted figures reconciled
+  by `app/providers/tax.py`; a non-zero discount
   (`invoice_discount`), a negative line (`negative_line`), a unit price finer than the
   currency's minor unit (`fractional_unit_price`) refused.
-- **FR-005**: Payments: the payments of the invoices the investigation loads, statuses by
+- **FR-005**: Payments: `list_payments(customer)` reads the payments of every invoice of
+  the customer, every list to its end and with no window -- so a payment id appearing
+  under two of the customer's invoices is seen wherever they lie; a payment shared with
+  another customer's invoice is not detectable from one customer, and the contract says so.
+  Statuses by
   the convention table (each entry recorded with its source: "convention, 2026-11-11", to
   become "confirmed by Pennylane, <date>" or be changed), unlisted statuses refused
   (`payment_status`, a new reason); amount and currency kept; `received_at` none; a payment
@@ -200,23 +216,41 @@ is the maintainer's.
   ended by the end-of-service convention; any other status refused
   (`subscription_status`); `plan_code` the subscription's `label`, or its id when it has
   none; current period, cadence and anchor: [Q1]. An invoice of a cancelled subscription
-  whose lines carry no period refused (`missing_field`).
+  is mapped only if every one of its lines has a complete, forward-running period (both
+  dates, the start before the end); otherwise it is refused (`missing_field`), so the
+  after-cancellation check never decides on partial coverage or on the issue instant.
 - **FR-007**: `invoice_owner` MUST read the invoice alone and extract its customer, nothing
   else, no lines; `NotFound` for gets and `None` for finds on a 404; `missing_field` for an
   existing object missing a required field; 401/403 a configuration error by category;
-  429 and 5xx retried within the read's budget, then `ProviderUnavailable`.
+  429, 5xx and connection failures retried within the port call's time budget, then
+  `ProviderUnavailable`. Every list and nested list -- customers, invoices, lines,
+  payments, credit notes, subscriptions -- is read to its end within that budget, pacing
+  and retries included; a malformed or repeating pagination, or a budget spent, is
+  `ProviderUnavailable`, never an absence. Errors are reported by category only: no token,
+  header, body or provider exception text reaches a log, an answer or an exception
+  message.
 - **FR-008**: The adapter MUST pace its requests per token, process-wide, under 25 per 5
   seconds, honouring `retry-after` within the read's time budget. Several processes on one
   token are not coordinated; the contract says so.
+- **FR-008a**: Pennylane's integer ids MUST become typed domain identifiers in the
+  adapter -- `pl_cus_<id>`, `pl_inv_<id>`, `pl_sub_<id>`, `pl_pay_<id>` -- translated back
+  in the adapter alone, so that a customer, a subscription, an invoice and a payment that
+  share a number never share an identifier, an alias or a pseudonym. Tests with equal raw
+  ids across the four types, through references, masking and restored evidence.
 - **FR-009**: The domain `Invoice` MAY carry its `number`; it is serialised only when set,
   so the fake's and Stripe's invoices dump, fingerprint and reach the engine exactly as
   before. The engine payload does not carry it.
 - **FR-010**: The reference hooks (`invoice_references`, `invoice_reference_spans`) MUST
-  receive the customer's loaded invoices; Pennylane's find the numbers of those invoices in
-  the text, normalised as the platform writes them, and answer their ids; a number not
-  among them is not resolved, and the investigation's trace records that one was left
-  unresolved, without the number. The fake and Stripe ignore the invoices given and answer
-  as today. [Q3: the dispute's invoice identifier.]
+  receive, on every call, the invoices of the investigation making it -- the cited-reference
+  check and every masking call alike, the masking's finder given its own context's invoices
+  at the call, with no invoices kept on a shared provider or engine between calls.
+  Pennylane's hooks recognise only the numbers of those invoices: a match is the whole
+  number, case-insensitive, bounded by a character that is neither a letter nor a digit,
+  the longest number first, matches never overlapping; a number that matches two loaded
+  invoices is not resolved. A number not among them is not recognised (neither resolved
+  nor masked). The fake and Stripe ignore the invoices given and answer as today. Tests:
+  interleaved investigations of two customers, a number inside a longer word, overlapping
+  numbers, an ambiguous number. [Q3: the dispute's invoice identifier.]
 - **FR-011**: A seed script (`scripts/pennylane_seed.py`) MUST build the worlds with its
   own token (`PENNYLANE_SEED_TOKEN`, never loaded by the adapter), after checking, failing
   closed, that the token's company is `PENNYLANE_SANDBOX_COMPANY_ID`; recovery after a lost
