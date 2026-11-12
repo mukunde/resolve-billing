@@ -316,11 +316,37 @@ per 5 seconds per token within the process, retried within a 20-second budget, e
 read to its end or the read refused as unavailable. Two processes on one token are not
 paced together.
 
-**As measured**: the contract on the seeded sandbox (`tests/contract/test_pennylane_contract.py`)
-is recorded here once run. SC-002 was amended by the maintainer on 2026-11-12: the
-documentation offers no way to attach a hand-made invoice to a subscription, so the
-duplicate and after-cancellation comparisons with the fake are made only where the
-sandbox lets their worlds be built.
+**As measured** (2026-11-12, run by an agent at the maintainer's request, on the
+declared sandbox, the seed with its own read-write token, the contract with the
+read-only one). SC-002 was amended by the maintainer on 2026-11-12: the documentation
+offers no way to attach a hand-made invoice to a subscription, so the duplicate and
+after-cancellation comparisons with the fake are made only where the sandbox lets their
+worlds be built.
+
+- The seed first stopped on Pennylane's own refusal: no invoice or subscription before
+  the company's invoice numbering is set. An agent set it, at the maintainer's request, in the sandbox's
+  settings (prefix `F-(annee)-(mois)-`, from 1).
+- Built: the taxed invoice, the paid invoice, the subscription (made, then stopped),
+  the credited invoice, the customer with two addresses, the invoice with a discount, the
+  fractional unit price. Excluded by the maintainer after the seed reported them
+  (`NOT_SEEDED`, each with why): the mixed VAT rate, which Pennylane refuses on a
+  customer invoice; the partial payment and the charge-back, which the documented API
+  cannot make; the taxed duplicate and the taxed invoice after cancellation, which need
+  a subscription's invoices the API does not let a seed control. The comparison of these
+  two with their fake counterparts is therefore not measured on Pennylane.
+- The contract: 9 passed, 6 skipped -- the five exclusions, and the paid invoice's
+  payments, as Pennylane listed **no payment** for an invoice marked paid. The taxed
+  invoice was read field by field as written, its number equal to Pennylane's own
+  field; each refused world gave its reason (`invoice_credit`, `multiple_addresses`,
+  `invoice_discount`, `fractional_unit_price`); the owner, the number's resolution and
+  the absence of writes held.
+- Observed, not assumed: `mode` is answered as a plain string though sent as an object;
+  `recurring_rule` is answered with `rule_type` and `day_of_month` as a list. Once
+  stopped, the subscription kept `next_occurrence` (a month after its start) and no
+  `finish` -- the shape the stopped convention reads. In `awaiting_validation` mode it
+  generated one invoice at once, left as a draft without a number. An invoice past its
+  deadline reads `late`. The state before the stop was not recorded: an earlier run, cut
+  short by a defect of the seed (since fixed), had already stopped it.
 
 ## Not guaranteed today
 

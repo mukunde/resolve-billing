@@ -47,9 +47,11 @@ class Uncertain(Exception):  # noqa: N818 -- a state: whether a write landed is 
 
 
 class Refused(Exception):  # noqa: N818 -- Pennylane's answer: nothing was made
-    def __init__(self, status: int) -> None:
+    def __init__(self, status: int, detail: str = "") -> None:
         super().__init__(f"refused ({status})")
         self.status = status
+        #: Pennylane's own words on why, so a report can say which field.
+        self.detail = detail
 
 
 class Stop(Exception):  # noqa: N818 -- the seed cannot tell, and says so
@@ -75,7 +77,7 @@ class PennylaneWriter(PennylaneReader):
             return None
         if response.status_code >= 500 or response.status_code == 429:
             raise Uncertain(path)
-        raise Refused(response.status_code)
+        raise Refused(response.status_code, response.text[:500])
 
 
 @dataclass
@@ -291,7 +293,8 @@ class Seeder:
         path = f"/billing_subscriptions/{made['id']}"
         try:
             before = await self.w.get(path)
-            settings = (made.get("mode") or {}).get("type"), made.get("payment_method")
+            # Sent as {"type": ...}, answered as a plain string (seen on the sandbox).
+            settings = made.get("mode"), made.get("payment_method")
             if settings != ("awaiting_validation", "offline"):
                 raise Stop("subscription: its settings are not those sent")
             generated = await self.w.every(
@@ -384,7 +387,8 @@ async def run(writer: PennylaneWriter, intents: Intents, today: date) -> list[st
         try:
             lines.append(f"{world.name}: {await seeder.build(world)}")
         except Refused as refusal:
-            lines.append(f"{world.name}: REPORTED -- Pennylane refused ({refusal.status})")
+            lines.append(f"{world.name}: REPORTED -- Pennylane refused ({refusal.status})"
+                         + (f": {refusal.detail}" if refusal.detail else ""))
         except Uncertain:
             lines.append(f"{world.name}: REPORTED -- a write's outcome is unknown; run again")
         except Stop as stop:

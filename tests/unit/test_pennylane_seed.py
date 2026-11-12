@@ -103,7 +103,7 @@ class Api:
             return httpx.Response(200, json=note)
         if path == "/billing_subscriptions":
             sub = {"id": self._id(), "customer": {"id": body["customer_id"]},
-                   "status": "in_progress", "mode": body["mode"],
+                   "status": "in_progress", "mode": body["mode"]["type"],
                    "payment_method": body["payment_method"], "stopped_at": None,
                    "next_occurrence": "2026-12-12", "finish": None, "sent": body}
             self.subscriptions.append(sub)
@@ -149,7 +149,7 @@ async def test_every_world_is_built_or_reported(tmp_path):
                 if line.split(": ", 1)[1].startswith(("built", "REPORTED", "excluded"))]
     names = [line.split(":")[0] for line in outcomes]
     assert names == [w.name for w in worlds.WORLDS]
-    assert any(line.startswith("taxed_duplicate: REPORTED") for line in lines)
+    assert any(line.startswith("taxed_duplicate: excluded (") for line in lines)
 
 
 async def test_a_second_run_writes_nothing_more(tmp_path):
@@ -285,11 +285,20 @@ async def test_a_lost_mark_as_paid_that_landed_is_settled_by_a_read(tmp_path):
     assert sum(1 for w in api.writes if w.endswith("/mark_as_paid")) == 1
 
 
-async def test_the_unbuildable_worlds_are_reported(tmp_path):
+async def test_the_unbuildable_worlds_are_reported(tmp_path, monkeypatch):
+    monkeypatch.setattr(worlds, "NOT_SEEDED", {})
     lines = await run(Api(), tmp_path)
     for name in ("partially_paid", "charged_back", "taxed_duplicate",
                  "taxed_billed_after_cancellation"):
         assert any(line.startswith(f"{name}: REPORTED") for line in lines), name
+
+
+async def test_an_approved_exclusion_is_not_attempted(tmp_path):
+    api = Api()
+    lines = await run(api, tmp_path)
+    for name in worlds.NOT_SEEDED:
+        assert any(line.startswith(f"{name}: excluded (") for line in lines), name
+    assert "rb:mixed_vat" not in {c["external_reference"] for c in api.customers}
 
 
 async def test_a_lost_subscription_create_that_landed_is_stopped_at_once(tmp_path):
@@ -351,3 +360,20 @@ async def test_every_found_subscription_is_tried_when_one_will_not_stop(tmp_path
     assert second["status"] == "stopped"
     assert any(line.startswith("subscription: NOT STOPPED") and str(first["id"]) in line
                for line in lines)
+
+
+async def test_a_refusal_is_reported_with_pennylane_s_own_words(tmp_path):
+    """Seen on the sandbox: without the invoice numbering set, every invoice is
+    refused; the report says why, not only the status."""
+    api = Api()
+    original = api._write
+
+    def numbering_unset(method, path, body):
+        if path == "/customer_invoices":
+            return httpx.Response(422, json={"error": "configure the invoice numbering"})
+        return original(method, path, body)
+
+    api._write = numbering_unset
+    lines = await run(api, tmp_path)
+    assert any(line.startswith("taxed_invoice: REPORTED -- Pennylane refused (422): ")
+               and "configure the invoice numbering" in line for line in lines)

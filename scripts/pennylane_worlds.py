@@ -49,7 +49,18 @@ WORLDS = (
 
 #: Worlds the maintainer approved leaving out, each with why. Only an approved
 #: exclusion enters here; a world neither built nor excluded fails readiness.
-NOT_SEEDED: dict[str, str] = {}
+#: Approved on 2026-11-12, after the seed reported each on the sandbox.
+NOT_SEEDED: dict[str, str] = {
+    "mixed_vat": "Pennylane refuses a mixed VAT rate on a customer invoice (422: only "
+                 "supplier invoices can have one); the refusal stays for a code it may send",
+    "partially_paid": "the documented API marks an invoice paid in full only",
+    "charged_back": "the documented API cannot make a charged-back payment",
+    "taxed_duplicate": "no documented way to attach a hand-made invoice to a subscription "
+                       "(SC-002 as amended)",
+    "taxed_billed_after_cancellation": "a subscription's invoice issued after its stop is not "
+                                       "controllable through the documented API (SC-002 as "
+                                       "amended)",
+}
 
 #: What the seed writes on every invoice it makes, and the read-back of
 #: `taxed_invoice` must find: fixed dates, so a reader can check them exactly.
