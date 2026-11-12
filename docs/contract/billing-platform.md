@@ -241,6 +241,22 @@ none; credit notes that exist were read with Credit Notes: Write granted,
 which allows reading them. Reading existing ones without it is not shown.
 No difference from the fake needed approving.
 
+**Tax** (specs/013-invoice-tax, 2026-11-12, run by an agent at the maintainer's
+request, same API version and SDK, the restricted key given **Tax Rates: Read**): the
+seed built the taxed worlds on the account -- the taxed duplicate, the taxed invoice
+after cancellation, prices including tax (refused `tax_inclusive`) and a taxed shipping
+cost (refused `tax_mismatch`). The read contract passed (78 passed, 28 skipped, all
+fake-only or write tests): the two taxed worlds gave the findings, classification,
+proposal, verdict and approval of their fake counterparts, and each refused shape its
+reason. On a fresh write generation the write contract passed (25 passed, 1 skipped,
+fake-only), the taxed properties included: a credit note on a paid and on an open taxed
+invoice, written line by line for the total including tax and found again; a taxed
+refunding credit note refunding that total; a refund beyond what a credited taxed
+invoice could give back refused, nothing written. Two defects of the seed were found and
+fixed on the way: a price named a product the seed did not make, and the taxed
+cancellation world's clock started on its month instead of a month before (its first
+build was deleted and rebuilt). No difference from the fake needed approving.
+
 ## Not guaranteed today
 
 - That Stripe keeps idempotency keys for at least a day: its documentation
