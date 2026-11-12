@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-12
 
-**Status**: Draft, for the maintainer's approval (Codex r383 answered)
+**Status**: Approved by the maintainer on 2026-11-12, at `915cd57`
 
 **Input**: Roadmap item 3, order A (coordination decision 45): after Pennylane reading
 (spec 014, merged), Pennylane credit notes. The framing was reviewed by Codex (r374-r379)
