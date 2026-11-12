@@ -39,10 +39,15 @@ serving recorded-shape payloads written from the reference, never real data.
 - `app/providers/pennylane/keys.py`: `PENNYLANE_API_TOKEN` (adapter) and
   `PENNYLANE_SEED_TOKEN` (seed) read from the environment where they are used, never
   printed; a missing token is a configuration error by category.
-- `PENNYLANE_SANDBOX_COMPANY_ID`: required. Before the first read of a provider instance,
-  the client reads the identity endpoint (`GET /me`) once and compares its company id;
-  missing setting, another company or an unreadable answer → `ProviderConfigurationError`
-  (`sandbox`), raised on every port call, nothing read. The answer of `/me` is not logged.
+- `PENNYLANE_SANDBOX_COMPANY_ID`: required. Every read method of the port -- the local
+  ones too (`get_usage`, `find_action`, a find given an id of another kind) -- starts with
+  one guard, inside the call's time budget: on its first use per provider instance it
+  reads the identity endpoint (`GET /me`) and compares the company id, then remembers the
+  verdict; a missing setting, another company or an unreadable answer →
+  `ProviderConfigurationError` (`sandbox`) on that call and every later one, nothing else
+  read. Writes are refused before any call, guard or not. The answer of `/me` is not
+  logged. Tests: missing, mismatched and unreadable identity, each followed by every read
+  method.
 - `app/api/deps.py`: `PROVIDERS` gains `pennylane`; `get_provider` builds the adapter;
   writes are never wired (`can_write` false).
 
@@ -90,6 +95,12 @@ is no invoice. Tests: equal integers across the four kinds through references, m
 - **VAT** `VAT_RATES = {"FR_200": 20, "FR_100": 10, "FR_55": 5.5, "FR_21": 2.1}` and
   `NO_TAX = {"exempt"}` (posted tax must be zero, else `tax_mismatch`); anything else
   `tax_code`.
+- **Invoices created from ledger entries**: one with no line, or a line without the
+  fields a line needs, is refused (`missing_field`), never mapped as an empty invoice.
+- **Cancelled subscriptions**: an invoice naming a subscription mapped as cancelled is
+  mapped only if every line has both imputation dates, start before end; one line
+  without, with one date or reversed → `missing_field`. Tests: mixed dated and undated
+  lines, one missing date, reversed dates.
 - **Lines**: quantity a decimal string; `raw_currency_unit_price` excluding tax, finer than
   the minor unit → `fractional_unit_price`; negative amount → `negative_line`; non-zero
   discount on line or invoice → `invoice_discount`; `imputation_dates` → period.
@@ -98,7 +109,9 @@ is no invoice. Tests: equal integers across the four kinds through references, m
   `received_at` none.
 - **Subscriptions**: `in_progress` → active; `stopped` → cancelled, ended at
   `paris_midnight(next_occurrence)` (missing → `missing_field`); `finished` → cancelled,
-  ended at `paris_midnight(finish) + 1 day`; others `subscription_status`. Current period
+  ended at `paris_midnight(finish + one calendar day)` -- the day added to the date, never
+  24 hours to the instant, so a daylight-saving change cannot move it; tests on both
+  transitions; others `subscription_status`. Current period
   `[prev_occurrence, next_occurrence)` at Paris midnights, required, and exactly one cycle
   of `recurring_rule` (`monthly`/`yearly`/`weekly` × `interval`), else `missing_field`;
   cadence from the rule; anchor `start`; `plan_code` the label or the typed id.
@@ -110,7 +123,10 @@ is no invoice. Tests: equal integers across the four kinds through references, m
 
 `app/providers/pennylane/adapter.py`, `PennylaneBillingProvider`:
 
-- `find_customer_by_email` / `list_customers`: every customer, in id order, to the end.
+- `find_customer_by_email` / `list_customers`: every customer, in id order, to the end;
+  the given address compared with every address of each customer, so an address that is a
+  customer's second one finds that customer -- who is then refused
+  (`multiple_addresses`). Test: a match on a second address.
 - `get_invoice` / `find_invoice`: the invoice, its lines to the end, the customer's credit
   notes to the end (to refuse a credited invoice), and its subscription when it names one
   (to apply the every-line-period rule of a cancelled subscription).
@@ -137,11 +153,18 @@ is no invoice. Tests: equal integers across the four kinds through references, m
   `invoices`. Pennylane's: build `{normalised number: typed id}` from the invoices given
   (a number shared by two → left out), then scan the text for whole matches --
   case-insensitive, bounded by a non-alphanumeric character, longest first, no overlap.
-- Callers: the investigation passes `context.invoices` to `invoice_references` (the
-  cited-reference check, `investigate_dispute.py`), and resolves `dispute.invoice_id`
-  through the same hook before looking for the target among the loaded invoices (Q3): a
-  typed id passes as it is, a number resolved, a number resolved to nothing left as given
-  (then `UNKNOWN_INVOICE` as today). Masking: `ReferenceFinder` becomes
+- One canonical target (Q3): in `load_context`, after the window's invoices are read, the
+  investigation resolves `dispute.invoice_id` once through the hook with those invoices --
+  a typed id as it is, a number to its invoice's typed id, an unresolved number left as
+  given -- and records the result in the context (`target_reference`). Everything that
+  uses the disputed invoice reads that one value: the target among the loaded invoices,
+  the ownership read for a reference outside the window (made only for a typed id of the
+  platform: an unresolved number is never sent to the API as an id), `unknown_invoice`,
+  and the cited-reference check's designated invoice. Every call of the hooks passes the
+  loaded invoices. On the fake and Stripe the hook returns the id unchanged, so their
+  investigations are as before. Tests through `load_context` and a full investigation:
+  a number, a typed id, an ambiguous number, another customer's number, an unresolved
+  number. Masking: `ReferenceFinder` becomes
   `Callable[[str, Sequence[Invoice]], list[...]]`; `mask_message` calls it with
   `context.invoices`; the engines keep the finder they are given and pass the context at
   the call -- no invoices stored on an engine or a provider. `deps.wire` unchanged.
@@ -163,22 +186,63 @@ categories, the seed token):
   the refused shapes: a credited invoice, two addresses, a `mixed` VAT line, a non-zero
   discount, a partially paid invoice if the API can make one. What the API does not let it
   build is reported with its reason.
-- Recovery: customers and invoices found again by `external_reference` (documented filter)
-  before any write; subscriptions by listing the world's customer's, stopping with a report
-  when it cannot tell; generated invoices by `billing_subscription_id`. Subscriptions with
-  no email sending and an offline payment method, stopped once their invoices exist.
+- Recovery, per mutation -- before each, a read decides whether it is needed; after a
+  write whose answer was lost (timeout, 5xx after sending, unreadable answer), a read
+  decides whether it landed; if that read cannot tell, the seed stops and reports, and no
+  uncertain write is ever sent again automatically. Durable state makes this hold across
+  restarts: before each create, the seed notes its intent (world, operation, the
+  identifying value it will set) in a manifest kept in the sandbox's own records -- the
+  world customer's metadata, as Stripe's seed keeps its manifest -- and clears it once a
+  read shows the object; a run that finds an intent noted and no object stops and reports
+  instead of creating, so a fresh attempt is told from an uncertain one:
+  - customer create: found by its `external_reference` (one → reuse; none and no intent
+    noted → create; none with an intent noted → stop; several → stop) -- the customer's
+    intent is noted in a local run file, the only state before the customer exists, and
+    the same rule applies;
+  - invoice create (draft): found by its `external_reference`, as above;
+  - invoice finalise: the invoice's `draft` read -- false → done, true → finalise once,
+    then read again;
+  - subscription create: the world customer's subscriptions listed by label -- none →
+    create, one → reuse, several → stop;
+  - subscription stop: its status read -- stopped → done, else stop it once, read again;
+  - credit note create and link: found by its `external_reference`; the link read on the
+    original's credit notes -- linked → done, else link once, read again;
+  - payment, where the API allows creating one: created with a unique label
+    `rb:<world>:payment:<n>`, found by listing the invoice's payments and matching that
+    label exactly -- one → done, none and no intent → create, none with an intent → stop,
+    several → stop.
+  Stub tests lose the answer of every mutation once, and make the recovery read fail or
+  stay inconclusive, then check that the next run reuses, completes or stops -- never
+  writes twice.
+- Subscriptions: created with no invoice email (no email recipients, the mode that does
+  not send) and the `offline` payment method, both read back and checked before the
+  world is used; every subscription the seed created is stopped once its invoices exist,
+  the stop being part of the recovery above; a stub test checks the settings sent and
+  that no created subscription is left running.
+- Refused worlds, each attempted and either built or reported: a credited invoice
+  (`invoice_credit`), two addresses (`multiple_addresses`), a `mixed` VAT line
+  (`tax_code`), a non-zero discount (`invoice_discount`), a partially paid invoice
+  (`invoice_status`), a `charged_back` payment (`payment_status`), a fractional unit price
+  (`fractional_unit_price`). A world the API does not let the seed build is reported with
+  its category; its exclusion goes to the maintainer, and only an exclusion he approved
+  enters `NOT_SEEDED`. The contract's readiness fails for a world neither present nor
+  excluded.
 - Output: one line per world (`built`, `complete`, `REPORTED` with the category), never
   amounts, names or payloads.
 
 ### 8. The contract on Pennylane (FR-012)
 
-`tests/contract/conftest.py` gains `pennylane_platform()`: skipped with the reason
-unless `PENNYLANE_API_TOKEN` and `PENNYLANE_SANDBOX_COMPANY_ID` are set; it finds the
-seeded worlds by `external_reference`. The platform-agnostic properties run on it; the
-supported worlds compare with their fake counterparts (`taxed_duplicate_fr`,
-`taxed_billed_after_cancellation_en`) as Stripe's do; each refused world its reason; the
-write contract skips (no writes). The run is the maintainer's, or an agent's at his
-request, with his tokens.
+`tests/contract/conftest.py`: the `platform` fixture's parameters become fake, stripe and
+pennylane; `pennylane_platform()` is skipped with the reason unless `PENNYLANE_API_TOKEN`
+and `PENNYLANE_SANDBOX_COMPANY_ID` are set. Its worlds come from a catalogue of its own,
+`scripts/pennylane_worlds.py` (supported worlds with their fake counterparts, refused
+worlds with their reasons, `NOT_SEEDED` for exclusions the maintainer approved), found by
+`external_reference`. The fixture declares capabilities: `usage` false (the usage
+properties skip with the reason, Pennylane holding none), `writes` false (the write
+contract skips, but the shared tests that a platform without writes refuses every write
+and still answers `find_action` run on it); the tests that need Stripe's `duplicate` world
+read the world from the platform's catalogue. The run is the maintainer's, or an agent's
+at his request, with his tokens.
 
 ### 9. Documents (FR-013)
 
@@ -195,8 +259,8 @@ One pull request, commits in this order: base reasons and `Invoice.number` (snap
 green); hooks' signature through fake, Stripe, investigation and masking (all existing
 tests green); Pennylane client; mapper; adapter; wiring; seed; contract fixture;
 documents. Then the seed and the contract run on the sandbox, on the maintainer's word,
-their results recorded before merge -- or, if the seed token is not yet there, the PR
-merged with the contract marked "to run" and a follow-up PR for the results.
+their results recorded in the same pull request before it is merged: SC-002 is shown on
+the platform, not on stubs. The seed token is therefore needed before the merge.
 
 ## Gates
 
