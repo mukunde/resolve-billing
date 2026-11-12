@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-11
 
-**Status**: Draft -- for the maintainer's approval
+**Status**: Draft -- clarifications answered by the maintainer on 2026-11-12; for his approval
 
 **Input**: Roadmap item 3, order A (coordination decision 45): after tax in the domain
 (spec 013, merged), Pennylane as a second real billing platform, reading first. The
@@ -68,24 +68,21 @@ approval of the final diff.
 - Q: The seed? → A: A second token, read and write on the three scopes, for the seed
   alone, created by the maintainer at the contract run; seeded documents stay in the
   sandbox.
-- Q: [NEEDS CLARIFICATION: Q1] A subscription's current period, cadence and anchor? The
-  domain requires a current period. Recommended, in the line of the conventions above:
-  the current period runs from `prev_occurrence` to `next_occurrence` (midnights, Paris);
-  the cadence is `recurring_rule` (`monthly` → month, `yearly` → year, `weekly` → week,
-  `interval` as the count); the anchor is `start`. A subscription missing any of these is
-  refused (`missing_field`). The alternative: cadence and anchor left unknown (proration
-  then never concludes on Pennylane), the current period still needed.
-- Q: [NEEDS CLARIFICATION: Q2] Which Pennylane company may the adapter read? Recommended:
-  only the sandbox the maintainer declares (`PENNYLANE_SANDBOX_COMPANY_ID`): the adapter
-  checks, before its first read, that the token's company is that one, and refuses
-  otherwise -- as the Stripe adapter refuses a live key. Reading a real company is a later
-  decision, with its data terms. The alternative: any company the token reaches.
-- Q: [NEEDS CLARIFICATION: Q3] The dispute's invoice identifier? The support tool knows an
-  invoice's number, the port Pennylane's integer id. Recommended: on Pennylane,
-  `dispute.invoice_id` may be either; a number is resolved within the customer's loaded
-  invoices like a cited reference, and one that resolves to nothing is an unknown
-  reference (`UNKNOWN_INVOICE`), as today. The alternative: the integer id only, the
-  intake resolving numbers itself.
+- Q1: A subscription's current period, cadence and anchor? → A: The current period runs
+  from `prev_occurrence` to `next_occurrence` (midnights, Paris); the cadence is
+  `recurring_rule` (`monthly` → month, `yearly` → year, `weekly` → week, `interval` as the
+  count); the anchor is `start` (the maintainer, 2026-11-12). Guard, at his question
+  whether that span could be two months: the span must be exactly one cycle of the rule;
+  otherwise, or with any of these missing, the subscription is refused (`missing_field`),
+  never read in part.
+- Q2: Which company may the adapter read? → A: Only the sandbox the maintainer declares
+  (`PENNYLANE_SANDBOX_COMPANY_ID`), checked before the first read; any other company
+  refused, as Stripe refuses a live key. Reading a real company is a later decision, with
+  its data terms (the maintainer, 2026-11-12).
+- Q3: The dispute's invoice identifier? → A: On Pennylane, `dispute.invoice_id` may be the
+  typed id or the invoice's number; a number is resolved within the customer's loaded
+  invoices by the rule of FR-010, and one that resolves to nothing is an unknown reference
+  (`UNKNOWN_INVOICE`), as today (the maintainer, 2026-11-12).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -176,7 +173,10 @@ is the maintainer's.
 - **FR-001**: `BILLING_PROVIDER=pennylane` MUST select a Pennylane adapter of the
   `BillingProvider` port, reading the Company API v2 with `PENNYLANE_API_TOKEN`, read-only
   (`can_write` false, every write refused before any call as on Stripe without writes).
-  Pennylane's vocabulary stays in its mapper (ADR-001). [Q2: the company check.]
+  Pennylane's vocabulary stays in its mapper (ADR-001). Before its first read the adapter
+  checks, through the API's identity endpoint, that the token's company is
+  `PENNYLANE_SANDBOX_COMPANY_ID`; a missing setting, another company or an unreadable
+  answer refuses every read, by category (Q2).
 - **FR-002**: Customers: found by address -- the given address trimmed and lower-cased,
   compared with every address of every customer, in id order, read to the end; a customer
   with several addresses refused (`multiple_addresses`), one without an address
@@ -216,7 +216,9 @@ is the maintainer's.
 - **FR-006**: Subscriptions: `in_progress` → active; `stopped` and `finished` → cancelled,
   ended by the end-of-service convention; any other status refused
   (`subscription_status`); `plan_code` the subscription's `label`, or its id when it has
-  none; current period, cadence and anchor: [Q1]. An invoice of a cancelled subscription
+  none; current period from `prev_occurrence` to `next_occurrence`, cadence from
+  `recurring_rule`, anchor `start` (Q1), the period exactly one cycle of the rule, else
+  refused (`missing_field`). An invoice of a cancelled subscription
   is mapped only if every one of its lines has a complete, forward-running period (both
   dates, the start before the end); otherwise it is refused (`missing_field`), so the
   after-cancellation check never decides on partial coverage or on the issue instant.
@@ -251,7 +253,9 @@ is the maintainer's.
   invoices is not resolved. A number not among them is not recognised (neither resolved
   nor masked). The fake and Stripe ignore the invoices given and answer as today. Tests:
   interleaved investigations of two customers, a number inside a longer word, overlapping
-  numbers, an ambiguous number. [Q3: the dispute's invoice identifier.]
+  numbers, an ambiguous number. On Pennylane, `dispute.invoice_id` may be the typed id or
+  a number, resolved by the same rule among the customer's loaded invoices; a number that
+  resolves to nothing is an unknown reference (`UNKNOWN_INVOICE`) (Q3).
 - **FR-011**: A seed script (`scripts/pennylane_seed.py`) MUST build the worlds with its
   own token (`PENNYLANE_SEED_TOKEN`, never loaded by the adapter), after checking, failing
   closed, that the token's company is `PENNYLANE_SANDBOX_COMPANY_ID`; recovery after a lost
