@@ -132,6 +132,7 @@ LOCK = os.path.join(tempfile.gettempdir(), "rb-stripe-seed.lock")
 PRODUCTS = {
     "rb_pro": "Pro",
     "rb_enterprise": "Enterprise",
+    "rb_team": "Team",  # the taxed duplicate's plan (specs/013-invoice-tax)
     "rb_addon": "Add-on",
     "rb_blocks": "API call blocks",
 }
