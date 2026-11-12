@@ -247,12 +247,23 @@ class TestSubscriptions:
             subscription(prev_occurrence="2026-08-01", next_occurrence="2026-10-01")
 
     def test_every_two_months_and_weekly(self):
-        assert subscription(prev_occurrence="2026-08-01",
+        assert subscription(prev_occurrence="2026-09-01", next_occurrence="2026-11-01",
                             recurring_rule={"rule_type": "monthly", "interval": 2}
                             ).billing_interval_count == 2
         assert subscription(prev_occurrence="2026-09-24",
                             recurring_rule={"rule_type": "weekly", "interval": 1}
                             ).billing_interval == "week"
+
+    def test_a_month_end_is_clamped_as_the_domain_does(self):
+        """r366: January 31 steps to February 28, by the domain's calendar."""
+        read = subscription(start="2026-01-31", prev_occurrence="2026-01-31",
+                            next_occurrence="2026-02-28")
+        assert read.current_period_end == datetime(2026, 2, 28, tzinfo=UTC)
+
+    def test_a_period_off_its_anchor_s_schedule_is_refused(self):
+        """r366: September 15 is no step of a schedule anchored on January 1."""
+        with refused("missing_field"):
+            subscription(prev_occurrence="2026-09-15", next_occurrence="2026-10-15")
 
     @pytest.mark.parametrize("rule", [None, {"rule_type": "daily", "interval": 1},
                                       {"rule_type": "monthly", "interval": 0}])
@@ -283,6 +294,22 @@ class TestReferences:
 
     def test_a_number_two_invoices_share_designates_neither(self):
         assert mapping.references("F1", self.invoices("F1", "F1")) == []
+
+    def test_unicode_boundaries_and_case(self):
+        """r366: a letter of any script bounds a number; no case folding crashes."""
+        assert mapping.references("éF1", self.invoices("F1")) == []
+        assert mapping.references("Straße", self.invoices("Straße")) == [(0, 6, "pl_inv_1")]
+        assert mapping.references("İ1", self.invoices("i1")) in ([], [(0, 2, "pl_inv_1")])
+
+    def test_the_longest_of_two_overlapping_numbers_wins(self):
+        """r366: `B-C-D` is longer than `A-B`, which starts first."""
+        found = mapping.references("A-B-C-D", self.invoices("A-B", "B-C-D"))
+        assert found == [(2, 7, "pl_inv_2")]
+
+    def test_a_reference_resolved_only_as_a_whole_number(self):
+        invoices = self.invoices("601")
+        assert mapping.resolve_number("601", invoices) == "pl_inv_1"
+        assert mapping.resolve_number("pl_inv_601", invoices) is None
 
     def test_a_number_not_among_the_invoices_is_not_recognised(self):
         assert mapping.references("F9999", self.invoices("F1")) == []

@@ -39,6 +39,10 @@ for _name in ("httpx", "httpcore"):
     logging.getLogger(_name).propagate = False
 
 
+class _Unreadable(ProviderUnavailable):
+    """An answer received and not readable as JSON."""
+
+
 class Pacer:
     """At most WINDOW_REQUESTS sends in any WINDOW_SECONDS, for one token,
     shared by every client of that token in the process."""
@@ -110,8 +114,8 @@ class PennylaneReader:
             raise self._verdict
         try:
             me = await self._get("/me")
-        except NotFound:
-            me = None
+        except (NotFound, _Unreadable):
+            me = None  # no identity to compare: not the declared sandbox
         company = (me or {}).get("company") if isinstance(me, dict) else None
         company_id = company.get("id") if isinstance(company, dict) else None
         if company_id != self._company_id:
@@ -173,7 +177,7 @@ class PennylaneReader:
                 try:
                     return response.json()
                 except ValueError:
-                    raise ProviderUnavailable("pennylane: an unreadable answer") from None
+                    raise _Unreadable("pennylane: an unreadable answer") from None
             if status == 404:
                 raise NotFound("pennylane: not found")
             if status == 401:

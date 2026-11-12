@@ -18,6 +18,7 @@ from typing import Any
 from app.domain.enums import InvoiceStatus, PaymentStatus, SubscriptionStatus
 from app.domain.models import Customer, Invoice, InvoiceLine, LineTax, Payment, Subscription
 from app.domain.money import Money
+from app.domain.rules import exactly_one_cycle
 from app.providers.base import ProviderUnsupported
 from app.providers.tax import reconcile, untaxed_unless_charged
 
@@ -317,19 +318,6 @@ def payment(payload: Payload, invoice_id: str) -> Payment:
 RULES = {"monthly": "month", "yearly": "year", "weekly": "week"}
 
 
-def _add(day: date, unit: str, count: int) -> date:
-    if unit == "week":
-        return day + timedelta(weeks=count)
-    months = count * (12 if unit == "year" else 1)
-    year, month = divmod(day.month - 1 + months, 12)
-    year += day.year
-    # A day that does not exist in the target month cannot be one cycle on.
-    try:
-        return date(year, month + 1, day.day)
-    except ValueError:
-        raise ProviderUnsupported("missing_field") from None
-
-
 def subscription(payload: Payload) -> Subscription:
     status = payload.get("status")
     if status == "in_progress":
@@ -353,12 +341,9 @@ def subscription(payload: Payload) -> Subscription:
         raise ProviderUnsupported("missing_field")
     previous = _day(payload.get("prev_occurrence"))
     following = _day(payload.get("next_occurrence"))
-    if _add(previous, unit, count) != following:
-        # The current period must be exactly one cycle (decision 46, Q1).
-        raise ProviderUnsupported("missing_field")
     label = payload.get("label")
     identifier = typed("subscription", payload.get("id"))
-    return Subscription(
+    mapped_subscription = Subscription(
         id=identifier,
         customer_id=_ref(payload.get("customer"), "customer") or _missing(),
         status=mapped,
@@ -370,6 +355,11 @@ def subscription(payload: Payload) -> Subscription:
         billing_interval_count=count,
         billing_anchor=midnight(_day(payload.get("start"))),
     )
+    # The current period must be exactly one cycle, by the domain's own
+    # calendar -- anchored, month ends clamped (decision 46, Q1).
+    if not exactly_one_cycle(mapped_subscription):
+        raise ProviderUnsupported("missing_field")
+    return mapped_subscription
 
 
 def fully_dated(invoice_: Invoice) -> bool:
@@ -386,25 +376,46 @@ def fully_dated(invoice_: Invoice) -> bool:
 # -- references (FR-010) ------------------------------------------------------------------
 
 
-def references(text: str, invoices: Sequence[Invoice]) -> list[tuple[int, int, str]]:
-    """Where the numbers of `invoices` sit in `text`, and the invoice each
-    stands for: whole numbers, case ignored, bounded by a character that is
-    neither a letter nor a digit, the longest first, never overlapping; a
-    number two invoices share designates neither."""
+def _numbers(invoices: Sequence[Invoice]) -> dict[str, str]:
+    """Each number, case-folded, to the one invoice that carries it; a number
+    two invoices share is left out: it designates neither."""
     by_number: dict[str, set[str]] = {}
     for item in invoices:
         if item.number:
             by_number.setdefault(item.number.casefold(), set()).add(item.id)
-    numbers = sorted(
-        (n for n, ids in by_number.items() if len(ids) == 1), key=len, reverse=True
-    )
-    if not numbers:
+    return {n: next(iter(ids)) for n, ids in by_number.items() if len(ids) == 1}
+
+
+#: Neither a letter nor a digit, in any script.
+_BEFORE = r"(?<![^\W_])"
+_AFTER = r"(?![^\W_])"
+
+
+def resolve_number(reference: str, invoices: Sequence[Invoice]) -> str | None:
+    """The invoice whose whole number `reference` is, case ignored."""
+    return _numbers(invoices).get(reference.strip().casefold())
+
+
+def references(text: str, invoices: Sequence[Invoice]) -> list[tuple[int, int, str]]:
+    """Where the numbers of `invoices` sit in `text`, and the invoice each
+    stands for: whole numbers, case ignored, bounded by a character that is
+    neither a letter nor a digit (in any script), the longest kept first where
+    two overlap, never overlapping."""
+    known = _numbers(invoices)
+    if not known:
         return []
-    pattern = re.compile(
-        r"(?<![0-9A-Za-z])(" + "|".join(re.escape(n) for n in numbers) + r")(?![0-9A-Za-z])",
-        re.IGNORECASE,
-    )
-    return [
-        (match.start(), match.end(), next(iter(by_number[match.group(1).casefold()])))
-        for match in pattern.finditer(text)
-    ]
+    candidates: list[tuple[int, int, str]] = []
+    originals = {item.number for item in invoices if item.number}
+    for number in originals:
+        invoice_id = known.get(number.casefold())
+        if invoice_id is None:
+            continue
+        pattern = re.compile(_BEFORE + re.escape(number) + _AFTER, re.IGNORECASE)
+        for match in pattern.finditer(text):
+            if match.group(0).casefold() == number.casefold():
+                candidates.append((match.start(), match.end(), invoice_id))
+    chosen: list[tuple[int, int, str]] = []
+    for start, end, invoice_id in sorted(candidates, key=lambda c: (c[0] - c[1], c[0])):
+        if all(end <= s or start >= e for s, e, _ in chosen):
+            chosen.append((start, end, invoice_id))
+    return sorted(set(chosen))

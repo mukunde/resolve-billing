@@ -54,6 +54,16 @@ class PennylaneBillingProvider:
     ) -> list[tuple[int, int, str]]:
         return mapping.references(text, invoices)
 
+    def resolve_invoice_reference(self, reference: str, invoices: Sequence[Invoice]) -> str:
+        """The disputed invoice (Q3): a typed id as it is; else the one loaded
+        invoice whose whole number it is; else the reference as given."""
+        if mapping.raw_id(reference, "invoice") is not None:
+            return reference
+        return mapping.resolve_number(reference, invoices) or reference
+
+    def is_invoice_id(self, reference: str) -> bool:
+        return mapping.raw_id(reference, "invoice") is not None
+
     # -- customers -------------------------------------------------------------
 
     async def get_customer(self, customer_id: str) -> Customer:

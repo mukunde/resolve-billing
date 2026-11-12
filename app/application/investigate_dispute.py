@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from app.application.events import AuditEvent, AuditSink, event
 from app.decision.base import (
@@ -97,6 +97,10 @@ class ProposedAction(BaseModel):
 
     type: Literal["credit_note", "refund", "reply", "request_information", "none"]
     amount: Money | None = None
+    invoice_id: str | None = Field(default=None, exclude=True)
+    """The invoice the correction is on, as the platform identifies it -- the
+    disputed one once resolved (specs/014-pennylane-read): what an approval
+    names. Never serialised."""
     tax_breakdown: TaxBreakdown | None = None
     """What the amount is made of, when the invoice carries tax
     (specs/013-invoice-tax, FR-007). None otherwise, and then not serialised,
@@ -366,7 +370,7 @@ class DisputeInvestigator:
         if result.authorization.verdict is not Verdict.REQUIRES_APPROVAL:
             return None
         amount = result.proposed_action.amount
-        invoice_id = result.dispute.invoice_id
+        invoice_id = result.proposed_action.invoice_id or result.dispute.invoice_id
         if amount is None or invoice_id is None:
             return None
 
@@ -410,13 +414,16 @@ class DisputeInvestigator:
         # The disputed invoice's reference, resolved once among the loaded
         # invoices (specs/014-pennylane-read, Q3): a number on a platform that
         # prints them, the id as it is elsewhere. Every later use reads this.
-        reference = self._resolve(dispute.invoice_id, invoices)
+        resolved = self._resolve(dispute.invoice_id, invoices)
+        reference = resolved if resolved is not None else dispute.invoice_id
         target = next((i for i in invoices if i.id == reference), None)
         # Not found in the window is not "does not exist" (taxonomy S7): ask
         # whose the reference is, and nothing else -- nothing of another
-        # account's invoice is mapped, so nothing of it can surface.
+        # account's invoice is mapped, so nothing of it can surface. A
+        # reference the platform does not take for one of its ids (an
+        # unresolved number) is never asked about.
         outside_window = False
-        if reference and target is None:
+        if reference and target is None and self._platform_id(reference):
             owner = await self._provider.invoice_owner(reference)
             outside_window = owner == customer.id
         usage = None
@@ -431,18 +438,25 @@ class DisputeInvestigator:
             payments=payments,
             usage=usage,
             target_invoice_id=target.id if target else None,
-            target_reference=reference,
+            target_reference=resolved,
             target_outside_window=outside_window,
         )
 
     def _resolve(self, reference: str | None, invoices: list[Invoice]) -> str | None:
-        """The one invoice a reference designates among `invoices`, or the
-        reference as given when the platform cannot resolve it to exactly one."""
-        finder = getattr(self._provider, "invoice_references", None)
-        if not reference or finder is None:
-            return reference
-        found = finder(reference, invoices)
-        return next(iter(found)) if len(found) == 1 else reference
+        """The invoice a reference designates, by a platform that resolves
+        references of its own (`resolve_invoice_reference`, optional on the
+        port: Pennylane's numbers); None on any other platform -- whose target
+        is then the reference as given, as before -- and for no reference."""
+        resolver = getattr(self._provider, "resolve_invoice_reference", None)
+        if not reference or resolver is None:
+            return None
+        return resolver(reference, invoices)
+
+    def _platform_id(self, reference: str) -> bool:
+        """Whether the platform takes `reference` for one of its invoice ids;
+        true on a platform that does not say (`is_invoice_id`, optional)."""
+        check = getattr(self._provider, "is_invoice_id", None)
+        return check is None or check(reference)
 
     def run_rules(self, dispute: Dispute, context: BillingContext) -> list[RuleFinding]:
         """Every deterministic check, in the order that matters.
@@ -464,7 +478,13 @@ class DisputeInvestigator:
             findings.append(automated)
 
         references = getattr(self._provider, "invoice_references", None)
+        # The disputed invoice as the platform resolved it, where it resolves
+        # its own references; elsewhere the reference normalised as before.
         designated = context.target_reference or dispute.invoice_id
+        if context.target_reference is None and references is not None and dispute.invoice_id:
+            designated = next(
+                iter(references(dispute.invoice_id, context.invoices)), dispute.invoice_id
+            )
         conflict = (
             cited_invoice_conflict(
                 references(dispute.customer_message, context.invoices),
@@ -477,9 +497,10 @@ class DisputeInvestigator:
             findings.append(conflict)
 
         if dispute.invoice_id:
-            missing = unknown_invoice(designated, context.invoices)
+            disputed = context.target_reference or dispute.invoice_id
+            missing = unknown_invoice(disputed, context.invoices)
             if missing is not None and context.target_outside_window:
-                missing = _outside_window(designated)
+                missing = _outside_window(disputed)
             if missing is not None:
                 findings.append(missing)
 
@@ -571,7 +592,9 @@ class DisputeInvestigator:
         # Whose the cited invoice is, and nothing else of it: the sender is
         # nobody we know.
         owner = (
-            await self._provider.invoice_owner(dispute.invoice_id) if dispute.invoice_id else None
+            await self._provider.invoice_owner(dispute.invoice_id)
+            if dispute.invoice_id and self._platform_id(dispute.invoice_id)
+            else None
         )
         impersonation = suspected_impersonation(
             dispute.customer_email,
@@ -830,7 +853,12 @@ def _proposed_action(
             correction = correction_for(kind, invoice, findings, context.payments)
             breakdown = TaxBreakdown.of(invoice) if correction.amount is not None else None
             return (
-                ProposedAction(type=kind, amount=correction.amount, tax_breakdown=breakdown),
+                ProposedAction(
+                    type=kind,
+                    amount=correction.amount,
+                    tax_breakdown=breakdown,
+                    invoice_id=invoice.id,
+                ),
                 correction.withheld,
             )
         case RecommendedAction.EXPLAIN_INVOICE:
