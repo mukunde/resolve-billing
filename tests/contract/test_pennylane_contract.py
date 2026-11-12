@@ -16,6 +16,8 @@ from decimal import Decimal
 import pytest
 
 from app.providers.base import PlatformCannotWrite, ProviderUnsupported
+from app.providers.pennylane import mapping
+from app.providers.pennylane.adapter import _filter
 from scripts import pennylane_worlds as worlds
 
 pytestmark = pytest.mark.contract
@@ -44,21 +46,31 @@ def world(name: str) -> worlds.World:
 
 
 async def _state(pennylane, spec) -> bool:
-    """Whether a world is in the state its kind asks for: its customer and
-    the objects the seed makes for it; a refusal counts as present (the refused
-    worlds' own test reads why)."""
+    """Whether a world is in the state its kind asks for. A refused world is
+    present only when refused with its own reason; a read world is never
+    refused; the subscription is present once stopped (read raw, as the mapper
+    may refuse what Pennylane gives -- an observation the seed prints); the paid
+    invoice once Pennylane says it is paid."""
     try:
         customer = await pennylane.find_customer_by_email(spec.email)
-        if customer is None:
-            return False
-        if spec.name == "subscription":
-            return bool(await pennylane.list_subscriptions(customer.id))
+    except ProviderUnsupported as refusal:
+        return spec.kind == "refused" and refusal.reason == spec.reason
+    if customer is None:
+        return False
+    if spec.name == "subscription":
+        raw = mapping.raw_id(customer.id, "customer")
+        found = await pennylane.reader.every(
+            "/billing_subscriptions", {"filter": _filter("customer_id", raw)})
+        return len(found) == 1 and found[0].get("status") == "stopped"
+    try:
         invoices = await pennylane.list_invoices(customer.id, since=EPOCH)
-        if spec.name == "paid_invoice":
-            return bool(invoices) and invoices[0].status.value == "paid"
-        return bool(invoices)
-    except ProviderUnsupported:
-        return True
+    except ProviderUnsupported as refusal:
+        return spec.kind == "refused" and refusal.reason == spec.reason
+    if spec.kind == "refused":
+        return False  # read without its refusal: the world is not what it should be
+    if spec.name == "paid_invoice":
+        return len(invoices) == 1 and invoices[0].status.value == "paid"
+    return len(invoices) >= 1
 
 
 async def test_every_world_is_present_or_excluded(pennylane):
@@ -82,7 +94,9 @@ async def test_a_taxed_invoice_is_read_faithfully(pennylane):
         rate: expected["tax_minor"]}
     assert invoice.total.amount_minor == expected["total_minor"]
     assert invoice.issued_at == datetime.fromisoformat(expected["date"]).replace(tzinfo=UTC)
-    assert isinstance(invoice.number, str) and invoice.number.strip()
+    raw = await pennylane.reader.get(
+        f"/customer_invoices/{mapping.raw_id(invoice.id, 'invoice')}")
+    assert invoice.number == raw["invoice_number"] and invoice.number.strip()
     (line,) = invoice.lines
     assert line.quantity == Decimal(expected["quantity"])
     assert line.unit_amount.amount_minor == expected["unit_minor"]
@@ -173,5 +187,8 @@ async def test_the_paid_invoice_reads_or_refuses_by_its_payment_status(pennylane
         payments = await pennylane.list_payments(customer.id)
     except ProviderUnsupported as refusal:
         assert refusal.reason == "payment_status"
-    else:
-        assert all(p.received_at is None for p in payments)
+        return
+    if not payments:
+        pytest.skip("Pennylane lists no payment for an invoice marked paid: an observation, "
+                    "recorded in the contract, not a payment the adapter could read")
+    assert all(p.received_at is None and p.invoice_id for p in payments)

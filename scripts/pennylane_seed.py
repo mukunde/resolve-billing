@@ -271,10 +271,17 @@ class Seeder:
                      "raw_currency_unit_price": "49.00", "vat_rate": "FR_200"}]},
             })
 
-        made = await self.once(f"{world.name}/subscription", find, create)
-        path = f"/billing_subscriptions/{made['id']}"
-        before = await self.w.get(path)
         try:
+            made = await self.once(f"{world.name}/subscription", find, create)
+        except (Uncertain, Stop):
+            # The create's answer was lost or unreadable, or the seed cannot
+            # tell which subscription is its own: whatever landed is stopped.
+            for landed in await find():
+                await self._stop(world, f"/billing_subscriptions/{landed['id']}")
+            raise
+        path = f"/billing_subscriptions/{made['id']}"
+        try:
+            before = await self.w.get(path)
             settings = (made.get("mode") or {}).get("type"), made.get("payment_method")
             if settings != ("awaiting_validation", "offline"):
                 raise Stop("subscription: its settings are not those sent")
@@ -283,11 +290,7 @@ class Seeder:
         finally:
             # Whatever failed above, a subscription the seed made never keeps
             # invoicing: it is stopped, once, and seen stopped.
-            async def stopped():
-                return (await self.w.get(path)).get("status") == "stopped"
-
-            await self.mutate(f"{world.name}/stop", stopped,
-                              lambda: self.w.write("PUT", path, {"stop": True}))
+            await self._stop(world, path)
         after = await self.w.get(path)
 
         def dates(payload):
@@ -300,6 +303,13 @@ class Seeder:
         self.observations.append(f"subscription: after stop {dates(after)}")
         self.observations.append(f"subscription: generated invoices {invoices}")
         return f"built, subscription {made['id']}"
+
+    async def _stop(self, world, path: str) -> None:
+        async def stopped():
+            return (await self.w.get(path)).get("status") == "stopped"
+
+        await self.mutate(f"{world.name}/stop:{path}", stopped,
+                          lambda: self.w.write("PUT", path, {"stop": True}))
 
     async def _credited_invoice(self, world):
         customer = await self.customer(world)

@@ -290,3 +290,36 @@ async def test_the_unbuildable_worlds_are_reported(tmp_path):
     for name in ("partially_paid", "charged_back", "taxed_duplicate",
                  "taxed_billed_after_cancellation"):
         assert any(line.startswith(f"{name}: REPORTED") for line in lines), name
+
+
+async def test_a_lost_subscription_create_that_landed_is_stopped_at_once(tmp_path):
+    """r370, finding 1: a create whose answer is lost is looked for and stopped
+    in the same run, not left invoicing until a later one."""
+    api = Api()
+    api.lose_next.add("/billing_subscriptions")
+    lines = await run(api, tmp_path)
+    assert any(line.startswith("subscription: REPORTED") for line in lines)
+    (sub,) = api.subscriptions
+    assert sub["status"] == "stopped"
+
+
+async def test_a_failing_subscription_read_still_stops_it(tmp_path):
+    """r370, finding 1: the first read of the made subscription fails; it is
+    stopped all the same."""
+    api = Api()
+    original = api.handle
+    failed = []
+
+    def first_read_fails(request):
+        path = request.url.path.removeprefix("/api/external/v2")
+        if request.method == "GET" and path.startswith("/billing_subscriptions/") and not failed:
+            failed.append(path)
+            return httpx.Response(404)
+        return original(request)
+
+    api.handle = first_read_fails
+    lines = await run(api, tmp_path)
+    assert failed
+    assert any(line.startswith("subscription: REPORTED") for line in lines)
+    (sub,) = api.subscriptions
+    assert sub["status"] == "stopped"
