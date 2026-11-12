@@ -11,13 +11,14 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, model_serializer
+from pydantic import BaseModel, Field, model_serializer
 
 from app.api.auth import Anyone, Approver, Service
 from app.api.deps import get_actions, get_approvals, get_attempts, get_audit
-from app.application.execute_action import ApprovalService
+from app.application.execute_action import IN_FLIGHT, RESOLUTION_NOTE_LIMIT, ApprovalService
 from app.domain.enums import ActionState
 from app.infrastructure.actions import (
+    RESOLVABLE,
     IllegalTransition,
     PendingAction,
     SqliteActionStore,
@@ -28,6 +29,25 @@ from app.infrastructure.audit import SqliteAuditRepository
 from app.providers.base import ProviderRejected, ProviderUnavailable, ProviderUnsupported
 
 router = APIRouter(prefix="/api/v1", tags=["approvals"])
+
+#: What an action of a type the platform does not write says (spec 015, FR-001).
+NOT_WRITTEN_HERE = (
+    "cannot be executed on this platform; a person carries it out outside ResolveBilling"
+)
+
+#: Fields absent from the answer unless they hold something: older clients
+#: read the same shape as before spec 015.
+_OPTIONAL = (
+    "notice",
+    "warning",
+    "partial_document",
+    "last_request_at",
+    "status_read_at",
+    "status_read_found",
+    "resolved_by",
+    "resolved_at",
+    "resolution_note",
+)
 
 
 class ActionOut(BaseModel):
@@ -61,6 +81,23 @@ class ActionOut(BaseModel):
     #: The invoice's tax is no longer the one proposed: nothing to approve.
     #: Absent unless true.
     stale: bool = False
+    #: Set when the platform does not write this type of action: a person
+    #: carries it out outside ResolveBilling (spec 015, FR-001).
+    notice: str | None = None
+    #: Set on a partial write, or a write without trace, not yet resolved: a
+    #: request may still have been in flight (spec 015, FR-009a).
+    warning: str | None = None
+    #: The document left half-way, its id and stage (FR-006).
+    partial_document: dict | None = None
+    #: When the attempt last sent a request, and a person's latest status
+    #: read: when and what it found (FR-009a).
+    last_request_at: datetime | None = None
+    status_read_at: datetime | None = None
+    status_read_found: str | None = None
+    #: Who recorded the resolution of a partial write, when, and what they did.
+    resolved_by: str | None = None
+    resolved_at: datetime | None = None
+    resolution_note: str | None = None
 
     @model_serializer(mode="wrap")
     def _without_absent_breakdown(self, handler):
@@ -69,10 +106,16 @@ class ActionOut(BaseModel):
             data.pop("tax_breakdown", None)
         if not self.stale:
             data.pop("stale", None)
+        for name in _OPTIONAL:
+            if getattr(self, name) is None:
+                data.pop(name, None)
         return data
 
     @classmethod
-    def of(cls, action: PendingAction, proposal: str | None = None) -> ActionOut:
+    def of(
+        cls, action: PendingAction, proposal: str | None = None, *, written: bool = True
+    ) -> ActionOut:
+        """`written` is whether the platform writes the action's type."""
         return cls(
             action_id=action.action_id,
             run_id=action.run_id,
@@ -95,7 +138,25 @@ class ActionOut(BaseModel):
             tax_breakdown=(
                 action.tax_breakdown.to_record() if action.tax_breakdown is not None else None
             ),
+            notice=None if written else NOT_WRITTEN_HERE,
+            warning=(
+                IN_FLIGHT
+                if action.attention in RESOLVABLE and action.resolved_at is None
+                else None
+            ),
+            partial_document=action.partial_document,
+            last_request_at=action.last_request_at,
+            status_read_at=action.status_read_at,
+            status_read_found=action.status_read_found,
+            resolved_by=action.resolved_by,
+            resolved_at=action.resolved_at,
+            resolution_note=action.resolution_note,
         )
+
+
+class ResolutionIn(BaseModel):
+    #: What the person did on the platform, in their words.
+    note: str = Field(min_length=1, max_length=RESOLUTION_NOTE_LIMIT)
 
 
 class ApprovalIn(BaseModel):
@@ -195,6 +256,30 @@ async def read_status(
         raise HTTPException(503, "billing platform unavailable: nothing was read") from error
 
 
+@router.post("/actions/{action_id}/resolution", response_model=ActionOut)
+async def record_resolution(
+    action_id: str,
+    approver: Approver,
+    approvals: Annotated[ApprovalService, Depends(get_approvals)],
+    body: ResolutionIn | None = None,
+) -> ActionOut:
+    """A person records how they resolved a partial write, or a write that
+    left no trace (spec 015, FR-009a).
+
+    By POST only, as the authenticated approver; a name in the body is not
+    read. Refused (409) unless the action is one of those two, unresolved,
+    and a status read was made at least ten minutes after the attempt's last
+    request. It releases the customer's blocker and never executes anything.
+    """
+    if body is None:
+        raise HTTPException(422, "a resolution says what was done")
+    try:
+        action = await _guard(lambda: approvals.resolve(action_id, approver.identity, body.note))
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    return ActionOut.of(action, written=approvals.writes(action.action_type))
+
+
 @router.get("/actions/{action_id}", response_model=ActionOut)
 async def read_action(
     action_id: str,
@@ -202,14 +287,15 @@ async def read_action(
     approvals: Annotated[ApprovalService, Depends(get_approvals)],
 ) -> ActionOut:
     action = await _guard(lambda: approvals.expire_if_overdue(action_id))
+    written = approvals.writes(action.action_type)
     if action.state is not ActionState.PENDING_APPROVAL:
-        return ActionOut.of(action)
+        return ActionOut.of(action, written=written)
     # No fingerprint for a proposal whose invoice no longer carries the tax
     # recorded with it: it is shown as stale, not offered (specs/013, FR-007).
     proposal = await approvals.presented(action)
     if proposal is None:
-        return ActionOut.of(action).model_copy(update={"stale": True})
-    return ActionOut.of(action, proposal)
+        return ActionOut.of(action, written=written).model_copy(update={"stale": True})
+    return ActionOut.of(action, proposal, written=written)
 
 
 @router.get("/runs/{run_id}")

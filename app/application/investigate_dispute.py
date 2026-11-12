@@ -276,26 +276,32 @@ class DisputeInvestigator:
         if injection is not None:
             trace.append(event("injection_suspected", matched=injection.evidence.get("categories")))
             trace.append(event("decision_engine_skipped"))
-            return self._finish(self._short_circuit(dispute, findings, injection), trace)
+            return self._finish(
+                self._short_circuit(dispute, findings, injection), trace, customer.id
+            )
 
         response = next((f for f in findings if f.code is RuleCode.AUTOMATED_RESPONSE), None)
         if response is not None:
             trace.append(event("decision_engine_skipped"))
-            return self._finish(self._set_aside(dispute, findings, response), trace)
+            return self._finish(self._set_aside(dispute, findings, response), trace, customer.id)
 
         too_long = _message_too_long(dispute.customer_message)
         if too_long is not None:
             findings.append(too_long)
             trace.append(event("message_too_long", **too_long.evidence))
             trace.append(event("decision_engine_skipped"))
-            return self._finish(self._short_circuit(dispute, findings, too_long), trace)
+            return self._finish(
+                self._short_circuit(dispute, findings, too_long), trace, customer.id
+            )
 
         conflict = next(
             (f for f in findings if f.code is RuleCode.INVOICE_REFERENCE_CONFLICT), None
         )
         if conflict is not None:
             trace.append(event("decision_engine_skipped"))
-            return self._finish(self._ask_which_invoice(dispute, findings, conflict), trace)
+            return self._finish(
+                self._ask_which_invoice(dispute, findings, conflict), trace, customer.id
+            )
 
         unusable = next((f for f in findings if f.code in _TO_A_PERSON), None)
         if unusable is not None:
@@ -306,7 +312,7 @@ class DisputeInvestigator:
                 unusable,
                 reason=f"Revue humaine : {unusable.code.value}. {unusable.description}",
             )
-            return self._finish(result, trace)
+            return self._finish(result, trace, customer.id)
 
         try:
             decision = await self._engine.decide(dispute, context, findings)
@@ -319,7 +325,7 @@ class DisputeInvestigator:
             result = self._assemble(
                 dispute, context, findings, decision, getattr(outage, "invocation_id", None)
             )
-            return self._finish(result, trace)
+            return self._finish(result, trace, customer.id)
         except EngineMisidentified as error:
             # The engine answered, so this is no outage: the answer came from
             # a model nobody chose, and it was dropped.
@@ -328,7 +334,7 @@ class DisputeInvestigator:
             result = self._assemble(
                 dispute, context, findings, decision, getattr(error, "invocation_id", None)
             )
-            return self._finish(result, trace)
+            return self._finish(result, trace, customer.id)
         trace.append(
             event(
                 "decision_created",
@@ -337,17 +343,25 @@ class DisputeInvestigator:
                 cost_micros=decision.telemetry.cost_micros if decision.telemetry else None,
             )
         )
-        return self._finish(self._assemble(dispute, context, findings, decision), trace)
+        return self._finish(
+            self._assemble(dispute, context, findings, decision), trace, customer.id
+        )
 
     def _finish(
-        self, result: InvestigationResult, trace: list[AuditEvent]
+        self,
+        result: InvestigationResult,
+        trace: list[AuditEvent],
+        customer_id: str | None = None,
     ) -> InvestigationResult:
+        # `customer_id` is the verified customer's -- resolved from the
+        # sender's address and checked against any claim -- or None before
+        # the customer is known, when nothing is ever queued.
         verdict = result.authorization.verdict.value
         trace.append(event("authorization_evaluated", verdict=verdict))
         if result.requires_human_approval:
             trace.append(event("approval_requested", verdict=verdict))
 
-        action_id = self._queue_for_approval(result, trace)
+        action_id = self._queue_for_approval(result, trace, customer_id)
         reply = automatic_reply(result)
         trace.append(event("automatic_reply", allowed=reply.allowed, reason=reply.reason.value))
         recorded = result.model_copy(
@@ -358,7 +372,10 @@ class DisputeInvestigator:
         return recorded
 
     def _queue_for_approval(
-        self, result: InvestigationResult, trace: list[AuditEvent]
+        self,
+        result: InvestigationResult,
+        trace: list[AuditEvent],
+        customer_id: str | None = None,
     ) -> str | None:
         """Register the action a human will be asked about.
 
@@ -382,6 +399,9 @@ class DisputeInvestigator:
             reason=result.explanation,
             provider=self._provider.name,
             tax_breakdown=result.proposed_action.tax_breakdown,
+            # The store blocks a customer's credit notes on one another
+            # while one is in flight or left half-way (spec 015, FR-009).
+            customer_id=customer_id,
         )
         trace.append(event("action_queued", action_id=action.action_id, state=action.state.value))
         return action.action_id

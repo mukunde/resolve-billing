@@ -37,6 +37,10 @@
     margin-top: 12px; font-size: 12.5px; color: #92400e;
     background: #fffbeb; border-left: 3px solid #fcd34d; padding: 9px 13px;
   }
+  .notice {
+    display: $notice_display; margin-top: 14px; font-size: 13.5px; color: #7c2d12;
+    background: #fff7ed; border-left: 3px solid #fb923c; padding: 9px 13px;
+  }
   .analysis { margin-top: 18px; font-size: 14px; color: #374151; }
   .analysis h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
   .policy {
@@ -82,6 +86,7 @@
     <div class="amount">$amount_display</div>
     <div style="font-size:13px;color:#374151;">$tax_display</div>
     <div style="font-size:14px;color:#374151;">$action_type &middot; $classification</div>
+    <div class="notice">$notice</div>
 
     <dl>
       <dt>Facture</dt><dd>$invoice_id</dd>

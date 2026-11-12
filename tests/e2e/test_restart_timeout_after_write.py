@@ -70,7 +70,7 @@ def test_a_timeout_after_a_write_is_reconciled_after_a_restart(tmp_path):
             assert unknown["state"] == "unknown_outcome"
             assert unknown["provider_action_id"] is None
 
-        (written,) = PersistentFake(ledger).writes()
+        (written,) = PersistentFake(ledger).held()
         assert written.action_id == action_id
         first.kill()
         assert first.exited()
@@ -102,4 +102,4 @@ def test_a_timeout_after_a_write_is_reconciled_after_a_restart(tmp_path):
     assert not any(call.startswith("create_") for call in second_calls), second_calls
 
     # The platform's own count: still the one write.
-    assert PersistentFake(ledger).writes() == [written]
+    assert PersistentFake(ledger).held() == [written]
