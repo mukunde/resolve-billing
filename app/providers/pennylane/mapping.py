@@ -1,5 +1,6 @@
 """Pennylane's payloads onto the domain (specs/014-pennylane-read, FR-002 to
-FR-006, FR-008a, FR-010).
+FR-006, FR-008a, FR-010), and the credit notes written back
+(specs/015-pennylane-credit-notes).
 
 Pennylane's vocabulary stops here (ADR-001). Every mapping whose meaning the
 documentation leaves open is a convention the maintainer approved (coordination
@@ -16,10 +17,19 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.domain.enums import InvoiceStatus, PaymentStatus, SubscriptionStatus
-from app.domain.models import Customer, Invoice, InvoiceLine, LineTax, Payment, Subscription
+from app.domain.models import (
+    Customer,
+    Invoice,
+    InvoiceLine,
+    LineTax,
+    Payment,
+    Subscription,
+    TaxBreakdown,
+    canonical_rate,
+)
 from app.domain.money import Money
 from app.domain.rules import exactly_one_cycle
-from app.providers.base import ProviderUnsupported
+from app.providers.base import ProviderAction, ProviderRejected, ProviderUnsupported
 from app.providers.tax import reconcile, untaxed_unless_charged
 
 Payload = dict[str, Any]
@@ -433,3 +443,289 @@ def references(text: str, invoices: Sequence[Invoice]) -> list[tuple[int, int, s
         if all(stop <= s or start >= e for s, e, _ in chosen):
             chosen.append((start, stop, invoice_id))
     return sorted(chosen)
+
+
+# -- credit notes (specs/015-pennylane-credit-notes) -----------------------------------
+
+#: What a credit note this system writes carries as `external_reference`: the
+#: prefix, then the action's 64-character key -- the only identifier Pennylane
+#: holds of it (FR-013).
+REFERENCE_PREFIX = "rb:"
+OUR_REFERENCE = re.compile(r"rb:[0-9a-f]{64}")
+#: The longest `external_reference` sent. Pennylane's own limit is to be read
+#: in the write contract run; until then the reference is held to this.
+REFERENCE_MAX = 255
+#: Pennylane's words when linking a credit note would take the invoice's
+#: credits beyond its total, seen on the sandbox on 2026-11-12 (400).
+CAP_MESSAGE = "The credit notes amount is bigger than the invoice amount"
+#: Fields that would carry a document out of Pennylane, on a customer or on a
+#: document: none may hold anything (decision 47). Matched as parts of a
+#: field's name, so a field named slightly differently still counts.
+OUTWARD_FIELD_PARTS = ("electronic_billing", "e_invoicing", "einvoicing", "e-invoicing")
+#: The customer's legal identifiers (SIREN, VAT number): a customer with either
+#: is one the platform may address formally (decision 47).
+LEGAL_IDENTIFIERS = ("reg_no", "vat_number")
+#: The reserved top-level domain (RFC 6761): mail to it is never delivered.
+TEST_TLD = ".test"
+
+
+def reference(idempotency_key: str) -> str:
+    """The `external_reference` of the action's credit note."""
+    return f"{REFERENCE_PREFIX}{idempotency_key}"
+
+
+def is_ours(payload: Payload) -> bool:
+    """Whether a document carries a reference this system writes."""
+    value = payload.get("external_reference")
+    return isinstance(value, str) and OUR_REFERENCE.fullmatch(value) is not None
+
+
+def credited_raw(payload: Payload) -> int | None:
+    """The id of the invoice a document is linked to, or None when unlinked."""
+    linked = payload.get("credited_invoice")
+    if linked is None:
+        return None
+    if not isinstance(linked, dict):
+        raise ProviderUnsupported("missing_field")
+    raw = linked.get("id")
+    if not isinstance(raw, int) or isinstance(raw, bool) or raw <= 0:
+        raise ProviderUnsupported("missing_field")
+    return raw
+
+
+def is_draft(payload: Payload) -> bool:
+    """Whether a document is a draft, confirmed either way: `draft: true`
+    (its status `draft` or absent) is a draft; `draft: false` with any status
+    but `draft` is finalised. Anything else -- the flag absent or malformed,
+    or contradicting the status -- cannot be told, and is `missing_field`:
+    never taken for a draft that may be deleted, nor for a final document."""
+    flag, status = payload.get("draft"), payload.get("status")
+    if flag is True and status in (None, "draft"):
+        return True
+    if flag is False and status != "draft":
+        return False
+    raise ProviderUnsupported("missing_field")
+
+
+def partial_stage(payload: Payload) -> str | None:
+    """What a document under our reference lacks to be a written credit
+    note: "draft", "unlinked", or None when finalised and linked."""
+    if is_draft(payload):
+        return "draft"
+    if credited_raw(payload) is None:
+        return "unlinked"
+    return None
+
+
+def _unit(line_: Payload) -> str:
+    unit = line_.get("unit")
+    return unit if isinstance(unit, str) and unit else "piece"
+
+
+def credit_lines(
+    invoice_payload: Payload,
+    lines: Sequence[Payload],
+    amount_minor: int,
+    breakdown: TaxBreakdown | None,
+) -> list[Payload]:
+    """The lines of the credit note, built before anything is sent.
+
+    On a taxed invoice (an approved `breakdown`): every line of the invoice
+    reversed at its own code, its quantity negative, its unit price the
+    original's in cents -- the invoice as it stands must still have exactly
+    the approved breakdown, credited whole (spec 013). On an untaxed one: one
+    line at the invoice's no-tax code for the approved amount. Anything else
+    is `invoice_state`, nothing sent. Labels are the invoice's own, never the
+    dispute's (FR-004).
+    """
+    try:
+        mapped = invoice(invoice_payload, lines)
+    except ProviderUnsupported:
+        raise ProviderRejected("invoice_state") from None
+    now = TaxBreakdown.of(mapped)
+    currency = mapped.total.currency
+    if breakdown is not None:
+        if now != breakdown or breakdown.total.amount_minor != amount_minor:
+            raise ProviderRejected("invoice_state")
+        credit: list[Payload] = []
+        for item in lines:
+            quantity = _decimal(item.get("quantity"))
+            if quantity <= 0:
+                raise ProviderRejected("invoice_state")
+            try:
+                price = _money(item.get("raw_currency_unit_price"), currency,
+                               finer="fractional_unit_price")
+            except ProviderUnsupported:
+                raise ProviderRejected("invoice_state") from None
+            label = item.get("label")
+            credit.append({
+                "label": label if isinstance(label, str) and label else "Avoir",
+                "quantity": format(-quantity, "f"),
+                "unit": _unit(item),
+                "raw_currency_unit_price": format(price.to_decimal(), "f"),
+                "vat_rate": item.get("vat_rate"),
+            })
+        return credit
+    if now is not None:
+        raise ProviderRejected("invoice_state")
+    codes = {item.get("vat_rate") for item in lines}
+    if len(codes) != 1 or not codes <= NO_TAX:
+        raise ProviderRejected("invoice_state")
+    if not 0 < amount_minor <= mapped.total.amount_minor:
+        raise ProviderRejected("invoice_state")
+    return [{
+        "label": "Avoir",
+        "quantity": "-1",
+        "unit": "piece",
+        "raw_currency_unit_price": format(
+            Money(amount_minor=amount_minor, currency=currency).to_decimal(), "f"),
+        "vat_rate": next(iter(codes)),
+    }]
+
+
+def _credit_amount(value: Any, currency: str) -> Money:
+    """A credit note's amount, posted negative (or zero), as a positive one."""
+    money = _money(value, currency)
+    if money.amount_minor > 0:
+        raise ProviderUnsupported("missing_field")
+    return Money(amount_minor=-money.amount_minor, currency=currency)
+
+
+def credit_total(doc: Payload) -> int:
+    """A credit note's total including tax, positive, in minor units."""
+    return _credit_amount(doc.get("currency_amount"), _currency(doc.get("currency"))).amount_minor
+
+
+def observed_breakdown(doc: Payload, lines: Sequence[Payload]) -> TaxBreakdown | None:
+    """What a credit note credits, as the positive amounts of a
+    `TaxBreakdown`: excluding tax and total from the document, tax by rate
+    from its lines, which must make the document's tax; a credit whose every
+    tax is zero is None (FR-010)."""
+    currency = _currency(doc.get("currency"))
+    excluding = _credit_amount(doc.get("currency_amount_before_tax"), currency)
+    total = _credit_amount(doc.get("currency_amount"), currency)
+    tax_total = _credit_amount(doc.get("currency_tax"), currency)
+    by_rate: dict[Decimal, int] = {}
+    summed = 0
+    for item in lines:
+        tax = _credit_amount(item.get("currency_tax"), currency).amount_minor
+        code = item.get("vat_rate")
+        if code in VAT_RATES:
+            rate = canonical_rate(VAT_RATES[code])
+            by_rate[rate] = by_rate.get(rate, 0) + tax
+        elif code in NO_TAX:
+            if tax != 0:
+                raise ProviderUnsupported("tax_mismatch")
+        else:
+            raise ProviderUnsupported("tax_code")
+        summed += tax
+    if summed != tax_total.amount_minor or excluding.amount_minor + summed != total.amount_minor:
+        raise ProviderUnsupported("tax_mismatch")
+    taxes = tuple(
+        (rate, Money(amount_minor=amount, currency=currency))
+        for rate, amount in sorted(by_rate.items())
+        if amount != 0
+    )
+    if not taxes:
+        return None
+    return TaxBreakdown(excluding_tax=excluding, taxes=taxes, total=total)
+
+
+def is_cap_refusal(refused: Any) -> bool:
+    """Whether a refusal of a link is Pennylane's cumulative cap: a 400 with
+    the message seen on the sandbox. A changed message is not recognised, and
+    the refusal then goes to a person -- the safe side."""
+    return getattr(refused, "status", None) == 400 and CAP_MESSAGE in str(
+        getattr(refused, "detail", ""))
+
+
+def _outward(payload: Payload) -> bool:
+    """Whether any field that would carry a document out holds something."""
+    return any(
+        value not in (None, "", [], {}, False)
+        for key, value in payload.items()
+        if any(part in key.lower() for part in OUTWARD_FIELD_PARTS)
+    )
+
+
+def _test_address(address: str) -> bool:
+    _, at, domain = address.strip().lower().rpartition("@")
+    return bool(at) and domain.endswith(TEST_TLD) and len(domain) > len(TEST_TLD)
+
+
+def outward_ready(customer_payload: Payload, addresses: Sequence[str],
+                  doc: Payload | None = None) -> bool:
+    """Decision 47's conditions for a document to be made and finalised: a
+    customer with no SIREN, no VAT number and no electronic billing address,
+    at least one address and every one under the reserved test domain; and,
+    when a document is given, nothing on it that would carry it out (FR-004)."""
+    if any(customer_payload.get(field) not in (None, "") for field in LEGAL_IDENTIFIERS):
+        return False
+    if _outward(customer_payload):
+        return False
+    if not addresses or not all(_test_address(a) for a in addresses):
+        return False
+    return doc is None or not _outward(doc)
+
+
+#: The allocation a credit note took, read from the status of the invoice it
+#: credits: a paid one stays paid (an amount owed to the customer); an open
+#: one credited is cancelled in part or in full (seen on the sandbox).
+ALLOCATION_OF_STATUS = {
+    "paid": "customer_balance",
+    "partially_cancelled": "reduce_due",
+    "cancelled": "reduce_due",
+}
+
+
+def _created(doc: Payload) -> datetime:
+    value = doc.get("created_at")
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = None
+        if parsed is not None and parsed.tzinfo is not None:
+            return parsed.astimezone(UTC)
+    return midnight(issue_day(doc))
+
+
+def provider_action(
+    doc: Payload,
+    lines: Sequence[Payload],
+    invoice_payload: Payload | None,
+    *,
+    observed_at: datetime,
+    test_mode: bool,
+) -> ProviderAction:
+    """A document found under our reference, as the execution service checks
+    it. Complete -- finalised, linked -- it reports its status, its allocation
+    (from the credited invoice's status, when that invoice is the one read)
+    and the breakdown it credits; incomplete, `partial` says what it lacks and
+    status and allocation are left unread (FR-008, FR-010)."""
+    value = doc.get("external_reference")
+    if not isinstance(value, str) or not OUR_REFERENCE.fullmatch(value):
+        raise ProviderUnsupported("missing_field")
+    currency = _currency(doc.get("currency"))
+    linked = credited_raw(doc)
+    partial = partial_stage(doc)
+    allocation = None
+    if partial is None and invoice_payload is not None and linked == invoice_payload.get("id"):
+        allocation = ALLOCATION_OF_STATUS.get(invoice_payload.get("status"))
+    return ProviderAction(
+        provider="pennylane",
+        provider_action_id=typed("invoice", doc.get("id")),
+        action_type="credit_note",
+        idempotency_key=value[len(REFERENCE_PREFIX):],
+        status="succeeded" if partial is None else None,
+        created_at=_created(doc),
+        invoice_id=typed("invoice", linked) if linked is not None else "",
+        amount_minor=_credit_amount(doc.get("currency_amount"), currency).amount_minor,
+        currency=currency,
+        test_mode=test_mode,
+        allocation=allocation,
+        action_id=None,  # the key is the only identifier Pennylane holds (FR-013)
+        observed_at=observed_at,
+        breakdown=observed_breakdown(doc, lines),
+        partial=partial,
+    )

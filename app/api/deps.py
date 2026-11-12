@@ -91,14 +91,18 @@ def get_provider() -> BillingProvider:
         writer = connect_writer(key) if os.getenv("STRIPE_WRITES") == "enabled" else None
         return StripeBillingProvider(reader, writer=writer)
     if name == "pennylane":
-        # Read-only, and only the sandbox the maintainer declared: every read
-        # checks the token's company first (specs/014-pennylane-read, Q2).
+        # Only the sandbox the maintainer declared: every read checks the
+        # token's company first (specs/014-pennylane-read, Q2). Credit notes are
+        # written only with writes enabled, by this exact word, and a token of
+        # their own, itself checked against the same company
+        # (specs/015-pennylane-credit-notes, FR-002).
         from app.providers.pennylane.adapter import PennylaneBillingProvider
         from app.providers.pennylane.client import PennylaneReader
-        from app.providers.pennylane.keys import sandbox_company_id, token
+        from app.providers.pennylane.keys import sandbox_company_id, token, writer
 
         return PennylaneBillingProvider(
-            PennylaneReader(token("PENNYLANE_API_TOKEN"), sandbox_company_id())
+            PennylaneReader(token("PENNYLANE_API_TOKEN"), sandbox_company_id()),
+            writer=writer(),
         )
     raise RuntimeError(f"unknown billing provider {name!r}; available: {list(PROVIDERS)}")
 

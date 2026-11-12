@@ -27,57 +27,24 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from app.providers.base import NotFound, ProviderUnavailable
-from app.providers.pennylane.client import Pacer, PennylaneReader
+from app.providers.pennylane.client import Pacer, PennylaneWriter, Refused, Uncertain
 from app.providers.pennylane.keys import ProviderConfigurationError, sandbox_company_id, token
 from scripts import pennylane_worlds as worlds
 
 Payload = dict[str, Any]
+
+#: The writer, `Uncertain` and `Refused` are the application's own
+#: (specs/015-pennylane-credit-notes); re-exported here for the seed's callers.
+__all__ = ["PennylaneWriter", "Refused", "Uncertain", "Intents", "Seeder", "run"]
 
 #: Where intents are noted between runs: outside any checkout, beside the
 #: other private state of the maintainer's runs.
 INTENTS = Path.home() / ".resolve-billing" / "pennylane-seed-intents.json"
 
 
-class Uncertain(Exception):  # noqa: N818 -- a state: whether a write landed is unknown
-    """A write was sent and its answer lost: nothing is sent again until a read
-    settles it."""
-
-
-class Refused(Exception):  # noqa: N818 -- Pennylane's answer: nothing was made
-    def __init__(self, status: int, detail: str = "") -> None:
-        super().__init__(f"refused ({status})")
-        self.status = status
-        #: Pennylane's own words on why, so a report can say which field.
-        self.detail = detail
-
-
 class Stop(Exception):  # noqa: N818 -- the seed cannot tell, and says so
     pass
-
-
-class PennylaneWriter(PennylaneReader):
-    """The reader, plus one-shot writes: never retried after sending."""
-
-    async def write(self, method: str, path: str, body: Payload | None = None) -> Payload | None:
-        await self.check_company()
-        await self._pacer.wait()
-        try:
-            response = await self._client.request(method, path, json=body)
-        except httpx.HTTPError:
-            raise Uncertain(path) from None
-        if response.status_code in (200, 201):
-            try:
-                return response.json()
-            except ValueError:
-                raise Uncertain(path) from None
-        if response.status_code == 204:
-            return None
-        if response.status_code >= 500 or response.status_code == 429:
-            raise Uncertain(path)
-        raise Refused(response.status_code, response.text[:500])
 
 
 @dataclass
