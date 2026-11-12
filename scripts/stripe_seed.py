@@ -269,9 +269,17 @@ def clock_name(world: str, generation: Generation) -> str:
     return f"rb:{world}@{generation.dates.start_day.isoformat()}/g{generation.number}"
 
 
+#: The worlds whose clock starts a month before their month (spec 013 added the
+#: taxed cancellation world, whose clock had started on its month).
+HISTORY_WORLDS = frozenset(
+    {"billed_after_cancellation", "failed_payment", "taxed_billed_after_cancellation"}
+)
+
+
 def starts_at(name: str, dates: Dates) -> int:
     """When a world's clock starts."""
-    if name in ("billed_after_cancellation", "failed_payment"):
+    # A world that cancels or renews needs a month of history before its month.
+    if name in HISTORY_WORLDS:
         return dates.previous
     return dates.start
 
