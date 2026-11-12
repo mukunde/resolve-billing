@@ -179,14 +179,26 @@ is no invoice. Tests: equal integers across the four kinds through references, m
 categories, the seed token):
 
 - Guard: `GET /me` company id == `PENNYLANE_SANDBOX_COMPANY_ID`, else stop, nothing written.
-- Worlds, each on its own customer (`external_reference` `rb:<world>`): the taxed duplicate
-  (two finalised invoices of 100.00 at `FR_200`, same imputation period, on one
-  subscription's id -- or, if the API attaches invoices to a subscription only by
-  generation, a subscription and its generated invoices), the taxed invoice after
-  cancellation (a subscription stopped, then an invoice for the following period), and
-  the refused shapes: a credited invoice, two addresses, a `mixed` VAT line, a non-zero
-  discount, a partially paid invoice if the API can make one. What the API does not let it
-  build is reported with its reason.
+- Worlds (SC-002 as amended), each on its own customer (`external_reference`
+  `rb:<world>`, created by `POST /company_customers` with a fictitious billing address):
+  - `taxed_invoice`: one finalised invoice (`POST /customer_invoices`, `draft` omitted),
+    100.00 at `FR_200`, an imputation period, read back field by field;
+  - `paid_invoice`: the same, then `PUT /customer_invoices/{id}/mark_as_paid`; the
+    payment Pennylane then lists (if any) and its status are recorded as an observation;
+  - `subscription`: one subscription (`POST /billing_subscriptions`, mode
+    `awaiting_validation`, `payment_method` `offline`, monthly), what it generates read
+    by `billing_subscription_id`, then stopped (`PUT /billing_subscriptions/{id}` with
+    `stop: true`) and its dates recorded -- observations, not established meanings;
+  - refused shapes: a credited invoice (a credit note created, then
+    `POST /customer_invoices/{id}/link_credit_note`) → `invoice_credit`; two addresses →
+    `multiple_addresses`; a `mixed` VAT line → `tax_code`; a non-zero discount →
+    `invoice_discount`; a unit price finer than a cent → `fractional_unit_price`, each
+    where the API accepts building it;
+  - `taxed_duplicate` and `taxed_billed_after_cancellation`: attempted only through a
+    subscription's own generated invoices; the documentation offers no way to attach a
+    hand-made invoice to a subscription, so the seed reports them when the sandbox does
+    not produce what they need, and the maintainer decides their exclusion.
+  What the API does not let it build is reported with its category.
 - Recovery, per mutation -- before each, a read decides whether it is needed; after a
   write whose answer was lost (timeout, 5xx after sending, unreadable answer), a read
   decides whether it landed; if that read cannot tell, the seed stops and reports, and no
@@ -200,9 +212,12 @@ categories, the seed token):
     noted → create; none with an intent noted → stop; several → stop) -- the customer's
     intent is noted in a local run file, the only state before the customer exists, and
     the same rule applies;
-  - invoice create (draft): found by its `external_reference`, as above;
-  - invoice finalise: the invoice's `draft` read -- false → done, true → finalise once,
-    then read again;
+  - invoice create (finalised at once): Pennylane documents no filter on an invoice's
+    `external_reference`, so the world customer's invoices are listed
+    (`filter customer_id`) and matched on that field; one → reuse, none and no intent →
+    create, none with an intent → stop, several → stop. Pennylane refuses (422) a second
+    invoice with an `external_reference` already used: a resend cannot duplicate one, and
+    a 422 there is read as "already made", then found by the listing;
   - subscription create: the world customer's subscriptions listed by label -- none →
     create, one → reuse, several → stop;
   - subscription stop: its status read -- stopped → done, else stop it once, read again;

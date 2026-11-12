@@ -103,10 +103,11 @@ seeded sandbox, against the fake counterparts.
 
 **Acceptance Scenarios**:
 
-1. **Given** the seeded taxed duplicate (two invoices of one subscription, same imputation
-   period, 100.00 + 20 % each), **When** the second is disputed, **Then** the findings,
-   classification, proposal (120.00 EUR with its breakdown), verdict and approval equal
-   those of `taxed_duplicate_fr` on the fake.
+1. **Given** a seeded taxed invoice (100.00 + 20 %, an imputation period, a number),
+   **When** it is read, **Then** its amounts, tax by rate, number, lines and period are
+   those the seed wrote; and **given** the taxed duplicate, if the sandbox lets it be
+   built (SC-002 as amended), the findings, classification, proposal (120.00 EUR with its
+   breakdown), verdict and approval equal those of `taxed_duplicate_fr` on the fake.
 2. **Given** an invoice with a credit note against it, **When** it is read, **Then** it is
    refused with `invoice_credit`.
 3. **Given** a customer with two addresses, **When** a dispute names one of them, **Then**
@@ -265,9 +266,11 @@ is the maintainer's.
   answer defined per operation (customers and invoices by an `external_reference` the seed
   sets and lists; subscriptions by listing the seed customer's, stopping and reporting when
   it cannot tell); subscriptions created with no email sending and an offline payment
-  method, stopped once their invoices exist. Worlds: the taxed duplicate and the taxed
-  invoice after cancellation (fake counterparts from spec 013), and each refused shape the
-  API lets the seed build. A world the API does not let it build is reported, and its
+  method, stopped once their invoices exist. Worlds: a taxed invoice; an invoice marked
+  paid (its payment's status recorded as Pennylane sets it); a subscription (what it
+  generates, and its dates once stopped, recorded); each refused shape the API lets the
+  seed build; and the taxed duplicate and the taxed invoice after cancellation (fake
+  counterparts from spec 013) where the API lets them be built. A world the API does not let it build is reported, and its
   exclusion goes to the maintainer (spec 001's precedent).
 - **FR-012**: The contract tests (`tests/contract/`) MUST run on Pennylane when its token
   and sandbox id are present, and skip with the reason otherwise; CI runs the fake only.
@@ -290,10 +293,17 @@ is the maintainer's.
 
 - **SC-001**: Mapping and adapter tests cover every row of the status, payment and VAT
   tables, every new reason, the conventions' dates, pagination, pacing and errors.
-- **SC-002**: On the seeded sandbox, the taxed duplicate and the taxed invoice after
-  cancellation give the findings, classification, proposal, verdict and approval of their
-  fake counterparts; each seeded refused shape is refused with its reason; whose an invoice
-  is is answered without its content.
+- **SC-002** (amended by the maintainer on 2026-11-12, at implementation): On the seeded
+  sandbox, a taxed invoice is read faithfully (amounts, tax by rate, number, lines,
+  period); each seeded refused shape is refused with its reason; whose an invoice is is
+  answered without its content; what a subscription generates, and the status a payment
+  takes when an invoice is marked paid, are recorded as observed (observations, not
+  established meanings). The taxed duplicate and the taxed invoice after cancellation are
+  compared with their fake counterparts where the sandbox lets them be built. Why amended:
+  Pennylane's documentation offers no way to attach an invoice created by hand to a
+  subscription -- only a subscription generates its invoices, on its own schedule -- and
+  both comparisons need invoices of one subscription; the seed reports each world it
+  cannot build, and the maintainer decides its exclusion.
 - **SC-003**: The fake's and Stripe's behaviour is unchanged: the mock baseline matched
   case by case, the snapshot of untaxed bytes held, the Stripe tests green.
 - **SC-004**: A message citing a loaded invoice's number is masked before any engine and
