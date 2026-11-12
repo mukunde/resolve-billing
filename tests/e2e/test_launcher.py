@@ -42,6 +42,6 @@ def test_the_launched_service_writes_on_the_persistent_fake(tmp_path):
             assert executed.status_code == 200, executed.text
         service.stop_gracefully()
 
-    (write,) = PersistentFake(ledger).writes()
+    (write,) = PersistentFake(ledger).held()
     assert write.provider_action_id == executed.json()["provider_action_id"]
     assert write.action_id == action_id

@@ -41,6 +41,7 @@ from app.providers.base import (
     ALLOCATIONS,
     BillingProvider,
     NotSent,
+    PartialWrite,
     ProviderAction,
     ProviderRejected,
 )
@@ -51,6 +52,21 @@ from app.providers.base import (
 #: claim that is still in flight is safe, since the idempotency key makes the
 #: two writes one, but it is noise.
 STALE_CLAIM = timedelta(minutes=5)
+
+#: How long after its claim an attempt may still send a request; each
+#: request's own timeout is counted by the adapter (spec 015, FR-011).
+STEP_DEADLINE = timedelta(minutes=2)
+
+#: Said wherever a document may have been left half-way, or a creation lost:
+#: a request already sent cannot be cancelled on the platform's side.
+IN_FLIGHT = (
+    "a request may still be in flight on the platform's side: read the status again "
+    "at least ten minutes after the attempt's last request before recording how it "
+    "was resolved; nothing automatic follows"
+)
+
+#: The longest account of a resolution a person may record.
+RESOLUTION_NOTE_LIMIT = 2000
 
 
 def breakdown_holds(action: PendingAction, invoice) -> bool:
@@ -72,6 +88,19 @@ class ApprovalService:
         self._actions = actions
         self._stale_after = stale_after
         self._now = now or (lambda: datetime.now(UTC))
+
+    def writes(self, action_type: str) -> bool:
+        """Whether the platform writes actions of this type. One it does not
+        is a person's to carry out outside ResolveBilling (spec 015, FR-001)."""
+        return bool(self._provider.can_write) and action_type in self._provider.writes
+
+    def _refuse_unwritten(self, action: PendingAction) -> None:
+        if not self.writes(action.action_type):
+            raise WritesNotSupported(
+                action.action_id,
+                action.state,
+                action.action_type if self._provider.can_write else None,
+            )
 
     async def proposal_fingerprint(self, action: PendingAction) -> str:
         """What an approver is asked to approve, reduced to a comparable value.
@@ -195,10 +224,10 @@ class ApprovalService:
         if action.state is ActionState.EXECUTED:
             return action
 
-        # A platform that cannot write is never asked: refused here, before
-        # any read, reconciliation or claim, so nothing has happened.
-        if not self._provider.can_write:
-            raise WritesNotSupported(action_id, action.state)
+        # A platform that does not write this type of action -- or nothing at
+        # all -- is never asked: refused here, before any read, reconciliation
+        # or claim, so nothing has happened (spec 015, FR-001).
+        self._refuse_unwritten(action)
 
         # An incident stops everything automatic for the action, for good:
         # nothing is reconciled, read or sent on a retry. A person decides.
@@ -286,7 +315,15 @@ class ApprovalService:
         # Every send falls within the platform's window from the first
         # attempt, read from the store -- a restart reads the same. Past it,
         # the platform may no longer answer the key: nothing is sent again.
-        if action.first_attempt_at is not None and not self._within_window(action):
+        # A platform with no window keeps no key: a retry only ever follows
+        # a refusal that made nothing, since an unknown outcome there is
+        # never FAILED (spec 015, FR-007).
+        window = self._provider.idempotency_window
+        if (
+            window is not None
+            and action.first_attempt_at is not None
+            and not self._within_window(action)
+        ):
             self._actions.annotate(
                 action_id,
                 action.state,
@@ -305,11 +342,16 @@ class ApprovalService:
         # it from the one it found, so whichever caller claims second fails,
         # in this process or another.
         # The first claim records when the write was first attempted, before
-        # anything is sent; a later claim keeps it.
+        # anything is sent; a later claim keeps it. The claim also refuses
+        # while another credit note of the customer is in flight, unknown or
+        # left half-way (spec 015, FR-009), in the same UPDATE.
+        claimed_at = self._now()
         action = self._actions.transition(
-            action_id, ActionState.EXECUTING, first_attempt_at=self._now()
+            action_id, ActionState.EXECUTING, first_attempt_at=claimed_at
         )
-        send_by = action.first_attempt_at + self._provider.idempotency_window
+        send_by = None if window is None else action.first_attempt_at + window
+        stopped: list[str] = []
+        before_request = self._before_request(action, claimed_at, stopped)
 
         try:
             # How the write lands on the invoice is planned once, before the
@@ -327,8 +369,12 @@ class ApprovalService:
                 action_id=action.action_id,
                 allocation=allocation,
                 send_by=send_by,
+                breakdown=action.tax_breakdown,
+                before_request=before_request,
             )
-        except NotSent:
+        except NotSent as error:
+            if stopped:
+                return self._stopped(action, stopped[0], error)
             # The deadline passed before the adapter could send: nothing left
             # by this attempt, and nothing will be sent again. After an
             # earlier unknown outcome it proves nothing about that one: the
@@ -356,6 +402,16 @@ class ApprovalService:
             raise NeedsAPerson(action_id, settled, "window_passed") from None
         except ProviderRejected as error:
             return await self._refused(action, error)
+        except PartialWrite as error:
+            # A document was made and not completed: final for everything
+            # automatic, whatever the claim became meanwhile (FR-006).
+            self._partial(
+                action_id,
+                error.document_id,
+                error.stage,
+                failure_reason=f"{type(error).__name__}: {error}",
+            )
+            raise NeedsAPerson(action_id, ActionState.UNKNOWN_OUTCOME, "partial_write") from error
         except Exception as error:  # noqa: BLE001 - recorded, then re-raised
             # No answer, or one we cannot read: the write may have landed.
             # An answer the adapter could not read is an incident besides.
@@ -372,6 +428,14 @@ class ApprovalService:
         # The platform's own answer is checked like a write found again:
         # recorded only if it is the write the person approved.
         problem = _unlike(action, allocation, result)
+        if problem == "partial_write":
+            self._partial(
+                action_id,
+                result.provider_action_id,
+                result.partial,
+                failure_reason="the platform's answer is a document not completed",
+            )
+            raise NeedsAPerson(action_id, ActionState.UNKNOWN_OUTCOME, problem)
         if problem is not None:
             self._actions.transition(
                 action_id,
@@ -382,6 +446,76 @@ class ApprovalService:
             )
             raise NeedsAPerson(action_id, ActionState.UNKNOWN_OUTCOME, problem)
         return self._record(action_id, result, how="made as {ref}")
+
+    def _before_request(self, action: PendingAction, claimed_at: datetime, stopped: list[str]):
+        """The hook the write calls before each of its requests (FR-011).
+
+        Past the step deadline (`STEP_DEADLINE` after the claim), or once the
+        row is no longer `EXECUTING` under this claim's token, it raises
+        `NotSent` and says why in `stopped`; otherwise it records the
+        request's instant, durably, in the same conditional UPDATE that
+        checks the claim. The adapter turns `NotSent` into `PartialWrite`
+        once a document exists.
+        """
+        deadline = claimed_at + STEP_DEADLINE
+        token = action.claim_token
+
+        async def before_request() -> None:
+            now = self._now()
+            if now >= deadline:
+                stopped.append("deadline")
+                raise NotSent("step_deadline")
+            if token is None or not self._actions.record_request(action.action_id, token, now):
+                stopped.append("claim")
+                raise NotSent("claim_lost")
+
+        return before_request
+
+    def _stopped(self, action: PendingAction, why: str, error: NotSent) -> PendingAction:
+        """The attempt stopped itself before a request, with no document
+        made (FR-011). A claim taken over is left to whoever holds the row
+        now: nothing is recorded over it. Past the step deadline, nothing
+        was made by this attempt: FAILED, retried by a fresh claim -- or, if
+        an earlier attempt's outcome was unknown, still unknown."""
+        if why == "claim":
+            raise IllegalTransition(
+                action.action_id,
+                self._actions.get(action.action_id).state,
+                ActionState.EXECUTED,
+                why="(this attempt's claim is no longer held; it sent nothing more)",
+            ) from error
+        settled = (
+            ActionState.FAILED if action.uncertain_since is None else ActionState.UNKNOWN_OUTCOME
+        )
+        self._actions.transition(
+            action.action_id,
+            settled,
+            failure_reason="not sent: the attempt's step deadline had passed",
+            unless_incident=True,
+        )
+        raise error
+
+    def _partial(
+        self,
+        action_id: str,
+        document_id: str,
+        stage: str | None,
+        failure_reason: str | None = None,
+        how: str = "the write stopped",
+    ) -> PendingAction:
+        """A document made and not completed: `partial_write`, its id and
+        stage recorded, the in-flight warning in the resolution (FR-006)."""
+        return self._actions.mark_partial(
+            action_id,
+            attention="partial_write",
+            partial_document={"document_id": document_id, "stage": stage},
+            failure_reason=failure_reason,
+            at=self._now(),
+            resolution=(
+                f"{how} after document {document_id} was made, left at stage {stage}; "
+                f"left to a person -- {IN_FLIGHT}"
+            ),
+        )
 
     async def _refused(self, action: PendingAction, error: ProviderRejected) -> PendingAction:
         """The platform said no to this attempt.
@@ -414,10 +548,13 @@ class ApprovalService:
 
     def _within_window(self, action: PendingAction) -> bool:
         """Whether the platform still answers the action's key with what it
-        made: only when the first attempt is known, and recent enough."""
+        made: only when the first attempt is known, and recent enough. Never
+        on a platform with no window: an absence there proves nothing."""
+        window = self._provider.idempotency_window
         return (
-            action.first_attempt_at is not None
-            and self._now() - action.first_attempt_at < self._provider.idempotency_window
+            window is not None
+            and action.first_attempt_at is not None
+            and self._now() - action.first_attempt_at < window
         )
 
     def _record(
@@ -470,10 +607,34 @@ class ApprovalService:
                 ActionState.EXECUTED,
                 why="(only a write made, or an action left to a person, has a status to read)",
             )
+        # Dated when the read starts, not when it returns: a read begun too
+        # soon after the attempt's last request never counts as a late one,
+        # however long the platform took to answer (FR-009a).
+        started = self._now()
         found = await self._provider.find_action(action.idempotency_key, action.invoice_id)
+        # Every read is recorded, nothing found included: a resolution needs
+        # one made long enough after the attempt's last request.
+        action = self._actions.record_status_read(action_id, started, _summary(found))
         if action.state is ActionState.EXECUTED:
             return self._observed(action, found)
         return self._settled_by_a_person(action, found)
+
+    def resolve(self, action_id: str, resolved_by: str, note: str) -> PendingAction:
+        """A person records how they resolved a partial write, or a write
+        that left no trace (spec 015, FR-009a).
+
+        Only on those two, only once, only after a status read made at least
+        ten minutes after the attempt's last request -- the store checks all
+        three in one conditional UPDATE. It releases the customer's blocker;
+        the action stays final for everything automatic and is never
+        executed again. Nothing is read or sent.
+        """
+        text = note.strip()
+        if not text or len(text) > RESOLUTION_NOTE_LIMIT:
+            raise ValueError(
+                f"a resolution says what was done, in 1 to {RESOLUTION_NOTE_LIMIT} characters"
+            )
+        return self._actions.record_resolution(action_id, resolved_by, text, self._now())
 
     def _observed(self, action: PendingAction, found: list[ProviderAction]) -> PendingAction:
         # Every write under the key counts: a second one beside the write
@@ -500,6 +661,13 @@ class ApprovalService:
                 ),
             )
         (made,) = mine
+        if made.partial is not None:
+            return self._partial(
+                action.action_id,
+                made.provider_action_id,
+                made.partial,
+                how="status read: the platform shows the write not completed",
+            )
         problem = _unlike(action, action.allocation, made)
         if problem is not None:
             return self._actions.annotate(
@@ -526,6 +694,14 @@ class ApprovalService:
     ) -> PendingAction:
         if len(found) == 1:
             (made,) = found
+            if made.partial is not None:
+                # A document found half-way is never success (FR-008).
+                return self._partial(
+                    action.action_id,
+                    made.provider_action_id,
+                    made.partial,
+                    how="status read: the platform holds the write not completed",
+                )
             problem = _unlike(action, action.allocation, made)
             if problem is None:
                 return self._record(
@@ -583,9 +759,8 @@ class ApprovalService:
         else is returned unchanged. `refusal` is what the platform answered
         the latest attempt, kept as the reason when nothing is found.
         """
-        if not self._provider.can_write:
-            raise WritesNotSupported(action_id, self._actions.get(action_id).state)
         action = self._actions.get(action_id)
+        self._refuse_unwritten(action)
         # An incident is never settled automatically, not even by a write
         # alike: only a person's status read does that. Nothing is read.
         if action.attention in INCIDENTS:
@@ -621,6 +796,15 @@ class ApprovalService:
             )
         if found:
             (made,) = found
+            if made.partial is not None:
+                # A document made and not completed: never success, never
+                # resumed (FR-006, FR-008).
+                return self._partial(
+                    action_id,
+                    made.provider_action_id,
+                    made.partial,
+                    how="reconciled: the platform holds the write not completed",
+                )
             if action.allocation is None:
                 return self._actions.annotate(
                     action_id,
@@ -647,6 +831,18 @@ class ApprovalService:
                 made,
                 how="reconciled: the platform already held {ref} under this idempotency key; "
                 "no second write",
+            )
+        if self._provider.idempotency_window is None:
+            # No key kept: an absence is never proof. The creation may still
+            # land; a person's status read can settle it then (FR-007).
+            return self._actions.mark_partial(
+                action_id,
+                attention="no_trace",
+                at=self._now(),
+                resolution=(
+                    "reconciled: nothing found under this idempotency key, which this "
+                    f"platform does not keep; never sent again, left to a person -- {IN_FLIGHT}"
+                ),
             )
         if not self._within_window(action):
             return self._actions.annotate(
@@ -679,6 +875,9 @@ def _unlike(action: PendingAction, allocation: str | None, made: ProviderAction)
     allocation planned (an action older than the plan, or one whose plan
     never completed), the write's must be one its type allows.
     """
+    if made.partial is not None:
+        # A document not completed is never the write approved (FR-008).
+        return "partial_write"
     if made.allocation is None or made.status is None:
         return "unreadable_answer"
     if (
@@ -695,4 +894,32 @@ def _unlike(action: PendingAction, allocation: str | None, made: ProviderAction)
         return "unlike_the_action"
     if made.allocation not in ALLOCATIONS.get(action.action_type, frozenset()):
         return "unlike_the_action"
+    # A platform that builds the credit note from new lines reports what it
+    # made of them: compared exactly with the breakdown approved (FR-010).
+    # Platforms that report none, and refunds, are compared as above.
+    if (
+        action.action_type == "credit_note"
+        and made.breakdown is not None
+        and _normalised(made.breakdown) != _normalised(action.tax_breakdown)
+    ):
+        return "unlike_the_action"
     return None
+
+
+def _normalised(breakdown: TaxBreakdown | None) -> TaxBreakdown | None:
+    """A breakdown whose every tax is zero is an untaxed amount: None."""
+    if breakdown is None or all(amount.amount_minor == 0 for _, amount in breakdown.taxes):
+        return None
+    return breakdown
+
+
+def _summary(found: list[ProviderAction]) -> str:
+    """What a status read found, in words, for the record."""
+    if not found:
+        return "nothing under this idempotency key"
+    if len(found) > 1:
+        return f"{len(found)} writes under this idempotency key"
+    (made,) = found
+    if made.partial is not None:
+        return f"{made.provider_action_id}, not completed ({made.partial})"
+    return f"{made.provider_action_id}, {made.status}"

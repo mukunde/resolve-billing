@@ -31,7 +31,7 @@ async def test_a_write_outlives_the_instance_that_made_it(tmp_path):
 
     later = PersistentFake(ledger)
 
-    assert later.writes() == [made]
+    assert later.held() == [made]
     assert await later.find_action("key_1", INVOICE) != []
 
 
@@ -42,7 +42,7 @@ async def test_a_replayed_key_is_the_same_write_never_a_second(tmp_path):
     again = await credit(PersistentFake(ledger), "key_1")
 
     assert again.provider_action_id == first.provider_action_id
-    assert len(PersistentFake(ledger).writes()) == 1
+    assert len(PersistentFake(ledger).held()) == 1
 
 
 async def test_what_an_invoice_gave_back_caps_the_next_write_across_instances(tmp_path):
@@ -51,7 +51,7 @@ async def test_what_an_invoice_gave_back_caps_the_next_write_across_instances(tm
 
     with pytest.raises(ProviderRejected, match="left to correct"):
         await credit(PersistentFake(ledger), "key_2", amount=100, action_id="act_2")
-    assert len(PersistentFake(ledger).writes()) == 1
+    assert len(PersistentFake(ledger).held()) == 1
 
 
 async def test_two_live_instances_see_each_other_s_writes_before_writing(tmp_path):
@@ -74,7 +74,7 @@ async def test_two_live_instances_see_each_other_s_writes_before_writing(tmp_pat
             allocation=allocation,
             send_by=datetime.now(UTC) + timedelta(hours=1),
         )
-    assert len(PersistentFake(ledger).writes()) == 1
+    assert len(PersistentFake(ledger).held()) == 1
 
 
 async def test_the_fault_loses_one_answer_after_the_write_is_committed(tmp_path):
@@ -84,12 +84,12 @@ async def test_the_fault_loses_one_answer_after_the_write_is_committed(tmp_path)
     with pytest.raises(TimeoutError):
         await credit(platform, "key_1")
 
-    (held,) = PersistentFake(ledger).writes()
+    (held,) = PersistentFake(ledger).held()
     assert held.idempotency_key == "key_1"
     # A retry under the key finds the write: no second write, no second fault.
     again = await credit(platform, "key_1")
     assert again.provider_action_id == held.provider_action_id
-    assert len(PersistentFake(ledger).writes()) == 1
+    assert len(PersistentFake(ledger).held()) == 1
 
 
 async def test_a_spent_fault_stays_spent_for_the_next_instance(tmp_path):
@@ -101,7 +101,7 @@ async def test_a_spent_fault_stays_spent_for_the_next_instance(tmp_path):
     restarted = PersistentFake(ledger, fault=TIMEOUT_AFTER_WRITE_ONCE)
     second = await credit(restarted, "key_2", amount=4900, action_id="act_2")
 
-    keys = [write.idempotency_key for write in PersistentFake(ledger).writes()]
+    keys = [write.idempotency_key for write in PersistentFake(ledger).held()]
     assert keys == ["key_1", "key_2"]
     assert second.idempotency_key == "key_2"
 
@@ -113,7 +113,7 @@ async def test_a_refused_write_commits_nothing(tmp_path):
     with pytest.raises(ProviderRejected):
         await credit(platform, "key_1", amount=100_000)
 
-    assert not ledger.exists() or PersistentFake(ledger).writes() == []
+    assert not ledger.exists() or PersistentFake(ledger).held() == []
 
 
 @pytest.mark.parametrize(
@@ -194,7 +194,7 @@ def test_a_well_formed_ledger_is_accepted(tmp_path):
     ledger = tmp_path / "ledger.json"
     ledger.write_text(json.dumps({"writes": [_write()], "fault_spent": False}), encoding="utf-8")
 
-    assert len(PersistentFake(ledger).writes()) == 1
+    assert len(PersistentFake(ledger).held()) == 1
 
 
 @pytest.mark.parametrize("helper", ["plant_action", "set_status", "change_invoice"])

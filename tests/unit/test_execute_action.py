@@ -182,11 +182,11 @@ class LostResponseProvider(FakeBillingProvider):
 
     def __init__(self) -> None:
         super().__init__()
-        self.writes = 0
+        self.sent = 0
         self.lose_responses = True
 
     async def create_credit_note(self, **kwargs):
-        self.writes += 1
+        self.sent += 1
         action = await super().create_credit_note(**kwargs)
         if self.lose_responses:
             raise TimeoutError("no response from the billing platform")
@@ -235,7 +235,7 @@ class TestATimeoutIsNotAFailure:
         first = await service.execute(action.action_id)
         second = await service.execute(action.action_id)
 
-        assert provider.writes == 1, "the retry found the credit note instead of issuing it"
+        assert provider.sent == 1, "the retry found the credit note instead of issuing it"
         assert len(provider.executed_actions) == 1
         assert first.state is second.state is ActionState.EXECUTED
         assert first.provider_action_id == provider.executed_actions[0].provider_action_id
@@ -322,7 +322,7 @@ class TestATimeoutIsNotAFailure:
 
         assert held.state is ActionState.UNKNOWN_OUTCOME
         assert held.attention == "several_writes"
-        assert provider.writes == 1
+        assert provider.sent == 1
 
 
 def approved_refund(store: SqliteActionStore):
@@ -719,6 +719,10 @@ class TestTheParametersAreFixedOnce:
 
         assert done.state is ActionState.EXECUTED
         first, second = provider.sent
+        # The hook is each attempt's own, bound to its claim (spec 015,
+        # FR-011); everything the platform receives is the same.
+        assert callable(first.pop("before_request"))
+        assert callable(second.pop("before_request"))
         assert first == second
 
     async def test_an_invoice_paid_between_the_plan_and_a_retry_is_not_written_otherwise(

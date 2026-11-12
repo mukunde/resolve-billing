@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -77,12 +78,36 @@ CREATE TABLE IF NOT EXISTS pending_actions (
     attention           TEXT,
     -- What the amount was made of when proposed, on a taxed invoice: JSON
     -- (specs/013-invoice-tax, FR-007). NULL on an untaxed one.
-    tax_breakdown       TEXT
+    tax_breakdown       TEXT,
+    -- The verified customer the action was proposed for; NULL on actions
+    -- older than the column, which never block another (spec 015, FR-009).
+    customer_id         TEXT,
+    -- Who holds the current claim, set at each claim; a worker whose token
+    -- is no longer the row's sends nothing more (spec 015, FR-011).
+    claim_token         TEXT,
+    -- When the current attempt last sent a request, recorded before each
+    -- request: durable, so a crashed worker's last request is known.
+    last_request_at     TEXT,
+    -- A document made and not completed: JSON {document_id, stage}.
+    partial_document    TEXT,
+    -- A person's latest status read: when, and what it found.
+    status_read_at      TEXT,
+    status_read_found   TEXT,
+    -- A person's account of how they resolved a partial write or a write
+    -- that left no trace; it releases the customer's blocker (FR-009a).
+    resolved_by         TEXT,
+    resolved_at         TEXT,
+    resolution_note     TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_run ON pending_actions(run_id);
 CREATE INDEX IF NOT EXISTS idx_actions_state ON pending_actions(state);
 """
+
+#: Created after the migration, which may be what adds the column.
+CUSTOMER_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_actions_customer ON pending_actions(customer_id)"
+)
 
 #: Which transitions are legal. Anything absent is a 409, not a silent no-op:
 #: approving an already-executed action is a symptom, not a nuisance.
@@ -142,6 +167,17 @@ ATTENTION = frozenset(
 #: The attentions that stop everything automatic for the action, for good.
 INCIDENTS = ATTENTION - {"not_successful"}
 
+#: The incidents a person may resolve, which releases the customer's blocker:
+#: a document left half-way, and a creation that left no trace (FR-009a).
+RESOLVABLE = frozenset({"partial_write", "no_trace"})
+
+#: How long after an attempt's last request a person's status read must be
+#: made for its resolution to be recorded: a request may still be in flight.
+SETTLING_DELAY = timedelta(minutes=10)
+
+#: The one type whose actions block each other per customer (FR-009).
+BLOCKING_TYPE = "credit_note"
+
 
 class IllegalTransition(BillingDomainError):
     def __init__(
@@ -165,10 +201,19 @@ class WritesNotSupported(IllegalTransition):
     answers 409 like any other action that cannot become executed now.
     """
 
-    def __init__(self, action_id: str, current: ActionState) -> None:
-        super().__init__(
-            action_id, current, ActionState.EXECUTED, why="(this billing platform cannot write)"
+    def __init__(
+        self, action_id: str, current: ActionState, action_type: str | None = None
+    ) -> None:
+        why = (
+            "(this billing platform cannot write)"
+            if action_type is None
+            else (
+                f"(this billing platform does not write a {action_type}: a person carries "
+                "it out outside ResolveBilling)"
+            )
         )
+        super().__init__(action_id, current, ActionState.EXECUTED, why=why)
+        self.action_type = action_type
 
 
 class NeedsAPerson(IllegalTransition):
@@ -183,6 +228,38 @@ class NeedsAPerson(IllegalTransition):
             action_id, current, ActionState.EXECUTED, why=f"(it needs a person: {attention})"
         )
         self.attention = attention
+
+
+class BlockedByAnother(IllegalTransition):
+    """Another credit note of the same customer is in flight, of unknown
+    outcome or left half-way, and nobody resolved it: nothing is claimed
+    (spec 015, FR-009). An `IllegalTransition`, so the API answers 409."""
+
+    def __init__(self, action_id: str, current: ActionState, blocker: str | None) -> None:
+        super().__init__(
+            action_id,
+            current,
+            ActionState.EXECUTING,
+            why=(
+                f"(the customer's credit note {blocker or 'another action'} is executing, "
+                "of unknown outcome or left half-way; a person resolves it first)"
+            ),
+        )
+        self.blocker = blocker
+
+
+class ResolutionRefused(IllegalTransition):
+    """A resolution that may not be recorded: the action is not a partial
+    write or a write without trace, it was resolved already, or no status
+    read was made long enough after its last request (FR-009a)."""
+
+    def __init__(self, action_id: str, current: ActionState, why: str) -> None:
+        BillingDomainError.__init__(
+            self, f"action {action_id} is {current.value}; no resolution recorded ({why})"
+        )
+        self.current = current
+        self.wanted = current
+        self.reason = why
 
 
 class UnknownAction(BillingDomainError):
@@ -219,6 +296,16 @@ class PendingAction(BaseModel):
     provider_status_at: datetime | None = None
     attention: str | None = None
     tax_breakdown: TaxBreakdown | None = None
+    customer_id: str | None = None
+    claim_token: str | None = None
+    last_request_at: datetime | None = None
+    #: The document left half-way: {"document_id": ..., "stage": ...}.
+    partial_document: dict | None = None
+    status_read_at: datetime | None = None
+    status_read_found: str | None = None
+    resolved_by: str | None = None
+    resolved_at: datetime | None = None
+    resolution_note: str | None = None
 
     def expired(self, now: datetime | None = None) -> bool:
         """Past the deadline for a decision."""
@@ -247,6 +334,7 @@ class SqliteActionStore:
         self._connection.row_factory = sqlite3.Row
         self._connection.executescript(SCHEMA)
         self._migrate()
+        self._connection.execute(CUSTOMER_INDEX)
         self._connection.commit()
 
     def _migrate(self) -> None:
@@ -268,6 +356,15 @@ class SqliteActionStore:
             ("provider_status_at", "TEXT"),
             ("attention", "TEXT"),
             ("tax_breakdown", "TEXT"),
+            ("customer_id", "TEXT"),
+            ("claim_token", "TEXT"),
+            ("last_request_at", "TEXT"),
+            ("partial_document", "TEXT"),
+            ("status_read_at", "TEXT"),
+            ("status_read_found", "TEXT"),
+            ("resolved_by", "TEXT"),
+            ("resolved_at", "TEXT"),
+            ("resolution_note", "TEXT"),
         ):
             if column not in held:
                 self._connection.execute(f"ALTER TABLE pending_actions ADD COLUMN {column} {ddl}")
@@ -294,11 +391,13 @@ class SqliteActionStore:
         provider: str,
         ttl: timedelta | None = None,
         tax_breakdown: TaxBreakdown | None = None,
+        customer_id: str | None = None,
     ) -> PendingAction:
         """Register an action awaiting a human.
 
         Replaying an identical proposal returns the existing one rather than
-        queueing a second approval for the same credit note.
+        queueing a second approval for the same credit note. `customer_id` is
+        the verified customer's, which the per-customer blocker reads.
         """
         key = idempotency_key(provider, invoice_id, action_type, amount)
         existing = self.by_idempotency_key(key)
@@ -316,8 +415,8 @@ class SqliteActionStore:
                 (action_id, run_id, created_at, updated_at, state, action_type,
                  invoice_id, amount_minor, currency, reason, idempotency_key,
                  resume_url, approved_by, provider_action_id, failure_reason,
-                 expires_at, tax_breakdown)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)
+                 expires_at, tax_breakdown, customer_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?)
                 """,
                 (
                     action_id,
@@ -337,6 +436,7 @@ class SqliteActionStore:
                         if tax_breakdown is not None
                         else None
                     ),
+                    customer_id,
                 ),
             )
         return self.get(action_id)
@@ -403,6 +503,13 @@ class SqliteActionStore:
         refused, in the `UPDATE` itself, while the action has an incident:
         one another process recorded after this one read the action stops it
         too. Only a person's status read settles an incident.
+
+        A claim takes a fresh `claim_token`, and, for a credit note of a known
+        customer, is refused in the same `UPDATE` while another credit note
+        of that customer is executing, of unknown outcome, or marked
+        `partial_write` or `no_trace`, and not resolved by a person
+        (spec 015, FR-009): one statement, so two actions of one customer
+        cannot both claim, in this process or another.
         """
         current = self.get(action_id)
         keep = attention is _KEEP
@@ -419,6 +526,10 @@ class SqliteActionStore:
             raise IllegalTransition(
                 action_id, current.state, to, why="without the provider's reference"
             )
+        claiming = to is ActionState.EXECUTING
+        blockable = (
+            claiming and current.customer_id is not None and current.action_type == BLOCKING_TYPE
+        )
 
         # The check above was made on a read. The UPDATE names the state that
         # read found, so if anything moved the action in between -- another
@@ -438,10 +549,12 @@ class SqliteActionStore:
                     uncertain_since = COALESCE(uncertain_since, ?),
                     provider_status = COALESCE(?, provider_status),
                     provider_status_at = COALESCE(?, provider_status_at),
-                    attention = CASE WHEN ? THEN attention ELSE ? END
+                    attention = CASE WHEN ? THEN attention ELSE ? END,
+                    claim_token = COALESCE(?, claim_token)
                 WHERE action_id = ? AND state = ?
                   AND NOT (? AND COALESCE(attention, '') IN ({incidents}))
-                """.format(incidents=", ".join("?" * len(INCIDENTS))),
+                  AND NOT (? AND {blocker})
+                """.format(incidents=", ".join("?" * len(INCIDENTS)), blocker=_BLOCKER),
                 (
                     to.value,
                     datetime.now(UTC).isoformat(),
@@ -456,20 +569,163 @@ class SqliteActionStore:
                     _iso(provider_status_at),
                     keep,
                     None if keep else attention,
+                    uuid.uuid4().hex if claiming else None,
                     action_id,
                     current.state.value,
                     guarded,
                     *sorted(INCIDENTS),
+                    blockable,
+                    *_blocker_parameters(current),
                 ),
             ).rowcount
         if updated != 1:
             held = self._attention_now(action_id)
             if guarded and held in INCIDENTS:
                 raise NeedsAPerson(action_id, current.state, held)
+            if blockable:
+                blocker = self.blocking(current)
+                if blocker is not None:
+                    raise BlockedByAnother(action_id, current.state, blocker)
             raise IllegalTransition(
                 action_id, current.state, to, why="(its state changed concurrently)"
             )
         return self.get(action_id)
+
+    def blocking(self, action: PendingAction) -> str | None:
+        """The action that blocks `action`'s claim now, or None: another
+        credit note of its customer, unresolved, executing, of unknown
+        outcome or left half-way (FR-009). Older rows, with no customer,
+        never block."""
+        if action.customer_id is None or action.action_type != BLOCKING_TYPE:
+            return None
+        row = self._connection.execute(
+            f"SELECT other.action_id FROM pending_actions AS other WHERE {_BLOCKER_WHERE} "
+            "ORDER BY other.created_at LIMIT 1",
+            _blocker_parameters(action),
+        ).fetchone()
+        return row[0] if row else None
+
+    def record_request(self, action_id: str, claim_token: str, at: datetime) -> bool:
+        """Before a request of an attempt: whether the row is still
+        `EXECUTING` under this claim, recording the request's instant if it
+        is -- one conditional `UPDATE`, durable before the request leaves
+        (spec 015, FR-011). False means the claim is gone: send nothing."""
+        with self._connection:
+            updated = self._connection.execute(
+                """
+                UPDATE pending_actions
+                SET last_request_at = ?
+                WHERE action_id = ? AND state = ? AND claim_token = ?
+                """,
+                (at.isoformat(), action_id, ActionState.EXECUTING.value, claim_token),
+            ).rowcount
+        return updated == 1
+
+    def mark_partial(
+        self,
+        action_id: str,
+        *,
+        attention: str,
+        resolution: str,
+        at: datetime,
+        failure_reason: str | None = None,
+        partial_document: dict | None = None,
+    ) -> PendingAction:
+        """A document left half-way, or a write that may still land with no
+        trace (`partial_write`, `no_trace`): recorded whatever state the row
+        is in now -- an `EXECUTING` one becomes `UNKNOWN_OUTCOME`, any other
+        keeps its state -- so a worker whose claim was taken over still
+        leaves what it made on the record. Final for everything automatic.
+        `partial_write` replaces `no_trace`, never the reverse: a document
+        found is more than none."""
+        if attention not in RESOLVABLE:
+            raise ValueError(f"not a partial outcome: {attention!r}")
+        self.get(action_id)
+        with self._connection:
+            self._connection.execute(
+                """
+                UPDATE pending_actions
+                SET state = CASE WHEN state = ? THEN ? ELSE state END,
+                    updated_at = ?,
+                    attention = CASE WHEN attention = ? THEN attention ELSE ? END,
+                    resolution = ?,
+                    failure_reason = COALESCE(?, failure_reason),
+                    uncertain_since = COALESCE(uncertain_since, ?),
+                    partial_document = COALESCE(?, partial_document)
+                WHERE action_id = ?
+                """,
+                (
+                    ActionState.EXECUTING.value,
+                    ActionState.UNKNOWN_OUTCOME.value,
+                    datetime.now(UTC).isoformat(),
+                    "partial_write",
+                    attention,
+                    resolution,
+                    failure_reason,
+                    at.isoformat(),
+                    _document(partial_document),
+                    action_id,
+                ),
+            )
+        return self.get(action_id)
+
+    def record_status_read(self, action_id: str, at: datetime, found: str) -> PendingAction:
+        """A person's status read: when it was made and what it found,
+        empty results included (FR-009a). Kept whatever the action's state."""
+        self.get(action_id)
+        with self._connection:
+            self._connection.execute(
+                "UPDATE pending_actions SET status_read_at = ?, status_read_found = ? "
+                "WHERE action_id = ?",
+                (at.isoformat(), found, action_id),
+            )
+        return self.get(action_id)
+
+    def record_resolution(self, action_id: str, by: str, note: str, at: datetime) -> PendingAction:
+        """A person's account of how they resolved a partial write or a write
+        that left no trace (spec 015, FR-009a).
+
+        One conditional `UPDATE`: only on `partial_write` or `no_trace`, only
+        once, and only when the latest status read was made at least
+        `SETTLING_DELAY` after the attempt's last request -- read from the
+        durable times, never from the caller. It releases the customer's
+        blocker; the incident stays, so the action is never executed again.
+        """
+        current = self.get(action_id)
+        with self._connection:
+            updated = self._connection.execute(
+                f"""
+                UPDATE pending_actions
+                SET resolved_by = ?, resolved_at = ?, resolution_note = ?, updated_at = ?
+                WHERE action_id = ?
+                  AND attention IN (?, ?)
+                  AND resolved_at IS NULL
+                  AND {_SETTLED}
+                """,
+                (
+                    by,
+                    at.isoformat(),
+                    note,
+                    datetime.now(UTC).isoformat(),
+                    action_id,
+                    *sorted(RESOLVABLE),
+                    SETTLING_DELAY.total_seconds(),
+                ),
+            ).rowcount
+        if updated != 1:
+            raise ResolutionRefused(action_id, current.state, self._why_not_resolvable(action_id))
+        return self.get(action_id)
+
+    def _why_not_resolvable(self, action_id: str) -> str:
+        action = self.get(action_id)
+        if action.attention not in RESOLVABLE:
+            return "only a partial write, or a write that left no trace, is resolved by a person"
+        if action.resolved_at is not None:
+            return f"resolved already, by {action.resolved_by}"
+        return (
+            "a status read made at least ten minutes after the attempt's last request "
+            "comes first: a request may still have been in flight"
+        )
 
     def _attention_now(self, action_id: str) -> str | None:
         """The attention as the row holds it now, read past any cached view."""
@@ -535,6 +791,40 @@ class SqliteActionStore:
         self._connection.close()
 
 
+#: Another credit note of the same customer that blocks a claim: unresolved,
+#: and executing, of unknown outcome, or left half-way (FR-009). Parameters:
+#: customer, own action id, type, two states, two attentions.
+_BLOCKER_WHERE = """other.customer_id = ? AND other.action_id != ? AND other.action_type = ?
+      AND other.resolved_at IS NULL
+      AND (other.state IN (?, ?) OR COALESCE(other.attention, '') IN (?, ?))"""
+_BLOCKER = f"EXISTS (SELECT 1 FROM pending_actions AS other WHERE {_BLOCKER_WHERE})"
+
+#: When a status read may settle a resolution: at least `SETTLING_DELAY`
+#: (seconds, the one parameter) after the attempt's last request -- or, when
+#: no request was recorded, after its outcome became unknown; the later of the
+#: two when both are known.
+_SETTLED = """status_read_at IS NOT NULL
+      AND COALESCE(last_request_at, uncertain_since) IS NOT NULL
+      AND (julianday(status_read_at) - julianday(MAX(
+              COALESCE(last_request_at, uncertain_since),
+              COALESCE(uncertain_since, last_request_at)))) * 86400.0 >= ?"""
+
+
+def _blocker_parameters(action: PendingAction) -> tuple:
+    return (
+        action.customer_id,
+        action.action_id,
+        BLOCKING_TYPE,
+        ActionState.EXECUTING.value,
+        ActionState.UNKNOWN_OUTCOME.value,
+        *sorted(RESOLVABLE),
+    )
+
+
+def _document(document: dict | None) -> str | None:
+    return json.dumps(document, sort_keys=True) if document is not None else None
+
+
 def _check_attention(attention: object) -> None:
     if attention is not None and attention not in ATTENTION:
         raise ValueError(f"unknown attention {attention!r}")
@@ -577,4 +867,15 @@ def _to_action(row: sqlite3.Row) -> PendingAction:
             if row["tax_breakdown"]
             else None
         ),
+        customer_id=row["customer_id"],
+        claim_token=row["claim_token"],
+        last_request_at=_moment(row["last_request_at"]),
+        partial_document=(
+            json.loads(row["partial_document"]) if row["partial_document"] else None
+        ),
+        status_read_at=_moment(row["status_read_at"]),
+        status_read_found=row["status_read_found"],
+        resolved_by=row["resolved_by"],
+        resolved_at=_moment(row["resolved_at"]),
+        resolution_note=row["resolution_note"],
     )
