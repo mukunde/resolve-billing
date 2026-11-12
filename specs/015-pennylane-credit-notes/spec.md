@@ -61,8 +61,14 @@ The pull request needs the maintainer's explicit approval of the final diff.
 - The cap, sequentially: linking a credit note beyond the invoice's total is refused, 400
   "The credit notes amount is bigger than the invoice amount", and so is a second credit
   note whose sum with the first exceeds it; the refused draft stays a draft. Refused at
-  linking, not at creation. Atomicity under competing links is not shown; the case of a
-  credit note made in Pennylane's interface waits for the maintainer.
+  linking, not at creation. Across the interface and the API too: after a credit note of
+  72.00 made in Pennylane's interface (drafted there, finalised through the API after
+  decision 47's check), the API's 72.00 more was refused at linking the same way.
+  Atomicity under competing links is not shown.
+- Pennylane's interface would not finalise a document for a company customer without a
+  SIREN and a VAT number; the API finalised them. An invoice credited from the interface
+  read `partially_paid`, one credited through the API `partially_cancelled` -- both refused
+  by spec 014's reads (`invoice_credit`).
 - On four draft lines (20 %, 5.5 %, exempt, a 0.05 price) Pennylane's tax per line equalled
   this code's (the line's amount excluding tax times its rate, rounded to the cent). None
   was an exact half-cent tie, so Pennylane's rounding rule is not inferred; the draft
