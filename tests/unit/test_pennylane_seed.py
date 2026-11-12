@@ -323,3 +323,31 @@ async def test_a_failing_subscription_read_still_stops_it(tmp_path):
     assert any(line.startswith("subscription: REPORTED") for line in lines)
     (sub,) = api.subscriptions
     assert sub["status"] == "stopped"
+
+
+async def test_every_found_subscription_is_tried_when_one_will_not_stop(tmp_path):
+    """r371: two subscriptions found (the seed cannot tell which is its own);
+    the first refuses to stop, the second is stopped all the same, and the
+    failure is reported."""
+    api = Api()
+    await run(api, tmp_path)  # builds the customer and one stopped subscription
+    customer = api.subscriptions[0]["customer"]
+    for _ in range(2):
+        api.subscriptions.append({"id": api._id(), "customer": customer,
+                                  "status": "in_progress"})
+    api.subscriptions.pop(0)
+    first, second = api.subscriptions
+    original = api._write
+
+    def first_refuses(method, path, body):
+        if path == f"/billing_subscriptions/{first['id']}":
+            return httpx.Response(400)
+        return original(method, path, body)
+
+    api._write = first_refuses
+    lines = await run(api, tmp_path)
+    assert any("subscription: REPORTED" in line and "several found" in line for line in lines)
+    assert first["status"] == "in_progress"
+    assert second["status"] == "stopped"
+    assert any(line.startswith("subscription: NOT STOPPED") and str(first["id"]) in line
+               for line in lines)

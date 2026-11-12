@@ -276,8 +276,17 @@ class Seeder:
         except (Uncertain, Stop):
             # The create's answer was lost or unreadable, or the seed cannot
             # tell which subscription is its own: whatever landed is stopped.
+            # Each is tried, whatever happened to the one before; the failures
+            # are reported with the original error.
+            failures = []
             for landed in await find():
-                await self._stop(world, f"/billing_subscriptions/{landed['id']}")
+                try:
+                    await self._stop(world, f"/billing_subscriptions/{landed['id']}")
+                except Exception as failure:  # noqa: BLE001 -- the next one is still tried
+                    failures.append(f"{landed['id']}: {failure!r}")
+            if failures:
+                self.observations.append(
+                    f"subscription: NOT STOPPED, stop it by hand: {failures}")
             raise
         path = f"/billing_subscriptions/{made['id']}"
         try:
