@@ -60,7 +60,8 @@ approval of the final diff.
   partial refund in particular -- would not be seen, and a refund or a duplicate payment
   could be proposed on money already given back; the approver sees it before anything
   moves (II), and a refund made by credit note is caught, the invoice then being refused
-  (`invoice_credit`).
+  (`invoice_credit`). The maintainer kept this assumption on 2026-11-12, knowing its
+  effect, rather than reading no collection as succeeded until Pennylane answers.
 - Q: Invoice references? → A: Option (a): numbers resolved in this slice, within the
   customer's invoices already loaded; a number outside them is not resolved.
 - Q: A customer with several addresses? → A: Refused (`multiple_addresses`).
