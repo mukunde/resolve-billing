@@ -1,6 +1,6 @@
 # Implementation Plan: Pennylane as a billing platform, read-only
 
-**Branch**: `014-pennylane-read` | **Date**: 2026-11-12 | **Spec**: [spec.md](spec.md), approved by the maintainer at `851eb33` | **Plan**: draft, for the maintainer's approval
+**Branch**: `014-pennylane-read` | **Date**: 2026-11-12 | **Spec**: [spec.md](spec.md), approved by the maintainer at `851eb33` | **Plan**: approved by the maintainer on 2026-11-12, at `db3f174`
 
 ## Summary
 
