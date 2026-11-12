@@ -1,10 +1,11 @@
 """Build the Pennylane worlds on the declared sandbox (specs/014-pennylane-read,
 FR-011, SC-002 as amended).
 
-    python -m dotenv run -- python -m scripts.pennylane_seed
+    python -m dotenv -f .env.seed run -- python -m scripts.pennylane_seed
 
 With its own token, `PENNYLANE_SEED_TOKEN` (read and write on Customers,
-Customer invoices and Billing subscriptions), never loaded by the adapter.
+Customer invoices and Billing subscriptions), kept in `.env.seed` with
+`PENNYLANE_SANDBOX_COMPANY_ID` -- never in `.env`, which the service loads.
 Before any write it checks, failing closed, that the token's company is
 `PENNYLANE_SANDBOX_COMPANY_ID`. Every write is preceded by a read that decides
 whether it is needed; after a write whose answer was lost, the next run reads

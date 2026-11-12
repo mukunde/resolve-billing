@@ -258,6 +258,70 @@ fixed on the way: a price named a product the seed did not make, and the taxed
 cancellation world's clock started on its month instead of a month before (its first
 build was deleted and rebuilt). No difference from the fake needed approving.
 
+## Pennylane, reading (specs/014-pennylane-read)
+
+`BILLING_PROVIDER=pennylane`, a company token read-only on Customers, Customer invoices
+and Billing subscriptions, and `PENNYLANE_SANDBOX_COMPANY_ID`: every read first checks,
+through the identity endpoint, that the token's company is that sandbox, and refuses
+otherwise (`sandbox`), the verdict kept. It writes nothing: `can_write` is false, every
+write refused before any call, `find_action` empty. Its identifiers are typed
+(`pl_cus_`, `pl_inv_`, `pl_sub_`, `pl_pay_` and Pennylane's integer), so ids of different
+kinds never meet.
+
+What Pennylane's documentation leaves open is mapped by the maintainer's conventions
+(coordination decision 46), each recorded where it is applied, or refused:
+
+- **Dates**: a date is its midnight in UTC (changed on 2026-11-12 from Paris's midnight,
+  which broke the checks' UTC calendar across summer time); an invoice at the window's
+  edge may fall one day in or out. A line's `imputation_dates` run from `start_date` to
+  the midnight after `end_date`, included; a line without them has no period.
+- **Invoices**: `paid` → paid, `upcoming` and `late` → open, `draft` → draft,
+  `cancelled` with no credit note → void (convention); every other status refused
+  (`invoice_status`); quotes, proformas and orders left out; credit notes told by their
+  link to the invoice they credit, never by status, and an invoice with any credit note
+  against it, whatever its date, refused (`invoice_credit`); an invoice without lines
+  refused (`missing_field`).
+- **Tax**: `FR_200`, `FR_100`, `FR_55`, `FR_21` read as 20, 10, 5.5, 2.1 %; `exempt` as no
+  tax charged; every other code refused (`tax_code`); a discount, a negative line, a unit
+  price finer than a cent refused; posted figures reconciled as spec 013 does.
+- **Payments**: `confirmed` and `paid_out` → succeeded, `refunded` → refunded (read as
+  full), the failures listed → failed, the states in progress (`found` and `not_found`
+  included) → pending; `charged_back` and any other refused (`payment_status`). The
+  maintainer kept, on 2026-11-12, the assumption this makes: a collection still
+  confirmed or paid out was not refunded. Its effect: a refund Pennylane records elsewhere
+  -- a partial one especially -- would not be seen, and a refund could be proposed on
+  money already given back; the approver sees it first, and a refund made by credit note
+  is caught, the invoice being refused. A payment seen under two of the customer's
+  invoices is refused (`multi_invoice_payment`); one shared with another customer's
+  invoice cannot be detected from one customer.
+- **Subscriptions**: `in_progress` → active; `finished` → cancelled, the service ending
+  at `finish` included; `stopped` → cancelled, the service running until the day before
+  `next_occurrence`; others refused (`subscription_status`). The current period runs
+  from `prev_occurrence` to `next_occurrence` and must be exactly one cycle of the rule by
+  the checks' own calendar, else refused (`missing_field`). An invoice of a cancelled
+  subscription is read only if every line has a period running forwards.
+- **Customers**: found by any of their addresses, trimmed and case-folded, in id order;
+  a customer with two addresses refused (`multiple_addresses`), the domain holding one.
+- **References**: customers cite an invoice's number. The disputed invoice is resolved
+  once, among the invoices the investigation loaded: a typed id as it is, a number to its
+  invoice; an unresolved number is an unknown reference and is never sent to the API.
+  Numbers of loaded invoices are recognised in a message -- whole, case-folded, bounded by
+  a character that is neither a letter nor a digit, the longest first -- checked against
+  the disputed invoice and masked before any engine; a number outside them is not
+  recognised.
+
+Reads per investigation: the customers, the customer's invoices and credit notes, each
+invoice's lines and payments, the subscriptions: several dozen requests, paced under 25
+per 5 seconds per token within the process, retried within a 20-second budget, every list
+read to its end or the read refused as unavailable. Two processes on one token are not
+paced together.
+
+**As measured**: the contract on the seeded sandbox (`tests/contract/test_pennylane_contract.py`)
+is recorded here once run. SC-002 was amended by the maintainer on 2026-11-12: the
+documentation offers no way to attach a hand-made invoice to a subscription, so the
+duplicate and after-cancellation comparisons with the fake are made only where the
+sandbox lets their worlds be built.
+
 ## Not guaranteed today
 
 - That Stripe keeps idempotency keys for at least a day: its documentation
@@ -285,6 +349,11 @@ Tax (spec 013): `tests/unit/test_invoice_tax.py`, `tests/unit/test_tax_rules.py`
 `tests/unit/test_tax_payload.py`, `tests/unit/test_untaxed_bytes.py`,
 `tests/integration/test_tax_breakdown.py`, and the taxed tests of the Stripe
 files above.
+Pennylane, without network: `tests/unit/test_pennylane_client.py`,
+`tests/unit/test_pennylane_mapping.py`, `tests/unit/test_pennylane_adapter.py`,
+`tests/unit/test_pennylane_review.py`, `tests/unit/test_pennylane_review2.py`,
+`tests/unit/test_pennylane_seed.py`; on its sandbox,
+`tests/contract/test_pennylane_contract.py`.
 Both, against the contract: `tests/contract/` -- the fake in CI, Stripe
 locally on a seeded account, with the read-only key, and with
 `STRIPE_WRITES=enabled` on a fresh write run for the write properties
