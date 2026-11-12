@@ -188,7 +188,9 @@ categories, the seed token):
   - `subscription`: one subscription (`POST /billing_subscriptions`, mode
     `awaiting_validation`, `payment_method` `offline`, monthly), what it generates read
     by `billing_subscription_id`, then stopped (`PUT /billing_subscriptions/{id}` with
-    `stop: true`) and its dates recorded -- observations, not established meanings;
+    `stop: true`) and its dates before and after the stop, and its generated invoices'
+    status and date, recorded -- observations, not established meanings; whatever
+    fails once it exists, it is stopped;
   - refused shapes: a credited invoice (a credit note created, then
     `POST /customer_invoices/{id}/link_credit_note`) → `invoice_credit`; two addresses →
     `multiple_addresses`; a `mixed` VAT line → `tax_code`; a non-zero discount →
@@ -252,9 +254,11 @@ rather than the shared fixture parametrised three ways: the shared tests assume 
 worlds, usage and writes, and SC-002 as amended asks other things of Pennylane. Skipped
 with the reason unless `PENNYLANE_API_TOKEN` and `PENNYLANE_SANDBOX_COMPANY_ID` are set;
 its worlds come from `scripts/pennylane_worlds.py` (`NOT_SEEDED` for exclusions the
-maintainer approved). It checks: every world present or excluded (readiness); the taxed
-invoice read faithfully (amounts, tax by rate, number, period); each refused world's
-reason; whose an invoice is, and nothing more; a number resolved among the customer's
+maintainer approved). It checks: every world, the compared ones included, in the state
+its kind asks for or excluded (readiness); the taxed invoice read faithfully against the
+fixed values the seed writes (amounts, tax by rate, quantity, unit price, issue date,
+exact period, a number present); each compared world equal to its fake counterpart
+where built; each refused world's reason; whose an invoice is, and nothing more; a number resolved among the customer's
 invoices; no write, and `find_action` empty; the paid invoice's payment mapped by the
 table or refused. The run is the maintainer's, or an agent's at his request, with his
 tokens.

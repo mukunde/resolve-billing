@@ -145,8 +145,9 @@ async def test_another_company_writes_nothing(tmp_path):
 async def test_every_world_is_built_or_reported(tmp_path):
     api = Api()
     lines = await run(api, tmp_path)
-    names = [line.split(":")[0] for line in lines if not line.startswith(("paid_invoice: pay",
-                                                                          "subscription: gen"))]
+    outcomes = [line for line in lines
+                if line.split(": ", 1)[1].startswith(("built", "REPORTED", "excluded"))]
+    names = [line.split(":")[0] for line in outcomes]
     assert names == [w.name for w in worlds.WORLDS]
     assert any(line.startswith("taxed_duplicate: REPORTED") for line in lines)
 
@@ -198,7 +199,8 @@ async def test_the_subscription_sends_no_mail_pays_offline_and_is_stopped(tmp_pa
     assert sub["sent"]["mode"] == {"type": "awaiting_validation"}
     assert sub["sent"]["payment_method"] == "offline"
     assert sub["status"] == "stopped"
-    assert any(line.startswith("subscription: generated") for line in lines)
+    assert any(line.startswith("subscription: generated invoices") for line in lines)
+    assert any(line.startswith("subscription: after stop {'status': 'stopped'") for line in lines)
 
 
 async def test_the_payment_observed_after_mark_as_paid_is_reported(tmp_path):
@@ -220,3 +222,71 @@ def test_every_compared_world_names_a_development_case(world):
 
     cases = {c["id"] for c in json.loads(DEVELOPMENT_SET.read_bytes())}
     assert world.counterpart in cases
+
+
+async def test_a_subscription_with_other_settings_is_still_stopped(tmp_path):
+    """r369, finding 2: a failure after the subscription exists never leaves it running."""
+    api = Api()
+    original = api._write
+
+    def other_settings(method, path, body):
+        response = original(method, path, body)
+        if path == "/billing_subscriptions":
+            api.subscriptions[-1]["payment_method"] = "gocardless_direct_debit"
+            return httpx.Response(201, json=api.subscriptions[-1])
+        return response
+
+    api._write = other_settings
+    lines = await run(api, tmp_path)
+    assert any(line.startswith("subscription: REPORTED -- subscription: its settings")
+               for line in lines)
+    assert api.subscriptions[-1]["status"] == "stopped"
+
+
+async def test_a_lost_stop_answer_is_never_resent_blind(tmp_path):
+    """r369, finding 3: the stop's intent kept; a later run reads before acting."""
+    api = Api()
+    original = api._write
+
+    def stop_lost(method, path, body):
+        response = original(method, path, body)
+        if path.startswith("/billing_subscriptions/") and body.get("stop"):
+            api.subscriptions[-1]["status"] = "in_progress"  # it did not land
+            return httpx.Response(504)
+        return response
+
+    api._write = stop_lost
+    first = await run(api, tmp_path)
+    assert any("subscription: REPORTED" in line for line in first)
+    api._write = original
+    second = await run(api, tmp_path)
+    assert any("an earlier change's outcome is unknown" in line for line in second)
+
+
+async def test_a_lost_mark_as_paid_that_landed_is_settled_by_a_read(tmp_path):
+    api = Api()
+    api.lose_next.add("/customer_invoices/{id}/mark_as_paid")
+    original = api.handle
+
+    def lose_mark(request):
+        if request.url.path.endswith("/mark_as_paid") and api.lose_next:
+            api.lose_next.clear()
+            path = request.url.path.removeprefix("/api/external/v2")
+            api.writes.append(f"{request.method} {path}")
+            api._write(request.method, path, {})
+            return httpx.Response(504)
+        return original(request)
+
+    api.handle = lose_mark
+    first = await run(api, tmp_path)
+    assert any(line.startswith("paid_invoice: REPORTED") for line in first)
+    second = await run(api, tmp_path)
+    assert any(line.startswith("paid_invoice: built") for line in second)
+    assert sum(1 for w in api.writes if w.endswith("/mark_as_paid")) == 1
+
+
+async def test_the_unbuildable_worlds_are_reported(tmp_path):
+    lines = await run(Api(), tmp_path)
+    for name in ("partially_paid", "charged_back", "taxed_duplicate",
+                 "taxed_billed_after_cancellation"):
+        assert any(line.startswith(f"{name}: REPORTED") for line in lines), name

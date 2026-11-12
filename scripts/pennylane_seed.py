@@ -159,6 +159,30 @@ class Seeder:
         self.intents.clear(key)
         return made
 
+    async def mutate(
+        self,
+        key: str,
+        done: Callable[[], Awaitable[bool]],
+        send: Callable[[], Awaitable[Any]],
+    ) -> None:
+        """A change of state (mark paid, stop, link), made once: skipped when a
+        read shows it done; refused to resend when an earlier send's outcome is
+        unknown; verified by a read after sending."""
+        if await done():
+            self.intents.clear(key)
+            return
+        if self.intents.noted(key):
+            raise Stop(f"{key}: an earlier change's outcome is unknown")
+        self.intents.note(key)
+        try:
+            await send()
+        except Refused:
+            self.intents.clear(key)
+            raise
+        if not await done():
+            raise Stop(f"{key}: sent, and not seen done")
+        self.intents.clear(key)
+
     # -- the objects ---------------------------------------------------------------
 
     async def customer(self, world: worlds.World, emails: list[str] | None = None) -> Payload:
@@ -180,7 +204,7 @@ class Seeder:
     async def invoice(self, world: worlds.World, customer: Payload, suffix: str = "invoice",
                       **line_changes: Any) -> Payload:
         reference = f"{world.reference}:{suffix}"
-        start, end = _month_before(self.today)
+        fixed = worlds.TAXED_INVOICE
         discount = line_changes.pop("invoice_discount", None)
 
         async def find():
@@ -191,11 +215,11 @@ class Seeder:
         async def create():
             line = {"label": "Abonnement Pro", "quantity": 1, "unit": "piece",
                     "raw_currency_unit_price": "100.00", "vat_rate": "FR_200",
-                    "imputation_dates": {"start_date": start.isoformat(),
-                                         "end_date": end.isoformat()}}
+                    "imputation_dates": {"start_date": fixed["start_date"],
+                                         "end_date": fixed["end_date"]}}
             line.update(line_changes)
-            body = {"customer_id": customer["id"], "date": start.isoformat(),
-                    "deadline": (start + timedelta(days=30)).isoformat(),
+            body = {"customer_id": customer["id"], "date": fixed["date"],
+                    "deadline": fixed["deadline"],
                     "currency": "EUR", "external_reference": reference,
                     "invoice_lines": [line]}
             if discount:
@@ -218,9 +242,11 @@ class Seeder:
     async def _paid_invoice(self, world):
         customer = await self.customer(world)
         made = await self.invoice(world, customer)
-        detail = await self.w.get(f"/customer_invoices/{made['id']}")
-        if not detail.get("paid"):
-            await self.w.write("PUT", f"/customer_invoices/{made['id']}/mark_as_paid")
+        async def paid():
+            return bool((await self.w.get(f"/customer_invoices/{made['id']}")).get("paid"))
+
+        await self.mutate(f"{world.name}/mark_as_paid", paid, lambda: self.w.write(
+            "PUT", f"/customer_invoices/{made['id']}/mark_as_paid"))
         payments = await self.w.every(f"/customer_invoices/{made['id']}/payments")
         statuses = sorted(str(p.get("status")) for p in payments)
         self.observations.append(f"paid_invoice: payments after mark_as_paid: {statuses}")
@@ -246,31 +272,46 @@ class Seeder:
             })
 
         made = await self.once(f"{world.name}/subscription", find, create)
-        settings = (made.get("mode") or {}).get("type"), made.get("payment_method")
-        if settings != ("awaiting_validation", "offline"):
-            raise Stop("subscription: its settings are not those sent")
-        generated = await self.w.every(
-            "/customer_invoices", {"filter": _filter("billing_subscription_id", made["id"])})
-        if made.get("status") != "stopped":
-            await self.w.write("PUT", f"/billing_subscriptions/{made['id']}", {"stop": True})
-        after = await self.w.get(f"/billing_subscriptions/{made['id']}")
-        self.observations.append(
-            f"subscription: generated {len(generated)} invoice(s); after stop: "
-            f"status={after.get('status')}, stopped_at set={after.get('stopped_at') is not None}, "
-            f"next_occurrence set={after.get('next_occurrence') is not None}, "
-            f"finish set={after.get('finish') is not None}")
-        if after.get("status") != "stopped":
-            raise Stop("subscription: not stopped")
+        path = f"/billing_subscriptions/{made['id']}"
+        before = await self.w.get(path)
+        try:
+            settings = (made.get("mode") or {}).get("type"), made.get("payment_method")
+            if settings != ("awaiting_validation", "offline"):
+                raise Stop("subscription: its settings are not those sent")
+            generated = await self.w.every(
+                "/customer_invoices", {"filter": _filter("billing_subscription_id", made["id"])})
+        finally:
+            # Whatever failed above, a subscription the seed made never keeps
+            # invoicing: it is stopped, once, and seen stopped.
+            async def stopped():
+                return (await self.w.get(path)).get("status") == "stopped"
+
+            await self.mutate(f"{world.name}/stop", stopped,
+                              lambda: self.w.write("PUT", path, {"stop": True}))
+        after = await self.w.get(path)
+
+        def dates(payload):
+            return {k: payload.get(k) for k in
+                    ("status", "start", "prev_occurrence", "next_occurrence", "finish",
+                     "stopped_at")}
+
+        invoices = [{k: i.get(k) for k in ("status", "date", "paid")} for i in generated]
+        self.observations.append(f"subscription: before stop {dates(before)}")
+        self.observations.append(f"subscription: after stop {dates(after)}")
+        self.observations.append(f"subscription: generated invoices {invoices}")
         return f"built, subscription {made['id']}"
 
     async def _credited_invoice(self, world):
         customer = await self.customer(world)
         original = await self.invoice(world, customer)
         note = await self.invoice(world, customer, suffix="credit_note", quantity=-1)
-        detail = await self.w.get(f"/customer_invoices/{note['id']}")
-        if detail.get("credited_invoice") is None:
-            await self.w.write("POST", f"/customer_invoices/{original['id']}/link_credit_note",
-                               {"credit_note_id": note["id"]})
+        async def linked():
+            detail = await self.w.get(f"/customer_invoices/{note['id']}")
+            return detail.get("credited_invoice") is not None
+
+        await self.mutate(f"{world.name}/link", linked, lambda: self.w.write(
+            "POST", f"/customer_invoices/{original['id']}/link_credit_note",
+            {"credit_note_id": note["id"]}))
         return f"built, invoice {original['id']}"
 
     async def _two_addresses(self, world):
@@ -293,6 +334,13 @@ class Seeder:
         customer = await self.customer(world)
         made = await self.invoice(world, customer, raw_currency_unit_price="100.005")
         return f"built, invoice {made['id']}"
+
+    async def _partially_paid(self, world):
+        raise Stop("needs a partial payment: the documented API marks an invoice paid in "
+                   "full only")
+
+    async def _charged_back(self, world):
+        raise Stop("needs a charged-back payment: the documented API cannot make one")
 
     async def _taxed_duplicate(self, world):
         raise Stop("needs two invoices of one subscription: no documented way to attach a "

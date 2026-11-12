@@ -38,6 +38,10 @@ WORLDS = (
     World("mixed_vat", "refused", reason="tax_code"),
     World("invoice_discount", "refused", reason="invoice_discount"),
     World("fractional_unit_price", "refused", reason="fractional_unit_price"),
+    # Attempted and reported: the documented API makes no partial payment and no
+    # charge-back, so these need the maintainer's exclusion once reported.
+    World("partially_paid", "refused", reason="invoice_status"),
+    World("charged_back", "refused", reason="payment_status"),
     World("taxed_duplicate", "compared", counterpart="taxed_duplicate_fr"),
     World("taxed_billed_after_cancellation", "compared",
           counterpart="taxed_billed_after_cancellation_en"),
@@ -47,8 +51,15 @@ WORLDS = (
 #: exclusion enters here; a world neither built nor excluded fails readiness.
 NOT_SEEDED: dict[str, str] = {}
 
-#: What the read-back of `taxed_invoice` must find (what the seed writes).
+#: What the seed writes on every invoice it makes, and the read-back of
+#: `taxed_invoice` must find: fixed dates, so a reader can check them exactly.
 TAXED_INVOICE = {
+    "date": "2026-10-01",
+    "deadline": "2026-10-31",
+    "start_date": "2026-10-01",
+    "end_date": "2026-10-31",
+    "quantity": "1",
+    "unit_minor": 10000,
     "excluding_tax_minor": 10000,
     "tax_minor": 2000,
     "rate": "20",

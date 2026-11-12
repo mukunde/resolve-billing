@@ -10,7 +10,7 @@ subscription generates) are printed by the seed; here the reads are checked.
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -43,36 +43,91 @@ def world(name: str) -> worlds.World:
     return next(w for w in worlds.WORLDS if w.name == name)
 
 
+async def _state(pennylane, spec) -> bool:
+    """Whether a world is in the state its kind asks for: its customer and
+    the objects the seed makes for it; a refusal counts as present (the refused
+    worlds' own test reads why)."""
+    try:
+        customer = await pennylane.find_customer_by_email(spec.email)
+        if customer is None:
+            return False
+        if spec.name == "subscription":
+            return bool(await pennylane.list_subscriptions(customer.id))
+        invoices = await pennylane.list_invoices(customer.id, since=EPOCH)
+        if spec.name == "paid_invoice":
+            return bool(invoices) and invoices[0].status.value == "paid"
+        return bool(invoices)
+    except ProviderUnsupported:
+        return True
+
+
 async def test_every_world_is_present_or_excluded(pennylane):
-    """Readiness: a world the seed should have built and did not, and the
-    maintainer did not exclude, fails here."""
-    missing = []
-    for spec in worlds.WORLDS:
-        if spec.name in worlds.NOT_SEEDED or spec.kind == "compared":
-            continue
-        try:
-            found = await pennylane.find_customer_by_email(spec.email)
-        except ProviderUnsupported:
-            found = True  # present, and refused: the refused worlds' own test reads why
-        if not found:
-            missing.append(spec.name)
+    """Readiness: every world, the compared ones included, is in its state or
+    excluded by the maintainer (`NOT_SEEDED`); none is passed over silently."""
+    missing = [
+        spec.name for spec in worlds.WORLDS
+        if spec.name not in worlds.NOT_SEEDED and not await _state(pennylane, spec)
+    ]
     assert missing == []
 
 
 async def test_a_taxed_invoice_is_read_faithfully(pennylane):
+    """Against what the seed wrote (`worlds.TAXED_INVOICE`), field by field."""
+    expected = worlds.TAXED_INVOICE
     customer = await pennylane.find_customer_by_email(world("taxed_invoice").email)
     (invoice,) = await pennylane.list_invoices(customer.id, since=EPOCH)
-    expected = worlds.TAXED_INVOICE
+    rate = Decimal(expected["rate"])
     assert invoice.amount_excluding_tax.amount_minor == expected["excluding_tax_minor"]
-    assert invoice.tax_by_rate == {
-        Decimal(expected["rate"]): invoice.tax_by_rate[Decimal(expected["rate"])]
-    }
-    assert invoice.tax_total.amount_minor == expected["tax_minor"]
+    assert {r: m.amount_minor for r, m in invoice.tax_by_rate.items()} == {
+        rate: expected["tax_minor"]}
     assert invoice.total.amount_minor == expected["total_minor"]
-    assert invoice.number
+    assert invoice.issued_at == datetime.fromisoformat(expected["date"]).replace(tzinfo=UTC)
+    assert isinstance(invoice.number, str) and invoice.number.strip()
     (line,) = invoice.lines
-    assert line.period_start is not None and line.period_end is not None
-    assert line.period_start < line.period_end
+    assert line.quantity == Decimal(expected["quantity"])
+    assert line.unit_amount.amount_minor == expected["unit_minor"]
+    assert line.amount.amount_minor == expected["excluding_tax_minor"]
+    assert line.period_start == datetime.fromisoformat(expected["start_date"]).replace(tzinfo=UTC)
+    assert line.period_end == (
+        datetime.fromisoformat(expected["end_date"]).replace(tzinfo=UTC) + timedelta(days=1))
+
+
+@pytest.mark.parametrize(
+    "spec", [w for w in worlds.WORLDS if w.kind == "compared"], ids=lambda w: w.name
+)
+async def test_a_compared_world_matches_its_fake_counterpart(pennylane, spec):
+    """Where the sandbox let the world be built (SC-002 as amended)."""
+    if spec.name in worlds.NOT_SEEDED:
+        pytest.skip(f"excluded by the maintainer: {worlds.NOT_SEEDED[spec.name]}")
+    customer = await pennylane.find_customer_by_email(spec.email)
+    if customer is None:
+        pytest.fail(f"{spec.name} is not built and not excluded")
+    import json
+
+    from app.application.investigate_dispute import DisputeInvestigator
+    from app.decision.mock import MockDecisionEngine
+    from app.domain.models import Dispute
+    from app.providers.fake.adapter import FakeBillingProvider
+    from evals.engines import DEVELOPMENT_SET
+    from evals.runner import EVALUATION_DATE
+
+    case = next(c for c in json.loads(DEVELOPMENT_SET.read_bytes())
+                if c["id"] == spec.counterpart)
+    invoices = await pennylane.list_invoices(customer.id, since=EPOCH)
+    target = max(invoices, key=lambda i: i.issued_at)
+
+    async def outcome(provider, email, invoice_id, now):
+        result = await DisputeInvestigator(provider=provider, engine=MockDecisionEngine()
+                                           ).investigate(Dispute(
+            id="contract", customer_message=case["message"], customer_email=email,
+            invoice_id=invoice_id), now=now)
+        amount = result.proposed_action.amount
+        return ({f.code for f in result.findings}, result.classification,
+                result.proposed_action.type, amount.amount_minor if amount else None,
+                result.authorization.verdict, result.requires_human_approval)
+
+    assert await outcome(pennylane, spec.email, target.id, datetime.now(UTC)) == await outcome(
+        FakeBillingProvider(), case["customer_email"], case["invoice_id"], EVALUATION_DATE)
 
 
 @pytest.mark.parametrize(
