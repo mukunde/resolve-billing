@@ -299,6 +299,9 @@ class TestReferences:
         """r366: a letter of any script bounds a number; no case folding crashes."""
         assert mapping.references("éF1", self.invoices("F1")) == []
         assert mapping.references("Straße", self.invoices("Straße")) == [(0, 6, "pl_inv_1")]
+        # r367: full case folding, both ways, the spans the original text's.
+        assert mapping.references("STRASSE", self.invoices("Straße")) == [(0, 7, "pl_inv_1")]
+        assert mapping.references("Straße", self.invoices("STRASSE")) == [(0, 6, "pl_inv_1")]
         assert mapping.references("İ1", self.invoices("i1")) in ([], [(0, 2, "pl_inv_1")])
 
     def test_the_longest_of_two_overlapping_numbers_wins(self):

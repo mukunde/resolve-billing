@@ -386,36 +386,50 @@ def _numbers(invoices: Sequence[Invoice]) -> dict[str, str]:
     return {n: next(iter(ids)) for n, ids in by_number.items() if len(ids) == 1}
 
 
-#: Neither a letter nor a digit, in any script.
-_BEFORE = r"(?<![^\W_])"
-_AFTER = r"(?![^\W_])"
-
-
 def resolve_number(reference: str, invoices: Sequence[Invoice]) -> str | None:
-    """The invoice whose whole number `reference` is, case ignored."""
+    """The invoice whose whole number `reference` is, case-folded."""
     return _numbers(invoices).get(reference.strip().casefold())
+
+
+def _folded(text: str) -> tuple[str, list[int]]:
+    """`text` case-folded in full (ß as ss), and for each folded character the
+    index of the original character it came from."""
+    parts: list[str] = []
+    origin: list[int] = []
+    for index, char in enumerate(text):
+        folded = char.casefold()
+        parts.append(folded)
+        origin.extend([index] * len(folded))
+    return "".join(parts), origin
 
 
 def references(text: str, invoices: Sequence[Invoice]) -> list[tuple[int, int, str]]:
     """Where the numbers of `invoices` sit in `text`, and the invoice each
-    stands for: whole numbers, case ignored, bounded by a character that is
-    neither a letter nor a digit (in any script), the longest kept first where
-    two overlap, never overlapping."""
+    stands for: whole numbers, compared case-folded in full, on whole
+    characters, bounded by a character that is neither a letter nor a digit (in
+    any script), the longest kept first where two overlap, never overlapping;
+    the spans are the original text's."""
     known = _numbers(invoices)
     if not known:
         return []
+    folded, origin = _folded(text)
     candidates: list[tuple[int, int, str]] = []
-    originals = {item.number for item in invoices if item.number}
-    for number in originals:
-        invoice_id = known.get(number.casefold())
-        if invoice_id is None:
-            continue
-        pattern = re.compile(_BEFORE + re.escape(number) + _AFTER, re.IGNORECASE)
-        for match in pattern.finditer(text):
-            if match.group(0).casefold() == number.casefold():
-                candidates.append((match.start(), match.end(), invoice_id))
+    for number, invoice_id in known.items():
+        at = folded.find(number)
+        while at != -1:
+            end = at + len(number)
+            whole = (at == 0 or origin[at - 1] != origin[at]) and (
+                end == len(folded) or origin[end] != origin[end - 1]
+            )
+            if whole:
+                start, stop = origin[at], origin[end - 1] + 1
+                before = start == 0 or not text[start - 1].isalnum()
+                after = stop == len(text) or not text[stop].isalnum()
+                if before and after:
+                    candidates.append((start, stop, invoice_id))
+            at = folded.find(number, at + 1)
     chosen: list[tuple[int, int, str]] = []
-    for start, end, invoice_id in sorted(candidates, key=lambda c: (c[0] - c[1], c[0])):
-        if all(end <= s or start >= e for s, e, _ in chosen):
-            chosen.append((start, end, invoice_id))
-    return sorted(set(chosen))
+    for start, stop, invoice_id in sorted(candidates, key=lambda c: (c[0] - c[1], c[0])):
+        if all(stop <= s or start >= e for s, e, _ in chosen):
+            chosen.append((start, stop, invoice_id))
+    return sorted(chosen)
