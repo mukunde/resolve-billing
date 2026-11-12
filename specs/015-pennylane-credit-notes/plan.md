@@ -3,7 +3,7 @@
 **Branch**: `015-pennylane-credit-notes` | **Date**: 2026-11-12 | **Spec**: [spec.md](spec.md)
 (approved at `915cd57`)
 
-**Status**: Draft, for the maintainer's approval (Codex r385 answered)
+**Status**: Approved by the maintainer on 2026-11-12, at `ab27035`
 
 ## Summary
 
