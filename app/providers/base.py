@@ -185,7 +185,9 @@ class BillingProvider(Protocol):
     #: what it made: every send, and every absence taken as proof, falls
     #: within it (specs/002-stripe-writes, FR-005).
     idempotency_window: timedelta
-    # Optionally, `invoice_references(text) -> set[str]`: the invoice ids cited
+    # Optionally, `invoice_references(text, invoices=()) -> set[str]`: the invoice
+    # ids cited (`invoices`, the investigation's, lets a platform that prints
+    # numbers resolve them, specs/014-pennylane-read). The ids cited
     # in a text, normalised to this platform's own form (taxonomy S6). Only
     # the platform knows how its references are written. Not part of the
     # protocol, so a provider without it still satisfies it and simply has no

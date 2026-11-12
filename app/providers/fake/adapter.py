@@ -13,6 +13,7 @@ so the fake is the place to prove the application layer relies on it.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import InvoiceStatus, PaymentStatus
@@ -44,7 +45,7 @@ class FakeBillingProvider:
     #: to start with "inv" is not one (taxonomy S6).
     _INVOICE_REFERENCE = re.compile(r"\binv[_-]?(\d{3,})\b", re.IGNORECASE)
 
-    def invoice_references(self, text: str) -> set[str]:
+    def invoice_references(self, text: str, invoices: Sequence[Invoice] = ()) -> set[str]:
         """Invoice ids cited in `text`, normalised to this platform's own form.
 
         Optional on the port (taxonomy S6): only the platform knows its
@@ -53,9 +54,13 @@ class FakeBillingProvider:
         """
         return {invoice_id for _, _, invoice_id in self.invoice_reference_spans(text)}
 
-    def invoice_reference_spans(self, text: str) -> list[tuple[int, int, str]]:
+    def invoice_reference_spans(
+        self, text: str, invoices: Sequence[Invoice] = ()
+    ) -> list[tuple[int, int, str]]:
         """Where each reference sits in `text`, and the id it stands for --
-        for masking it in place (D10). Optional on the port, like the above."""
+        for masking it in place (D10). Optional on the port, like the above.
+        `invoices`, the investigation's (specs/014-pennylane-read), is not
+        needed here: the fake's ids are written in the text as they are."""
         return [
             (match.start(), match.end(), f"inv_{match.group(1).lower()}")
             for match in self._INVOICE_REFERENCE.finditer(text)

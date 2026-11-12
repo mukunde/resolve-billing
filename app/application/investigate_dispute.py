@@ -407,13 +407,17 @@ class DisputeInvestigator:
         invoices = await self._provider.list_invoices(customer.id, since=now - LOOKBACK)
         payments = await self._provider.list_payments(customer.id)
 
-        target = next((i for i in invoices if i.id == dispute.invoice_id), None)
+        # The disputed invoice's reference, resolved once among the loaded
+        # invoices (specs/014-pennylane-read, Q3): a number on a platform that
+        # prints them, the id as it is elsewhere. Every later use reads this.
+        reference = self._resolve(dispute.invoice_id, invoices)
+        target = next((i for i in invoices if i.id == reference), None)
         # Not found in the window is not "does not exist" (taxonomy S7): ask
         # whose the reference is, and nothing else -- nothing of another
         # account's invoice is mapped, so nothing of it can surface.
         outside_window = False
-        if dispute.invoice_id and target is None:
-            owner = await self._provider.invoice_owner(dispute.invoice_id)
+        if reference and target is None:
+            owner = await self._provider.invoice_owner(reference)
             outside_window = owner == customer.id
         usage = None
         period = _metered_period(target) if target is not None else None
@@ -427,8 +431,18 @@ class DisputeInvestigator:
             payments=payments,
             usage=usage,
             target_invoice_id=target.id if target else None,
+            target_reference=reference,
             target_outside_window=outside_window,
         )
+
+    def _resolve(self, reference: str | None, invoices: list[Invoice]) -> str | None:
+        """The one invoice a reference designates among `invoices`, or the
+        reference as given when the platform cannot resolve it to exactly one."""
+        finder = getattr(self._provider, "invoice_references", None)
+        if not reference or finder is None:
+            return reference
+        found = finder(reference, invoices)
+        return next(iter(found)) if len(found) == 1 else reference
 
     def run_rules(self, dispute: Dispute, context: BillingContext) -> list[RuleFinding]:
         """Every deterministic check, in the order that matters.
@@ -450,12 +464,11 @@ class DisputeInvestigator:
             findings.append(automated)
 
         references = getattr(self._provider, "invoice_references", None)
+        designated = context.target_reference or dispute.invoice_id
         conflict = (
             cited_invoice_conflict(
-                references(dispute.customer_message),
-                next(iter(references(dispute.invoice_id)), dispute.invoice_id)
-                if dispute.invoice_id
-                else None,
+                references(dispute.customer_message, context.invoices),
+                designated,
             )
             if references is not None
             else None
@@ -464,9 +477,9 @@ class DisputeInvestigator:
             findings.append(conflict)
 
         if dispute.invoice_id:
-            missing = unknown_invoice(dispute.invoice_id, context.invoices)
+            missing = unknown_invoice(designated, context.invoices)
             if missing is not None and context.target_outside_window:
-                missing = _outside_window(dispute.invoice_id)
+                missing = _outside_window(designated)
             if missing is not None:
                 findings.append(missing)
 

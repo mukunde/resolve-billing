@@ -11,7 +11,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, model_serializer
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_serializer
 
 from app.domain.enums import (
     InvoiceStatus,
@@ -303,6 +303,11 @@ class BillingContext(BaseModel):
     payments: list[Payment] = []
     usage: Usage | None = None
     target_invoice_id: str | None = None
+    target_reference: str | None = Field(default=None, exclude=True)
+    """The disputed invoice's reference, resolved once among the loaded
+    invoices (specs/014-pennylane-read, Q3): every rule that names the disputed
+    invoice reads this. None when the dispute names none. Never serialised: a
+    context dumps as before."""
     target_outside_window: bool = False
     """The disputed invoice is the customer's, but older than the window
     loaded here: it exists, and nothing about it was checked (taxonomy S7)."""

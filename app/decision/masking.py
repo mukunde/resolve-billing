@@ -33,10 +33,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from app.decision.anonymise import Pseudonyms
-from app.domain.models import BillingContext
+from app.domain.models import BillingContext, Invoice
 
 #: Recorded with every result the Claude engine produces, next to the prompt
 #: version: a change to what is masked can change what the model decides.
@@ -45,7 +45,9 @@ MASKING_VERSION = "masking_v1"
 #: Finds invoice references in a text: (start, end, normalised id) triples, in
 #: the provider's own format. Optional: without one, only identifiers written
 #: exactly as the context holds them are recognised.
-ReferenceFinder = Callable[[str], list[tuple[int, int, str]]]
+#: Finds invoice references in a text, given the investigation's invoices
+#: (specs/014-pennylane-read): (start, end, invoice id) for each.
+ReferenceFinder = Callable[[str, Sequence[Invoice]], list[tuple[int, int, str]]]
 
 _ALIAS_LIKE = re.compile(
     r"\[(?:INVOICE_REF_\d+|CUSTOMER_EMAIL|EMAIL|CUSTOMER_NAME|IBAN|CARD|PHONE|REF)\]"
@@ -90,7 +92,9 @@ def mask_message(
     unknown_invoices: dict[str, str] = {}
 
     if find_references is not None:
-        for start, end, invoice_id in find_references(text):
+        # The invoices of this investigation, given at the call: nothing is
+        # kept on a provider or an engine between calls.
+        for start, end, invoice_id in find_references(text, context.invoices):
             alias = names.alias_of(invoice_id)
             if alias is None:
                 alias = unknown_invoices.setdefault(

@@ -14,7 +14,7 @@ outcome. specs/001-stripe-read-adapter.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -62,10 +62,14 @@ class StripeBillingProvider:
 
     # -- references (taxonomy S6, D10) ------------------------------------
 
-    def invoice_references(self, text: str) -> set[str]:
+    # `invoices`, the investigation's (specs/014-pennylane-read), is not needed:
+    # Stripe's `in_` identifiers are found in the text alone.
+    def invoice_references(self, text: str, invoices: Sequence[Invoice] = ()) -> set[str]:
         return {invoice_id for _, _, invoice_id in mapping.references(text)}
 
-    def invoice_reference_spans(self, text: str) -> list[tuple[int, int, str]]:
+    def invoice_reference_spans(
+        self, text: str, invoices: Sequence[Invoice] = ()
+    ) -> list[tuple[int, int, str]]:
         return mapping.references(text)
 
     # -- customers ---------------------------------------------------------
