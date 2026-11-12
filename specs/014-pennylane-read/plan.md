@@ -247,17 +247,17 @@ categories, the seed token):
 
 ### 8. The contract on Pennylane (FR-012)
 
-`tests/contract/conftest.py`: the `platform` fixture's parameters become fake, stripe and
-pennylane; `pennylane_platform()` is skipped with the reason unless `PENNYLANE_API_TOKEN`
-and `PENNYLANE_SANDBOX_COMPANY_ID` are set. Its worlds come from a catalogue of its own,
-`scripts/pennylane_worlds.py` (supported worlds with their fake counterparts, refused
-worlds with their reasons, `NOT_SEEDED` for exclusions the maintainer approved), found by
-`external_reference`. The fixture declares capabilities: `usage` false (the usage
-properties skip with the reason, Pennylane holding none), `writes` false (the write
-contract skips, but the shared tests that a platform without writes refuses every write
-and still answers `find_action` run on it); the tests that need Stripe's `duplicate` world
-read the world from the platform's catalogue. The run is the maintainer's, or an agent's
-at his request, with his tokens.
+At implementation, a contract file of its own, `tests/contract/test_pennylane_contract.py`,
+rather than the shared fixture parametrised three ways: the shared tests assume Stripe's
+worlds, usage and writes, and SC-002 as amended asks other things of Pennylane. Skipped
+with the reason unless `PENNYLANE_API_TOKEN` and `PENNYLANE_SANDBOX_COMPANY_ID` are set;
+its worlds come from `scripts/pennylane_worlds.py` (`NOT_SEEDED` for exclusions the
+maintainer approved). It checks: every world present or excluded (readiness); the taxed
+invoice read faithfully (amounts, tax by rate, number, period); each refused world's
+reason; whose an invoice is, and nothing more; a number resolved among the customer's
+invoices; no write, and `find_action` empty; the paid invoice's payment mapped by the
+table or refused. The run is the maintainer's, or an agent's at his request, with his
+tokens.
 
 ### 9. Documents (FR-013)
 
