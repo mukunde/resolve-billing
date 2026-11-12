@@ -11,13 +11,14 @@ idempotency key.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
 from app.domain.exceptions import BillingDomainError
-from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
+from app.domain.models import Customer, Invoice, Payment, Subscription, TaxBreakdown, Usage
 
 
 class NotFound(BillingDomainError):
@@ -115,6 +116,23 @@ class ProviderOutcomeUnknown(Exception):  # noqa: N818 -- a state, not a program
         self.category = category
 
 
+class PartialWrite(ProviderOutcomeUnknown):
+    """A write made of several requests stopped after a document was created:
+    the document exists, in `stage`, and is not the write approved
+    (specs/015-pennylane-credit-notes, FR-006). Final for everything automatic;
+    a request may still be in flight on the platform's side."""
+
+    def __init__(self, document_id: str, stage: str) -> None:
+        super().__init__("partial_write")
+        self.document_id = document_id
+        self.stage = stage
+
+
+#: Called by an adapter before each request of a write; raises when the attempt
+#: may no longer send (its deadline passed, its claim gone) (spec 015, FR-011).
+BeforeRequest = Callable[[], Awaitable[None]]
+
+
 class ProviderUnavailable(Exception):  # noqa: N818 -- a state, not a programming error
     """A read could not be completed: the platform timed out, failed or is
     down (taxonomy S7).
@@ -165,6 +183,13 @@ class ProviderAction(BaseModel):
     allocation: Allocation | None
     action_id: str | None
     observed_at: datetime
+    #: The breakdown of the credit as the platform holds it, positive amounts, an
+    #: all-zero tax normalised to None -- reported by a platform that builds a
+    #: credit note from new lines (spec 015, FR-010); None elsewhere.
+    breakdown: TaxBreakdown | None = None
+    #: Set when the document found is not complete -- "draft", "unlinked",
+    #: "unfinalised": never a success (spec 015, FR-008).
+    partial: str | None = None
 
 
 @runtime_checkable
@@ -181,10 +206,16 @@ class BillingProvider(Protocol):
     #: cannot (a read-only slice) is never asked: execution is refused before
     #: anything is read or claimed (ADR-008).
     can_write: bool
+    #: The types of write the platform makes ("credit_note", "refund"); an action
+    #: of another type is refused before anything is read or claimed
+    #: (specs/015-pennylane-credit-notes, FR-001). `can_write` is "writes anything".
+    writes: frozenset[str]
     #: How long after a first attempt the platform still answers a key with
     #: what it made: every send, and every absence taken as proof, falls
-    #: within it (specs/002-stripe-writes, FR-005).
-    idempotency_window: timedelta
+    #: within it (specs/002-stripe-writes, FR-005). None: the platform keeps no
+    #: key -- the first send happens, a creation is never resent, an absence is
+    #: never proof (spec 015, FR-007).
+    idempotency_window: timedelta | None
     # Optionally, `invoice_references(text, invoices=()) -> set[str]`: the invoice
     # ids cited (`invoices`, the investigation's, lets a platform that prints
     # numbers resolve them, specs/014-pennylane-read). The ids cited
@@ -260,7 +291,9 @@ class BillingProvider(Protocol):
         *,
         action_id: str,
         allocation: Allocation,
-        send_by: datetime,
+        send_by: datetime | None,
+        breakdown: TaxBreakdown | None = None,
+        before_request: BeforeRequest | None = None,
     ) -> ProviderAction:
         """Raise :class:`ProviderRejected` when the platform says no.
 
@@ -282,7 +315,9 @@ class BillingProvider(Protocol):
         *,
         action_id: str,
         allocation: Allocation,
-        send_by: datetime,
+        send_by: datetime | None,
+        breakdown: TaxBreakdown | None = None,
+        before_request: BeforeRequest | None = None,
     ) -> ProviderAction:
         """Return money already collected on the invoice.
 

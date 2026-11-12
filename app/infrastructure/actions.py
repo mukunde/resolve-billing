@@ -131,6 +131,11 @@ ATTENTION = frozenset(
         "unreadable_answer",
         # A write was made and its status is not success: to follow up.
         "not_successful",
+        # A document was made and not completed: a person's (spec 015, FR-006).
+        "partial_write",
+        # No window and nothing found after an unknown outcome: the creation may
+        # still land; a person's status read can settle it (spec 015, FR-007).
+        "no_trace",
     }
 )
 

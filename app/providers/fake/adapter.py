@@ -17,10 +17,19 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import InvoiceStatus, PaymentStatus
-from app.domain.models import Customer, Invoice, InvoiceLine, Payment, Subscription, Usage
+from app.domain.models import (
+    Customer,
+    Invoice,
+    InvoiceLine,
+    Payment,
+    Subscription,
+    TaxBreakdown,
+    Usage,
+)
 from app.providers.base import (
     ALLOCATIONS,
     Allocation,
+    BeforeRequest,
     NotFound,
     NotSent,
     ProviderAction,
@@ -36,6 +45,7 @@ class FakeBillingProvider:
 
     name = "fake"
     can_write = True
+    writes = frozenset({"credit_note", "refund"})
     #: The fake keeps keys for as long as it runs; it declares the window a
     #: real platform has, so the execution service is held to it here too.
     idempotency_window = timedelta(hours=23)
@@ -183,6 +193,8 @@ class FakeBillingProvider:
         action_id: str,
         allocation: Allocation,
         send_by: datetime,
+        breakdown: TaxBreakdown | None = None,
+        before_request: BeforeRequest | None = None,
     ) -> ProviderAction:
         """Issue a credit note, at most once per idempotency key.
 
@@ -222,6 +234,8 @@ class FakeBillingProvider:
         action_id: str,
         allocation: Allocation,
         send_by: datetime,
+        breakdown: TaxBreakdown | None = None,
+        before_request: BeforeRequest | None = None,
     ) -> ProviderAction:
         """Refund money collected on the invoice, at most once per key.
 

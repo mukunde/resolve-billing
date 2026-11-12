@@ -37,6 +37,7 @@ def _filter(field: str, value: Any) -> str:
 class PennylaneBillingProvider:
     name = "pennylane"
     can_write = False
+    writes: frozenset[str] = frozenset()
     #: Nothing is written, so no key is ever held.
     idempotency_window = timedelta(0)
 

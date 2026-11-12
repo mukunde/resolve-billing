@@ -18,10 +18,11 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
-from app.domain.models import Customer, Invoice, Payment, Subscription, Usage
+from app.domain.models import Customer, Invoice, Payment, Subscription, TaxBreakdown, Usage
 from app.providers.base import (
     ALLOCATIONS,
     Allocation,
+    BeforeRequest,
     NotFound,
     NotSent,
     PlatformCannotWrite,
@@ -42,6 +43,7 @@ TIME_BUDGET = 30.0
 class StripeBillingProvider:
     name = "stripe"
     can_write = False
+    writes: frozenset[str] = frozenset()
     #: A margin under the day Stripe keeps idempotency keys, by its
     #: documentation (specs/002-stripe-writes, FR-005).
     idempotency_window = timedelta(hours=23)
@@ -57,6 +59,7 @@ class StripeBillingProvider:
         self.reader = reader
         self._writer = writer
         self.can_write = writer is not None
+        self.writes = frozenset({"credit_note", "refund"}) if self.can_write else frozenset()
         self._budget = budget
         self._now = now or (lambda: datetime.now(UTC))
 
@@ -214,6 +217,8 @@ class StripeBillingProvider:
         action_id: str,
         allocation: Allocation,
         send_by: datetime,
+        breakdown: TaxBreakdown | None = None,
+        before_request: BeforeRequest | None = None,
     ) -> ProviderAction:
         return await self._write(
             "credit_note",
@@ -236,6 +241,8 @@ class StripeBillingProvider:
         action_id: str,
         allocation: Allocation,
         send_by: datetime,
+        breakdown: TaxBreakdown | None = None,
+        before_request: BeforeRequest | None = None,
     ) -> ProviderAction:
         """A credit note whose whole amount is refunded to the invoice's
         payment: never a standalone refund (FR-011)."""
