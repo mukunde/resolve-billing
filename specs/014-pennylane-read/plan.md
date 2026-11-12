@@ -203,15 +203,14 @@ categories, the seed token):
   write whose answer was lost (timeout, 5xx after sending, unreadable answer), a read
   decides whether it landed; if that read cannot tell, the seed stops and reports, and no
   uncertain write is ever sent again automatically. Durable state makes this hold across
-  restarts: before each create, the seed notes its intent (world, operation, the
-  identifying value it will set) in a manifest kept in the sandbox's own records -- the
-  world customer's metadata, as Stripe's seed keeps its manifest -- and clears it once a
-  read shows the object; a run that finds an intent noted and no object stops and reports
-  instead of creating, so a fresh attempt is told from an uncertain one:
+  restarts: before each create, the seed notes its intent (world, operation) in a local
+  file outside any checkout (`~/.resolve-billing/pennylane-seed-intents.json`) and clears
+  it once a read shows the object; a run that finds an intent noted and no object stops
+  and reports instead of creating, so a fresh attempt is told from an uncertain one. (At
+  implementation: Pennylane's customers carry no metadata to keep it in, as Stripe's do;
+  the file is the maintainer's machine's, so the seed runs from one machine.)
   - customer create: found by its `external_reference` (one → reuse; none and no intent
-    noted → create; none with an intent noted → stop; several → stop) -- the customer's
-    intent is noted in a local run file, the only state before the customer exists, and
-    the same rule applies;
+    noted → create; none with an intent noted → stop; several → stop);
   - invoice create (finalised at once): Pennylane documents no filter on an invoice's
     `external_reference`, so the world customer's invoices are listed
     (`filter customer_id`) and matched on that field; one → reuse, none and no intent →

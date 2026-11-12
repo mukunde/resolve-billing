@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from app.providers.pennylane.adapter import PennylaneBillingProvider
-from app.providers.pennylane.client import Pacer, PennylaneReader
+from app.providers.pennylane.client import PennylaneReader
 
 SANDBOX = 282871
 
@@ -104,6 +104,13 @@ class Account:
         return httpx.Response(200, json=found) if found else httpx.Response(404)
 
 
+class NoPacer:
+    """No pacing in tests: the pacer has its own tests."""
+
+    async def wait(self):
+        return None
+
+
 async def _no_sleep(_seconds):
     return None
 
@@ -111,7 +118,7 @@ async def _no_sleep(_seconds):
 def provider(account: Account, budget: float = 5.0) -> PennylaneBillingProvider:
     reader = PennylaneReader(
         "test-token", SANDBOX, transport=httpx.MockTransport(account.handle),
-        pacer=Pacer(sleep=_no_sleep), sleep=_no_sleep,
+        pacer=NoPacer(), sleep=_no_sleep,
     )
     return PennylaneBillingProvider(reader, budget=budget)
 
