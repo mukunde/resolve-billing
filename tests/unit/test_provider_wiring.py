@@ -196,3 +196,36 @@ def imports_the_adapter(source: str) -> bool:
         ):
             return True
     return False
+
+
+class TestPennylane:
+    """specs/014-pennylane-read, FR-001: read-only, the declared sandbox only."""
+
+    @pytest.fixture
+    def pennylane(self, chosen, monkeypatch):
+        for name in ("PENNYLANE_API_TOKEN", "PENNYLANE_SANDBOX_COMPANY_ID"):
+            monkeypatch.delenv(name, raising=False)
+
+        def choose(**environment):
+            return chosen(BILLING_PROVIDER="pennylane", **environment)
+
+        return choose
+
+    def test_chosen_by_name_and_reading_only(self, pennylane):
+        from app.providers.pennylane.adapter import PennylaneBillingProvider
+
+        provider = pennylane(PENNYLANE_API_TOKEN="t", PENNYLANE_SANDBOX_COMPANY_ID="282871")()
+        assert isinstance(provider, PennylaneBillingProvider)
+        assert provider.can_write is False
+
+    @pytest.mark.parametrize(("environment", "category"), [
+        ({"PENNYLANE_SANDBOX_COMPANY_ID": "282871"}, "missing_token"),
+        ({"PENNYLANE_API_TOKEN": "t"}, "sandbox"),
+        ({"PENNYLANE_API_TOKEN": "t", "PENNYLANE_SANDBOX_COMPANY_ID": "x"}, "sandbox"),
+    ])
+    def test_refused_without_its_token_or_its_sandbox(self, pennylane, environment, category):
+        from app.providers.pennylane.keys import ProviderConfigurationError as PennylaneError
+
+        with pytest.raises(PennylaneError) as raised:
+            pennylane(**environment)()
+        assert raised.value.category == category

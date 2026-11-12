@@ -81,9 +81,10 @@ is no invoice. Tests: equal integers across the four kinds through references, m
 
 `app/providers/pennylane/mapping.py`, pure functions over payload dicts:
 
-- **Dates** (decision 46): `paris_midnight(date)` = the date at 00:00 Europe/Paris
-  (`zoneinfo`), in UTC; line period `[start 00:00, end + 1 day 00:00)`; one helper, one
-  test per daylight-saving edge.
+- **Dates** (decision 46, as changed on 2026-11-12): `midnight(date)` = the date at
+  00:00 UTC; line period `[start 00:00, end + 1 day 00:00)`; one helper. (Paris's midnight,
+  first planned, broke the domain's UTC calendar across a change of summer time: see the
+  spec's clarification.)
 - **Customers**: `emails` trimmed; zero → `missing_field` when mapped; two or more →
   `multiple_addresses`; one → `Customer(email=...)`; no currency → none.
 - **Invoices**: kind first -- `credited_invoice` set → a credit note, never mapped as an
@@ -108,11 +109,11 @@ is no invoice. Tests: equal integers across the four kinds through references, m
   (`"convention 2026-11-11"`), `charged_back` and unlisted → `payment_status`;
   `received_at` none.
 - **Subscriptions**: `in_progress` → active; `stopped` → cancelled, ended at
-  `paris_midnight(next_occurrence)` (missing → `missing_field`); `finished` → cancelled,
-  ended at `paris_midnight(finish + one calendar day)` -- the day added to the date, never
+  `midnight(next_occurrence)` (missing → `missing_field`); `finished` → cancelled,
+  ended at `midnight(finish + one calendar day)` -- the day added to the date, never
   24 hours to the instant, so a daylight-saving change cannot move it; tests on both
   transitions; others `subscription_status`. Current period
-  `[prev_occurrence, next_occurrence)` at Paris midnights, required, and exactly one cycle
+  `[prev_occurrence, next_occurrence)` at UTC midnights, required, and exactly one cycle
   of `recurring_rule` (`monthly`/`yearly`/`weekly` × `interval`), else `missing_field`;
   cadence from the rule; anchor `start`; `plan_code` the label or the typed id.
 - **New reasons** in `app/providers/base.py`: `invoice_status`, `payment_status`,

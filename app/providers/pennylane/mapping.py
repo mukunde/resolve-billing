@@ -14,7 +14,6 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.domain.enums import InvoiceStatus, PaymentStatus, SubscriptionStatus
 from app.domain.models import Customer, Invoice, InvoiceLine, LineTax, Payment, Subscription
@@ -60,9 +59,7 @@ def _ref(value: Any, kind: str) -> str | None:
     return typed(kind, value.get("id"))
 
 
-# -- dates (decision 46, conventions of 2026-11-11) ------------------------------
-
-PARIS = ZoneInfo("Europe/Paris")
+# -- dates (decision 46: midnight UTC, the maintainer's choice of 2026-11-12) --------
 
 
 def _day(value: Any) -> date:
@@ -74,17 +71,18 @@ def _day(value: Any) -> date:
         raise ProviderUnsupported("missing_field") from None
 
 
-def paris_midnight(day: date) -> datetime:
-    """A calendar date as the instant it starts in Europe/Paris, in UTC
-    (convention, 2026-11-11: an invoice at the window's edge may fall one day
-    in or out)."""
-    return datetime(day.year, day.month, day.day, tzinfo=PARIS).astimezone(UTC)
+def midnight(day: date) -> datetime:
+    """A calendar date as the instant it starts in UTC -- the convention, chosen
+    on 2026-11-12 over Paris's midnight, which put a period's bounds an hour
+    apart across a change of summer time and left the domain's UTC calendar
+    unable to measure a cycle. An invoice at the window's edge may fall one day
+    in or out."""
+    return datetime(day.year, day.month, day.day, tzinfo=UTC)
 
 
 def day_after(day: date) -> datetime:
-    """The midnight after `day`, the day added to the date -- never 24 hours to
-    the instant, so a change of summer time cannot move it."""
-    return paris_midnight(day + timedelta(days=1))
+    """The midnight after `day`."""
+    return midnight(day + timedelta(days=1))
 
 
 # -- money --------------------------------------------------------------------------
@@ -223,7 +221,7 @@ def line(payload: Payload, currency: str) -> InvoiceLine:
             raise ProviderUnsupported("missing_field")
         if dates.get("start_date") is not None and dates.get("end_date") is not None:
             # `end_date` included (convention, 2026-11-11).
-            start = paris_midnight(_day(dates["start_date"]))
+            start = midnight(_day(dates["start_date"]))
             end = day_after(_day(dates["end_date"]))
     label = payload.get("label")
     return InvoiceLine(
@@ -266,7 +264,7 @@ def invoice(payload: Payload, lines: Sequence[Payload]) -> Invoice:
         subscription_id=_ref(payload.get("billing_subscription"), "subscription"),
         total=total,
         status=status,
-        issued_at=paris_midnight(issue_day(payload)),
+        issued_at=midnight(issue_day(payload)),
         lines=mapped,
         number=number if isinstance(number, str) and number else None,
     )
@@ -339,7 +337,7 @@ def subscription(payload: Payload) -> Subscription:
     elif status == "stopped":
         # `stopped_at` prevents the next renewal: the service runs until the
         # day before `next_occurrence`, included (convention, 2026-11-11).
-        mapped, cancelled_at = SubscriptionStatus.CANCELLED, paris_midnight(
+        mapped, cancelled_at = SubscriptionStatus.CANCELLED, midnight(
             _day(payload.get("next_occurrence")))
     elif status == "finished":
         # The service ends at `finish`, that day included (convention, 2026-11-11).
@@ -365,12 +363,12 @@ def subscription(payload: Payload) -> Subscription:
         customer_id=_ref(payload.get("customer"), "customer") or _missing(),
         status=mapped,
         plan_code=label if isinstance(label, str) and label else identifier,
-        current_period_start=paris_midnight(previous),
-        current_period_end=paris_midnight(following),
+        current_period_start=midnight(previous),
+        current_period_end=midnight(following),
         cancelled_at=cancelled_at,
         billing_interval=unit,
         billing_interval_count=count,
-        billing_anchor=paris_midnight(_day(payload.get("start"))),
+        billing_anchor=midnight(_day(payload.get("start"))),
     )
 
 

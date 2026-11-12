@@ -3,7 +3,7 @@ Payload shapes are written from the v2 reference; no real data."""
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -63,15 +63,14 @@ class TestIdentifiers:
 
 
 class TestDates:
-    def test_midnight_in_paris_in_winter_and_summer(self):
-        assert mapping.paris_midnight(date(2026, 1, 15)) == datetime(2026, 1, 14, 23, tzinfo=UTC)
-        assert mapping.paris_midnight(date(2026, 7, 15)) == datetime(2026, 7, 14, 22, tzinfo=UTC)
+    def test_midnight_utc_in_winter_and_summer(self):
+        """The convention chosen on 2026-11-12: the same hour all year."""
+        assert mapping.midnight(date(2026, 1, 15)) == datetime(2026, 1, 15, tzinfo=UTC)
+        assert mapping.midnight(date(2026, 7, 15)) == datetime(2026, 7, 15, tzinfo=UTC)
 
-    @pytest.mark.parametrize("day", [date(2026, 3, 28), date(2026, 10, 24)])
-    def test_the_day_after_across_a_change_of_time(self, day):
-        """28 March and 24 October 2026 are the eves of the changes."""
-        after = mapping.day_after(day)
-        assert after == mapping.paris_midnight(date(day.year, day.month, day.day + 1))
+    @pytest.mark.parametrize("day", [date(2026, 3, 28), date(2026, 10, 24), date(2026, 12, 31)])
+    def test_the_day_after(self, day):
+        assert mapping.day_after(day) - mapping.midnight(day) == timedelta(days=1)
 
 
 class TestCustomers:
@@ -96,12 +95,12 @@ class TestInvoices:
             "pl_inv_42", "pl_cus_7", "pl_sub_9", "F20260042")
         assert read.total == eur(12000)
         assert read.tax_by_rate == {Decimal(20): eur(2000)}
-        assert read.issued_at == datetime(2026, 8, 31, 22, tzinfo=UTC)
+        assert read.issued_at == datetime(2026, 9, 1, tzinfo=UTC)
 
     def test_the_end_date_is_included(self):
         only = invoice().lines[0]
-        assert only.period_start == datetime(2026, 8, 31, 22, tzinfo=UTC)
-        assert only.period_end == datetime(2026, 9, 30, 22, tzinfo=UTC)  # 1 October, Paris
+        assert only.period_start == datetime(2026, 9, 1, tzinfo=UTC)
+        assert only.period_end == datetime(2026, 10, 1, tzinfo=UTC)
 
     @pytest.mark.parametrize(("status", "expected"), [
         ("paid", InvoiceStatus.PAID), ("upcoming", InvoiceStatus.OPEN),
@@ -224,19 +223,19 @@ class TestSubscriptions:
         assert (read.status, read.cancelled_at, read.billing_interval,
                 read.billing_interval_count, read.plan_code) == (
             SubscriptionStatus.ACTIVE, None, "month", 1, "Pro mensuel")
-        assert read.current_period_start == datetime(2026, 8, 31, 22, tzinfo=UTC)
-        assert read.current_period_end == datetime(2026, 9, 30, 22, tzinfo=UTC)
-        assert read.billing_anchor == datetime(2025, 12, 31, 23, tzinfo=UTC)
+        assert read.current_period_start == datetime(2026, 9, 1, tzinfo=UTC)
+        assert read.current_period_end == datetime(2026, 10, 1, tzinfo=UTC)
+        assert read.billing_anchor == datetime(2026, 1, 1, tzinfo=UTC)
 
     def test_stopped_ends_the_day_before_the_next_renewal(self):
         read = subscription(status="stopped", stopped_at="2026-09-15T10:00:00Z")
         assert read.status is SubscriptionStatus.CANCELLED
-        assert read.cancelled_at == datetime(2026, 9, 30, 22, tzinfo=UTC)  # 1 October, Paris
+        assert read.cancelled_at == datetime(2026, 10, 1, tzinfo=UTC)
 
     def test_finished_ends_at_finish_included(self):
         read = subscription(status="finished", finish="2026-10-24",
                             prev_occurrence="2026-10-01", next_occurrence="2026-11-01")
-        assert read.cancelled_at == mapping.paris_midnight(date(2026, 10, 25))
+        assert read.cancelled_at == datetime(2026, 10, 25, tzinfo=UTC)
 
     @pytest.mark.parametrize("status", ["draft", "pending", "not_started", "unknown"])
     def test_other_statuses(self, status):

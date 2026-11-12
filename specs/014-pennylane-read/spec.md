@@ -37,11 +37,14 @@ approval of the final diff.
   (a line without a period, a payment without a date), mapped as unknown; where it
   requires a value, refused until established. A value the seed writes and reads back
   establishes no meaning.
-- Q: A date without a time? → A: Convention: the date's midnight in Europe/Paris,
-  converted to UTC. Effect: an invoice at the 180-day window's edge may fall one day in or
-  out.
+- Q: A date without a time? → A: Convention: the date's midnight in UTC. Effect: an
+  invoice at the 180-day window's edge may fall one day in or out. (Approved on
+  2026-11-11 as Paris's midnight; changed by the maintainer on 2026-11-12, at
+  implementation: Paris's midnight put a period's bounds an hour apart across a change of
+  summer time, the domain's calendar, in UTC, then found no cycle exact, and the
+  not-evaluable check blocked every correction.)
 - Q: A line's period? → A: Convention: `imputation_dates.end_date` is inclusive; the
-  domain's period runs from `start_date` at midnight (Paris) to the midnight after
+  domain's period runs from `start_date` at midnight (UTC) to the midnight after
   `end_date`, excluded. A line without `imputation_dates` has no period;
   `performance_period` (German VAT) is not read.
 - Q: When does a subscription's service end? → A: Convention: `finished` → at `finish`,
@@ -69,7 +72,7 @@ approval of the final diff.
   alone, created by the maintainer at the contract run; seeded documents stay in the
   sandbox.
 - Q1: A subscription's current period, cadence and anchor? → A: The current period runs
-  from `prev_occurrence` to `next_occurrence` (midnights, Paris); the cadence is
+  from `prev_occurrence` to `next_occurrence` (midnights, UTC); the cadence is
   `recurring_rule` (`monthly` → month, `yearly` → year, `weekly` → week, `interval` as the
   count); the anchor is `start` (the maintainer, 2026-11-12). Guard, at his question
   whether that span could be two months: the span must be exactly one cycle of the rule;
