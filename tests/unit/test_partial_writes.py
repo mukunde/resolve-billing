@@ -832,6 +832,24 @@ class TestAResolution:
         assert resolved.attention == "partial_write"
         assert resolved.state is ActionState.UNKNOWN_OUTCOME
 
+    async def test_a_read_begun_too_soon_does_not_count_however_late_it_returns(
+        self, store, clock
+    ):
+        service, action = await left_halfway(store, clock)
+
+        class SlowRead(LeftHalfway):
+            async def find_action(self, idempotency_key, invoice_id):
+                clock.advance(minutes=5)
+                return await super().find_action(idempotency_key, invoice_id)
+
+        slow = ApprovalService(SlowRead(), store, now=clock)
+        clock.advance(minutes=9)
+        read = await slow.refresh_status(action.action_id)
+
+        assert read.status_read_at == T0 + timedelta(minutes=9)
+        with pytest.raises(ResolutionRefused):
+            service.resolve(action.action_id, "m.dupont", "deleted the draft")
+
     async def test_it_is_recorded_once(self, store, clock):
         service, action = await left_halfway(store, clock)
         clock.advance(minutes=11)

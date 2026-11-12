@@ -607,10 +607,14 @@ class ApprovalService:
                 ActionState.EXECUTED,
                 why="(only a write made, or an action left to a person, has a status to read)",
             )
+        # Dated when the read starts, not when it returns: a read begun too
+        # soon after the attempt's last request never counts as a late one,
+        # however long the platform took to answer (FR-009a).
+        started = self._now()
         found = await self._provider.find_action(action.idempotency_key, action.invoice_id)
         # Every read is recorded, nothing found included: a resolution needs
-        # one made long enough after the attempt's last request (FR-009a).
-        action = self._actions.record_status_read(action_id, self._now(), _summary(found))
+        # one made long enough after the attempt's last request.
+        action = self._actions.record_status_read(action_id, started, _summary(found))
         if action.state is ActionState.EXECUTED:
             return self._observed(action, found)
         return self._settled_by_a_person(action, found)
