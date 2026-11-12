@@ -180,6 +180,20 @@ class TestTheScope:
         assert set(seed.BUILDERS) == names
         assert set(seed.CHECKS) == names
 
+    def test_every_price_names_a_product_the_seed_makes(self):
+        """Stripe refuses a price whose product does not exist; the stub does
+        not, so the catalogue is checked here (spec 013's `rb_team`)."""
+        assert {spec["product"] for spec in seed.PRICES.values()} <= set(seed.PRODUCTS)
+
+    def test_a_world_that_steps_back_a_day_has_a_month_of_history(self):
+        """A builder advancing to `dates.start - DAY` needs its clock to start
+        before it, or the step is lost (spec 013's taxed cancellation world)."""
+        import inspect
+
+        for name, builder in seed.BUILDERS.items():
+            if "dates.start - DAY" in inspect.getsource(builder):
+                assert name in seed.HISTORY_WORLDS, name
+
     def test_every_unsupported_reason_has_a_world_or_says_why_not(self):
         built = {w.unsupported for w in worlds.UNSUPPORTED}
         assert built.isdisjoint(worlds.NOT_SEEDED)
