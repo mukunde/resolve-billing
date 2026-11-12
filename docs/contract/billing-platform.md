@@ -249,8 +249,9 @@ cost (refused `tax_mismatch`). The read contract passed (78 passed, 28 skipped, 
 fake-only or write tests): the two taxed worlds gave the findings, classification,
 proposal, verdict and approval of their fake counterparts, and each refused shape its
 reason. On a fresh write generation the write contract passed (25 passed, 1 skipped,
-fake-only), the taxed properties included: a credit note on a paid and on an open taxed
-invoice, written line by line for the total including tax and found again; a taxed
+fake-only), the taxed properties included: a credit note on a paid taxed invoice,
+written line by line for the total including tax and found again by `find_action`; one
+on an open taxed invoice lowering what is due by that total; a taxed
 refunding credit note refunding that total; a refund beyond what a credited taxed
 invoice could give back refused, nothing written. Two defects of the seed were found and
 fixed on the way: a price named a product the seed did not make, and the taxed
