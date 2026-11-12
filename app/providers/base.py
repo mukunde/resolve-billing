@@ -49,6 +49,13 @@ UNSUPPORTED_REASONS = frozenset(
         # that include tax.
         "tax_mismatch",
         "tax_inclusive",
+        # specs/014-pennylane-read: an invoice status, a payment status or a VAT
+        # code whose meaning is not established, and a customer with several
+        # addresses (the domain holds one).
+        "invoice_status",
+        "payment_status",
+        "tax_code",
+        "multiple_addresses",
     }
 )
 

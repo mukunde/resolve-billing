@@ -65,6 +65,12 @@ UNSUPPORTED = tuple(
 
 #: Reasons no world produces, and why: the mapping tests cover them alone.
 NOT_SEEDED = {
+    # Reasons only the Pennylane mapper raises (specs/014-pennylane-read): Stripe's
+    # statuses, tax and customers never produce them.
+    "invoice_status": "a Pennylane reason: Stripe's invoice statuses all map.",
+    "payment_status": "a Pennylane reason: Stripe's payment states all map.",
+    "tax_code": "a Pennylane reason: Stripe states a tax rate's percentage, not a code.",
+    "multiple_addresses": "a Pennylane reason: a Stripe customer has one address.",
     "cancellation_without_end": "a subscription the seed cancels is expected to carry `ended_at`.",
     "unplaced_payment": "an invoice payment without a payment intent is not built here.",
     "missing_field": "the seed fills every field the mapping needs; absences are mapping tests.",
