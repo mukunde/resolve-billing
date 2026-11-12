@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-11
 
-**Status**: Draft -- clarifications answered by the maintainer on 2026-11-12; for his approval
+**Status**: Approved by the maintainer on 2026-11-12, at `851eb33`, `d7e926d` once rebased on main (clarifications answered the same day)
 
 **Input**: Roadmap item 3, order A (coordination decision 45): after tax in the domain
 (spec 013, merged), Pennylane as a second real billing platform, reading first. The
