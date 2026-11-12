@@ -38,6 +38,7 @@ from app.providers.base import (
 from app.providers.pennylane import mapping
 from app.providers.pennylane.client import (
     DEFAULT_BUDGET,
+    REQUEST_TIMEOUT,
     PennylaneReader,
     PennylaneWriter,
     Refused,
@@ -69,6 +70,8 @@ class PennylaneBillingProvider:
     #: Pennylane keeps no idempotency key: the first send happens, a creation is
     #: never resent, an absence is never proof (spec 015, FR-007).
     idempotency_window = None
+    #: Counted by the execution service's step deadline (FR-011).
+    request_timeout = REQUEST_TIMEOUT
 
     def __init__(
         self,

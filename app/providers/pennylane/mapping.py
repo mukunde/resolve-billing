@@ -727,5 +727,6 @@ def provider_action(
         action_id=None,  # the key is the only identifier Pennylane holds (FR-013)
         observed_at=observed_at,
         breakdown=observed_breakdown(doc, lines),
+        breakdown_reported=True,
         partial=partial,
     )

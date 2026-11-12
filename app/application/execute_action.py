@@ -459,10 +459,13 @@ class ApprovalService:
         """
         deadline = claimed_at + STEP_DEADLINE
         token = action.claim_token
+        # Each request's own timeout is counted: one that could not end before
+        # the deadline is not started (FR-011).
+        timeout = getattr(self._provider, "request_timeout", timedelta(0))
 
         async def before_request() -> None:
             now = self._now()
-            if now >= deadline:
+            if now + timeout >= deadline:
                 stopped.append("deadline")
                 raise NotSent("step_deadline")
             if token is None or not self._actions.record_request(action.action_id, token, now):
@@ -899,7 +902,7 @@ def _unlike(action: PendingAction, allocation: str | None, made: ProviderAction)
     # Platforms that report none, and refunds, are compared as above.
     if (
         action.action_type == "credit_note"
-        and made.breakdown is not None
+        and (made.breakdown_reported or made.breakdown is not None)
         and _normalised(made.breakdown) != _normalised(action.tax_breakdown)
     ):
         return "unlike_the_action"

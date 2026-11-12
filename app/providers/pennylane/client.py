@@ -19,6 +19,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -80,6 +81,10 @@ class Pacer:
                 await self._sleep(WINDOW_SECONDS - (now - self._sent[0]))
 
 
+#: The longest one request may take (httpx's timeout).
+REQUEST_TIMEOUT = timedelta(seconds=10)
+
+
 class PennylaneReader:
     """GETs on the Company API v2, for the declared sandbox only."""
 
@@ -96,7 +101,7 @@ class PennylaneReader:
             base_url=BASE_URL,
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             transport=transport,
-            timeout=10.0,
+            timeout=REQUEST_TIMEOUT.total_seconds(),
         )
         self._company_id = company_id
         self._pacer = pacer or Pacer.for_token(token)

@@ -493,6 +493,20 @@ class TestTheBreakdown:
 
         assert _unlike(action, "customer_balance", self._made(action, ZERO_TAX)) is None
 
+    def test_an_observed_untaxed_credit_against_a_taxed_approval_is_unlike(self, store):
+        """Codex r389: a platform that reports its breakdown and observed no tax
+        (None, normalised) is compared, never taken as "reports none"."""
+        action = approved(store, invoice_id="inv_600", amount=12000, tax_breakdown=TAXED)
+        made = self._made(action, None).model_copy(update={"breakdown_reported": True})
+
+        assert _unlike(action, "customer_balance", made) == "unlike_the_action"
+
+    def test_an_observed_untaxed_credit_against_an_untaxed_approval_is_alike(self, store):
+        action = approved(store)
+        made = self._made(action, None).model_copy(update={"breakdown_reported": True})
+
+        assert _unlike(action, "customer_balance", made) is None
+
     def test_no_breakdown_reported_is_compared_as_before(self, store):
         action = approved(store, invoice_id="inv_600", amount=12000, tax_breakdown=TAXED)
 
@@ -765,6 +779,21 @@ class TestTheStepHook:
         assert held.state is ActionState.FAILED
         assert held.attention is None
         assert "step deadline" in held.failure_reason
+
+    async def test_a_request_whose_timeout_would_pass_the_deadline_is_not_started(
+        self, store, clock
+    ):
+        """Codex r389: the hook counts the platform's request timeout (FR-011)."""
+        provider = Hooked(between=lambda: clock.advance(
+            seconds=STEP_DEADLINE.total_seconds() - 5))
+        provider.request_timeout = timedelta(seconds=10)
+        action = approved(store)
+
+        with pytest.raises(NotSent):
+            await ApprovalService(provider, store, now=clock).execute(action.action_id)
+
+        assert provider.requests == 1
+        assert provider.executed_actions == []
 
     async def test_a_document_made_before_the_hook_refuses_is_a_partial_write(self, store, clock):
         class DraftThenHook(NoWindow):

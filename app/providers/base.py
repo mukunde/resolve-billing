@@ -190,6 +190,9 @@ class ProviderAction(BaseModel):
     #: Set when the document found is not complete -- "draft", "unlinked",
     #: "unfinalised": never a success (spec 015, FR-008).
     partial: str | None = None
+    #: Whether the platform reports the breakdown: then `breakdown` None means
+    #: "observed untaxed", compared like any other (spec 015, FR-010, Codex r389).
+    breakdown_reported: bool = False
 
 
 @runtime_checkable
@@ -216,6 +219,9 @@ class BillingProvider(Protocol):
     #: key -- the first send happens, a creation is never resent, an absence is
     #: never proof (spec 015, FR-007).
     idempotency_window: timedelta | None
+    # Optionally, `request_timeout: timedelta`: the longest one request of a
+    # write may take; the step deadline refuses a request that would not end
+    # before it (spec 015, FR-011). Absent, none is counted.
     # Optionally, `invoice_references(text, invoices=()) -> set[str]`: the invoice
     # ids cited (`invoices`, the investigation's, lets a platform that prints
     # numbers resolve them, specs/014-pennylane-read). The ids cited
