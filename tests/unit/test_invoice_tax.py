@@ -152,3 +152,12 @@ def test_a_breakdown_survives_its_record():
         {"rate": "5.5", "amount_minor": 275},
         {"rate": "20", "amount_minor": 2000},
     ]
+
+
+def test_an_invoice_number_is_serialised_only_when_set():
+    """specs/014-pennylane-read, FR-009: the fake's and Stripe's invoices,
+    which carry none, dump as before."""
+    plain = invoice(line(100), total=100)
+    assert "number" not in plain.model_dump()
+    numbered = plain.model_copy(update={"number": "F20260042"})
+    assert numbered.model_dump()["number"] == "F20260042"

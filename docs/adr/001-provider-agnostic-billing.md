@@ -136,3 +136,17 @@ retired. An untaxed invoice is mapped, serialised, fingerprinted and sent to
 the engine exactly as before, so nothing measured before the change moves. A
 platform's tax vocabulary -- Stripe's `total_taxes`, its tax rate objects --
 stays in its mapper.
+
+## Amendment, 2026-11-12 -- a third platform, Pennylane
+
+With spec 014 Pennylane reads behind the port, read-only. Three things changed for every
+platform, none of them for the fake's or Stripe's results: a platform may give an invoice
+its printed `number` (absent, not serialised); the reference hooks receive the
+investigation's invoices, so a platform whose customers cite numbers can resolve them
+among the invoices loaded -- never by a further read -- and a platform may resolve the
+disputed invoice's reference (`resolve_invoice_reference`) and say which references are
+its ids (`is_invoice_id`), both optional; and Pennylane's integer ids are typed by kind in
+its mapper, so that a customer and an invoice sharing a number never share an identifier.
+What Pennylane's documentation leaves open is mapped by the maintainer's dated
+conventions, or refused with one of four new reasons (`invoice_status`, `payment_status`,
+`tax_code`, `multiple_addresses`).

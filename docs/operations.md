@@ -193,6 +193,31 @@ tests can be run, without waiting for the clocked worlds:
 alone (`permission`, say): Stripe's message, naming a missing permission, is
 in the Dashboard's logs (Developers -> Logs).
 
+### On the Pennylane sandbox (specs/014-pennylane-read)
+
+Read-only, and only the sandbox declared: `.env` holds `PENNYLANE_API_TOKEN` (a company
+token, read-only on Customers, Customer invoices and Billing subscriptions, with an
+expiry) and `PENNYLANE_SANDBOX_COMPANY_ID`; `BILLING_PROVIDER=pennylane` selects it.
+
+The worlds: `.env.seed` holds `PENNYLANE_SEED_TOKEN` (read and write on the same three
+scopes, nothing else) and `PENNYLANE_SANDBOX_COMPANY_ID`; never `.env`, which the service
+loads. The seed checks the company before any write, and prints one line per world --
+`built`, or `REPORTED` with why -- then what it observed (the payment a "mark as paid"
+leaves, what a subscription generates and its dates once stopped):
+
+```bash
+python -m dotenv -f .env.seed run -- python -m scripts.pennylane_seed
+```
+
+Its intents live in `~/.resolve-billing/pennylane-seed-intents.json`: run it from one
+machine. A world reported "outcome unknown" is settled by running it again; one reported
+"an earlier create's outcome is unknown" needs a look in Pennylane before its intent is
+removed from that file. Then the contract, read-only:
+
+```bash
+python -m dotenv run -- python -m pytest tests/contract/test_pennylane_contract.py -rs -q
+```
+
 ### What CI actually enforces
 
 The interesting assertion is not that the tests pass.

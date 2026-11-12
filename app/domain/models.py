@@ -11,7 +11,7 @@ from datetime import timedelta
 from decimal import Decimal
 from typing import NamedTuple
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, model_serializer
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_serializer
 
 from app.domain.enums import (
     InvoiceStatus,
@@ -121,6 +121,17 @@ class Invoice(BaseModel):
     status: InvoiceStatus
     issued_at: AwareDatetime
     lines: list[InvoiceLine] = []
+    number: str | None = None
+    """The number the platform printed on the invoice, when the platform's
+    identifier is not it (Pennylane, specs/014-pennylane-read). Absent, it is
+    not serialised, so an invoice without one dumps exactly as before."""
+
+    @model_serializer(mode="wrap")
+    def _without_absent_number(self, handler):
+        data = handler(self)
+        if self.number is None:
+            data.pop("number", None)
+        return data
 
     # -- tax (specs/013-invoice-tax) -------------------------------------
     # Derived from the lines, never stored: the mapper has reconciled what the
@@ -292,6 +303,11 @@ class BillingContext(BaseModel):
     payments: list[Payment] = []
     usage: Usage | None = None
     target_invoice_id: str | None = None
+    target_reference: str | None = Field(default=None, exclude=True)
+    """The disputed invoice's reference, resolved once among the loaded
+    invoices (specs/014-pennylane-read, Q3): every rule that names the disputed
+    invoice reads this. None when the dispute names none. Never serialised: a
+    context dumps as before."""
     target_outside_window: bool = False
     """The disputed invoice is the customer's, but older than the window
     loaded here: it exists, and nothing about it was checked (taxonomy S7)."""

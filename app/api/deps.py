@@ -73,7 +73,7 @@ ENGINES: dict[str, type] = {
 
 
 #: Billing platforms that exist today. The fake stays the default.
-PROVIDERS = ("fake", "stripe")
+PROVIDERS = ("fake", "stripe", "pennylane")
 
 
 @lru_cache(maxsize=1)
@@ -90,6 +90,16 @@ def get_provider() -> BillingProvider:
         reader = connect(key)
         writer = connect_writer(key) if os.getenv("STRIPE_WRITES") == "enabled" else None
         return StripeBillingProvider(reader, writer=writer)
+    if name == "pennylane":
+        # Read-only, and only the sandbox the maintainer declared: every read
+        # checks the token's company first (specs/014-pennylane-read, Q2).
+        from app.providers.pennylane.adapter import PennylaneBillingProvider
+        from app.providers.pennylane.client import PennylaneReader
+        from app.providers.pennylane.keys import sandbox_company_id, token
+
+        return PennylaneBillingProvider(
+            PennylaneReader(token("PENNYLANE_API_TOKEN"), sandbox_company_id())
+        )
     raise RuntimeError(f"unknown billing provider {name!r}; available: {list(PROVIDERS)}")
 
 

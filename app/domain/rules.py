@@ -327,6 +327,13 @@ def _one_cycle(sub: Subscription) -> bool | None:
     )
 
 
+def exactly_one_cycle(sub: Subscription) -> bool:
+    """Whether the subscription's current period is exactly one step of its
+    schedule, by the calendar the checks use -- for a platform's mapper that
+    must refuse a period the checks could not measure (specs/014)."""
+    return _one_cycle(sub) is True
+
+
 def _cadence_known(sub: Subscription) -> bool:
     count = sub.billing_interval_count
     return (
