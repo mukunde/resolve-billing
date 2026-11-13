@@ -1,0 +1,165 @@
+"""The write contract on Pennylane's declared sandbox (specs/015-pennylane-credit-notes,
+SC-002).
+
+Runs locally only, on the latest write generation the seed built
+(`python -m scripts.pennylane_seed --write-run`), with writes enabled for the run
+(`PENNYLANE_WRITES=enabled`, `PENNYLANE_WRITE_TOKEN`) and the read-only token; skipped
+otherwise, with the reason. Each action goes through the real approval and execution
+service, as `test_stripe_execution.py` does: created in a temporary store, approved with
+the fingerprint it presents, executed twice. A run consumes its generation: a credited
+invoice is refused afterwards, so the next run needs a fresh one.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import UTC, datetime
+
+import pytest
+
+from app.application.execute_action import ApprovalService
+from app.domain.enums import ActionState
+from app.domain.models import TaxBreakdown
+from app.domain.money import Money
+from app.infrastructure.actions import IllegalTransition, SqliteActionStore, idempotency_key
+from app.providers.base import ProviderRejected, ProviderUnsupported
+from scripts import pennylane_worlds as worlds
+
+pytestmark = pytest.mark.contract
+
+EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+@pytest.fixture
+async def pennylane():
+    needed = ("PENNYLANE_API_TOKEN", "PENNYLANE_SANDBOX_COMPANY_ID", "PENNYLANE_WRITE_TOKEN")
+    if os.getenv("PENNYLANE_WRITES") != "enabled" or not all(os.getenv(v) for v in needed):
+        pytest.skip("Pennylane writes are not enabled for this run: the write contract runs "
+                    "locally, on the sandbox, with PENNYLANE_WRITES=enabled and its token")
+    from app.providers.pennylane.adapter import PennylaneBillingProvider
+    from app.providers.pennylane.client import PennylaneReader
+    from app.providers.pennylane.keys import sandbox_company_id, token, writer
+
+    reader = PennylaneReader(token("PENNYLANE_API_TOKEN"), sandbox_company_id())
+    return PennylaneBillingProvider(reader, writer=writer())
+
+
+@pytest.fixture
+async def generation(pennylane):
+    from scripts.pennylane_seed import latest_write_generation
+
+    found = await latest_write_generation(pennylane.reader)
+    if found == 0:
+        pytest.fail("no write generation: run the seed with --write-run")
+    return found
+
+
+@pytest.fixture
+def store(tmp_path):
+    return SqliteActionStore(tmp_path / "actions.db")
+
+
+async def fresh(pennylane, generation, name):
+    """The world's customer and its one invoice, still uncredited -- else the
+    generation is spent and the seed must build another."""
+    world = worlds.write_world(generation, name)
+    customer = await pennylane.find_customer_by_email(world.email)
+    assert customer is not None, f"{world.name} is not built: run the seed with --write-run"
+    try:
+        (invoice,) = await pennylane.list_invoices(customer.id, since=EPOCH)
+    except ProviderUnsupported as refusal:
+        pytest.fail(f"{world.name} is spent ({refusal.reason}): run the seed with --write-run")
+    return customer, invoice
+
+
+def queue(store, customer, invoice, amount=None, action_type="credit_note"):
+    return store.create(
+        run_id="contract", action_type=action_type, invoice_id=invoice.id,
+        amount=amount or invoice.total, reason="contract", provider="pennylane",
+        tax_breakdown=TaxBreakdown.of(invoice), customer_id=customer.id)
+
+
+async def approved_and_executed_twice(pennylane, store, action):
+    service = ApprovalService(pennylane, store)
+    await service.approve(action.action_id, "contract",
+                          await service.proposal_fingerprint(action))
+    first = await service.execute(action.action_id)
+    second = await service.execute(action.action_id)
+    return first, second
+
+
+async def one_complete(pennylane, action, invoice):
+    (found,) = await pennylane.find_action(action.idempotency_key, invoice.id)
+    assert found.partial is None and found.status == "succeeded"
+    assert found.amount_minor == action.amount.amount_minor
+    return found
+
+
+@pytest.mark.parametrize(("name", "allocation"), [("open", "reduce_due"),
+                                                  ("paid", "customer_balance")])
+async def test_a_taxed_invoice_is_credited_once_through_the_service(
+        pennylane, generation, store, name, allocation):
+    customer, invoice = await fresh(pennylane, generation, name)
+    action = queue(store, customer, invoice)
+
+    first, second = await approved_and_executed_twice(pennylane, store, action)
+
+    assert first.state is ActionState.EXECUTED and first.allocation == allocation
+    assert second.provider_action_id == first.provider_action_id
+    found = await one_complete(pennylane, action, invoice)
+    assert found.breakdown == TaxBreakdown.of(invoice)
+
+
+async def test_mixed_rates_an_exempt_line_and_rounding_edges_credit_exactly(
+        pennylane, generation, store):
+    customer, invoice = await fresh(pennylane, generation, "mixed")
+    action = queue(store, customer, invoice)
+
+    first, _ = await approved_and_executed_twice(pennylane, store, action)
+
+    assert first.state is ActionState.EXECUTED
+    found = await one_complete(pennylane, action, invoice)
+    assert found.breakdown == TaxBreakdown.of(invoice)
+
+
+async def test_an_untaxed_invoice_is_credited_in_part(pennylane, generation, store):
+    customer, invoice = await fresh(pennylane, generation, "untaxed")
+    half = Money(amount_minor=invoice.total.amount_minor // 2, currency=invoice.total.currency)
+    action = queue(store, customer, invoice, amount=half)
+
+    first, _ = await approved_and_executed_twice(pennylane, store, action)
+
+    assert first.state is ActionState.EXECUTED and first.allocation == "reduce_due"
+    found = await one_complete(pennylane, action, invoice)
+    assert found.breakdown is None
+
+
+async def test_a_credit_beyond_the_total_is_refused_at_linking_nothing_numbered_left(
+        pennylane, generation):
+    """Straight to the adapter: the service's own guard would refuse it first."""
+    _, invoice = await fresh(pennylane, generation, "cap")
+    beyond = invoice.total.amount_minor + invoice.total.amount_minor // 2
+    key = idempotency_key("pennylane", invoice.id, "credit_note",
+                          Money(amount_minor=beyond, currency=invoice.total.currency))
+
+    with pytest.raises(ProviderRejected) as refused:
+        await pennylane.create_credit_note(
+            invoice.id, beyond, invoice.total.currency, "contract", key,
+            action_id="contract-cap", allocation="reduce_due", send_by=None, breakdown=None)
+
+    assert "cap" in str(refused.value)
+    assert await pennylane.find_action(key, invoice.id) == []
+
+
+async def test_a_refund_is_refused_before_anything_is_claimed(pennylane, generation, store):
+    customer, invoice = await fresh(pennylane, generation, "cap")
+    action = queue(store, customer, invoice, action_type="refund")
+    service = ApprovalService(pennylane, store)
+    await service.approve(action.action_id, "contract",
+                          await service.proposal_fingerprint(action))
+
+    with pytest.raises(IllegalTransition):
+        await service.execute(action.action_id)
+
+    held = store.get(action.action_id)
+    assert held.state is ActionState.APPROVED and held.first_attempt_at is None

@@ -76,3 +76,22 @@ TAXED_INVOICE = {
     "rate": "20",
     "total_minor": 12000,
 }
+
+#: The write contract's worlds (specs/015-pennylane-credit-notes, SC-002). A run of
+#: the contract consumes them -- a credited invoice is refused afterwards -- so the
+#: seed builds them afresh, one generation at a time (`--write-run`). Each line:
+#: (unit price excluding tax, Pennylane's VAT code, quantity); then whether paid.
+WRITE_WORLDS: dict[str, tuple[tuple[tuple[str, str, int], ...], bool]] = {
+    "open": ((("100.00", "FR_200", 1),), False),
+    "paid": ((("100.00", "FR_200", 1),), True),
+    # Mixed rates, an exempt line and rounding edges (5.5 % of 33.33; 0.05 at 20 %).
+    "mixed": ((("33.33", "FR_55", 1), ("19.99", "FR_200", 3), ("10.00", "exempt", 1),
+               ("0.05", "FR_200", 1)), False),
+    "untaxed": ((("100.00", "exempt", 1),), False),
+    # For a credit beyond the total, refused at linking.
+    "cap": ((("100.00", "exempt", 1),), False),
+}
+
+
+def write_world(generation: int, name: str) -> World:
+    return World(f"w{generation}_{name}", "write")

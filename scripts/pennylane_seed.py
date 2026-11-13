@@ -2,6 +2,11 @@
 FR-011, SC-002 as amended).
 
     python -m dotenv -f .env.seed run -- python -m scripts.pennylane_seed
+    python -m dotenv -f .env.seed run -- python -m scripts.pennylane_seed --write-run
+
+The second builds a fresh generation of the write contract's worlds
+(specs/015-pennylane-credit-notes, SC-002), each invoice a draft checked against
+decision 47's conditions before it is finalised.
 
 With its own token, `PENNYLANE_SEED_TOKEN` (read and write on Customers,
 Customer invoices and Billing subscriptions), kept in `.env.seed` with
@@ -28,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from app.providers.base import NotFound, ProviderUnavailable
+from app.providers.pennylane import mapping
 from app.providers.pennylane.client import Pacer, PennylaneWriter, Refused, Uncertain
 from app.providers.pennylane.keys import ProviderConfigurationError, sandbox_company_id, token
 from scripts import pennylane_worlds as worlds
@@ -340,6 +346,97 @@ class Seeder:
                    "through the documented API")
 
 
+class WriteSeeder(Seeder):
+    """The write contract's worlds, one generation (specs/015-pennylane-credit-notes,
+    SC-002): each invoice made as a draft dated the day, checked against decision
+    47's conditions, then finalised -- never otherwise."""
+
+    async def write_world(self, world: worlds.World,
+                          lines: tuple[tuple[str, str, int], ...], paid: bool) -> str:
+        customer = await self.customer(world)
+        reference = f"{world.reference}:invoice"
+
+        async def find():
+            items = await self.w.every(
+                "/customer_invoices", {"filter": _filter("customer_id", customer["id"])})
+            return [i for i in items if i.get("external_reference") == reference]
+
+        async def create():
+            day = self.today.isoformat()
+            return await self.w.write("POST", "/customer_invoices", {
+                "customer_id": customer["id"], "date": day,
+                "deadline": (self.today + timedelta(days=30)).isoformat(),
+                "currency": "EUR", "draft": True, "external_reference": reference,
+                "invoice_lines": [
+                    {"label": "Abonnement Pro", "quantity": quantity, "unit": "piece",
+                     "raw_currency_unit_price": price, "vat_rate": vat}
+                    for price, vat, quantity in lines]})
+
+        made = await self.once(f"{world.name}/invoice", find, create)
+        path = f"/customer_invoices/{made['id']}"
+
+        async def final():
+            return not (await self.w.get(path)).get("draft")
+
+        if not await final():
+            fresh = await self.w.get(f"/customers/{customer['id']}")
+            eligible = (await self.w.get(
+                f"/customers/{customer['id']}/electronic_billing_addresses")).get("items")
+            if eligible is None or not mapping.outward_ready(
+                    fresh, mapping.emails(fresh), await self.w.get(path), eligible):
+                raise Stop("not finalised: the customer or the draft could carry it out")
+        await self.mutate(f"{world.name}/finalise", final,
+                          lambda: self.w.write("PUT", f"{path}/finalize"))
+        if paid:
+            async def is_paid():
+                return bool((await self.w.get(path)).get("paid"))
+
+            await self.mutate(f"{world.name}/mark_as_paid", is_paid,
+                              lambda: self.w.write("PUT", f"{path}/mark_as_paid"))
+        return f"built, invoice {made['id']}"
+
+
+async def latest_write_generation(reader) -> int:
+    """The highest generation whose every write world has its customer; 0 when none."""
+    references = {c.get("external_reference") for c in await reader.every("/customers")}
+    found = 0
+    for generation in range(1, 1000):
+        if not all(worlds.write_world(generation, name).reference in references
+                   for name in worlds.WRITE_WORLDS):
+            break
+        found = generation
+    return found
+
+
+async def run_writes(writer: PennylaneWriter, intents: Intents, today: date) -> list[str]:
+    """A fresh write generation: the one after the latest complete one, or the
+    latest if it is incomplete (a rerun finishes it)."""
+    try:
+        await writer.check_company()
+    except ProviderConfigurationError as refusal:
+        return [f"stopped before any write: {refusal.category}"]
+    references = {c.get("external_reference") for c in await writer.every("/customers")}
+    generation = await latest_write_generation(writer) + 1
+    previous = [worlds.write_world(generation, n).reference in references
+                for n in worlds.WRITE_WORLDS]
+    seeder = WriteSeeder(writer, intents, today)
+    lines = [f"write generation {generation}" + (" (resumed)" if any(previous) else "")]
+    for name, (invoice_lines, paid) in worlds.WRITE_WORLDS.items():
+        world = worlds.write_world(generation, name)
+        try:
+            lines.append(f"{world.name}: {await seeder.write_world(world, invoice_lines, paid)}")
+        except Refused as refusal:
+            lines.append(f"{world.name}: REPORTED -- Pennylane refused ({refusal.status})"
+                         + (f": {refusal.detail}" if refusal.detail else ""))
+        except Uncertain:
+            lines.append(f"{world.name}: REPORTED -- a write's outcome is unknown; run again")
+        except Stop as stop:
+            lines.append(f"{world.name}: REPORTED -- {stop}")
+        except (ProviderUnavailable, NotFound) as error:
+            lines.append(f"{world.name}: REPORTED -- {type(error).__name__}")
+    return lines
+
+
 async def run(writer: PennylaneWriter, intents: Intents, today: date) -> list[str]:
     seeder = Seeder(writer, intents, today)
     try:
@@ -372,7 +469,8 @@ def main() -> int:
     except ProviderConfigurationError as error:
         print(f"pennylane_seed: {error.category}")
         return 2
-    for line in asyncio.run(run(writer, Intents(INTENTS), date.today())):
+    seed = run_writes if "--write-run" in sys.argv else run
+    for line in asyncio.run(seed(writer, Intents(INTENTS), date.today())):
         print(line)
     return 0
 
