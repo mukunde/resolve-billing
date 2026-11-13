@@ -208,9 +208,10 @@ async def test_a_credit_beyond_what_is_left_is_refused_at_linking_nothing_number
     """The adapter never builds a credit beyond the invoice's total; Pennylane's
     own cap is reached when a correction made outside lands first. Here one of
     60 % is drafted outside ResolveBilling (with the write token, not under our
-    reference), and linked and finalised -- after decision 47's check -- just
-    before the adapter links its own 60 %: Pennylane refuses that link for its
-    cap, the adapter deletes its draft, and nothing of ours is numbered."""
+    reference); when the adapter is about to send its own link, the outside one
+    is linked and finalised -- after decision 47's check -- and only then is the
+    adapter's link of its 60 % sent: Pennylane refuses it for its cap, the
+    adapter deletes its draft, and nothing of ours is numbered."""
     from app.providers.pennylane import mapping
     from app.providers.pennylane.keys import writer
 
@@ -227,45 +228,57 @@ async def test_a_credit_beyond_what_is_left_is_refused_at_linking_nothing_number
         "invoice_lines": [{"label": "Avoir", "quantity": -1, "unit": "piece",
                            "raw_currency_unit_price": f"{part / 100:.2f}",
                            "vat_rate": "exempt"}]})
-    landed = []
+    landed: list[dict] = []
+    ours = pennylane._writer
+    send = ours.write
 
-    async def outside_lands_before_our_link():
-        # The adapter's 11th request is its link (pinned by its unit tests).
-        landed.append(None)
-        if len(landed) != 11:
-            return
-        path = f"/customer_invoices/{theirs['id']}"
-        await outside.write("POST", f"/customer_invoices/{raw_invoice}/link_credit_note",
-                            {"credit_note_id": theirs["id"]})
-        fresh_customer = await outside.get(f"/customers/{raw_customer}")
-        eligible = (await outside.get(
-            f"/customers/{raw_customer}/electronic_billing_addresses")).get("items")
-        assert isinstance(eligible, list) and mapping.outward_ready(
-            fresh_customer, mapping.emails(fresh_customer), await outside.get(path), eligible)
-        await outside.write("PUT", f"{path}/finalize")
+    async def outside_lands_first(method, path, body=None, **kwargs):
+        if path == f"/customer_invoices/{raw_invoice}/link_credit_note" and not landed:
+            theirs_path = f"/customer_invoices/{theirs['id']}"
+            await outside.write("POST", f"/customer_invoices/{raw_invoice}/link_credit_note",
+                                {"credit_note_id": theirs["id"]})
+            fresh_customer = await outside.get(f"/customers/{raw_customer}")
+            eligible = (await outside.get(
+                f"/customers/{raw_customer}/electronic_billing_addresses")).get("items")
+            assert isinstance(eligible, list) and mapping.outward_ready(
+                fresh_customer, mapping.emails(fresh_customer),
+                await outside.get(theirs_path), eligible)
+            await outside.write("PUT", f"{theirs_path}/finalize")
+            landed.append(await outside.get(theirs_path))
+        return await send(method, path, body, **kwargs)
 
+    ours.write = outside_lands_first
     amount = Money(amount_minor=part, currency=invoice.total.currency)
     key = idempotency_key("pennylane", invoice.id, "credit_note", amount)
     with pytest.raises(ProviderRejected) as refused:
         await pennylane.create_credit_note(
             invoice.id, part, invoice.total.currency, "contract", key,
-            action_id="contract-cap", allocation="reduce_due", send_by=None, breakdown=None,
-            before_request=outside_lands_before_our_link)
+            action_id="contract-cap", allocation="reduce_due", send_by=None, breakdown=None)
 
-    assert len(landed) >= 11, "the outside credit never landed: the race was not run"
+    (finalised,) = landed  # the outside credit landed before our link was sent
+    assert finalised.get("draft") is False
+    assert mapping.credited_raw(finalised) == raw_invoice
     assert "cap" in str(refused.value)
     assert await pennylane.find_action(key, invoice.id) == []
 
 
-async def test_a_refund_is_refused_before_anything_is_claimed(pennylane, generation, store):
-    customer, invoice = await fresh(pennylane, generation, "cap")
-    action = queue(store, customer, invoice, action_type="refund")
-    service = ApprovalService(pennylane, store)
-    await service.approve(action.action_id, "contract",
-                          await service.proposal_fingerprint(action))
+async def test_a_refund_is_refused_before_anything_is_read_or_claimed(
+        pennylane, generation, store):
+    """A refund on Pennylane is refused first, by its type, whatever its state:
+    nothing of the platform is read, so a spent world serves as well."""
+    from app.providers.pennylane import mapping
+
+    world = worlds.write_world(generation, "cap")
+    customer = await pennylane.find_customer_by_email(world.email)
+    (raw,) = [d for d in await pennylane._documents(mapping.raw_id(customer.id, "customer"))
+              if d.get("external_reference") == f"{world.reference}:invoice"]
+    action = store.create(
+        run_id="contract", action_type="refund", invoice_id=mapping.typed("invoice", raw["id"]),
+        amount=Money(amount_minor=10000, currency="EUR"), reason="contract",
+        provider="pennylane", customer_id=customer.id)
 
     with pytest.raises(IllegalTransition):
-        await service.execute(action.action_id)
+        await ApprovalService(pennylane, store).execute(action.action_id)
 
     held = store.get(action.action_id)
-    assert held.state is ActionState.APPROVED and held.first_attempt_at is None
+    assert held.state is ActionState.PENDING_APPROVAL and held.first_attempt_at is None
