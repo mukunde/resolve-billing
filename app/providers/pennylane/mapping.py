@@ -654,11 +654,14 @@ def _test_address(address: str) -> bool:
 
 
 def outward_ready(customer_payload: Payload, addresses: Sequence[str],
-                  doc: Payload | None = None) -> bool:
+                  doc: Payload | None = None, eligible: Sequence[Any] = ()) -> bool:
     """Decision 47's conditions for a document to be made and finalised: a
     customer with no SIREN, no VAT number and no electronic billing address,
     at least one address and every one under the reserved test domain; and,
-    when a document is given, nothing on it that would carry it out (FR-004)."""
+    when a document is given, nothing on it that would carry it out; and no
+    eligible electronic billing address, as Pennylane lists them (FR-004)."""
+    if eligible:
+        return False
     if any(customer_payload.get(field) not in (None, "") for field in LEGAL_IDENTIFIERS):
         return False
     if _outward(customer_payload):

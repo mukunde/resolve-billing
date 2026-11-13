@@ -242,6 +242,17 @@ class PennylaneBillingProvider:
             before=before,
         )
 
+    async def _eligible(self, customer_raw: int, before: BeforeRequest | None) -> list[Any]:
+        """The electronic billing addresses Pennylane lists as selectable for
+        the customer -- any one means a document could be routed out (FR-004).
+        An answer without its list is unreadable: refused as unsupported."""
+        answer = await self.reader.get(
+            f"/customers/{customer_raw}/electronic_billing_addresses", before=before)
+        items = answer.get("items")
+        if not isinstance(items, list):
+            raise ProviderUnsupported("missing_field")
+        return items
+
     async def _subscriptions_of(
         self, payload: Payload, customer_raw: int | None
     ) -> dict[str, Subscription]:
@@ -416,6 +427,7 @@ class PennylaneBillingProvider:
             customer = await self.reader.get(f"/customers/{customer_raw}", before=hook)
             documents = await self._documents(customer_raw, hook)
             addresses = mapping.emails(customer)
+            eligible = await self._eligible(customer_raw, hook)
         except (ProviderUnavailable, ProviderConfigurationError, ProviderUnsupported, NotFound):
             # After the claim, a read that fails leaves the outcome as unknown
             # as any other failure, as on Stripe: a person looks.
@@ -427,7 +439,7 @@ class PennylaneBillingProvider:
             # A credit note of ours left half-way for this customer: nothing
             # more is written until a person resolves it (FR-004).
             raise ProviderRejected("partial_document")
-        if not mapping.outward_ready(customer, addresses):
+        if not mapping.outward_ready(customer, addresses, eligible=eligible):
             raise ProviderRejected("outward")
         if payload.get("currency") != currency:
             raise ProviderRejected("invoice_state")
@@ -522,11 +534,12 @@ class PennylaneBillingProvider:
 
         attempt.stage = "linked"
         customer = await self.reader.get(f"/customers/{customer_raw}", before=hook)
+        eligible = await self._eligible(customer_raw, hook)
         linked = await self.reader.get(path, before=hook)
         if (
             mapping.credited_raw(linked) != invoice_raw
             or not mapping.is_draft(linked)
-            or not mapping.outward_ready(customer, mapping.emails(customer), linked)
+            or not mapping.outward_ready(customer, mapping.emails(customer), linked, eligible)
         ):
             raise PartialWrite(attempt.document, "linked")
 

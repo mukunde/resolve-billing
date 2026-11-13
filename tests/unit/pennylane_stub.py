@@ -194,6 +194,11 @@ class WritingAccount(Account):
             if path in self.read_faults:
                 self.requests.append(path)
                 return httpx.Response(self.read_faults[path])
+            if path.endswith("/electronic_billing_addresses"):
+                self.requests.append(path)
+                items = [{"electronic_billing_address": a} for a in getattr(self, "eligible", [])]
+                return httpx.Response(200, json={"items": items, "has_more": False,
+                                                 "next_cursor": None})
             return self._read(request)
         self.requests.append(path)
         parts = path.strip("/").split("/")

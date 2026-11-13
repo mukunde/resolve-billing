@@ -98,11 +98,13 @@ async def test_an_open_invoice_is_credited_in_fr004_order():
         ("GET", "/customer_invoices/600/invoice_lines"),
         ("GET", "/customers/7"),
         ("GET", "/customer_invoices"),
+        ("GET", "/customers/7/electronic_billing_addresses"),
         ("POST", "/customer_invoices"),
         ("GET", f"/customer_invoices/{DRAFT}"),
         ("GET", f"/customer_invoices/{DRAFT}/invoice_lines"),
         ("POST", "/customer_invoices/600/link_credit_note"),
         ("GET", "/customers/7"),
+        ("GET", "/customers/7/electronic_billing_addresses"),
         ("GET", f"/customer_invoices/{DRAFT}"),
         ("PUT", f"/customer_invoices/{DRAFT}/finalize"),
         ("GET", f"/customer_invoices/{DRAFT}"),
@@ -417,11 +419,11 @@ async def test_a_read_that_fails_before_the_creation_sends_nothing():
 async def test_the_hook_refusing_before_the_creation_sends_nothing():
     account = credit_world("upcoming")
     with pytest.raises(NotSent):
-        await credit(writing_provider(account), hook=Hook(fail_at=7))  # at the creation
+        await credit(writing_provider(account), hook=Hook(fail_at=8))  # at the creation
     assert account.written() == []
 
 
-@pytest.mark.parametrize("fail_at", [8, 10, 13, 14])
+@pytest.mark.parametrize("fail_at", [9, 11, 15, 16])
 async def test_the_hook_refusing_after_the_creation_is_a_partial_write(fail_at):
     account = credit_world("upcoming")
     with pytest.raises(PartialWrite) as partial:
@@ -765,3 +767,27 @@ def test_wiring_builds_the_writer_only_when_enabled(monkeypatch):
         deps.get_provider()
     deps.get_provider.cache_clear()
     assert raised.value.category == "missing_token"
+
+
+@pytest.mark.parametrize("stage", ["before creating", "before finalising"])
+async def test_an_eligible_electronic_billing_address_stops_the_write(stage):
+    """FR-004: Pennylane listing a selectable e-invoicing address for the
+    customer means a document could be routed out: refused before creating,
+    a partial write before finalising -- never finalised."""
+    account = credit_world("upcoming")
+    if stage == "before creating":
+        account.eligible = ["123456789"]
+        with pytest.raises(ProviderRejected):
+            await credit(writing_provider(account))
+        assert account.written() == []
+        return
+
+    def appear(method, path):
+        if method == "POST" and path.endswith("/link_credit_note"):
+            account.eligible = ["123456789"]
+
+    account.on_request = appear
+    with pytest.raises(PartialWrite) as partial:
+        await credit(writing_provider(account))
+    assert partial.value.stage == "linked"
+    assert not any(path.endswith("/finalize") for _, path, _ in account.sent)
