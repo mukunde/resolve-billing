@@ -420,6 +420,53 @@ async def test_the_next_write_run_is_a_new_generation(tmp_path):
     assert len([c for c in api.customers if c["external_reference"].startswith("rb:w2_")]) == 5
 
 
+async def test_an_unfinished_generation_is_resumed_not_skipped(tmp_path):
+    """Codex r391: the last world's invoice failing leaves the generation
+    unfinished; the next run finishes it, and only then is it the latest."""
+    api = Api()
+    original = api._write
+
+    def cap_refused(method, path, body):
+        if path == "/customer_invoices" and body.get("external_reference") == "rb:w1_cap:invoice":
+            return httpx.Response(400)
+        return original(method, path, body)
+
+    api._write = cap_refused
+    await write_run(api, tmp_path)
+    assert await seed.latest_write_generation(writer(api)) == 0
+    api._write = original
+    lines = await write_run(api, tmp_path)
+    assert lines[0] == "write generation 1 (resumed)"
+    assert await seed.latest_write_generation(writer(api)) == 1
+
+
+async def test_generations_have_no_upper_bound(tmp_path):
+    api = Api()
+    for name in worlds.WRITE_WORLDS:
+        api.customers.append({"id": api._id(), "emails": [],
+                              "external_reference": f"rb:w1000_{name}"})
+        api.invoices.append({"id": api._id(), "external_reference": f"rb:w1000_{name}:invoice",
+                             "draft": False, "paid": True, "customer": {"id": 0}})
+    lines = await write_run(api, tmp_path)
+    assert lines[0] == "write generation 1001"
+
+
+@pytest.mark.parametrize("malformed", [{}, "", False, None])
+async def test_an_unreadable_eligibility_list_never_finalises(tmp_path, malformed):
+    api = Api()
+    original = api.handle
+
+    def unreadable(request):
+        if request.url.path.endswith("/electronic_billing_addresses"):
+            return httpx.Response(200, json={"items": malformed})
+        return original(request)
+
+    api.handle = unreadable
+    lines = await write_run(api, tmp_path)
+    assert all("REPORTED -- not finalised" in line for line in lines[1:])
+    assert not any(w.endswith("/finalize") for w in api.writes)
+
+
 async def test_a_write_world_that_could_be_routed_out_is_never_finalised(tmp_path):
     api = Api()
     api.eligible = ["123456789"]

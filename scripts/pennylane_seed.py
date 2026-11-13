@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -382,7 +383,7 @@ class WriteSeeder(Seeder):
             fresh = await self.w.get(f"/customers/{customer['id']}")
             eligible = (await self.w.get(
                 f"/customers/{customer['id']}/electronic_billing_addresses")).get("items")
-            if eligible is None or not mapping.outward_ready(
+            if not isinstance(eligible, list) or not mapping.outward_ready(
                     fresh, mapping.emails(fresh), await self.w.get(path), eligible):
                 raise Stop("not finalised: the customer or the draft could carry it out")
         await self.mutate(f"{world.name}/finalise", final,
@@ -396,16 +397,35 @@ class WriteSeeder(Seeder):
         return f"built, invoice {made['id']}"
 
 
+_GENERATION = re.compile(r"rb:w(\d+)_([a-z]+)")
+
+
+async def _generations(reader) -> tuple[set[int], set[int]]:
+    """Every generation with anything made, and those complete: every world's
+    invoice finalised, and paid where it must be."""
+    started: set[int] = set()
+    for customer in await reader.every("/customers"):
+        found = _GENERATION.fullmatch(str(customer.get("external_reference") or ""))
+        if found and found.group(2) in worlds.WRITE_WORLDS:
+            started.add(int(found.group(1)))
+    done: dict[int, set[str]] = {}
+    for invoice in await reader.every("/customer_invoices"):
+        found = re.fullmatch(r"rb:w(\d+)_([a-z]+):invoice",
+                             str(invoice.get("external_reference") or ""))
+        if not found or found.group(2) not in worlds.WRITE_WORLDS:
+            continue
+        generation, name = int(found.group(1)), found.group(2)
+        if invoice.get("draft") is False and (
+                not worlds.WRITE_WORLDS[name][1] or invoice.get("paid") is True):
+            done.setdefault(generation, set()).add(name)
+    complete = {g for g, names in done.items() if names == set(worlds.WRITE_WORLDS)}
+    return started, complete
+
+
 async def latest_write_generation(reader) -> int:
-    """The highest generation whose every write world has its customer; 0 when none."""
-    references = {c.get("external_reference") for c in await reader.every("/customers")}
-    found = 0
-    for generation in range(1, 1000):
-        if not all(worlds.write_world(generation, name).reference in references
-                   for name in worlds.WRITE_WORLDS):
-            break
-        found = generation
-    return found
+    """The highest complete generation; 0 when none."""
+    _, complete = await _generations(reader)
+    return max(complete, default=0)
 
 
 async def run_writes(writer: PennylaneWriter, intents: Intents, today: date) -> list[str]:
@@ -415,12 +435,12 @@ async def run_writes(writer: PennylaneWriter, intents: Intents, today: date) -> 
         await writer.check_company()
     except ProviderConfigurationError as refusal:
         return [f"stopped before any write: {refusal.category}"]
-    references = {c.get("external_reference") for c in await writer.every("/customers")}
-    generation = await latest_write_generation(writer) + 1
-    previous = [worlds.write_world(generation, n).reference in references
-                for n in worlds.WRITE_WORLDS]
+    started, complete = await _generations(writer)
+    unfinished = sorted(started - complete)
+    resumed = bool(unfinished)
+    generation = unfinished[-1] if resumed else max(started | complete, default=0) + 1
     seeder = WriteSeeder(writer, intents, today)
-    lines = [f"write generation {generation}" + (" (resumed)" if any(previous) else "")]
+    lines = [f"write generation {generation}" + (" (resumed)" if resumed else "")]
     for name, (invoice_lines, paid) in worlds.WRITE_WORLDS.items():
         world = worlds.write_world(generation, name)
         try:

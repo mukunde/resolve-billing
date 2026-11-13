@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
 from app.application.execute_action import ApprovalService
 from app.domain.enums import ActionState
 from app.domain.models import TaxBreakdown
-from app.domain.money import Money
+from app.domain.money import ROUNDING, Money
 from app.infrastructure.actions import IllegalTransition, SqliteActionStore, idempotency_key
 from app.providers.base import ProviderRejected, ProviderUnsupported
 from scripts import pennylane_worlds as worlds
@@ -72,6 +73,44 @@ async def fresh(pennylane, generation, name):
     return customer, invoice
 
 
+#: Pennylane's codes as rates, for the expected figures only.
+RATES = {"FR_200": Decimal("20"), "FR_55": Decimal("5.5"), "exempt": Decimal("0")}
+
+
+def expected(name: str) -> tuple[int, TaxBreakdown | None]:
+    """The world's total and breakdown computed from its definition, not from
+    what the mapper read: each line's tax rounded to the cent, as Pennylane did
+    on the sandbox; None when no tax is charged."""
+    lines, _ = worlds.WRITE_WORLDS[name]
+    excluding = Decimal(0)
+    taxes: dict[Decimal, Decimal] = {}
+    for price, vat, quantity in lines:
+        amount = Decimal(price) * quantity
+        excluding += amount
+        if RATES[vat]:
+            tax = (amount * RATES[vat] / 100).quantize(Decimal("0.01"), ROUNDING)
+            taxes[RATES[vat]] = taxes.get(RATES[vat], Decimal(0)) + tax
+    total = int((excluding + sum(taxes.values())) * 100)
+    if not taxes:
+        return total, None
+
+    def eur(value: Decimal) -> Money:
+        return Money(amount_minor=int(value * 100), currency="EUR")
+
+    return total, TaxBreakdown(
+        excluding_tax=eur(excluding),
+        taxes=tuple((rate, eur(taxes[rate])) for rate in sorted(taxes)),
+        total=Money(amount_minor=total, currency="EUR"),
+    )
+
+
+def as_defined(name: str, invoice) -> TaxBreakdown | None:
+    total, breakdown = expected(name)
+    assert invoice.total.amount_minor == total, f"{name}: not the world defined"
+    assert TaxBreakdown.of(invoice) == breakdown, f"{name}: not the world defined"
+    return breakdown
+
+
 def queue(store, customer, invoice, amount=None, action_type="credit_note"):
     return store.create(
         run_id="contract", action_type=action_type, invoice_id=invoice.id,
@@ -100,6 +139,8 @@ async def one_complete(pennylane, action, invoice):
 async def test_a_taxed_invoice_is_credited_once_through_the_service(
         pennylane, generation, store, name, allocation):
     customer, invoice = await fresh(pennylane, generation, name)
+    breakdown = as_defined(name, invoice)
+    assert breakdown is not None
     action = queue(store, customer, invoice)
 
     first, second = await approved_and_executed_twice(pennylane, store, action)
@@ -107,23 +148,27 @@ async def test_a_taxed_invoice_is_credited_once_through_the_service(
     assert first.state is ActionState.EXECUTED and first.allocation == allocation
     assert second.provider_action_id == first.provider_action_id
     found = await one_complete(pennylane, action, invoice)
-    assert found.breakdown == TaxBreakdown.of(invoice)
+    assert found.breakdown == breakdown
 
 
 async def test_mixed_rates_an_exempt_line_and_rounding_edges_credit_exactly(
         pennylane, generation, store):
     customer, invoice = await fresh(pennylane, generation, "mixed")
+    breakdown = as_defined("mixed", invoice)
+    assert breakdown is not None and len(breakdown.taxes) == 2  # 5.5 % and 20 %
+    assert len(invoice.lines) == len(worlds.WRITE_WORLDS["mixed"][0])  # the exempt one too
     action = queue(store, customer, invoice)
 
     first, _ = await approved_and_executed_twice(pennylane, store, action)
 
     assert first.state is ActionState.EXECUTED
     found = await one_complete(pennylane, action, invoice)
-    assert found.breakdown == TaxBreakdown.of(invoice)
+    assert found.breakdown == breakdown
 
 
 async def test_an_untaxed_invoice_is_credited_in_part(pennylane, generation, store):
     customer, invoice = await fresh(pennylane, generation, "untaxed")
+    assert as_defined("untaxed", invoice) is None
     half = Money(amount_minor=invoice.total.amount_minor // 2, currency=invoice.total.currency)
     action = queue(store, customer, invoice, amount=half)
 
