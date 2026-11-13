@@ -1,11 +1,15 @@
-"""Pennylane's Company API v2, read over HTTP (specs/014-pennylane-read, FR-007,
-FR-008).
+"""Pennylane's Company API v2 over HTTP: reads (specs/014-pennylane-read, FR-007,
+FR-008) and the one-shot writes of credit notes (specs/015-pennylane-credit-notes).
 
 What the adapter needs from the wire, and nothing of Pennylane's vocabulary:
 requests paced under the limit per token, process-wide; every list read to its
 end or not at all; retries within the port call's time budget; errors by
 category, never with a URL, a header, a body or an exception's text. The
-company check lives here too: every read starts with it.
+company check lives here too: every read starts with it. A write is sent
+once and never retried; an answer lost is `Uncertain`, a refusal `Refused`.
+Every request may be preceded by a hook (`before`) that raises when the
+attempt may no longer send (spec 015, FR-011): it runs after pacing, before
+each send, retries included.
 """
 
 from __future__ import annotations
@@ -15,11 +19,12 @@ import logging
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from typing import Any
 
 import httpx
 
-from app.providers.base import NotFound, ProviderUnavailable
+from app.providers.base import BeforeRequest, NotFound, ProviderUnavailable
 from app.providers.pennylane.keys import ProviderConfigurationError
 
 BASE_URL = "https://app.pennylane.com/api/external/v2"
@@ -76,6 +81,10 @@ class Pacer:
                 await self._sleep(WINDOW_SECONDS - (now - self._sent[0]))
 
 
+#: The longest one request may take (httpx's timeout).
+REQUEST_TIMEOUT = timedelta(seconds=10)
+
+
 class PennylaneReader:
     """GETs on the Company API v2, for the declared sandbox only."""
 
@@ -92,7 +101,7 @@ class PennylaneReader:
             base_url=BASE_URL,
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             transport=transport,
-            timeout=10.0,
+            timeout=REQUEST_TIMEOUT.total_seconds(),
         )
         self._company_id = company_id
         self._pacer = pacer or Pacer.for_token(token)
@@ -105,7 +114,12 @@ class PennylaneReader:
 
     # -- the company check (Q2) --------------------------------------------
 
-    async def check_company(self) -> None:
+    @property
+    def refused_company(self) -> bool:
+        """Whether the company check was made and refused."""
+        return isinstance(self._verdict, ProviderConfigurationError)
+
+    async def check_company(self, before: BeforeRequest | None = None) -> None:
         """Raise unless the token's company is the declared sandbox; the
         verdict, either way, is kept for every later call."""
         if self._verdict is True:
@@ -113,7 +127,7 @@ class PennylaneReader:
         if isinstance(self._verdict, ProviderConfigurationError):
             raise self._verdict
         try:
-            me = await self._get("/me")
+            me = await self._get("/me", before=before)
         except (NotFound, _Unreadable):
             me = None  # no identity to compare: not the declared sandbox
         company = (me or {}).get("company") if isinstance(me, dict) else None
@@ -125,18 +139,24 @@ class PennylaneReader:
 
     # -- reads ------------------------------------------------------------------
 
-    async def get(self, path: str) -> Payload:
+    async def get(self, path: str, *, before: BeforeRequest | None = None) -> Payload:
         """One object; `NotFound` on a 404."""
-        await self.check_company()
-        body = await self._get(path)
+        await self.check_company(before)
+        body = await self._get(path, before=before)
         if not isinstance(body, dict):
             raise ProviderUnavailable("pennylane: an answer that is not an object")
         return body
 
-    async def every(self, path: str, params: dict[str, Any] | None = None) -> list[Payload]:
+    async def every(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        before: BeforeRequest | None = None,
+    ) -> list[Payload]:
         """Every item of a list, to its end; a list that cannot be read to its
         end is `ProviderUnavailable`, never a shorter list."""
-        await self.check_company()
+        await self.check_company(before)
         items: list[Payload] = []
         cursor: str | None = None
         seen: set[str] = set()
@@ -145,7 +165,7 @@ class PennylaneReader:
             if cursor is not None:
                 page_params["cursor"] = cursor
             try:
-                page = await self._get(path, page_params)
+                page = await self._get(path, page_params, before=before)
             except NotFound:
                 raise ProviderUnavailable("pennylane: a list answered not found") from None
             batch = page.get("items") if isinstance(page, dict) else None
@@ -160,10 +180,18 @@ class PennylaneReader:
                 raise ProviderUnavailable("pennylane: unusable pagination")
             seen.add(cursor)
 
-    async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    async def _get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        *,
+        before: BeforeRequest | None = None,
+    ) -> Any:
         delay = 0.5
         for attempt in range(1, MAX_ATTEMPTS + 1):
             await self._pacer.wait()
+            if before is not None:
+                await before()
             try:
                 response = await self._client.get(path, params=params)
             except httpx.HTTPError:
@@ -193,3 +221,55 @@ class PennylaneReader:
                 continue
             raise ProviderConfigurationError("invalid_request")
         raise ProviderUnavailable("pennylane: no answer")
+
+
+class Uncertain(Exception):  # noqa: N818 -- a state: whether a write landed is unknown
+    """A write was sent and its answer lost or unreadable: nothing is sent
+    again until a read settles it."""
+
+
+class Refused(Exception):  # noqa: N818 -- Pennylane's answer: nothing was made
+    def __init__(self, status: int, detail: str = "") -> None:
+        super().__init__(f"refused ({status})")
+        self.status = status
+        #: Pennylane's own words on why, so a report can say which field.
+        self.detail = detail
+
+
+#: Paths a writer never requests: sending a document by email, or anything of
+#: electronic invoicing (spec 015, FR-012). Checked on every write.
+FORBIDDEN_PATH_PARTS = ("send_by_email", "email", "e_invoic", "einvoic", "e-invoic")
+
+
+class PennylaneWriter(PennylaneReader):
+    """The reader, plus one-shot writes: never retried after sending."""
+
+    async def write(
+        self,
+        method: str,
+        path: str,
+        body: Payload | None = None,
+        *,
+        before: BeforeRequest | None = None,
+    ) -> Payload | None:
+        lowered = path.lower()
+        if any(part in lowered for part in FORBIDDEN_PATH_PARTS):
+            raise ValueError("pennylane: an email or e-invoicing path is never requested")
+        await self.check_company(before)
+        await self._pacer.wait()
+        if before is not None:
+            await before()
+        try:
+            response = await self._client.request(method, path, json=body)
+        except httpx.HTTPError:
+            raise Uncertain(path) from None
+        if response.status_code in (200, 201):
+            try:
+                return response.json()
+            except ValueError:
+                raise Uncertain(path) from None
+        if response.status_code == 204:
+            return None
+        if response.status_code >= 500 or response.status_code == 429:
+            raise Uncertain(path)
+        raise Refused(response.status_code, response.text[:500])

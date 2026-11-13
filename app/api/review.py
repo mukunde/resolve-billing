@@ -39,11 +39,13 @@ from fastapi.responses import HTMLResponse
 from app.api.auth import Approver
 from app.api.deps import get_actions, get_approvals, get_audit
 from app.api.templating import render as _page
-from app.application.execute_action import ApprovalService
+from app.application.execute_action import RESOLUTION_NOTE_LIMIT, ApprovalService
 from app.domain.enums import ActionState
 from app.domain.models import TaxBreakdown
 from app.domain.money import Money
 from app.infrastructure.actions import (
+    RESOLVABLE,
+    SETTLING_DELAY,
     IllegalTransition,
     PendingAction,
     SqliteActionStore,
@@ -82,6 +84,11 @@ async def review_page(
 
     # Past its deadline the request is expired here, and shown as such.
     action = approvals.expire_if_overdue(action_id)
+    if _awaits_resolution(action):
+        # A document left half-way, or a write without trace: the page puts
+        # the in-flight warning and the last status read first, then asks
+        # what the person did (spec 015, FR-009a).
+        return HTMLResponse(_resolution(action, approver.identity))
     if action.state is not ActionState.PENDING_APPROVAL:
         return HTMLResponse(_already_decided(action), status_code=409)
 
@@ -129,6 +136,50 @@ async def review_page(
             # back: an approval binds to this proposal on this invoice. D13.
             proposal=proposal,
             deadline=_deadline(action),
+            # A type the platform does not write stays approvable -- the
+            # decision is recorded -- and execution refuses it: a person
+            # carries it out outside ResolveBilling (spec 015, FR-001).
+            notice=(
+                ""
+                if approvals.writes(action.action_type)
+                else "Cette action ne peut pas être exécutée sur cette plateforme : "
+                "une personne la réalise hors de ResolveBilling (par exemple un virement)."
+            ),
+            notice_display="none" if approvals.writes(action.action_type) else "block",
+        )
+    )
+
+
+@router.post("/{action_id}/review/resolution", response_class=HTMLResponse)
+async def submit_resolution(
+    action_id: str,
+    actions: Annotated[SqliteActionStore, Depends(get_actions)],
+    approvals: Annotated[ApprovalService, Depends(get_approvals)],
+    note: Annotated[str, Form()],
+    approver: Approver,
+) -> HTMLResponse:
+    """Record what a person did about a partial write, as the authenticated
+    approver (spec 015, FR-009a). Never executes anything."""
+    _found(lambda: actions.get(action_id))
+    try:
+        action = approvals.resolve(action_id, approver.identity, note)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    except IllegalTransition:
+        return HTMLResponse(_resolution_refused(actions.get(action_id)), status_code=409)
+    return HTMLResponse(
+        _page(
+            "review_done.html",
+            headline="Résolution enregistrée",
+            subhead="Les autres avoirs de ce client ne sont plus bloqués ; l'action reste close.",
+            banner_bg="#475569",
+            banner_fg="#ffffff",
+            action_id=action.action_id,
+            state=action.state.value,
+            amount_display=_money(action.amount) + _tax_suffix(action),
+            decided_by=action.resolved_by or "—",
+            provider_action_id=_document(action),
+            footnote="Rien d'automatique ne suivra : l'action ne sera plus jamais exécutée.",
         )
     )
 
@@ -218,6 +269,82 @@ def _already_decided(action: PendingAction) -> str:
             if action.state is ActionState.EXPIRED
             else "Un lien de validation ne vaut que pour une décision."
         ),
+    )
+
+
+def _awaits_resolution(action: PendingAction) -> bool:
+    return action.attention in RESOLVABLE and action.resolved_at is None
+
+
+def _moment(moment) -> str:
+    return "—" if moment is None else f"{moment:%d/%m/%Y %H:%M:%S} UTC"
+
+
+def _document(action: PendingAction) -> str:
+    document = action.partial_document
+    if not document:
+        return "aucun trouvé"
+    return f"{document.get('document_id')} (étape : {document.get('stage')})"
+
+
+def _settled_from(action: PendingAction) -> str:
+    """From when a status read may settle the resolution: ten minutes after
+    the attempt's last request, or after its outcome became unknown when no
+    request was recorded -- the later of the two."""
+    known = [m for m in (action.last_request_at, action.uncertain_since) if m is not None]
+    return _moment(max(known) + SETTLING_DELAY) if known else "—"
+
+
+def _resolution(action: PendingAction, approver: str) -> str:
+    status_read = (
+        "aucune"
+        if action.status_read_at is None
+        else f"{_moment(action.status_read_at)} : {action.status_read_found}"
+    )
+    return _page(
+        "resolution.html",
+        headline=(
+            "Écriture laissée à mi-chemin"
+            if action.attention == "partial_write"
+            else "Écriture sans trace"
+        ),
+        post_url=f"/api/v1/actions/{action.action_id}/review/resolution",
+        status_url=f"/api/v1/actions/{action.action_id}/status",
+        action_id=action.action_id,
+        state=action.state.value,
+        attention=action.attention,
+        amount_display=_money(action.amount) + _tax_suffix(action),
+        document=_document(action),
+        last_request=_moment(action.last_request_at),
+        status_read=status_read,
+        settled_from=_settled_from(action),
+        note_limit=RESOLUTION_NOTE_LIMIT,
+        approver=approver,
+    )
+
+
+def _resolution_refused(action: PendingAction) -> str:
+    if action.attention not in RESOLVABLE:
+        why = "Seule une écriture laissée à mi-chemin, ou sans trace, se résout ici."
+    elif action.resolved_at is not None:
+        why = f"Déjà résolue par {action.resolved_by}."
+    else:
+        why = (
+            "Une lecture du statut faite au moins dix minutes après la dernière requête "
+            f"est requise d'abord (à partir de {_settled_from(action)})."
+        )
+    return _page(
+        "review_done.html",
+        headline="Résolution non enregistrée",
+        subhead=why,
+        banner_bg="#475569",
+        banner_fg="#ffffff",
+        action_id=action.action_id,
+        state=action.state.value,
+        amount_display=_money(action.amount) + _tax_suffix(action),
+        decided_by=action.resolved_by or "—",
+        provider_action_id=_document(action),
+        footnote="Une requête a pu rester en vol chez la plateforme : elle ne s'annule pas.",
     )
 
 

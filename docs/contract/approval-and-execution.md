@@ -103,6 +103,28 @@ approvals bound to what was shown, writes on a real platform) and ADR-009
   The correction itself is the invoice's total including tax, capped there,
   credit notes and refunds together.
 
+- **A platform writes some types, not all** (specs/015-pennylane-credit-notes). An
+  action of a type the platform does not write -- a refund on Pennylane -- is refused
+  by `execute()` and `reconcile()` before anything is read or claimed (409, state kept);
+  the page and `GET /actions/{id}` say a person carries it out outside ResolveBilling.
+- **A platform without a window** (Pennylane): the first send happens; a creation is
+  never resent; nothing found after an unknown outcome leaves the action to a person
+  (`no_trace`), never `FAILED`.
+- **One credit note at a time per customer.** The claim refuses while another
+  credit-note action of the same customer is executing, unknown, or left half-way
+  unresolved -- one conditional statement across processes. Actions recorded before
+  the customer was stored never block.
+- **A write in several requests stops on its own.** Before each request the service
+  checks a step deadline (two minutes after the claim, the request's timeout counted)
+  and that it still holds the claim; otherwise nothing more is sent.
+- **A document left half-way is a person's** (`partial_write`): its id and stage are
+  recorded, with the warning that a request may still be in flight. A person records
+  its resolution (`POST /actions/{id}/resolution`, an authenticated approver, by POST)
+  once a status read made at least ten minutes after the attempt's last request is
+  recorded; that releases the customer and never executes the action.
+- **The approved breakdown is compared with what was written** when the platform
+  reports one (Pennylane), exactly, before `EXECUTED`.
+
 ## States
 
 ```text
@@ -181,6 +203,8 @@ An action says why in `attention`, from a closed set:
 | `unlike_the_action` | a write that is not the one approved | nothing |
 | `unreadable_answer` | an answer that does not say what it made | nothing |
 | `not_successful` | a write made, whose status is not success | the action is `EXECUTED`; to follow up |
+| `partial_write` | a document made and not completed (spec 015) | nothing; a person resolves it |
+| `no_trace` | no window, and nothing found after an unknown outcome: the creation may still land | nothing; a status read can settle it |
 
 - **An incident is final for everything automatic.** Every attention but
   `not_successful` stops the action for good: `execute()` refuses it (409)
@@ -214,6 +238,10 @@ An action says why in `attention`, from a closed set:
   a crash inside a database transaction, not an action left `executing` by a
   crash mid-flight (reconciled after five minutes), not the orchestrator's
   resumption, not exactly-once on a real platform.
+- That a `partial_write` is stable: on a platform without fencing (Pennylane) a
+  request already sent may still be processed after the system stopped; the
+  resolution route asks for a later status read, which lowers the risk, never
+  removes it (accepted by the maintainer on the sandbox, decision 47).
 - An expired correction is not reopened by investigating the dispute again:
   the queue returns the expired action found under its key. A person
   reassesses it.
@@ -235,5 +263,7 @@ was made there once, end to end (SC-002).
 `tests/e2e/test_restart_expired_approval.py`,
 `tests/e2e/test_restart_repeated_delivery.py`,
 `tests/e2e/test_restart_timeout_after_write.py`,
-`tests/unit/test_persistent_fake.py`; on a Stripe test account,
-`tests/contract/test_stripe_execution.py`.
+`tests/unit/test_persistent_fake.py`, `tests/unit/test_write_foundation.py`,
+`tests/unit/test_partial_writes.py`, `tests/integration/test_partial_write_api.py`; on a
+Stripe test account, `tests/contract/test_stripe_execution.py`; on Pennylane's sandbox,
+`tests/contract/test_pennylane_writes.py`.

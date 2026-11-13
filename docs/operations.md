@@ -218,6 +218,25 @@ removed from that file. Then the contract, read-only:
 python -m dotenv run -- python -m pytest tests/contract/test_pennylane_contract.py -rs -q
 ```
 
+Credit notes (specs/015-pennylane-credit-notes) are written only when
+`PENNYLANE_WRITES=enabled`, with `PENNYLANE_WRITE_TOKEN` (`customer_invoices:all` only),
+on the same sandbox; off as delivered. A write run of the contract consumes its worlds,
+so the seed first builds a fresh generation, then the contract runs with writes enabled
+for that run alone:
+
+```bash
+python -m dotenv -f .env.seed run -- python -m scripts.pennylane_seed --write-run
+```
+
+```bash
+PENNYLANE_WRITES=enabled python -m dotenv run -- python -m pytest tests/contract/test_pennylane_writes.py -rs -q
+```
+
+An action left `partial_write` or `no_trace` waits for a person: read its status again
+(`POST /actions/{id}/status`) at least ten minutes after its last request, look at the
+document in Pennylane, finish or offset it there, then record what was done
+(`POST /actions/{id}/resolution`). The customer's next credit note waits until then.
+
 ### What CI actually enforces
 
 The interesting assertion is not that the tests pass.

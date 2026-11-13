@@ -2,6 +2,11 @@
 FR-011, SC-002 as amended).
 
     python -m dotenv -f .env.seed run -- python -m scripts.pennylane_seed
+    python -m dotenv -f .env.seed run -- python -m scripts.pennylane_seed --write-run
+
+The second builds a fresh generation of the write contract's worlds
+(specs/015-pennylane-credit-notes, SC-002), each invoice a draft checked against
+decision 47's conditions before it is finalised.
 
 With its own token, `PENNYLANE_SEED_TOKEN` (read and write on Customers,
 Customer invoices and Billing subscriptions), kept in `.env.seed` with
@@ -20,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -27,57 +33,25 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-import httpx
-
 from app.providers.base import NotFound, ProviderUnavailable
-from app.providers.pennylane.client import Pacer, PennylaneReader
+from app.providers.pennylane import mapping
+from app.providers.pennylane.client import Pacer, PennylaneWriter, Refused, Uncertain
 from app.providers.pennylane.keys import ProviderConfigurationError, sandbox_company_id, token
 from scripts import pennylane_worlds as worlds
 
 Payload = dict[str, Any]
+
+#: The writer, `Uncertain` and `Refused` are the application's own
+#: (specs/015-pennylane-credit-notes); re-exported here for the seed's callers.
+__all__ = ["PennylaneWriter", "Refused", "Uncertain", "Intents", "Seeder", "run"]
 
 #: Where intents are noted between runs: outside any checkout, beside the
 #: other private state of the maintainer's runs.
 INTENTS = Path.home() / ".resolve-billing" / "pennylane-seed-intents.json"
 
 
-class Uncertain(Exception):  # noqa: N818 -- a state: whether a write landed is unknown
-    """A write was sent and its answer lost: nothing is sent again until a read
-    settles it."""
-
-
-class Refused(Exception):  # noqa: N818 -- Pennylane's answer: nothing was made
-    def __init__(self, status: int, detail: str = "") -> None:
-        super().__init__(f"refused ({status})")
-        self.status = status
-        #: Pennylane's own words on why, so a report can say which field.
-        self.detail = detail
-
-
 class Stop(Exception):  # noqa: N818 -- the seed cannot tell, and says so
     pass
-
-
-class PennylaneWriter(PennylaneReader):
-    """The reader, plus one-shot writes: never retried after sending."""
-
-    async def write(self, method: str, path: str, body: Payload | None = None) -> Payload | None:
-        await self.check_company()
-        await self._pacer.wait()
-        try:
-            response = await self._client.request(method, path, json=body)
-        except httpx.HTTPError:
-            raise Uncertain(path) from None
-        if response.status_code in (200, 201):
-            try:
-                return response.json()
-            except ValueError:
-                raise Uncertain(path) from None
-        if response.status_code == 204:
-            return None
-        if response.status_code >= 500 or response.status_code == 429:
-            raise Uncertain(path)
-        raise Refused(response.status_code, response.text[:500])
 
 
 @dataclass
@@ -373,6 +347,116 @@ class Seeder:
                    "through the documented API")
 
 
+class WriteSeeder(Seeder):
+    """The write contract's worlds, one generation (specs/015-pennylane-credit-notes,
+    SC-002): each invoice made as a draft dated the day, checked against decision
+    47's conditions, then finalised -- never otherwise."""
+
+    async def write_world(self, world: worlds.World,
+                          lines: tuple[tuple[str, str, int], ...], paid: bool) -> str:
+        customer = await self.customer(world)
+        reference = f"{world.reference}:invoice"
+
+        async def find():
+            items = await self.w.every(
+                "/customer_invoices", {"filter": _filter("customer_id", customer["id"])})
+            return [i for i in items if i.get("external_reference") == reference]
+
+        async def create():
+            day = self.today.isoformat()
+            return await self.w.write("POST", "/customer_invoices", {
+                "customer_id": customer["id"], "date": day,
+                "deadline": (self.today + timedelta(days=30)).isoformat(),
+                "currency": "EUR", "draft": True, "external_reference": reference,
+                "invoice_lines": [
+                    {"label": "Abonnement Pro", "quantity": quantity, "unit": "piece",
+                     "raw_currency_unit_price": price, "vat_rate": vat}
+                    for price, vat, quantity in lines]})
+
+        made = await self.once(f"{world.name}/invoice", find, create)
+        path = f"/customer_invoices/{made['id']}"
+
+        async def final():
+            return not (await self.w.get(path)).get("draft")
+
+        if not await final():
+            fresh = await self.w.get(f"/customers/{customer['id']}")
+            eligible = (await self.w.get(
+                f"/customers/{customer['id']}/electronic_billing_addresses")).get("items")
+            if not isinstance(eligible, list) or not mapping.outward_ready(
+                    fresh, mapping.emails(fresh), await self.w.get(path), eligible):
+                raise Stop("not finalised: the customer or the draft could carry it out")
+        await self.mutate(f"{world.name}/finalise", final,
+                          lambda: self.w.write("PUT", f"{path}/finalize"))
+        if paid:
+            async def is_paid():
+                return bool((await self.w.get(path)).get("paid"))
+
+            await self.mutate(f"{world.name}/mark_as_paid", is_paid,
+                              lambda: self.w.write("PUT", f"{path}/mark_as_paid"))
+        return f"built, invoice {made['id']}"
+
+
+_GENERATION = re.compile(r"rb:w(\d+)_([a-z]+)")
+
+
+async def _generations(reader) -> tuple[set[int], set[int]]:
+    """Every generation with anything made, and those complete: every world's
+    invoice finalised, and paid where it must be."""
+    started: set[int] = set()
+    for customer in await reader.every("/customers"):
+        found = _GENERATION.fullmatch(str(customer.get("external_reference") or ""))
+        if found and found.group(2) in worlds.WRITE_WORLDS:
+            started.add(int(found.group(1)))
+    done: dict[int, set[str]] = {}
+    for invoice in await reader.every("/customer_invoices"):
+        found = re.fullmatch(r"rb:w(\d+)_([a-z]+):invoice",
+                             str(invoice.get("external_reference") or ""))
+        if not found or found.group(2) not in worlds.WRITE_WORLDS:
+            continue
+        generation, name = int(found.group(1)), found.group(2)
+        if invoice.get("draft") is False and (
+                not worlds.WRITE_WORLDS[name][1] or invoice.get("paid") is True):
+            done.setdefault(generation, set()).add(name)
+    complete = {g for g, names in done.items() if names == set(worlds.WRITE_WORLDS)}
+    return started, complete
+
+
+async def latest_write_generation(reader) -> int:
+    """The highest complete generation; 0 when none."""
+    _, complete = await _generations(reader)
+    return max(complete, default=0)
+
+
+async def run_writes(writer: PennylaneWriter, intents: Intents, today: date) -> list[str]:
+    """A fresh write generation: the one after the latest complete one, or the
+    latest if it is incomplete (a rerun finishes it)."""
+    try:
+        await writer.check_company()
+    except ProviderConfigurationError as refusal:
+        return [f"stopped before any write: {refusal.category}"]
+    started, complete = await _generations(writer)
+    unfinished = sorted(started - complete)
+    resumed = bool(unfinished)
+    generation = unfinished[-1] if resumed else max(started | complete, default=0) + 1
+    seeder = WriteSeeder(writer, intents, today)
+    lines = [f"write generation {generation}" + (" (resumed)" if resumed else "")]
+    for name, (invoice_lines, paid) in worlds.WRITE_WORLDS.items():
+        world = worlds.write_world(generation, name)
+        try:
+            lines.append(f"{world.name}: {await seeder.write_world(world, invoice_lines, paid)}")
+        except Refused as refusal:
+            lines.append(f"{world.name}: REPORTED -- Pennylane refused ({refusal.status})"
+                         + (f": {refusal.detail}" if refusal.detail else ""))
+        except Uncertain:
+            lines.append(f"{world.name}: REPORTED -- a write's outcome is unknown; run again")
+        except Stop as stop:
+            lines.append(f"{world.name}: REPORTED -- {stop}")
+        except (ProviderUnavailable, NotFound) as error:
+            lines.append(f"{world.name}: REPORTED -- {type(error).__name__}")
+    return lines
+
+
 async def run(writer: PennylaneWriter, intents: Intents, today: date) -> list[str]:
     seeder = Seeder(writer, intents, today)
     try:
@@ -405,7 +489,8 @@ def main() -> int:
     except ProviderConfigurationError as error:
         print(f"pennylane_seed: {error.category}")
         return 2
-    for line in asyncio.run(run(writer, Intents(INTENTS), date.today())):
+    seed = run_writes if "--write-run" in sys.argv else run
+    for line in asyncio.run(seed(writer, Intents(INTENTS), date.today())):
         print(line)
     return 0
 

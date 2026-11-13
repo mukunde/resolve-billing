@@ -118,7 +118,7 @@ class PersistentFake(FakeBillingProvider):
 
     # -- the ledger -----------------------------------------------------------
 
-    def writes(self) -> list[ProviderAction]:
+    def held(self) -> list[ProviderAction]:
         """What the ledger holds, read from the file."""
         with self._locked():
             return list(self._read()[0])
