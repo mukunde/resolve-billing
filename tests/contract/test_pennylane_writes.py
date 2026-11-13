@@ -203,19 +203,56 @@ async def test_an_untaxed_invoice_is_credited_in_part(pennylane, generation, sto
     assert found.breakdown is None
 
 
-async def test_a_credit_beyond_the_total_is_refused_at_linking_nothing_numbered_left(
+async def test_a_credit_beyond_what_is_left_is_refused_at_linking_nothing_numbered_left(
         pennylane, generation):
-    """Straight to the adapter: the service's own guard would refuse it first."""
-    _, invoice = await fresh(pennylane, generation, "cap")
-    beyond = invoice.total.amount_minor + invoice.total.amount_minor // 2
-    key = idempotency_key("pennylane", invoice.id, "credit_note",
-                          Money(amount_minor=beyond, currency=invoice.total.currency))
+    """The adapter never builds a credit beyond the invoice's total; Pennylane's
+    own cap is reached when a correction made outside lands first. Here one of
+    60 % is drafted outside ResolveBilling (with the write token, not under our
+    reference), and linked and finalised -- after decision 47's check -- just
+    before the adapter links its own 60 %: Pennylane refuses that link for its
+    cap, the adapter deletes its draft, and nothing of ours is numbered."""
+    from app.providers.pennylane import mapping
+    from app.providers.pennylane.keys import writer
 
+    customer, invoice = await fresh(pennylane, generation, "cap")
+    as_defined("cap", invoice)
+    part = invoice.total.amount_minor * 6 // 10
+    raw_invoice = mapping.raw_id(invoice.id, "invoice")
+    raw_customer = mapping.raw_id(customer.id, "customer")
+    outside = writer()
+    day = datetime.now(UTC).date().isoformat()
+    theirs = await outside.write("POST", "/customer_invoices", {
+        "customer_id": raw_customer, "date": day, "deadline": day, "currency": "EUR",
+        "draft": True, "external_reference": f"outside:{raw_invoice}",
+        "invoice_lines": [{"label": "Avoir", "quantity": -1, "unit": "piece",
+                           "raw_currency_unit_price": f"{part / 100:.2f}",
+                           "vat_rate": "exempt"}]})
+    landed = []
+
+    async def outside_lands_before_our_link():
+        # The adapter's 11th request is its link (pinned by its unit tests).
+        landed.append(None)
+        if len(landed) != 11:
+            return
+        path = f"/customer_invoices/{theirs['id']}"
+        await outside.write("POST", f"/customer_invoices/{raw_invoice}/link_credit_note",
+                            {"credit_note_id": theirs["id"]})
+        fresh_customer = await outside.get(f"/customers/{raw_customer}")
+        eligible = (await outside.get(
+            f"/customers/{raw_customer}/electronic_billing_addresses")).get("items")
+        assert isinstance(eligible, list) and mapping.outward_ready(
+            fresh_customer, mapping.emails(fresh_customer), await outside.get(path), eligible)
+        await outside.write("PUT", f"{path}/finalize")
+
+    amount = Money(amount_minor=part, currency=invoice.total.currency)
+    key = idempotency_key("pennylane", invoice.id, "credit_note", amount)
     with pytest.raises(ProviderRejected) as refused:
         await pennylane.create_credit_note(
-            invoice.id, beyond, invoice.total.currency, "contract", key,
-            action_id="contract-cap", allocation="reduce_due", send_by=None, breakdown=None)
+            invoice.id, part, invoice.total.currency, "contract", key,
+            action_id="contract-cap", allocation="reduce_due", send_by=None, breakdown=None,
+            before_request=outside_lands_before_our_link)
 
+    assert len(landed) >= 11, "the outside credit never landed: the race was not run"
     assert "cap" in str(refused.value)
     assert await pennylane.find_action(key, invoice.id) == []
 

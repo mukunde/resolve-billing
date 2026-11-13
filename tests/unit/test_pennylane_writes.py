@@ -803,3 +803,15 @@ def test_a_draft_credit_note_as_pennylane_answers_it_is_a_draft():
     assert mapping.partial_stage({"draft": True, "status": "credit_note",
                                   "credited_invoice": None}) == "draft"
     assert not mapping.is_draft({"draft": False, "status": "cancelled"})
+
+
+def test_a_paid_invoice_credited_whole_still_reads_as_an_amount_owed():
+    """Seen on the sandbox's write run (2026-11-13): a paid invoice credited
+    whole reads `cancelled` and `paid: true`. Read by its status alone, the
+    allocation was `reduce_due`, unlike the plan: the write went to a person."""
+    from app.providers.pennylane import mapping
+
+    assert mapping.allocation_of({"status": "cancelled", "paid": True}) == "customer_balance"
+    assert mapping.allocation_of({"status": "paid", "paid": True}) == "customer_balance"
+    assert mapping.allocation_of({"status": "cancelled", "paid": False}) == "reduce_due"
+    assert mapping.allocation_of({"status": "partially_cancelled", "paid": False}) == "reduce_due"

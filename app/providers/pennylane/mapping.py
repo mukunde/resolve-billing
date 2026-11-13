@@ -682,6 +682,16 @@ ALLOCATION_OF_STATUS = {
 }
 
 
+def allocation_of(invoice_payload: Payload) -> str | None:
+    """How a credit note landed, read from the invoice it credits: a paid one
+    is an amount owed to the customer, whatever its status -- a paid invoice
+    credited whole reads `cancelled` and still `paid: true` (the sandbox's
+    write run, 2026-11-13); otherwise from its status."""
+    if invoice_payload.get("paid") is True:
+        return "customer_balance"
+    return ALLOCATION_OF_STATUS.get(invoice_payload.get("status"))
+
+
 def _created(doc: Payload) -> datetime:
     value = doc.get("created_at")
     if isinstance(value, str):
@@ -715,7 +725,7 @@ def provider_action(
     partial = partial_stage(doc)
     allocation = None
     if partial is None and invoice_payload is not None and linked == invoice_payload.get("id"):
-        allocation = ALLOCATION_OF_STATUS.get(invoice_payload.get("status"))
+        allocation = allocation_of(invoice_payload)
     return ProviderAction(
         provider="pennylane",
         provider_action_id=typed("invoice", doc.get("id")),
