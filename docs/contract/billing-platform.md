@@ -348,6 +348,52 @@ worlds be built.
   deadline reads `late`. The state before the stop was not recorded: an earlier run, cut
   short by a defect of the seed (since fixed), had already stopped it.
 
+## Pennylane, writing (specs/015-pennylane-credit-notes)
+
+Credit notes only, on the declared sandbox only, and only when `PENNYLANE_WRITES` is
+exactly `enabled`, with a token of their own (`PENNYLANE_WRITE_TOKEN`,
+`customer_invoices:all`) checked against the same company; otherwise `writes` is empty
+and Pennylane writes nothing. **Off as delivered**: Pennylane's written answers on an
+atomic cap and on finalising without sending come first (decision 47). Pennylane has
+no refund write: a refund proposed on it is a person's (see the execution contract).
+
+- **How it lands** (`plan_write`): an open invoice (`upcoming`, `late`) → `reduce_due`;
+  a paid one → `customer_balance`, an amount owed to the customer that a person pays
+  back; any other state refused (`invoice_state`).
+- **The write, in one claim**: no other credit note of ours left half-way for the
+  customer; the customer and, later, the draft hold nothing that could carry a document
+  out (no SIREN, no VAT number, no eligible electronic billing address, only addresses
+  under the reserved test domain); a **draft** dated the day, in the invoice's currency,
+  `external_reference` `rb:` + the action's key, its lines from the approved breakdown
+  (a taxed invoice reversed line by line, an untaxed one in a single line); the draft
+  read back and compared exactly with what was approved; **linked**; checked again;
+  **finalised**; read back. Never an email or e-invoicing request.
+- **Nothing written**, `FAILED`, in two cases only: a draft that differs, or a link
+  refused for the cap -- the draft deleted and seen gone. Anything else after the
+  creation is `partial_write`, a person's.
+- **Found again** (`find_action`) by `external_reference`: a credit note linked,
+  finalised and alike is the write, with the breakdown it credits; a draft or an
+  unlinked one is reported as partial, never as a success.
+- The only identifier Pennylane holds is the key; `test_mode` is true for the declared
+  sandbox alone.
+
+**Seen on the sandbox** (2026-11-12, observations, not guarantees): a draft credit note
+can be linked, then finalised; a draft's lines take no `imputation_dates`; a second
+create with an `external_reference` already used is refused (422); a finalised credit
+note reads `cancelled`, negative amounts, numbered in the invoices' sequence; an
+invoice credited through the API reads `partially_cancelled` (one credited from the
+interface `partially_paid`), a paid one stays `paid`; the cap is refused at linking
+(400 "The credit notes amount is bigger than the invoice amount"), alone and summed,
+from the API and across the interface and the API; a document dated before the latest
+finalised invoice cannot be finalised; the interface would not finalise for a company
+customer without SIREN and VAT number, the API did; a day after, no credit note carried
+an electronic billing address or an e-invoicing state.
+
+**Prerequisites** (decision 47): the atomic cap -- not met (sequential refusals only);
+finalising without sending or queueing -- not met (no written answer yet). The write
+contract (`tests/contract/test_pennylane_writes.py`, on a fresh seed generation) is
+recorded here once run.
+
 ## Not guaranteed today
 
 - That Stripe keeps idempotency keys for at least a day: its documentation
@@ -375,6 +421,8 @@ Tax (spec 013): `tests/unit/test_invoice_tax.py`, `tests/unit/test_tax_rules.py`
 `tests/unit/test_tax_payload.py`, `tests/unit/test_untaxed_bytes.py`,
 `tests/integration/test_tax_breakdown.py`, and the taxed tests of the Stripe
 files above.
+Pennylane writes, without network: `tests/unit/test_pennylane_writes.py`,
+`tests/unit/test_pennylane_seed.py`; on its sandbox, `tests/contract/test_pennylane_writes.py`.
 Pennylane, without network: `tests/unit/test_pennylane_client.py`,
 `tests/unit/test_pennylane_mapping.py`, `tests/unit/test_pennylane_adapter.py`,
 `tests/unit/test_pennylane_review.py`, `tests/unit/test_pennylane_review2.py`,

@@ -250,3 +250,53 @@ Stripe enforces holds there; it is no longer a property of the fake alone.
 **Re-evaluation condition:** a platform whose keys outlive any retry, or a
 scheduler sweeping unknown outcomes (above), changes how the window is set,
 not that there is one.
+
+## A write in several requests, on a platform that keeps no key
+
+Added 2026-11-13, with Pennylane's credit notes (specs/015-pennylane-credit-notes,
+approved by the maintainer; coordination decision 47). Pennylane documents no
+idempotency key and makes a credit note in several requests: a draft, a link to the
+invoice, a finalisation. What changes:
+
+- **A platform declares the types it writes** (`writes`). An action of another type --
+  a refund on Pennylane, which has no refund write -- is refused by `execute()` and
+  `reconcile()` before anything is read or claimed, as a platform that cannot write
+  was; the approval page and the API say a person carries it out outside
+  ResolveBilling. `can_write` stays as "writes anything".
+- **A platform may declare no window** (`idempotency_window` None). The first send
+  happens; a creation is never resent; an absence found after an unknown outcome is
+  never proof -- the action stays `UNKNOWN_OUTCOME` with attention `no_trace`, never
+  `FAILED`. Stripe's 23 hours are unchanged.
+- **A document made and not completed is a person's** (`partial_write`, an incident).
+  Any refusal, lost or unreadable answer after the creation leaves the action
+  `UNKNOWN_OUTCOME` with the document's id and stage; nothing is resent or resumed.
+  Exactly two cases end as "nothing written", `FAILED`: a draft whose figures differ
+  from the approved breakdown, and a confirmed draft whose link the platform refuses
+  for its cap -- each only once the draft is deleted and a read shows it gone.
+- **A found document that is not complete is never a success**, in reconciliation and
+  in a person's status read alike.
+- **One write at a time per customer.** The claim's conditional `UPDATE` also requires
+  that no other credit-note action of the same customer is executing, unknown, or
+  carries an unresolved `partial_write` or `no_trace`: one statement, across processes.
+- **A worker does not outlive its claim.** Before each request the adapter calls the
+  service's hook: past a step deadline (two minutes after the claim, the request's own
+  timeout counted) or once the row is no longer held under this claim, it sends
+  nothing more.
+- **A person resolves what the system cannot.** An authenticated approver records,
+  by POST, what they did on the platform, once a status read made at least ten
+  minutes after the attempt's last request is recorded; it releases the customer,
+  and the action is never executed again.
+- **The approved breakdown reaches the write**, and a platform that builds the
+  credit note from new lines reports what it made; the two are compared exactly
+  before `EXECUTED` -- an observed untaxed credit included.
+
+**What this cannot do.** The platform offers no fencing: a worker paused between its
+hook and its request still sends once, and a request that timed out may still be
+processed later. A `partial_write` therefore never means the document is stable; the
+maintainer accepted this residual risk on the sandbox (decision 47), the person being
+told and reading the document again after a delay.
+
+**Before writes are enabled** (decision 47): Pennylane's written answer that its cap
+on credit notes holds atomically, and that finalising sends or queues nothing. The
+sandbox showed the cap refused at linking, sequentially, from the API and the
+interface alike; that is not atomicity.
