@@ -59,6 +59,19 @@ def clock():
     return Clock()
 
 
+@pytest.fixture(autouse=True)
+def _fakes_on_the_test_clock(monkeypatch, clock):
+    """Every fake in these tests reads the test's clock, not the wall clock:
+    a window measured from T0 must not pass because the calendar did."""
+    original = FakeBillingProvider.__init__
+
+    def on_the_clock(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        self.now = clock
+
+    monkeypatch.setattr(FakeBillingProvider, "__init__", on_the_clock)
+
+
 def approved(
     store: SqliteActionStore,
     invoice_id: str = "inv_002",
