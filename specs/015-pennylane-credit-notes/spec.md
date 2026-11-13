@@ -76,8 +76,12 @@ The pull request needs the maintainer's explicit approval of the final diff.
 - A document dated before the latest finalised invoice cannot be finalised (422): credit
   notes are dated the day they are made.
 - After finalising: `electronic_billing_address` and `e_invoicing` null on every credit
-  note (to be read again a day later; a field observation, not proof that nothing was
+  note, and still null a day later (a field observation, not proof that nothing was
   sent).
+- From the write contract's runs (2026-11-13): a draft credit note reads status
+  `credit_note` and an empty number; a paid invoice credited whole reads `cancelled` and
+  `paid: true`; the write contract passed on the fourth generation (recorded in the
+  billing-platform contract).
 
 ## User Scenarios & Testing *(mandatory)*
 

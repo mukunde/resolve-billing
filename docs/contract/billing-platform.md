@@ -390,9 +390,27 @@ customer without SIREN and VAT number, the API did; a day after, no credit note 
 an electronic billing address or an e-invoicing state.
 
 **Prerequisites** (decision 47): the atomic cap -- not met (sequential refusals only);
-finalising without sending or queueing -- not met (no written answer yet). The write
-contract (`tests/contract/test_pennylane_writes.py`, on a fresh seed generation) is
-recorded here once run.
+finalising without sending or queueing -- not met (no written answer yet).
+
+**As measured** (2026-11-13, run by an agent at the maintainer's request, on the declared
+sandbox, writes enabled for the run only, with the write token reaching customer invoices
+alone): the write contract passed on generation 4 -- 6 passed. An open taxed invoice and
+a paid one credited once through approval and execution, executed twice for one credit
+note, found again with the approved breakdown (`reduce_due`, `customer_balance`); mixed
+rates with an exempt line and rounding edges credited to the cent; an untaxed invoice
+credited in part; a refund refused by its type before anything was read; and, a
+correction of 60 % made outside landing just before the adapter linked its own 60 %,
+Pennylane refused that link for its cap, the draft was deleted and nothing of ours was
+numbered. The adapter itself never builds a credit beyond the invoice's total, so
+Pennylane's cap is reached only in such a race.
+
+Three earlier runs each stopped on something the stub had not shown, every time on
+the safe side -- the actions left to a person, nothing resent -- and were fixed with a
+test each: a draft credit note reads status `credit_note` (generation 1: every credit
+note stopped after its draft); a paid invoice credited whole reads `cancelled` and
+`paid: true` (generation 2: the allocation is read from the paid flag first); the
+write token cannot read customers (generation 3, in the test's own race). Their drafts
+stay in the sandbox, blocking only their own test customers.
 
 ## Not guaranteed today
 
