@@ -22,7 +22,7 @@ from app.application.execute_action import ApprovalService
 from app.domain.enums import ActionState
 from app.domain.models import TaxBreakdown
 from app.domain.money import ROUNDING, Money
-from app.infrastructure.actions import IllegalTransition, SqliteActionStore, idempotency_key
+from app.infrastructure.actions import SqliteActionStore, WritesNotSupported, idempotency_key
 from app.providers.base import ProviderRejected, ProviderUnsupported
 from scripts import pennylane_worlds as worlds
 
@@ -277,8 +277,23 @@ async def test_a_refund_is_refused_before_anything_is_read_or_claimed(
         amount=Money(amount_minor=10000, currency="EUR"), reason="contract",
         provider="pennylane", customer_id=customer.id)
 
-    with pytest.raises(IllegalTransition):
+    reads: list[str] = []
+    real_get, real_every = pennylane.reader.get, pennylane.reader.every
+
+    async def get(path, *args, **kwargs):
+        reads.append(path)
+        return await real_get(path, *args, **kwargs)
+
+    async def every(path, *args, **kwargs):
+        reads.append(path)
+        return await real_every(path, *args, **kwargs)
+
+    pennylane.reader.get, pennylane.reader.every = get, every
+    with pytest.raises(WritesNotSupported) as refused:
         await ApprovalService(pennylane, store).execute(action.action_id)
 
+    assert pennylane.writes == frozenset({"credit_note"})  # it writes, but not refunds
+    assert "refund" in str(refused.value)
+    assert reads == []  # refused before anything was read
     held = store.get(action.action_id)
     assert held.state is ActionState.PENDING_APPROVAL and held.first_attempt_at is None
