@@ -104,7 +104,31 @@ def expected(name: str) -> tuple[int, TaxBreakdown | None]:
     )
 
 
+def lines_defined(name: str) -> list[tuple[Decimal, int, int, int, Decimal]]:
+    """Each line as defined: quantity, unit price and amount excluding tax, the
+    tax posted, its rate (0 for none) -- in minor units, sorted."""
+    out = []
+    for price, vat, quantity in worlds.WRITE_WORLDS[name][0]:
+        amount = Decimal(price) * quantity
+        tax = (amount * RATES[vat] / 100).quantize(Decimal("0.01"), ROUNDING)
+        out.append((Decimal(quantity), int(Decimal(price) * 100), int(amount * 100),
+                    int(tax * 100), RATES[vat] if tax else Decimal(0)))
+    return sorted(out)
+
+
+def lines_read(invoice) -> list[tuple[Decimal, int, int, int, Decimal]]:
+    out = []
+    for line in invoice.lines:
+        tax = sum(t.amount.amount_minor for t in line.taxes)
+        rates = {t.rate for t in line.taxes if t.amount.amount_minor}
+        out.append((line.quantity, line.unit_amount.amount_minor, line.amount.amount_minor,
+                    tax, next(iter(rates)) if len(rates) == 1 else Decimal(0)))
+    return sorted(out)
+
+
 def as_defined(name: str, invoice) -> TaxBreakdown | None:
+    """The invoice read is the world defined, line by line and in sum."""
+    assert lines_read(invoice) == lines_defined(name), f"{name}: not the lines defined"
     total, breakdown = expected(name)
     assert invoice.total.amount_minor == total, f"{name}: not the world defined"
     assert TaxBreakdown.of(invoice) == breakdown, f"{name}: not the world defined"
