@@ -258,8 +258,10 @@ class WritingAccount(Account):
                 "discount": None,
             })
         document = {
-            "id": id_, "invoice_number": None, "customer": {"id": body["customer_id"]},
-            "date": body["date"], "status": "draft", "draft": True,
+            # As Pennylane answered on the sandbox: a draft credit note reads
+            # status `credit_note` and an empty number (spec 015's run, 2026-11-13).
+            "id": id_, "invoice_number": "", "customer": {"id": body["customer_id"]},
+            "date": body["date"], "status": "credit_note", "draft": True,
             "currency": body["currency"], "currency_amount": f"{excl_total + tax_total:.2f}",
             "currency_amount_before_tax": f"{excl_total:.2f}",
             "currency_tax": f"{tax_total:.2f}", "discount": None, "credited_invoice": None,

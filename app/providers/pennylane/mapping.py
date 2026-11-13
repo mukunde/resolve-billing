@@ -495,12 +495,13 @@ def credited_raw(payload: Payload) -> int | None:
 
 def is_draft(payload: Payload) -> bool:
     """Whether a document is a draft, confirmed either way: `draft: true`
-    (its status `draft` or absent) is a draft; `draft: false` with any status
+    (its status `draft`, `credit_note` -- what a draft credit note reads, seen
+    on the sandbox -- or absent) is a draft; `draft: false` with any status
     but `draft` is finalised. Anything else -- the flag absent or malformed,
     or contradicting the status -- cannot be told, and is `missing_field`:
     never taken for a draft that may be deleted, nor for a final document."""
     flag, status = payload.get("draft"), payload.get("status")
-    if flag is True and status in (None, "draft"):
+    if flag is True and status in (None, "draft", "credit_note"):
         return True
     if flag is False and status != "draft":
         return False

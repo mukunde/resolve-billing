@@ -791,3 +791,15 @@ async def test_an_eligible_electronic_billing_address_stops_the_write(stage):
         await credit(writing_provider(account))
     assert partial.value.stage == "linked"
     assert not any(path.endswith("/finalize") for _, path, _ in account.sent)
+
+
+def test_a_draft_credit_note_as_pennylane_answers_it_is_a_draft():
+    """Seen on the sandbox's first write run (2026-11-13): a draft credit note
+    reads `draft: true`, status `credit_note`, an empty number. Taken for
+    unreadable, every credit note stopped half-way, left to a person."""
+    from app.providers.pennylane import mapping
+
+    assert mapping.is_draft({"draft": True, "status": "credit_note", "invoice_number": ""})
+    assert mapping.partial_stage({"draft": True, "status": "credit_note",
+                                  "credited_invoice": None}) == "draft"
+    assert not mapping.is_draft({"draft": False, "status": "cancelled"})
