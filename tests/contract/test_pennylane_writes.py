@@ -237,8 +237,10 @@ async def test_a_credit_beyond_what_is_left_is_refused_at_linking_nothing_number
             theirs_path = f"/customer_invoices/{theirs['id']}"
             await outside.write("POST", f"/customer_invoices/{raw_invoice}/link_credit_note",
                                 {"credit_note_id": theirs["id"]})
-            fresh_customer = await outside.get(f"/customers/{raw_customer}")
-            eligible = (await outside.get(
+            # The write token reaches customer invoices only: the customer is
+            # read with the read-only token, as the adapter does.
+            fresh_customer = await pennylane.reader.get(f"/customers/{raw_customer}")
+            eligible = (await pennylane.reader.get(
                 f"/customers/{raw_customer}/electronic_billing_addresses")).get("items")
             assert isinstance(eligible, list) and mapping.outward_ready(
                 fresh_customer, mapping.emails(fresh_customer),
