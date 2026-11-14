@@ -172,7 +172,9 @@ def test_a_refusal_by_revolut_can_be_retried(tmp_path):
     ["--invoice-number", "A", "--total", "10000.01", "--other-number", "B"],
     ["--invoice-number", "A", "--total", "49.001", "--other-number", "B"],
     ["--invoice-number", "A", "--total", "NaN", "--other-number", "B"],
-    ["--invoice-number", "A", "--total", "49.00", "--other-number", "A"],
+    ["--invoice-number", "A", "--total", "49.00", "--other-number", "a"],
+    ["--invoice-number", " ", "--total", "49.00", "--other-number", "B"],
+    ["--invoice-number", "A", "--total", "49.00", "--other-number", "B", "--currency", "EURO"],
 ])
 def test_bad_arguments_are_refused(argv):
     with pytest.raises(SystemExit):
@@ -183,3 +185,32 @@ def test_the_seed_never_reads_the_service_configuration():
     source = Path(seed.__file__).read_text(encoding="utf-8")
     assert "REVOLUT_API_KEY" not in source and "load_dotenv" not in source
     assert "REVOLUT_SIGNING_KEY_PATH" not in source
+
+
+def test_equivalent_arguments_are_the_same_worlds(tmp_path):
+    def lost(request):
+        raise httpx.ReadTimeout("lost", request=request)
+
+    run(lost, tmp_path)
+    again = Sandbox()
+    lines = run(again, tmp_path, ["--invoice-number", " F-2026-0042 ", "--total", "49",
+                                  "--other-number", "F-2026-0043", "--currency", "eur"])
+    assert again.requests == []
+    assert all("outcome is unknown" in line for line in lines)
+
+
+def test_a_second_run_at_the_same_time_sends_nothing(tmp_path):
+    sandbox = Sandbox()
+    s = seeder(sandbox, tmp_path)
+    with s.intents.lock():
+        lines = seed.run(s, seed.arguments(ARGS))
+    assert sandbox.requests == []
+    assert len(lines) == 1 and lines[0].startswith("stopped before any top-up: another")
+
+
+def test_the_lock_is_released_after_a_run(tmp_path):
+    run(Sandbox(), tmp_path)
+    again = Sandbox()
+    lines = run(again, tmp_path)
+    assert all(line.endswith("already made") for line in lines)
+    assert not (tmp_path / "intents.json.lock").exists()

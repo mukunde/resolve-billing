@@ -32,7 +32,8 @@ def bank_evidence() -> BankEvidence | None:
     if not selected:
         return None
     if selected != "revolut":
-        raise RuntimeError(f"unknown bank evidence {selected!r}; available: {list(BANKS)}")
+        # Never the value: a credential pasted in the wrong variable stays out of messages.
+        raise RuntimeError(f"unknown BANK_EVIDENCE; available: {list(BANKS)}")
     return _revolut()
 
 

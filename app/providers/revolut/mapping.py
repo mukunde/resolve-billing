@@ -125,9 +125,21 @@ def _legs(tx: dict) -> list[dict]:
     return legs
 
 
+def _text(value: Any) -> str:
+    if not isinstance(value, str):
+        raise Malformed
+    return value
+
+
+def _optional_text(value: Any) -> str | None:
+    return None if value is None else _text(value)
+
+
 def _origin(leg: dict) -> Origin:
     counterparty = leg.get("counterparty")
     kind = counterparty.get("account_type") if isinstance(counterparty, dict) else None
+    if not isinstance(kind, str):
+        return "unknown"
     if kind == "external":
         return "external"
     if kind in INTERNAL:
@@ -153,16 +165,19 @@ def _fee(leg: dict) -> bool:
 
 def credit(tx: dict, declared: frozenset[str], observed_at: datetime) -> BankCredit | None:
     """The transaction as a credit on a declared account, or None when it is not one."""
-    kind, state = tx.get("type"), tx.get("state")
+    kind, state = _text(tx.get("type")), _text(tx.get("state"))
     if kind not in CREDIT_TYPES or state not in CREDIT_STATES:
         return None
     legs = _legs(tx)
-    if len(legs) != 1 or legs[0].get("account_id") not in declared:
+    if len(legs) != 1 or _optional_text(legs[0].get("account_id")) not in declared:
         return None
     leg = legs[0]
     amount = money(leg.get("amount"), leg.get("currency"))
     if amount.amount_minor <= 0:
         return None
+    completed_at = _optional_instant(tx.get("completed_at"))
+    if state == "completed" and completed_at is None:
+        raise Malformed  # required when completed: the window is decided by it
     reference = tx.get("reference")
     return BankCredit(
         account_id=leg["account_id"],
@@ -172,7 +187,7 @@ def credit(tx: dict, declared: frozenset[str], observed_at: datetime) -> BankCre
         observed_at=observed_at,
         amount=amount,
         created_at=instant(tx.get("created_at")),
-        completed_at=_optional_instant(tx.get("completed_at")),
+        completed_at=completed_at,
         reference=reference if isinstance(reference, str) else None,
         origin=_origin(leg),
         fx=_fx(leg, _number(leg.get("amount")), amount.currency),
@@ -182,15 +197,15 @@ def credit(tx: dict, declared: frozenset[str], observed_at: datetime) -> BankCre
 
 def returns(tx: dict, declared: frozenset[str], credit_ids: set[str]) -> list[BankReturn]:
     """The transaction's legs on declared accounts as returns, when it is one."""
-    related = tx.get("related_transaction_id")
-    related = related if isinstance(related, str) and related in credit_ids else None
-    kind = tx.get("type")
+    related = _optional_text(tx.get("related_transaction_id"))
+    related = related if related in credit_ids else None
+    kind = _text(tx.get("type"))
     if related is None and kind not in RETURN_TYPES:
         return []
-    if not isinstance(kind, str):
-        raise Malformed
     created_at = instant(tx.get("created_at"))
     completed_at = _optional_instant(tx.get("completed_at"))
+    if tx.get("state") == "completed" and completed_at is None:
+        raise Malformed
     return [
         BankReturn(
             id=tx["id"],
@@ -201,7 +216,7 @@ def returns(tx: dict, declared: frozenset[str], credit_ids: set[str]) -> list[Ba
             related_credit_id=related,
         )
         for leg in _legs(tx)
-        if leg.get("account_id") in declared
+        if _optional_text(leg.get("account_id")) in declared
     ]
 
 

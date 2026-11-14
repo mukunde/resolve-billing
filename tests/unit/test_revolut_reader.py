@@ -21,6 +21,7 @@ from app.providers.revolut.adapter import RevolutBank, lower_bound, wire_instant
 from app.providers.revolut.client import (
     HOST,
     WINDOW_REQUESTS,
+    BudgetSpent,
     Pacer,
     RevolutConfigurationError,
     RevolutReader,
@@ -330,6 +331,40 @@ async def test_retries_stop_at_the_budget():
     assert clock.slept == []
 
 
+async def test_a_request_that_outlasts_the_budget_ends_the_read_incomplete():
+    clock = Clock()
+    bank = Bank([tx("t1", created=START)])
+
+    def slow(request):
+        clock.now += 25.0  # the answer comes after the 20-second budget
+        return bank(request)
+
+    result = await read(slow, clock=clock, budget=20.0)
+    assert result.incompleteness == ("budget_spent",)
+    assert len(bank.requests) == 1  # nothing asked once the budget was gone
+
+
+async def test_each_request_is_bounded_by_what_remains_of_the_budget():
+    clock = Clock()
+    bank = Bank([tx("t1", created=START)])
+    seen = []
+
+    def timed(request):
+        seen.append(request.extensions["timeout"]["read"])
+        clock.now += 8.0
+        return bank(request)
+
+    await read(timed, clock=clock, budget=12.0)
+    assert seen == [10.0, 4.0]
+
+
+async def test_the_pacer_gives_no_slot_past_the_deadline():
+    clock = Clock()
+    clock.now = 5.0
+    with pytest.raises(BudgetSpent):
+        await Pacer(clock=clock, sleep=clock.sleep).wait(deadline=5.0)
+
+
 @pytest.mark.parametrize("status, category", [
     (401, "authentication"), (403, "permission"), (400, "rejected"), (404, "rejected"),
     (500, "unreachable"), (429, "rate_limited"),
@@ -418,6 +453,14 @@ async def test_an_amount_finer_than_the_minor_unit_is_malformed_not_rounded():
     json.dumps([tx("t1", created=START)]).replace('"amount": 49', '"amount": true').encode(),
     json.dumps([tx("t1", created=START, currency="EURO")]).encode(),
     json.dumps([{**tx("t1", created=START), "legs": "one"}]).encode(),
+    json.dumps([{**tx("t1", created=START), "type": []}]).encode(),
+    json.dumps([{**tx("t1", created=START), "state": {"x": 1}}]).encode(),
+    json.dumps([tx("t1", created=START, account=["acc"])]).encode(),
+    json.dumps([tx("t1", created=START, completed=None)]).encode(),  # completed, no instant
+    json.dumps([tx("r1", created=START, kind="topup_return", amount=-1,
+                   completed=None)]).encode(),
+    json.dumps([tx("t1", created=START),
+                {**tx("t1", created=START), "state": "reverted"}]).encode(),
 ])
 async def test_a_malformed_answer_is_unavailable_with_a_fixed_category(answer):
     bank = Bank()
@@ -426,6 +469,49 @@ async def test_a_malformed_answer_is_unavailable_with_a_fixed_category(answer):
         await read(bank)
     assert raised.value.category == "malformed_answer"
     assert raised.value.__cause__ is None
+
+
+async def test_a_counterparty_of_an_unreadable_type_is_an_unknown_origin():
+    item = tx("t1", created=START)
+    item["legs"][0]["counterparty"] = {"account_type": ["external"]}
+    result = await read(Bank([item]))
+    assert result.credits[0].origin == "unknown"
+
+
+async def test_the_same_transaction_answered_differently_across_pages_is_malformed():
+    items = [tx(f"t{i}", created=LOWER + timedelta(days=1, minutes=i)) for i in range(4)]
+    bank = Bank(items)
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        response = bank(request)
+        if len([c for c in calls if c.url.path.endswith("/transactions")]) == 3:
+            # The second data page repeats t3, now reverted.
+            body = json.loads(response.content)
+            body.append({**items[3], "state": "reverted"})
+            return answer(body)
+        return response
+
+    with pytest.raises(BankUnavailable) as raised:
+        await read(handler, page_size=3)
+    assert raised.value.category == "malformed_answer"
+
+
+async def test_the_boundary_proof_answering_differently_is_malformed():
+    items = [tx(f"t{i}", created=LOWER + timedelta(days=1, minutes=i)) for i in range(4)]
+    bank = Bank(items)
+
+    def handler(request):
+        response = bank(request)
+        q = request.url.params
+        if request.url.path.endswith("/transactions") and q["from"] == items[1]["created_at"]:
+            return answer([{**items[1], "state": "reverted"}])
+        return response
+
+    with pytest.raises(BankUnavailable) as raised:
+        await read(handler, page_size=3)
+    assert raised.value.category == "malformed_answer"
 
 
 async def test_malformed_accounts_are_unavailable():
@@ -458,7 +544,8 @@ async def test_other_types_are_not_credits(kind):
     ("declined", False), ("failed", False),
 ])
 async def test_credits_are_completed_or_reverted(state, kept):
-    result = await read(Bank([tx("t1", created=START, state=state, completed=None)]))
+    completed = "same" if state == "completed" else None
+    result = await read(Bank([tx("t1", created=START, state=state, completed=completed)]))
     assert bool(result.credits) is kept
 
 
@@ -494,7 +581,7 @@ async def test_fx_and_fee_are_reported():
 async def test_returns_related_or_of_a_return_type_with_their_own_instants():
     credit = tx("t1", created=START)
     related = tx("r1", created=START + timedelta(days=1), kind="transfer", amount=-49,
-                 related="t1", reference=None, completed=None)
+                 related="t1", reference=None, state="pending", completed=None)
     typed = tx("r2", created=START + timedelta(days=2), kind="topup_return", amount=-10,
                reference=None)
     refund = tx("r3", created=START + timedelta(days=3), kind="refund", amount=5)
@@ -652,9 +739,10 @@ def test_the_seed_key_in_the_service_environment_refuses_the_start(env):
     assert "seed-key-not-real" not in str(raised.value)
 
 
-def test_an_unknown_bank_is_refused(env):
+def test_an_unknown_bank_is_refused_without_its_value(env):
     from app.api.bank_config import bank_evidence
 
-    env(BANK_EVIDENCE="qonto")
-    with pytest.raises(RuntimeError):
+    env(BANK_EVIDENCE="sk-pasted-here-by-mistake")
+    with pytest.raises(RuntimeError) as raised:
         bank_evidence()
+    assert "sk-pasted-here-by-mistake" not in str(raised.value)

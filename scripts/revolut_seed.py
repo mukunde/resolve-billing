@@ -33,7 +33,10 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -110,6 +113,21 @@ class Intents:
         if current.pop(key, None) is not None:
             self.path.write_text(json.dumps(current, sort_keys=True), encoding="utf-8")
 
+    @contextmanager
+    def lock(self) -> Iterator[None]:
+        """One seed run at a time: two runs could both find no intent and both send. A
+        lock left by a run that died is removed by hand, once the Sandbox is checked."""
+        path = self.path.with_name(self.path.name + ".lock")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        except FileExistsError:
+            raise Stop(f"another seed run holds {path}; remove it by hand if none runs") from None
+        try:
+            yield
+        finally:
+            path.unlink(missing_ok=True)
+
 
 def _guard(account_id: str):
     def guard(request: httpx.Request) -> None:
@@ -145,7 +163,7 @@ class Seeder:
     def __init__(self, key: str, account_id: str, intents: Intents, *,
                  transport: httpx.BaseTransport | None = None) -> None:
         self._account = account_id
-        self._intents = intents
+        self.intents = intents
         self._client = httpx.Client(
             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                      "Accept": "application/json"},
@@ -160,17 +178,17 @@ class Seeder:
 
     def topup(self, world: World, currency: str, label: str) -> str:
         """One world: skipped when made, refused when an earlier send is unknown."""
-        key = f"{label}/{world.name}"
-        known = self._intents.state(key)
+        key = f"{self._account}|{label}/{world.name}"
+        known = self.intents.state(key)
         if known == "made":
             return "already made"
         if known == "sent":
             raise Stop("an earlier top-up's outcome is unknown; check the Sandbox by hand")
-        self._intents.mark(key, "sent")
+        self.intents.mark(key, "sent")
         try:
             response = self._client.post(TOPUP_URL, content=_body(self._account, world, currency))
         except Refused:
-            self._intents.clear(key)  # refused before it left: nothing was sent
+            self.intents.clear(key)  # refused before it left: nothing was sent
             raise
         except httpx.HTTPError:
             raise Stop("no answer; the top-up's outcome is unknown") from None
@@ -178,7 +196,7 @@ class Seeder:
         if 300 <= status < 400:
             raise Stop("redirected; the top-up's outcome is unknown")
         if status in (200, 201):
-            self._intents.mark(key, "made")
+            self.intents.mark(key, "made")
             try:
                 state = json.loads(response.content).get("state")
             except (ValueError, AttributeError):
@@ -186,7 +204,7 @@ class Seeder:
             return f"made, state {state if state in STATES else 'other'}"
         if status >= 500 or status == 429:
             raise Stop(f"answered {status}; the top-up's outcome is unknown")
-        self._intents.clear(key)  # refused by Revolut: nothing was made
+        self.intents.clear(key)  # refused by Revolut: nothing was made
         return f"refused ({status})"
 
 
@@ -197,31 +215,50 @@ def _decimal(value: str) -> Decimal:
         raise argparse.ArgumentTypeError("not a decimal") from None
     if not number.is_finite() or number < 1 or number > TOPUP_MAX or number != round(number, 2):
         raise argparse.ArgumentTypeError("an amount from 1 to 10000, two decimals at most")
-    return number
+    # Canonical, so `49`, `49.0` and `49.00` are one world and one intent.
+    return number.quantize(Decimal("0.01"))
+
+
+def _currency(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z]{3}", value.strip()):
+        raise argparse.ArgumentTypeError("a three-letter currency code")
+    return value.strip().upper()
+
+
+def _number(value: str) -> str:
+    if not value.strip():
+        raise argparse.ArgumentTypeError("an invoice number")
+    return value.strip()
 
 
 def arguments(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="revolut_seed")
-    parser.add_argument("--invoice-number", required=True)
+    parser.add_argument("--invoice-number", required=True, type=_number)
     parser.add_argument("--total", required=True, type=_decimal)
-    parser.add_argument("--other-number", required=True)
-    parser.add_argument("--currency", default="EUR")
+    parser.add_argument("--other-number", required=True, type=_number)
+    parser.add_argument("--currency", default="EUR", type=_currency)
     args = parser.parse_args(argv)
-    if args.invoice_number == args.other_number:
+    if args.invoice_number.casefold() == args.other_number.casefold():
         parser.error("the other number must differ from the invoice's")
     return args
 
 
 def run(seeder: Seeder, args: argparse.Namespace) -> list[str]:
-    label = f"{args.invoice_number}|{args.total}|{args.other_number}|{args.currency}"
+    """Every world, under the lock; an intent's identity is the canonical arguments."""
+    label = json.dumps([args.invoice_number, str(args.total), args.other_number,
+                        args.currency])
     lines = []
-    for world in worlds(args.invoice_number, args.total, args.other_number):
-        try:
-            lines.append(f"{world.name}: {seeder.topup(world, args.currency, label)}")
-        except Stop as stop:
-            lines.append(f"{world.name}: REPORTED -- {stop}")
-        except Refused as refusal:
-            lines.append(f"{world.name}: REFUSED before sending -- {refusal}")
+    try:
+        with seeder.intents.lock():
+            for world in worlds(args.invoice_number, args.total, args.other_number):
+                try:
+                    lines.append(f"{world.name}: {seeder.topup(world, args.currency, label)}")
+                except Stop as stop:
+                    lines.append(f"{world.name}: REPORTED -- {stop}")
+                except Refused as refusal:
+                    lines.append(f"{world.name}: REFUSED before sending -- {refusal}")
+    except Stop as stop:
+        lines.append(f"stopped before any top-up: {stop}")
     return lines
 
 

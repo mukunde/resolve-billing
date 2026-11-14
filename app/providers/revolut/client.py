@@ -127,6 +127,8 @@ class Pacer:
         async with self._lock:
             while True:
                 now = self._clock()
+                if now >= deadline:
+                    raise BudgetSpent
                 while self._sent and now - self._sent[0] >= WINDOW_SECONDS:
                     self._sent.popleft()
                 if len(self._sent) < WINDOW_REQUESTS:
@@ -194,18 +196,28 @@ class RevolutReader:
 
     async def get(self, path: str, params: dict[str, str] | None, deadline: float) -> Any:
         """One GET under the API prefix, its answer parsed. `BudgetSpent` when the budget
-        runs out first; `BankUnavailable(category)` on any failure."""
+        runs out first -- before a send, during one (its timeout is what remains), or by
+        the time its answer is in; `BankUnavailable(category)` on any failure."""
         delay = 0.5
         for attempt in range(1, MAX_ATTEMPTS + 1):
             await self._pacer.wait(deadline)
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                raise BudgetSpent
             try:
-                response = await self._client.get(BASE_URL + path, params=params)
+                response = await self._client.get(
+                    BASE_URL + path, params=params, timeout=min(REQUEST_TIMEOUT, remaining)
+                )
             except httpx.HTTPError:
+                if self._clock() >= deadline:
+                    raise BudgetSpent from None
                 if attempt == MAX_ATTEMPTS:
                     raise BankUnavailable("unreachable") from None
                 await self._pause(delay, deadline)
                 delay *= 2
                 continue
+            if self._clock() > deadline:
+                raise BudgetSpent
             status = response.status_code
             if 300 <= status < 400 or response.url.host != HOST:
                 raise BankUnavailable("redirect")

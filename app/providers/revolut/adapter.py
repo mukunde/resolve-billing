@@ -54,6 +54,15 @@ def lower_bound(window_start: datetime, margin_days: int) -> datetime:
     return mapping.instant(wire_instant(window_start - timedelta(days=margin_days)))
 
 
+def _keep(items: dict[str, tuple[dict, datetime]], tx_id: str, tx: dict,
+          created: datetime) -> None:
+    """Keep a transaction once; the same id answered twice with different content is
+    malformed -- never the first answer silently trusted."""
+    if tx_id in items and items[tx_id][0] != tx:
+        raise mapping.Malformed
+    items.setdefault(tx_id, (tx, created))
+
+
 class _AccountRead:
     """Transactions read for one account: the items, and why the read stopped short."""
 
@@ -103,7 +112,8 @@ class RevolutBank:
                         incomplete.append("account_not_visible")
                         continue
                     found = await self._transactions(account.id, lower, window_end, deadline)
-                    items.update(found.items)
+                    for tx_id, (tx, created) in found.items.items():
+                        _keep(items, tx_id, tx, created)
                     if found.short is not None:
                         incomplete.append(found.short)
                         if found.short == "budget_spent":
@@ -112,7 +122,8 @@ class RevolutBank:
             credits, returns = mapping.observations(
                 kept, frozenset(a.id for a in accounts if a.visible), now
             )
-        except mapping.Malformed:
+        except (mapping.Malformed, TypeError, ValueError, KeyError, AttributeError):
+            # Whatever in the answer could not be read; nothing of it travels.
             raise BankUnavailable("malformed_answer") from None
         early = any(created < lower for _, created in items.values())
         reasons = tuple(dict.fromkeys(incomplete))
@@ -144,7 +155,7 @@ class RevolutBank:
                     deadline,
                 ))
                 for tx, tx_id, created in found:
-                    read.items.setdefault(tx_id, (tx, created))
+                    _keep(read.items, tx_id, tx, created)
                 if len(found) < self._page_size:
                     return read
                 if not await self._clean_boundary(account, found, to_raw, to, read, deadline):
@@ -179,5 +190,9 @@ class RevolutBank:
              "count": str(self._page_size)},
             deadline,
         ))
-        unseen = any(tx_id not in read.items for _, tx_id, _ in probe)
-        return not unseen and len(probe) < self._page_size
+        for tx, tx_id, _ in probe:
+            if tx_id not in read.items:
+                return False  # left out of the page: the boundary is a tie
+            if read.items[tx_id][0] != tx:
+                raise mapping.Malformed
+        return len(probe) < self._page_size
