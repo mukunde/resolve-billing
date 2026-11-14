@@ -48,8 +48,9 @@ jobs:
 
       - name: Install
         # `engines`: the free-tier engines' SDKs, for their network-free checks;
-        # no test calls a vendor (specs/004-second-engines).
-        run: pip install -e ".[api,dev,mcp,otel,engines,claude]"
+        # no test calls a vendor (specs/004-second-engines). `revolut`: the bank
+        # reader's signing, tested on a fixed vector (specs/016-bank-evidence).
+        run: pip install -e ".[api,dev,mcp,otel,engines,claude,revolut]"
 
       - name: Lint
         run: ruff check .
