@@ -176,14 +176,22 @@ class TestToReconcile:
         _, record = check(credit(), returns=(ret,))
         assert record.items[1].instant == done and record.items[1].instant_is == "completed"
 
-    def test_a_return_naming_no_credit_for_the_same_amount_after_it(self):
+    def test_a_return_naming_no_credit_is_not_attributed_even_for_the_same_amount(self):
         ret = BankReturn(
-            id="tx_r", type="topup_return", amount=Money(amount_minor=-5900, currency="EUR"),
+            id="tx_r", type="refund", amount=Money(amount_minor=-5900, currency="EUR"),
             created_at=ISSUED + timedelta(days=9),
         )
         finding, record = check(credit(), returns=(ret,))
-        assert finding.code is RuleCode.BANK_CREDIT_TO_RECONCILE
-        assert "related_return_found" in record.reasons
+        assert finding.code is RuleCode.BANK_CREDIT_OBSERVED
+        assert len(record.items) == 1
+
+    def test_a_return_naming_the_credit_after_the_window_is_not_counted(self):
+        ret = BankReturn(
+            id="tx_r", type="topup_return", amount=Money(amount_minor=-5900, currency="EUR"),
+            created_at=NOW + timedelta(seconds=1), related_credit_id="tx_1",
+        )
+        finding, _ = check(credit(), returns=(ret,))
+        assert finding.code is RuleCode.BANK_CREDIT_OBSERVED
 
     def test_an_unrelated_return_of_another_amount_does_not_count(self):
         ret = BankReturn(

@@ -199,6 +199,32 @@ class TestWhereItRuns:
         assert result.bank_check.outcome == "not_run"
         assert result.bank_check.reason == "short_circuit"
 
+    def test_an_identity_conflict_runs_before_the_bank(self, worlds):
+        spy = Spy(FakeBank("observed", path=worlds))
+        engine = Capturing()
+        investigator = DisputeInvestigator(FakeBillingProvider(), engine, bank=spy)
+        claim = dispute().model_copy(update={"customer_id": "cus_acme"})
+        result = asyncio.run(investigator.investigate(claim, now=NOW))
+        assert RuleCode.IDENTITY_CONFLICT in {f.code for f in result.findings}
+        assert spy.reads == 0 and not engine.seen
+        assert result.bank_check.reason == "short_circuit"
+
+    @pytest.mark.parametrize(
+        ("invoice_id", "code"),
+        [("inv_301", RuleCode.CURRENCY_MISMATCH), ("inv_299", RuleCode.INVOICE_OUTSIDE_WINDOW)],
+    )
+    def test_the_findings_sent_to_a_person_run_before_the_bank(self, worlds, invoice_id, code):
+        spy = Spy(FakeBank("observed", path=worlds))
+        engine = Capturing()
+        audit = SqliteAuditRepository(":memory:")
+        investigator = DisputeInvestigator(FakeBillingProvider(), engine, audit=audit, bank=spy)
+        result = asyncio.run(investigator.investigate(
+            dispute(invoice_id, "compta@sirius-labs.fr", "Facturés deux fois ?"), now=NOW))
+        assert code in {f.code for f in result.findings}
+        assert spy.reads == 0 and not engine.seen
+        assert audit.bank_check(result.run_id).reason == "short_circuit"
+        audit.close()
+
     def test_an_automated_response_runs_before_the_bank(self, worlds):
         spy = Spy(FakeBank("observed", path=worlds))
         investigator = DisputeInvestigator(FakeBillingProvider(), Capturing(), bank=spy)
@@ -232,10 +258,83 @@ class TestWhereItRuns:
         assert SECRET not in result.explanation
 
 
+class TestNoChannelCarriesBankText:
+    """A read that fails with the bank's own text in it: the log, the trace, the record
+    and the explanation say a category at most."""
+
+    def test_a_failed_read(self, worlds, caplog, monkeypatch):
+        attributes: dict = {}
+        monkeypatch.setattr(
+            "app.application.investigate_dispute.tracing.set_attributes",
+            lambda span, **kw: attributes.update(kw),
+        )
+
+        class Leaky:
+            name = "leaky"
+
+            async def read(self, *args):
+                raise BankUnavailable(SECRET)
+
+        audit = SqliteAuditRepository(":memory:")
+        investigator = DisputeInvestigator(
+            FakeBillingProvider(), Capturing(), audit=audit, bank=Leaky())
+        with caplog.at_level("DEBUG"):
+            result = asyncio.run(investigator.investigate(dispute(), now=NOW))
+        assert result.bank_check.reason == "bank_unavailable"
+        assert attributes["billing.bank_check"] == "not_evaluable"
+        assert SECRET not in caplog.text
+        assert SECRET not in json.dumps(attributes, default=str)
+        assert SECRET not in json.dumps(dict(audit.run(result.run_id)), default=str)
+        assert SECRET not in json.dumps([dict(e) for e in audit.events(result.run_id)])
+        audit.close()
+
+
+def _bank_cases():
+    from evals.runner import CASES_PATH
+
+    return [c for c in json.loads(CASES_PATH.read_text(encoding="utf-8")) if c.get("bank_world")]
+
+
+def _sentinels() -> set[str]:
+    """What a bank world holds that no engine may receive: its transaction and account
+    ids, and the reason codes and record keys the rule writes."""
+    from app.providers.fake.bank import worlds
+
+    found = {"transaction_ids", "reference_matched", "amount_partial", "currency_differs",
+             "several_invoices_cited", "reversed", "coverage_not_established", "read_incomplete"}
+    for world in worlds().values():
+        found |= {a["id"] for a in world.get("accounts", [])}
+        found |= {c["transaction_id"] for c in world.get("credits", [])}
+    return found
+
+
+@pytest.mark.parametrize("case", _bank_cases(), ids=lambda c: c["id"])
+def test_no_development_case_shows_the_engine_a_bank_value(case):
+    """SC-003: every bank case's engine payload, at the port, holds codes alone."""
+    from evals.investigators import investigator_for
+
+    engine = Capturing()
+    investigator = investigator_for(case, FakeBillingProvider(), engine)
+    asyncio.run(investigator.investigate(Dispute(
+        id="d", customer_message=case["message"], customer_email=case["customer_email"],
+        invoice_id=case["invoice_id"]), now=NOW))
+    for findings in engine.seen:
+        for finding in findings:
+            if finding.code.value.startswith("BANK_"):
+                assert finding.evidence == {}, "a bank finding reached the engine with evidence"
+            assert finding.evidence.get("check") != "bank"
+        sent = json.dumps([f.model_dump(mode="json") for f in findings])
+        assert not {s for s in _sentinels() if s in sent}
+
+
 class TestTheHostedRequest:
     """What the Claude engine sends, captured at its client: the code, nothing else."""
 
-    def test_no_bank_value_is_sent(self, worlds):
+    @pytest.mark.parametrize(
+        ("world", "code"),
+        [("partial", "BANK_CREDIT_TO_RECONCILE"), ("uncovered", "NOT_EVALUABLE")],
+    )
+    def test_no_bank_value_is_sent(self, worlds, world, code):
         from app.decision.claude import ClaudeDecisionEngine
 
         captured: dict = {}
@@ -252,10 +351,11 @@ class TestTheHostedRequest:
 
         engine = ClaudeDecisionEngine(
             client=SimpleNamespace(messages=SimpleNamespace(create=create)), model="claude-opus-5")
-        run("partial", worlds, engine=engine)
+        run(world, worlds, engine=engine)
         sent = json.dumps(captured, ensure_ascii=False, default=str)
-        assert "BANK_CREDIT_TO_RECONCILE" in sent
-        for leak in ("tx_part", "acc_eur", "amount_partial", SECRET, "transaction_ids"):
+        assert code in sent
+        for leak in ("tx_part", "tx_obs", "acc_eur", "amount_partial", SECRET,
+                     "transaction_ids", "coverage_not_established", '"check": "bank"'):
             assert leak not in sent
 
 

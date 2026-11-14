@@ -989,22 +989,14 @@ def _return_instant(item: BankReturn) -> datetime:
 def _returns_of(
     credit: BankCredit, returns: tuple[BankReturn, ...], end: datetime
 ) -> list[BankReturn]:
-    """The returns that may give `credit`'s money back, up to the window's end: one that
-    names it, and -- until the bank says how a reversal appears -- one that names no
-    credit, in the credit's currency, for its amount, after its creation. Said, never
-    weighed: either makes the credit one to reconcile."""
-    related = []
-    for item in returns:
-        instant = _return_instant(item)
-        if instant > end:
-            continue
-        if item.related_credit_id == credit.transaction_id or (
-            item.related_credit_id is None
-            and item.amount.currency == credit.amount.currency
-            and abs(item.amount.amount_minor) == credit.amount.amount_minor
-            and instant >= credit.created_at
-        ):
-            related.append(item)
+    """The returns that name `credit` (`related_credit_id`), up to the window's end. A
+    return that names no credit is not attributed to one: no convention for that was
+    approved, and guessing by amount could pin someone else's refund on this invoice."""
+    related = [
+        item
+        for item in returns
+        if item.related_credit_id == credit.transaction_id and _return_instant(item) <= end
+    ]
     return sorted(related, key=lambda r: (_return_instant(r), r.id))
 
 
