@@ -166,5 +166,65 @@
     "email": "paul@tilleul-conseil.fr",
     "currency": "EUR",
     "display_name": "Tilleul Conseil"
+  },
+  {
+    "id": "cus_opale",
+    "email": "camille@opale-studio.fr",
+    "currency": "EUR",
+    "display_name": "Opale Studio"
+  },
+  {
+    "id": "cus_orme",
+    "email": "hugo@orme-conseil.fr",
+    "currency": "EUR",
+    "display_name": "Orme Conseil"
+  },
+  {
+    "id": "cus_cobalt",
+    "email": "lea@cobalt-design.fr",
+    "currency": "EUR",
+    "display_name": "Cobalt Design"
+  },
+  {
+    "id": "cus_saule",
+    "email": "marc@saule-architectes.fr",
+    "currency": "EUR",
+    "display_name": "Saule Architectes"
+  },
+  {
+    "id": "cus_ambre",
+    "email": "nina@ambre-traiteur.fr",
+    "currency": "EUR",
+    "display_name": "Ambre Traiteur"
+  },
+  {
+    "id": "cus_kestrel",
+    "email": "oliver@kestrel-labs.fr",
+    "currency": "EUR",
+    "display_name": "Kestrel Labs"
+  },
+  {
+    "id": "cus_givre",
+    "email": "paul@givre-froid.fr",
+    "currency": "EUR",
+    "display_name": "Givre Froid"
+  },
+  {
+    "id": "cus_pervenche",
+    "email": "rose@pervenche-fleurs.fr",
+    "currency": "EUR",
+    "display_name": "Pervenche Fleurs"
+  },
+  {
+    "id": "cus_basalte",
+    "email": "theo@basalte-btp.fr",
+    "currency": "EUR",
+    "display_name": "Basalte BTP"
+  },
+  {
+    "id": "cus_ocre",
+    "email": "zoe@ocre-edition.fr",
+    "currency": "EUR",
+    "display_name": "Ocre Edition"
   }
 ]

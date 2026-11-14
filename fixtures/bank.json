@@ -1,3 +1,256 @@
 {
- "worlds": {}
+ "worlds": {
+  "credit_observed": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": [
+    {
+     "account_id": "acc_eur",
+     "transaction_id": "tx_b01",
+     "type": "transfer",
+     "state": "completed",
+     "amount": 5900,
+     "currency": "EUR",
+     "created_at": "2026-09-14T08:00:00Z",
+     "reference": "Facture inv_701",
+     "origin": "external",
+     "fx": false,
+     "fee": false,
+     "completed_at": "2026-09-14T08:00:05Z"
+    }
+   ]
+  },
+  "recorded_on_platform": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": [
+    {
+     "account_id": "acc_eur",
+     "transaction_id": "tx_b02",
+     "type": "transfer",
+     "state": "completed",
+     "amount": 5900,
+     "currency": "EUR",
+     "created_at": "2026-09-12T09:00:00Z",
+     "reference": "Reglement inv_702",
+     "origin": "external",
+     "fx": false,
+     "fee": false,
+     "completed_at": "2026-09-12T09:00:04Z"
+    }
+   ]
+  },
+  "amount_only": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": [
+    {
+     "account_id": "acc_eur",
+     "transaction_id": "tx_b03",
+     "type": "transfer",
+     "state": "completed",
+     "amount": 5900,
+     "currency": "EUR",
+     "created_at": "2026-09-14T08:00:00Z",
+     "reference": null,
+     "origin": "external",
+     "fx": false,
+     "fee": false,
+     "completed_at": "2026-09-14T08:00:05Z"
+    }
+   ]
+  },
+  "two_invoices_cited": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": [
+    {
+     "account_id": "acc_eur",
+     "transaction_id": "tx_b04",
+     "type": "transfer",
+     "state": "completed",
+     "amount": 5900,
+     "currency": "EUR",
+     "created_at": "2026-09-14T08:00:00Z",
+     "reference": "inv_704 inv_705",
+     "origin": "external",
+     "fx": false,
+     "fee": false,
+     "completed_at": "2026-09-14T08:00:05Z"
+    }
+   ]
+  },
+  "partial_payment": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": [
+    {
+     "account_id": "acc_eur",
+     "transaction_id": "tx_b05",
+     "type": "transfer",
+     "state": "completed",
+     "amount": 3000,
+     "currency": "EUR",
+     "created_at": "2026-09-14T08:00:00Z",
+     "reference": "Acompte inv_706",
+     "origin": "external",
+     "fx": false,
+     "fee": false,
+     "completed_at": "2026-09-14T08:00:05Z"
+    }
+   ]
+  },
+  "other_currency": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    },
+    {
+     "id": "acc_gbp",
+     "currency": "GBP",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": [
+    {
+     "account_id": "acc_gbp",
+     "transaction_id": "tx_b06",
+     "type": "transfer",
+     "state": "completed",
+     "amount": 5900,
+     "currency": "GBP",
+     "created_at": "2026-09-14T08:00:00Z",
+     "reference": "Invoice inv_707",
+     "origin": "external",
+     "fx": false,
+     "fee": false,
+     "completed_at": "2026-09-14T08:00:05Z"
+    }
+   ]
+  },
+  "reversed_credit": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": [
+    {
+     "account_id": "acc_eur",
+     "transaction_id": "tx_b07",
+     "type": "transfer",
+     "state": "reverted",
+     "amount": 5900,
+     "currency": "EUR",
+     "created_at": "2026-09-10T08:00:00Z",
+     "reference": "Facture inv_708",
+     "origin": "external",
+     "fx": false,
+     "fee": false
+    }
+   ]
+  },
+  "read_cut_short": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "incomplete": [
+    "page_boundary_tie"
+   ],
+   "credits": [
+    {
+     "account_id": "acc_eur",
+     "transaction_id": "tx_b08",
+     "type": "transfer",
+     "state": "completed",
+     "amount": 5900,
+     "currency": "EUR",
+     "created_at": "2026-09-14T08:00:00Z",
+     "reference": "Facture inv_709",
+     "origin": "external",
+     "fx": false,
+     "fee": false,
+     "completed_at": "2026-09-14T08:00:05Z"
+    }
+   ]
+  },
+  "duplicate_with_credit": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": [
+    {
+     "account_id": "acc_eur",
+     "transaction_id": "tx_b09",
+     "type": "transfer",
+     "state": "completed",
+     "amount": 5900,
+     "currency": "EUR",
+     "created_at": "2026-09-14T08:00:00Z",
+     "reference": "Facture inv_711",
+     "origin": "external",
+     "fx": false,
+     "fee": false,
+     "completed_at": "2026-09-14T08:00:05Z"
+    }
+   ]
+  },
+  "no_credit": {
+   "accounts": [
+    {
+     "id": "acc_eur",
+     "currency": "EUR",
+     "visible": true
+    }
+   ],
+   "controlled": true,
+   "credits": []
+  }
+ }
 }

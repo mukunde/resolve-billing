@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from app.domain.enums import InvoiceStatus, PaymentStatus, RuleCode
 from app.domain.models import Invoice, Payment, RuleFinding
 from app.domain.money import Money
+from app.domain.rules import is_bank_finding
 
 #: Findings meaning the whole invoice should not exist.
 WHOLE_INVOICE_FINDINGS = frozenset(
@@ -72,6 +73,10 @@ def correction_for(
     # correction, whether or not it concerns this one.
     if any(f.code in UNCERTAIN for f in findings):
         return Correction(None, "un contrôle n'a pas pu conclure faute de données")
+    # The merchant's bank (specs/016-bank-evidence, FR-004): a credit observed or to
+    # reconcile is a person's to weigh, never a ground for a figure -- whichever.
+    if any(is_bank_finding(f) for f in findings):
+        return Correction(None, "une preuve bancaire est à examiner par une personne")
     if invoice.total.amount_minor <= 0:
         return Correction(None, "montant de facture nul ou négatif")
 

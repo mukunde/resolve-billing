@@ -1217,5 +1217,241 @@
       }
     ],
     "label_source": "maintainer, 2026-11-06"
+  },
+  {
+    "id": "bank_credit_observed",
+    "why": "Spec 016, SC-003. The customer says they paid by transfer; the invoice is open; the bank shows one completed credit from an outside payer, for the total, citing this invoice and no other. Observed, a reference-based candidate: a person reads the evidence, nothing is corrected, no automatic reply; the engine sees the code alone.",
+    "message": "Bonjour,\n\nJ'ai réglé la facture inv_701 par virement le 14 septembre, avec son numéro en référence. Pourriez-vous arrêter les relances ?\n\nCamille",
+    "customer_email": "camille@opale-studio.fr",
+    "invoice_id": "inv_701",
+    "bank_world": "credit_observed",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "A",
+        "type": "EX"
+      }
+    ]
+  },
+  {
+    "id": "bank_payment_recorded_on_platform",
+    "why": "Spec 016, SC-003, the B14 positive boundary. The payment is recorded on the platform (the invoice is paid) and the same money is at the bank: the bank is not read for a paid invoice, nothing is counted twice, no duplicate payment is found. A dunning complaint whose money arrived.",
+    "message": "Bonjour,\n\nJe viens de recevoir une relance pour la facture inv_702, que nous avons pourtant payée le 12 septembre. Pouvez-vous vérifier ?\n\nHugo",
+    "customer_email": "hugo@orme-conseil.fr",
+    "invoice_id": "inv_702",
+    "bank_world": "recorded_on_platform",
+    "expect_classification": "payment_already_received",
+    "expect_engine_action": "explain_invoice",
+    "expect_action": "reply",
+    "expect_human_approval": false,
+    "expect_findings": [],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B14",
+        "side": "A",
+        "type": "EX"
+      }
+    ]
+  },
+  {
+    "id": "bank_amount_only_credit",
+    "why": "Spec 016, SC-003. A credit for the invoice's total with no reference: never a candidate. No finding, the case behaves as a claim without evidence does today.",
+    "message": "Bonjour,\n\nLa facture inv_703 a été payée par virement il y a quelques semaines. Merci de mettre votre dossier à jour.\n\nLéa",
+    "customer_email": "lea@cobalt-design.fr",
+    "invoice_id": "inv_703",
+    "bank_world": "amount_only",
+    "expect_classification": "insufficient_information",
+    "expect_action": "request_information",
+    "expect_human_approval": false,
+    "expect_findings": [],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B14",
+        "side": "B",
+        "type": "CD"
+      }
+    ]
+  },
+  {
+    "id": "bank_reference_two_invoices",
+    "why": "Spec 016, SC-003. One credit, for one invoice's total, whose reference cites this invoice and another of the customer's: to reconcile, a person's.",
+    "message": "Bonjour,\n\nNous avons réglé la facture inv_705 par virement. Merci de ne plus nous relancer.\n\nMarc",
+    "customer_email": "marc@saule-architectes.fr",
+    "invoice_id": "inv_705",
+    "bank_world": "two_invoices_cited",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ]
+  },
+  {
+    "id": "bank_partial_payment",
+    "why": "Spec 016, SC-003. A credit citing the invoice for part of its total: to reconcile, never matched.",
+    "message": "Bonjour,\n\nNous avons versé un acompte sur la facture inv_706 et pensions être à jour. Pourquoi cette relance ?\n\nNina",
+    "customer_email": "nina@ambre-traiteur.fr",
+    "invoice_id": "inv_706",
+    "bank_world": "partial_payment",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ]
+  },
+  {
+    "id": "bank_other_currency",
+    "why": "Spec 016, SC-003. A credit citing the invoice, in another currency than the invoice's: to reconcile, never converted.",
+    "message": "Hello,\n\nWe paid invoice inv_707 by bank transfer from our UK account last month. Please stop the reminders.\n\nOliver",
+    "customer_email": "oliver@kestrel-labs.fr",
+    "invoice_id": "inv_707",
+    "bank_world": "other_currency",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ]
+  },
+  {
+    "id": "bank_reversed_credit",
+    "why": "Spec 016, SC-003. A credit citing the invoice, reverted, with no completion instant, created inside the window: kept, to reconcile.",
+    "message": "Bonjour,\n\nJ'ai payé la facture inv_708 par virement le 10 septembre. Je ne comprends pas la relance.\n\nPaul",
+    "customer_email": "paul@givre-froid.fr",
+    "invoice_id": "inv_708",
+    "bank_world": "reversed_credit",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ]
+  },
+  {
+    "id": "bank_read_cut_short",
+    "why": "Spec 016, SC-003. The bank read stopped on a page boundary it could not prove clean: not evaluable, never 'nothing', whatever the read holds.",
+    "message": "Bonjour,\n\nLa facture inv_709 est réglée depuis la mi-septembre par virement. Merci de corriger.\n\nRose",
+    "customer_email": "rose@pervenche-fleurs.fr",
+    "invoice_id": "inv_709",
+    "bank_world": "read_cut_short",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "NOT_EVALUABLE"
+    ],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "X",
+        "type": "EX",
+        "outcome": "not_evaluable"
+      }
+    ]
+  },
+  {
+    "id": "bank_duplicate_invoice_with_credit",
+    "why": "Spec 016, SC-003. A duplicate invoice, and a bank credit citing it for its total: the duplicate keeps its precedence (the classification), the bank finding blocks the correction, a person decides.",
+    "message": "Bonjour,\n\nJe crois que nous avons été facturés deux fois pour septembre, et nous avons déjà viré le montant de la facture inv_711.\n\nThéo",
+    "customer_email": "theo@basalte-btp.fr",
+    "invoice_id": "inv_711",
+    "bank_world": "duplicate_with_credit",
+    "expect_classification": "duplicate_billing",
+    "expect_engine_action": "propose_credit_note",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "DUPLICATE_INVOICE",
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "A",
+        "type": "EX"
+      },
+      {
+        "boundary": "B07",
+        "side": "A",
+        "type": "EX"
+      }
+    ]
+  },
+  {
+    "id": "bank_no_credit",
+    "why": "Spec 016, SC-003. A complete, covered read with no credit: no finding, never evidence of non-payment; the case behaves as a claim without evidence does today.",
+    "message": "Bonjour,\n\nJ'ai effectué le règlement de la facture inv_712 la semaine dernière. Merci d'arrêter les relances.\n\nZoé",
+    "customer_email": "zoe@ocre-edition.fr",
+    "invoice_id": "inv_712",
+    "bank_world": "no_credit",
+    "expect_classification": "insufficient_information",
+    "expect_action": "request_information",
+    "expect_human_approval": false,
+    "expect_findings": [],
+    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "covers": [
+      {
+        "boundary": "B14",
+        "side": "B",
+        "type": "CD"
+      }
+    ]
   }
 ]

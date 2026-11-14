@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 from app.domain.enums import RuleCode, SenderStatus
+from app.domain.rules import is_bank_finding
 from app.policies.action_policy import Verdict
 
 if TYPE_CHECKING:
@@ -67,6 +68,10 @@ def automatic_reply(result: InvestigationResult) -> AutomaticReply:
         return AutomaticReply(reason=ReplyReason.AUTOMATED_MESSAGE)
     if result.sender is not SenderStatus.KNOWN:
         return AutomaticReply(reason=ReplyReason.UNKNOWN_SENDER)
+    # The bank's evidence is a person's to read (specs/016-bank-evidence, FR-004):
+    # never a reply sent unattended, whatever the verdict says.
+    if any(is_bank_finding(f) for f in result.findings):
+        return AutomaticReply(reason=ReplyReason.NEEDS_A_PERSON)
     if result.authorization.verdict is not Verdict.AUTO:
         return AutomaticReply(reason=ReplyReason.NEEDS_A_PERSON)
     if result.proposed_action.type not in REPLIES:

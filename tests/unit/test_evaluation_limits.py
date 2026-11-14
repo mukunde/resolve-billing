@@ -599,7 +599,7 @@ class TestTheHostedRun:
         assert result["complete"] is False
         assert "rate limiting" in result["stop_reason"]
         assert result["stopped_at"] not in result["statuses"]
-        assert len(result["outcomes"]) + 1 + len(result["not_attempted"]) == 45
+        assert len(result["outcomes"]) + 1 + len(result["not_attempted"]) == 55
         assert "/34" not in capsys.readouterr().out
 
     def test_a_cancelled_run_is_written_incomplete(self, tmp_path, monkeypatch):
@@ -627,7 +627,7 @@ class TestTheHostedRun:
         )
 
         assert result["complete"] is True
-        assert len(result["statuses"]) == 45
+        assert len(result["statuses"]) == 55
         assert set(result["statuses"].values()) <= {"decided", "rules_only"}
         assert result["configuration"]["model"] == "gemini-3.8-flash"
         assert result["cost"]["basis"] == "estimated zero under the free quota"
@@ -642,7 +642,7 @@ class TestTheHostedRun:
         oversized = [c for c, s in result["statuses"].items() if s == "not_sent_oversized"]
         assert oversized
         assert sorted(result["not_scored"]) == sorted(oversized)
-        scored = 45 - len(oversized)
+        scored = 55 - len(oversized)
         assert f"cases                         : {scored}" in capsys.readouterr().out
 
     def test_the_mistral_allowance_is_for_mistral_alone(self, tmp_path, monkeypatch):
@@ -944,7 +944,7 @@ class TestAfterR161:
 
         assert status == 3
         assert result["stop_reason"] == "interrupted"
-        assert len(result["not_attempted"]) == 45
+        assert len(result["not_attempted"]) == 55
 
     def test_a_client_that_cannot_be_built_leaves_every_case_unattempted(
         self, tmp_path, monkeypatch
@@ -958,7 +958,7 @@ class TestAfterR161:
         (written,) = list(tmp_path.glob("gemini-*.json"))
         result = json.loads(written.read_text(encoding="utf-8"))
         assert result["stop_reason"] == "internal error (RuntimeError)"
-        assert len(result["not_attempted"]) == 45
+        assert len(result["not_attempted"]) == 55
 
     @pytest.mark.parametrize("last", ['"NaN"', '"Infinity"', '"-Infinity"', "1e30"])
     def test_a_pace_that_is_not_a_time_waits_the_whole_minute(self, last):
