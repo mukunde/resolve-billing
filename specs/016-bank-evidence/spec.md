@@ -100,10 +100,11 @@ counterparty value.
   `transfer` 1, `charge` 1; states `completed` 10, `failed` 1; counterparty absent on 10,
   `revolut` on 1; **no `reference` on any**; no `related_transaction_id`; leg amounts JSON
   numbers, integral 10, fractional 1.
-- Consequence, limited to what was seen: the six demo top-ups carry no counterparty. If the
-  top-ups the seed makes carry none either, their origin is *unknown* and FR-003 keeps them
-  from ever being candidates; SC-002's expected outcome follows the origin actually read
-  back, which only the seeded run will show.
+- Consequence, limited to what was seen: ten of the eleven demo transactions carried no
+  counterparty; the aggregate does not say which. If the top-ups the seed makes carry none,
+  their origin is *unknown* and FR-003 keeps them from ever being candidates; SC-002's
+  expected outcome follows the origin actually read back, which only the seeded run will
+  show.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -115,7 +116,7 @@ citing its number and no other.
 
 **Independent Test**: The rule and the fake without network, on fixtures that include an
 outside payer's credit. Whether the Sandbox can show it depends on the origin its seeded
-top-ups read back with (see SC-002); the demo top-ups carried no counterparty.
+top-ups read back with (see SC-002).
 
 **Acceptance Scenarios**:
 
@@ -221,13 +222,14 @@ top-ups read back with (see SC-002); the demo top-ups carried no counterparty.
 - **SC-001**: Tests without network cover every functional requirement, acceptance scenario
   and edge case, the payload and disclosure allowlists, the adapter's GET-only, host,
   redirect, signing, pagination-tie and decimal behaviour, the seed's restrictions; and, on
-  fixtures only, what the Sandbox cannot make: an outside payer's credit (observed), a later
-  reversal of a completed credit, a separate return related to it, and a timestamp tie at a
-  page boundary.
+  fixtures, what the Sandbox cannot make or may not make: an outside payer's credit
+  (observed) unless the seeded top-ups read back with an external counterparty, a later
+  reversal of a completed credit (Sandbox states are final), a separate return related to
+  it, and a timestamp tie at a page boundary.
 - **SC-002**: On the Sandbox, credits seeded as top-ups (citing the invoice's number, for its
   total; for part of it; reverted; citing another number) are read back through the real
   adapter, signed, and mapped faithfully. Each gives the outcome the rule dictates for the
-  origin it actually reads back with: if, like the demo top-ups, they carry no counterparty,
+  origin it actually reads back with: if they carry no counterparty,
   none can give *observed*, and the contract records that a positive match was not
   demonstrated on the Sandbox.
 - **SC-003**: Development cases, labels adjudicated by the maintainer: a claim with an
