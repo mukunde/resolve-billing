@@ -58,11 +58,12 @@ maintainer's explicit approval of the final diff.
   not verified and that a reference may be mistyped. If a merchant numbered per customer,
   the finding would mislead a person, never move money.
 
-### Open, for the maintainer
-- **The type allowlist** (convention until Revolut answers): `topup`, and `transfer` with an
-  `external` counterparty.
-- **The lookback margin** (convention until Revolut answers): how long before the window a
-  credit's creation is read (proposed: 7 days).
+- Q: Which transaction types count as an incoming transfer, until Revolut answers? → A:
+  `topup`, and `transfer` with an `external` counterparty (a convention, one constant to
+  change on Revolut's answer).
+- Q: The lookback margin, until Revolut answers? → A: 7 days before the window opens; on
+  Production data coverage stays not established, on the Sandbox and fixtures it holds by
+  construction.
 
 ## What the documentation establishes, and what the probe will settle
 
