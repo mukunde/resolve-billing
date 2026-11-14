@@ -47,10 +47,17 @@ maintainer's explicit approval of the final diff.
 - Q: Production claims? → A: None until Revolut answers; the incoming-transfer type
   allowlist and the lookback margin are conventions the maintainer approves.
 
-### Open, for the maintainer
+### Session 2026-11-14 (the maintainer)
 
-- **Invoice numbers**: unique across the merchant, or only per customer? It decides how
-  much a reference proves (see "Assumptions").
+- Q: Are invoice numbers unique across the merchant, or only per customer? → A: Unique
+  across the merchant -- French invoicing law requires a unique, chronological numbering
+  per company, and both platforms integrated follow it (Pennylane one sequence per company;
+  Stripe's per-customer numbering carries a per-customer prefix). The finding may therefore
+  say that the cited number designates this invoice alone; it still says that the payer is
+  not verified and that a reference may be mistyped. If a merchant numbered per customer,
+  the finding would mislead a person, never move money.
+
+### Open, for the maintainer
 - **The type allowlist** (convention until Revolut answers): `topup`, and `transfer` with an
   `external` counterparty.
 - **The lookback margin** (convention until Revolut answers): how long before the window a
@@ -183,9 +190,7 @@ Sandbox, a top-up seeded with the reference.
 
 ## Assumptions
 
-- Invoice numbers: if unique across the merchant, a reference citing a number points at one
-  invoice only; if only per customer, a credit from one customer citing a number may concern
-  another's invoice with the same number, and the finding says so. Either way the credit
-  stays a reference-based candidate (open question above).
+- Invoice numbers are unique across the merchant (clarified 2026-11-14); the credit stays a
+  reference-based candidate, the payer unverified.
 - Revolut's answers may change the type allowlist, the reversal model and the coverage rule;
   each is a conventional default until then.
