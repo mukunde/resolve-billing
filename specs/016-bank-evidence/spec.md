@@ -8,7 +8,8 @@
 
 **Input**: Roadmap item 3, the last of its integrations (coordination decisions 4, 45 and
 48). The framing was reviewed by Codex (r399-r405) and decided by the maintainer on
-2026-11-13 (decision 48): observe a receipt for a person, read from the merchant's bank,
+2026-11-13 (decision 48); it is kept beside this spec as [framing.md](framing.md), and its
+design section is normative here wherever this spec refers to it: observe a receipt for a person, read from the merchant's bank,
 never conclude about the invoice. The bank changed the same day from Qonto, whose developer
 portal admits only paying, verified customers, to **Revolut Business**, whose Sandbox is free
 and open; the slice is a demonstration on that Sandbox and on fixtures, not a claim about
@@ -77,8 +78,11 @@ with a reference and a final state; signing optional in Sandbox, valid when sent
 Not documented, asked of Revolut: the type and reference of an incoming SEPA transfer, the
 shape of a reversal of a completed credit, timestamp ties, the longest creation-to-
 completion delay, history depth. The read-only probe (reviewed before it runs) settles what
-the Sandbox shows: the declared account's visibility and currency, the fields and values a
-transaction actually carries, whether signed requests are accepted.
+the Sandbox shows, printing **structure only**: the declared account's visibility and
+currency, the field names a transaction carries, the enumeration values seen from closed
+sets (anything else counted, never printed), whether optional fields are present, whether
+signed requests are accepted -- never an amount, id, reference, description, label or
+counterparty value.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -88,8 +92,9 @@ A customer says they paid by transfer; the invoice is unpaid on the platform; th
 shows one completed credit, from an outside payer, in the invoice's currency, for its total,
 citing its number and no other.
 
-**Independent Test**: The rule and the fake without network; then the Revolut adapter on the
-Sandbox, a top-up seeded with the reference.
+**Independent Test**: The rule and the fake without network, on fixtures that include an
+outside payer's credit. The Sandbox cannot show this story: its top-ups have no outside payer
+(see SC-002).
 
 **Acceptance Scenarios**:
 
@@ -149,9 +154,20 @@ Sandbox, a top-up seeded with the reference.
   Ed25519 key as Production requires, and parse amounts as decimals. A timestamp tie at a
   full page's boundary MUST make the read incomplete.
 - **FR-003**: The check MUST run before any model (I), on the disputed invoice when it is
-  unpaid on the platform, with the criteria of "What counts", "Reference" and "Time" in the
-  framing (decision 48), and the outcomes in their order of precedence: not evaluable; to
+  unpaid on the platform, with the criteria of the framing's design point 2 ("What counts",
+  "Reference", "Time") and its outcomes in their order of precedence: not evaluable; to
   reconcile; observed; nothing.
+- **FR-003a**: Retrieval and coverage MUST follow the framing's design point 1: the read
+  pages by `created_at` from a lower bound set the approved margin before the window;
+  window membership by `completed_at` (UTC); a reverted credit without `completed_at`,
+  created before the window's end, kept as to reconcile; a full page whose last instant is
+  shared, or any page boundary not proven clean, makes the read incomplete; returns related
+  to a credit (by `related_transaction_id`) or of a return type are read, whatever their
+  sign or reference, and one related to a candidate makes it to reconcile.
+- **FR-003b**: Coverage MUST be reported as not established on Production data until Revolut
+  states a maximum creation-to-completion delay (the check then answers not evaluable); on
+  the Sandbox and fixtures it is established only by construction -- every world's credits
+  created inside the margin -- and said so with every finding.
 - **FR-004**: Either finding MUST block every correction on the invoice and route to human
   review with no automatic reply; existing findings keep their precedence; the engine is
   still consulted for the classification.
@@ -160,7 +176,11 @@ Sandbox, a top-up seeded with the reference.
   limitations said every time; counterparty fields, descriptions, raw references and labels
   MUST appear nowhere -- not in logs, traces, exceptions or API answers.
 - **FR-006**: The seed MUST make top-up credits only, on the declared account only, with the
-  seed key from `.env.seed`; the service and the probe MUST never load that file.
+  seed key from `.env.seed`; the service and the probe MUST never load that file. Because
+  that key has full Sandbox access, the seed MUST pin the Sandbox origin, refuse redirects
+  and any URL but its own, issue only `POST /sandbox/topup` with the declared account's id,
+  and never print, log or raise the key or a response body; tests MUST show each
+  restriction.
 - **FR-007**: Constitution III, a new ADR for the port, ADR-009's disclosure inventory, and
   the contracts named in "Behaviour changed" MUST be written or amended in the same pull
   request.
@@ -177,16 +197,27 @@ Sandbox, a top-up seeded with the reference.
 
 ## Success Criteria *(mandatory)*
 
-- **SC-001**: Tests without network cover every acceptance scenario and edge case, the
-  payload and disclosure allowlists, and the adapter's GET-only, host, redirect, signing,
-  pagination-tie and decimal behaviour.
-- **SC-002**: On the Sandbox: credits seeded as top-ups (a matching one, a partial one, a
-  reverted one, one with another reference) are read back through the real adapter, signed,
-  and give their findings. Recorded in the bank-evidence contract, with what the Sandbox
-  cannot show.
-- **SC-003**: New development cases (labels adjudicated by the maintainer) and the taxonomy
-  row; the existing cases' baseline unchanged where no bank evidence applies, the moved
-  ones moved case by case; a live engine run only with its cost shown first.
+- **SC-001**: Tests without network cover every functional requirement, acceptance scenario
+  and edge case, the payload and disclosure allowlists, the adapter's GET-only, host,
+  redirect, signing, pagination-tie and decimal behaviour, the seed's restrictions; and, on
+  fixtures only, what the Sandbox cannot make: an outside payer's credit (observed), a later
+  reversal of a completed credit, a separate return related to it, and a timestamp tie at a
+  page boundary.
+- **SC-002**: On the Sandbox, credits seeded as top-ups (citing the invoice's number, for its
+  total; for part of it; reverted; citing another number) are read back through the real
+  adapter, signed, and mapped faithfully. Top-ups have no outside payer, so none gives
+  *observed*: each gives the outcome its origin and the rule dictate, as the probe shows the
+  origin to be, and the contract records that this, not a positive match, is what the
+  Sandbox demonstrates.
+- **SC-003**: Development cases, labels adjudicated by the maintainer: a claim with an
+  outside payer's matching credit; a payment already recorded on the platform with the same
+  money at the bank (no double counting, no duplicate payment); an amount-only credit (no
+  reference); a reference citing two invoices; a partial payment; another currency; a
+  reversed credit; a cut-short read; a duplicate invoice with a bank credit (the duplicate
+  keeps precedence); no credit (`insufficient_information`, as today); and the engine
+  payload checked for bank data in each. The taxonomy row; the existing cases' baseline
+  unchanged where no bank evidence applies, the moved ones moved case by case; a live engine
+  run only with its cost shown first.
 
 ## Assumptions
 
