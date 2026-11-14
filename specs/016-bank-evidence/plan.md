@@ -3,7 +3,7 @@
 **Branch**: `016-bank-evidence` | **Date**: 2026-11-14 | **Spec**: [spec.md](spec.md)
 (approved at `a0d4307`; conventions approved at `c3e0baa`) | **Framing**: [framing.md](framing.md)
 
-**Status**: Draft, for the maintainer's approval (Codex r418-r420 answered)
+**Status**: Approved by the maintainer on 2026-11-14, at `6da6dc6`
 
 ## Summary
 
