@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-14
 
-**Status**: Draft, for the maintainer's approval
+**Status**: Approved by the maintainer on 2026-11-14, at `a0d4307`
 
 **Input**: Roadmap item 3, the last of its integrations (coordination decisions 4, 45 and
 48). The framing was reviewed by Codex (r399-r405) and decided by the maintainer on
