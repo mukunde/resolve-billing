@@ -26,6 +26,7 @@ from app.domain.models import (
     TaxBreakdown,
     Usage,
 )
+from app.domain.references import merge_spans, references
 from app.providers.base import (
     ALLOCATIONS,
     Allocation,
@@ -62,19 +63,21 @@ class FakeBillingProvider:
         format, and a provider without this method simply has no
         cited-reference check.
         """
-        return {invoice_id for _, _, invoice_id in self.invoice_reference_spans(text)}
+        return {invoice_id for _, _, invoice_id in self.invoice_reference_spans(text, invoices)}
 
     def invoice_reference_spans(
         self, text: str, invoices: Sequence[Invoice] = ()
     ) -> list[tuple[int, int, str]]:
         """Where each reference sits in `text`, and the id it stands for --
         for masking it in place (D10). Optional on the port, like the above.
-        `invoices`, the investigation's (specs/014-pennylane-read), is not
-        needed here: the fake's ids are written in the text as they are."""
-        return [
+        The fake's ids are written in the text as they are; a fixture's
+        printed `number`, when it has one, is recognised among `invoices`
+        too (specs/016-bank-evidence)."""
+        ids = [
             (match.start(), match.end(), f"inv_{match.group(1).lower()}")
             for match in self._INVOICE_REFERENCE.finditer(text)
         ]
+        return merge_spans(ids, references(text, invoices))
 
     def __init__(self, fixtures: FixtureSet | None = None) -> None:
         # A given set is the reference run's frozen snapshot; otherwise the

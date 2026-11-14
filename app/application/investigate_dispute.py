@@ -36,6 +36,7 @@ from app.decision.base import (
     RecommendedAction,
 )
 from app.domain.automated import automated_message
+from app.domain.bank import BankCheck
 from app.domain.enums import RuleCode, SenderStatus, Severity
 from app.domain.models import (
     BillingContext,
@@ -66,6 +67,7 @@ from app.observability import tracing
 from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
 from app.policies.correction import correction_for
 from app.policies.reply import AutomaticReply, automatic_reply
+from app.providers.bank_base import BankEvidence
 from app.providers.base import BillingProvider, ProviderUnavailable, ProviderUnsupported
 
 log = logging.getLogger(__name__)
@@ -142,6 +144,9 @@ class InvestigationResult(BaseModel):
     short_circuited_by: RuleCode | None = None
     sender: SenderStatus = SenderStatus.KNOWN
     """Whether we know who wrote. Decided by the rules, never by the engine."""
+    bank_check: BankCheck | None = Field(default=None, exclude=True)
+    """The bank check's record (specs/016-bank-evidence), kept whatever it found;
+    for the audit and the pages, never in the API's answer."""
     automatic_reply: AutomaticReply = AutomaticReply()
     """Whether text may be sent to the sender unattended, and why or why not.
     The only authority on an automatic reply (ADR-011); set once the run is
@@ -162,12 +167,16 @@ class DisputeInvestigator:
         policy: ActionPolicy | None = None,
         audit: AuditSink | None = None,
         actions=None,
+        bank: BankEvidence | None = None,
     ) -> None:
         self._provider = provider
         self._engine = engine
         self._policy = policy or ActionPolicy()
         self._audit = audit
         self._actions = actions
+        #: The merchant's bank, read for evidence that a payment arrived
+        #: (specs/016-bank-evidence); None: no bank, the investigation as before.
+        self._bank = bank
 
     async def investigate(
         self, dispute: Dispute, now: datetime | None = None

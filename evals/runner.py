@@ -1,3 +1,4 @@
+
 """Run the case set against an engine and report what it got right.
 
 Four of the numbers this prints are ordinary. One is not.
@@ -39,13 +40,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.application.investigate_dispute import DisputeInvestigator, InvestigationResult
+from app.application.investigate_dispute import InvestigationResult
 from app.decision.base import Classification
 from app.decision.prompts import DEFAULT_PROMPT, PROMPTS
 from app.domain.enums import SenderStatus
 from app.domain.models import Dispute
 from app.providers.fake.adapter import FakeBillingProvider
 from evals import engines
+from evals.investigators import investigator_for
 
 CASES_PATH = Path(__file__).parent / "cases.json"
 
@@ -324,7 +326,6 @@ async def run(
         raise ValueError(f"{engine_name} reads no prompt")
     built = _claude_engine(prompt) if engine_name == "claude" else available[engine_name]()
     engine = wire(built, provider)
-    investigator = DisputeInvestigator(provider=provider, engine=engine)
 
     outcomes = []
     try:
@@ -337,7 +338,8 @@ async def run(
                 invoice_id=case["invoice_id"],
                 headers=header_pairs(case.get("headers")),
             )
-            result = await investigator.investigate(dispute, now=EVALUATION_DATE)
+            result = await investigator_for(case, provider, engine).investigate(
+                dispute, now=EVALUATION_DATE)
             outcomes.append(_evaluate(case, result))
     finally:
         # Whatever the engine holds belongs to this run's event loop, which

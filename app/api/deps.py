@@ -11,6 +11,7 @@ import importlib.util
 import os
 from functools import lru_cache
 
+from app.api.bank_config import bank_evidence
 from app.application.execute_action import ApprovalService
 from app.application.investigate_dispute import DisputeInvestigator
 from app.decision.base import DecisionEngine
@@ -204,4 +205,5 @@ def get_investigator() -> DisputeInvestigator:
         engine=get_engine(),
         audit=get_audit(),
         actions=get_actions(),
+        bank=bank_evidence(),
     )

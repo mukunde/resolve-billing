@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 from app.domain.models import Customer, Invoice, Payment, Subscription, TaxBreakdown, Usage
+from app.domain.references import merge_spans, references
 from app.providers.base import (
     ALLOCATIONS,
     Allocation,
@@ -68,12 +69,15 @@ class StripeBillingProvider:
     # `invoices`, the investigation's (specs/014-pennylane-read), is not needed:
     # Stripe's `in_` identifiers are found in the text alone.
     def invoice_references(self, text: str, invoices: Sequence[Invoice] = ()) -> set[str]:
-        return {invoice_id for _, _, invoice_id in mapping.references(text)}
+        return {invoice_id for _, _, invoice_id in self.invoice_reference_spans(text, invoices)}
 
     def invoice_reference_spans(
         self, text: str, invoices: Sequence[Invoice] = ()
     ) -> list[tuple[int, int, str]]:
-        return mapping.references(text)
+        """Stripe's ids, and the printed numbers of the loaded invoices, so a
+        number a customer cites is recognised and masked too (D10;
+        specs/016-bank-evidence)."""
+        return merge_spans(mapping.references(text), references(text, invoices))
 
     # -- customers ---------------------------------------------------------
 
