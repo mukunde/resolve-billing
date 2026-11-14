@@ -84,6 +84,22 @@ sets (anything else counted, never printed), whether optional fields are present
 signed requests are accepted -- never an amount, id, reference, description, label or
 counterparty value.
 
+### What the probe showed (2026-11-14, structure only, signed requests)
+
+- The read key, signed with its Ed25519 key, was accepted (200) on accounts and
+  transactions. It reaches the API Console's own Sandbox, not one opened from the Sandbox
+  sign-up page: the declared account `RB worlds` (EUR, active) was made there, and the two
+  sandboxes share a default company name.
+- Accounts carry `id`, `name`, `currency`, `state`, `balance`, `public`, `created_at`,
+  `updated_at` and one more undocumented field.
+- 11 demo transactions (one page): types `topup` 6, `card_payment` 3, `transfer` 1,
+  `charge` 1; states `completed` 10, `failed` 1; one leg each; **no `reference` on any**;
+  **no counterparty on the six top-ups** (one `revolut` counterparty elsewhere); leg amounts
+  JSON numbers, integral or fractional; legs carry `description` and `balance`.
+- Consequence: a Sandbox top-up has no counterparty, so its origin is *unknown* and it can
+  never be a candidate (FR-003); SC-002 demonstrates retrieval, signing, mapping and the
+  unknown-origin outcome, not a positive match.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - A claimed payment with a matching bank credit goes to a person with the evidence (Priority: P1)
