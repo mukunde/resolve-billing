@@ -3,7 +3,7 @@
 **Branch**: `016-bank-evidence` | **Date**: 2026-11-14 | **Spec**: [spec.md](spec.md)
 (approved at `a0d4307`; conventions approved at `c3e0baa`) | **Framing**: [framing.md](framing.md)
 
-**Status**: Draft, for the maintainer's approval (Codex r418 answered)
+**Status**: Draft, for the maintainer's approval (Codex r418 and r419 answered)
 
 ## Summary
 
@@ -61,6 +61,12 @@ evaluation. In order:
   `cited_invoices(text, invoices) -> set[invoice id]` over the **loaded invoices only**,
   matching each one's printed `number` and its id, so a bank reference is read the same way
   on every platform (the fake, Stripe and Pennylane hooks are not used for bank text).
+- Printed numbers on every platform: Stripe's mapper sets `Invoice.number` from the
+  invoice's `number`; the fake's fixtures accept an optional `number`. `Invoice.number` is
+  serialised only when set (spec 014): whether the engine's payload or the untaxed-bytes
+  snapshot moves on Stripe and the fake is shown by the gates in this commit; if it does,
+  the change is declared and the numbers are masked before any engine as on Pennylane (D10).
+  Tests: printed-number matching and the exclusion of unloaded invoices, on each platform.
 - `app/providers/bank_base.py`: the port `BankEvidence` -- `name`, `async read(window,
   margin, now) -> BankRead`, the declared accounts from configuration, never from a dispute;
   `BankUnavailable` for a read that failed.
@@ -70,8 +76,16 @@ evaluation. In order:
 - `app/api/bank_config.py`: `bank_evidence() -> BankEvidence | None`, returning None until
   section 2a fills it; `deps.py` passes it to the investigator.
 - Fixture schema frozen: `app/providers/fake/fixtures/bank.json` (an empty, valid file),
-  documented in the module: accounts (id, currency, visible), credits and returns keyed by
-  account, an `incomplete` switch and a `tie` case per account.
+  documented in the module: **named worlds**, each with accounts (id, currency, visible),
+  credits and returns keyed by account, an `incomplete` switch, a `tie` case, and whether its
+  coverage is controlled. The fake's constructor takes a world name; an evaluation case
+  selects one with an optional `bank_world` field; no field means no bank configured, so
+  every existing case runs exactly as before. `evals/runner.py` and `evals/hosted_run.py`
+  build the investigator through one shared helper, with a parity test.
+- The foundation itself touches, besides the above: `app/providers/stripe/mapping.py` (the
+  number), `app/providers/fake/` fixture loading (the optional number),
+  `app/providers/pennylane/mapping.py` (importing the moved recogniser), the shared
+  investigator helper in `evals/`.
 - Ownership after it: section 2a owns `app/providers/bank/`, `app/providers/fake/bank.py`,
   `app/api/bank_config.py`, `scripts/revolut_seed.py`, `.env.example`'s bank lines and their
   tests; section 2b owns the rule in `app/domain/rules.py`, `app/application/`,
@@ -90,15 +104,19 @@ evaluation. In order:
     start minus the margin; `to` moved to the last item's `created_at`; a full page whose last
     `created_at` is shared by more than one item, or a boundary not proven clean, makes the
     read incomplete; 60 requests per minute respected, within a time budget, else incomplete;
-  - mapping: single-leg credits to a declared account, positive amount; `type` on the
-    allowlist (`topup`; `transfer` with an `external` counterparty); origin from the
-    counterparty (absent → unknown; `self`, `revolut` → internal); `fx` and `fee` as above;
+  - mapping: single-leg credits to a declared account, positive amount, `type` `topup` or
+    `transfer` -- **of any origin**: the origin is mapped (absent → unknown; `self`,
+    `revolut` → internal; `external`) and the rule, not the mapper, decides that only an
+    external transfer or a top-up qualifies, so a referenced internal or unknown transfer
+    still reaches the rule as an exception; `fx` and `fee` as above;
     returns: a `related_transaction_id` pointing at a credit read, or a type `topup_return` /
     `refund`; amounts with `parse_float=Decimal`; `description`, counterparty ids, merchant
     and card fields never kept; a malformed answer → `BankUnavailable` with a fixed category,
     never the platform's text;
-  - coverage: established only on the Sandbox host (its worlds created inside the margin);
-    elsewhere false until Revolut states a maximum delay.
+  - coverage: established only when the configuration declares the account's worlds
+    **controlled** (`REVOLUT_CONTROLLED_WORLDS=enabled`, set for the seeded Sandbox run alone)
+    **and** no credit or return read was created before the read's lower bound; otherwise
+    not established -- on the Sandbox too -- until Revolut states a maximum delay.
 - **Seed** (`scripts/revolut_seed.py`): only `POST /sandbox/topup`, only the declared
   account, pinned host, no redirects, the seed key from `.env.seed`, never printed; one-shot
   writes with intents as the Pennylane seed; worlds: a top-up citing an invoice number for
@@ -164,8 +182,8 @@ evaluation. In order:
 |---|---|
 | FR-001 | the types; returns read; accounts' visibility and currency; completeness and coverage carried |
 | FR-002 | GET only; host pinned; redirects refused; declared accounts checked; the signature on a fixed vector; decimals; a page-boundary tie → incomplete; the rate budget → incomplete; a malformed or failed answer → `BankUnavailable`, a fixed category |
-| FR-003 | each outcome and its precedence; each exception reason (FX by billed amount and by billed currency); the window bounds; a reverted credit without `completed_at`; an invisible account and a currency mismatch with zero transactions → not evaluable; a reference citing an unloaded invoice is not a second citation |
-| FR-003a/b | the margin; coverage not established off the Sandbox → `NOT_EVALUABLE`; established on the fake by construction |
+| FR-003 | each outcome and its precedence; a referenced internal or unknown-origin transfer, through the real mapper and the rule, beside a qualifying credit → to reconcile; each exception reason (FX by billed amount and by billed currency); the window bounds; a reverted credit without `completed_at`; an invisible account and a currency mismatch with zero transactions → not evaluable; a reference citing an unloaded invoice is not a second citation |
+| FR-003a/b | the margin; coverage not established without controlled worlds, on the Sandbox too → `NOT_EVALUABLE`; established on controlled fake worlds and the seeded Sandbox run |
 | FR-004 | corrections blocked by each bank code and by a bank-derived `NOT_EVALUABLE`; human review; no automatic reply; each short-circuit runs before the bank and records `not_run`; a duplicate invoice keeps its precedence; no bank configured → unchanged |
 | FR-005 | a capturing engine, the mock and the hosted request payloads hold the code only; the run row's `bank_check_json` round-trips the allowlist; the run page shows it; logs, traces and exceptions carry no bank text |
 | FR-006 | the seed's restrictions, one by one |
