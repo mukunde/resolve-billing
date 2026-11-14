@@ -3,7 +3,7 @@
 **Branch**: `016-bank-evidence` | **Date**: 2026-11-14 | **Spec**: [spec.md](spec.md)
 (approved at `a0d4307`; conventions approved at `c3e0baa`) | **Framing**: [framing.md](framing.md)
 
-**Status**: Draft, for the maintainer's approval (Codex r418 and r419 answered)
+**Status**: Draft, for the maintainer's approval (Codex r418-r420 answered)
 
 ## Summary
 
@@ -49,7 +49,8 @@ evaluation. In order:
     completed at or None, created at, reference text or None -- in memory for the check,
     never serialised --, origin `external` / `internal` / `unknown`, `fx: bool` -- a
     `bill_currency` or a `bill_amount` differing from the leg's --, `fee: bool`);
-  - `BankReturn` (id, type, signed amount `Money`, related credit id or None);
+  - `BankReturn` (id, type, signed amount `Money`, related credit id or None, completed at
+    or None, created at);
   - `BankRead` (accounts, credits, returns, window, margin, complete, coverage_established,
     incompleteness reasons from a closed set);
   - `BankCheck` -- the record kept whatever the outcome: window, margin, accounts (id,
@@ -67,6 +68,11 @@ evaluation. In order:
   snapshot moves on Stripe and the fake is shown by the gates in this commit; if it does,
   the change is declared and the numbers are masked before any engine as on Pennylane (D10).
   Tests: printed-number matching and the exclusion of unloaded invoices, on each platform.
+- Masking printed numbers: the fake's and Stripe's `invoice_reference_spans` are composed
+  with the domain recogniser, so a printed number cited in a customer's message is masked
+  before any engine on every platform, not only recognised (D10). The foundation owns
+  `app/providers/fake/adapter.py` and `app/providers/stripe/adapter.py` for this; tests on
+  the requests captured from the hosted and failover engines.
 - `app/providers/bank_base.py`: the port `BankEvidence` -- `name`, `async read(window,
   margin, now) -> BankRead`, the declared accounts from configuration, never from a dispute;
   `BankUnavailable` for a read that failed.
@@ -106,9 +112,10 @@ evaluation. In order:
     read incomplete; 60 requests per minute respected, within a time budget, else incomplete;
   - mapping: single-leg credits to a declared account, positive amount, `type` `topup` or
     `transfer` -- **of any origin**: the origin is mapped (absent → unknown; `self`,
-    `revolut` → internal; `external`) and the rule, not the mapper, decides that only an
-    external transfer or a top-up qualifies, so a referenced internal or unknown transfer
-    still reaches the rule as an exception; `fx` and `fee` as above;
+    `revolut` → internal; `external`) and the rule, not the mapper, decides that a credit
+    qualifies only when its origin is **external**, whatever its type (`topup` or
+    `transfer`), so a referenced internal or unknown-origin credit still reaches the rule as
+    an exception -- and a Sandbox top-up without a counterparty never gives *observed*; `fx` and `fee` as above;
     returns: a `related_transaction_id` pointing at a credit read, or a type `topup_return` /
     `refund`; amounts with `parse_float=Decimal`; `description`, counterparty ids, merchant
     and card fields never kept; a malformed answer → `BankUnavailable` with a fixed category,
@@ -182,7 +189,7 @@ evaluation. In order:
 |---|---|
 | FR-001 | the types; returns read; accounts' visibility and currency; completeness and coverage carried |
 | FR-002 | GET only; host pinned; redirects refused; declared accounts checked; the signature on a fixed vector; decimals; a page-boundary tie → incomplete; the rate budget → incomplete; a malformed or failed answer → `BankUnavailable`, a fixed category |
-| FR-003 | each outcome and its precedence; a referenced internal or unknown-origin transfer, through the real mapper and the rule, beside a qualifying credit → to reconcile; each exception reason (FX by billed amount and by billed currency); the window bounds; a reverted credit without `completed_at`; an invisible account and a currency mismatch with zero transactions → not evaluable; a reference citing an unloaded invoice is not a second citation |
+| FR-003 | each outcome and its precedence; a referenced top-up or transfer of unknown or internal origin → to reconcile, never observed; a return's completion or, absent, creation instant in the record; a referenced internal or unknown-origin transfer, through the real mapper and the rule, beside a qualifying credit → to reconcile; each exception reason (FX by billed amount and by billed currency); the window bounds; a reverted credit without `completed_at`; an invisible account and a currency mismatch with zero transactions → not evaluable; a reference citing an unloaded invoice is not a second citation |
 | FR-003a/b | the margin; coverage not established without controlled worlds, on the Sandbox too → `NOT_EVALUABLE`; established on controlled fake worlds and the seeded Sandbox run |
 | FR-004 | corrections blocked by each bank code and by a bank-derived `NOT_EVALUABLE`; human review; no automatic reply; each short-circuit runs before the bank and records `not_run`; a duplicate invoice keeps its precedence; no bank configured → unchanged |
 | FR-005 | a capturing engine, the mock and the hosted request payloads hold the code only; the run row's `bank_check_json` round-trips the allowlist; the run page shows it; logs, traces and exceptions carry no bank text |
