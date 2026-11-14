@@ -38,12 +38,12 @@ def bank_evidence() -> BankEvidence | None:
 
 
 def _revolut() -> BankEvidence:
-    from app.providers.revolut.adapter import RevolutBank
-    from app.providers.revolut.client import (
+    from app.providers.bank.client import (
         RevolutConfigurationError,
         RevolutReader,
         load_signing_key,
     )
+    from app.providers.bank.revolut import RevolutBank
 
     if os.environ.get("REVOLUT_SEED_KEY"):
         raise RevolutConfigurationError("seed_key_in_service_environment")

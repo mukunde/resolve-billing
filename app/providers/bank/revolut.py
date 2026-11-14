@@ -28,9 +28,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.domain.bank import BankRead, DeclaredAccount, Incompleteness
+from app.providers.bank import mapping
+from app.providers.bank.client import DEFAULT_BUDGET, BudgetSpent, RevolutReader
 from app.providers.bank_base import BankUnavailable
-from app.providers.revolut import mapping
-from app.providers.revolut.client import DEFAULT_BUDGET, BudgetSpent, RevolutReader
 
 #: Revolut's largest page.
 PAGE_SIZE = 1000

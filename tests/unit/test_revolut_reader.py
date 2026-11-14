@@ -16,10 +16,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.domain.money import Money
-from app.providers.bank_base import BankEvidence, BankUnavailable
-from app.providers.revolut import mapping
-from app.providers.revolut.adapter import RevolutBank, lower_bound, wire_instant
-from app.providers.revolut.client import (
+from app.providers.bank import mapping
+from app.providers.bank.client import (
     HOST,
     WINDOW_REQUESTS,
     BudgetSpent,
@@ -29,6 +27,8 @@ from app.providers.revolut.client import (
     load_signing_key,
     signature,
 )
+from app.providers.bank.revolut import RevolutBank, lower_bound, wire_instant
+from app.providers.bank_base import BankEvidence, BankUnavailable
 
 API_KEY = "test-key-not-real"
 ACCOUNT = "acc_declared"
