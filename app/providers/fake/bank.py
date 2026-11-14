@@ -15,7 +15,11 @@ A world:
      "returns": [{"id": "tx_9", "type": "topup_return", "amount": -4900, "currency": "EUR",
                   "created_at": "...", "completed_at": "...", "related_credit_id": "tx_1"}],
      "incomplete": [],          # reasons from the closed set: the read is then incomplete
-     "controlled": true}        # its credits all created inside the margin (coverage)
+     "controlled": true}        # its author says no item completes long after creation
+
+Coverage is established only for a controlled world **and** when no credit or return the
+read leaves out (created before the lower bound) completed at or after that bound: a
+world that breaks its own guarantee is not covered, whatever it declares.
 
 Amounts in minor units. The fake filters by `created_at` as the real read does.
 """
@@ -80,6 +84,12 @@ class FakeBank:
             )
             for r in w.get("returns", []) if inside(r)
         )
+        def missed(raw: dict) -> bool:
+            completed = _at(raw.get("completed_at"))
+            return _at(raw["created_at"]) < lower and completed is not None and completed >= lower
+
+        every = [*w.get("credits", []), *w.get("returns", [])]
+        covered = bool(w.get("controlled", False)) and not any(missed(r) for r in every)
         accounts = tuple(DeclaredAccount(**a) for a in w.get("accounts", []))
         incomplete = tuple(w.get("incomplete", []))
         if any(not a.visible for a in accounts) and "account_not_visible" not in incomplete:
@@ -88,5 +98,5 @@ class FakeBank:
             accounts=accounts, credits=credits, returns=returns,
             window_start=window_start, window_end=window_end, margin_days=margin_days,
             complete=not incomplete, incompleteness=incomplete,
-            coverage_established=bool(w.get("controlled", False)),
+            coverage_established=covered,
         )

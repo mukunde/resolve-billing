@@ -8,8 +8,7 @@ serialised; payer names, account numbers and descriptions are never mapped at al
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
@@ -32,7 +31,7 @@ Outcome = Literal["observed", "to_reconcile", "not_evaluable", "nothing", "not_r
 
 
 class DeclaredAccount(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
     currency: str | None = None
@@ -94,25 +93,99 @@ class BankRead(BaseModel):
     coverage_established: bool = False
 
 
+#: Why a credit or return is in the record -- the framing's closed set.
+CheckReason = Literal[
+    "reference_matched",
+    "amount_equal",
+    "amount_partial",
+    "amount_over",
+    "currency_differs",
+    "reversed",
+    "several_invoices_cited",
+    "several_candidates",
+    "fx_present",
+    "fee_present",
+    "related_return_found",
+    "origin_unknown",
+    "origin_internal",
+]
+
+#: Why the check concluded nothing it could stand on (`not_evaluable`).
+NotEvaluableReason = Literal[
+    "read_incomplete",
+    "coverage_not_established",
+    "account_not_visible",
+    "no_account_in_currency",
+    "bank_unavailable",
+]
+
+#: Why the check did not run (`not_run`).
+NotRunReason = Literal[
+    "no_bank",
+    "no_invoice",
+    "paid_on_platform",
+    "short_circuit",
+]
+
+#: Said every time the check runs.
+Limitation = Literal[
+    "allocation_unverified_beyond_loaded_invoices",
+    "coverage_declared_accounts_from_issue",
+    "later_reversal_not_followed",
+]
+
+_CLOSED = ConfigDict(frozen=True, extra="forbid")
+
+
+class CheckedCredit(BaseModel):
+    """A credit as the record keeps it: the allowlist, nothing else."""
+
+    model_config = _CLOSED
+
+    kind: Literal["credit"] = "credit"
+    account_id: str
+    transaction_id: str
+    amount: Money
+    completed_at: AwareDatetime | None = None
+    state: str
+    observed_at: AwareDatetime
+    reasons: tuple[CheckReason, ...] = ()
+
+
+class CheckedReturn(BaseModel):
+    """A return as the record keeps it: its instant labelled completed or created."""
+
+    model_config = _CLOSED
+
+    kind: Literal["return"] = "return"
+    id: str
+    type: str
+    amount: Money  # signed
+    related_credit_id: str | None = None
+    instant: AwareDatetime
+    instant_is: Literal["completed", "created"]
+
+
 class BankCheck(BaseModel):
     """The record of the bank check on one run, kept whatever it found (plan 016, the
-    audit allowlist). Built by the rule; nothing here carries bank text."""
+    audit allowlist). Built by the rule; closed types only, so no bank text can enter:
+    an unknown field or reason is refused."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = _CLOSED
 
     outcome: Outcome
-    reason: str | None = None  # for `not_run`: why, from a closed set
+    reason: NotRunReason | NotEvaluableReason | None = None
     invoice_id: str | None = None
-    window_start: datetime | None = None
-    window_end: datetime | None = None
+    window_start: AwareDatetime | None = None
+    window_end: AwareDatetime | None = None
     margin_days: int | None = None
     accounts: tuple[DeclaredAccount, ...] = ()
     complete: bool | None = None
     coverage_established: bool | None = None
-    #: Per credit or return: allowlisted fields and reasons only.
-    items: tuple[dict, ...] = ()
-    reasons: tuple[str, ...] = ()
-    limitations: tuple[str, ...] = ()
+    items: tuple[Annotated[CheckedCredit | CheckedReturn, Field(discriminator="kind")], ...] = ()
+    #: Reasons for the outcome as a whole (several candidates, several invoices cited).
+    reasons: tuple[CheckReason, ...] = ()
+    limitations: tuple[Limitation, ...] = ()
 
     def to_record(self) -> dict:
         return self.model_dump(mode="json")

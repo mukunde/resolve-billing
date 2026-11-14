@@ -25,12 +25,16 @@ def _numbers(invoices: Sequence[Invoice]) -> dict[str, str]:
     return {n: next(iter(ids)) for n, ids in by_number.items() if len(ids) == 1}
 
 
-def _tokens(invoices: Sequence[Invoice]) -> dict[str, str]:
-    """Numbers as above, and each invoice's own id, case-folded."""
-    tokens = _numbers(invoices)
+def _tokens(invoices: Sequence[Invoice]) -> dict[str, frozenset[str]]:
+    """Each printed number and each id, case-folded, to every loaded invoice it can
+    stand for: a number shared by two invoices, or one invoice's number equal to another's
+    id, stands for both -- an ambiguous token is never resolved to one of them."""
+    tokens: dict[str, set[str]] = {}
     for item in invoices:
-        tokens.setdefault(item.id.casefold(), item.id)
-    return tokens
+        tokens.setdefault(item.id.casefold(), set()).add(item.id)
+        if item.number:
+            tokens.setdefault(item.number.casefold(), set()).add(item.id)
+    return {token: frozenset(ids) for token, ids in tokens.items()}
 
 
 def resolve_number(reference: str, invoices: Sequence[Invoice]) -> str | None:
@@ -84,10 +88,13 @@ def references(text: str, invoices: Sequence[Invoice]) -> list[tuple[int, int, s
 
 def cited_invoices(text: str | None, invoices: Sequence[Invoice]) -> set[str]:
     """The loaded invoices a text cites, by printed number or by id -- only those:
-    a token naming an invoice that is not loaded is not recognised."""
+    a token naming an invoice that is not loaded is not recognised, and an ambiguous
+    token cites every invoice it can stand for."""
     if not text:
         return set()
-    return {invoice_id for _, _, invoice_id in _spans(text, _tokens(invoices))}
+    tokens = _tokens(invoices)
+    found = _spans(text, {token: token for token in tokens})
+    return {invoice_id for _, _, token in found for invoice_id in tokens[token]}
 
 
 def merge_spans(*groups: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
