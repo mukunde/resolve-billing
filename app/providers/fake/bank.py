@@ -18,8 +18,9 @@ A world:
      "controlled": true}        # its author says no item completes long after creation
 
 Coverage is established only for a controlled world **and** when no credit or return the
-read leaves out (created before the lower bound) completed at or after that bound: a
-world that breaks its own guarantee is not covered, whatever it declares.
+read leaves out (created before the lower bound) completed at or after that bound or has
+no completion instant: a world that breaks its own guarantee is not covered, whatever it
+declares.
 
 Amounts in minor units. The fake filters by `created_at` as the real read does.
 """
@@ -85,8 +86,10 @@ class FakeBank:
             for r in w.get("returns", []) if inside(r)
         )
         def missed(raw: dict) -> bool:
+            # Left out by creation, yet possibly relevant: completed inside the read, or
+            # with no completion instant at all (a reverted credit may have none).
             completed = _at(raw.get("completed_at"))
-            return _at(raw["created_at"]) < lower and completed is not None and completed >= lower
+            return _at(raw["created_at"]) < lower and (completed is None or completed >= lower)
 
         every = [*w.get("credits", []), *w.get("returns", [])]
         covered = bool(w.get("controlled", False)) and not any(missed(r) for r in every)

@@ -107,7 +107,8 @@ class TestFakeBank:
                          "reference": "inv_060", "origin": "external"},
                         {"account_id": "acc", "transaction_id": "tx_old", "type": "topup",
                          "state": "completed", "amount": 100, "currency": "EUR",
-                         "created_at": "2026-01-01T00:00:00Z"}],
+                         "created_at": "2026-01-01T00:00:00Z",
+                         "completed_at": "2026-01-01T00:00:01Z"}],
             "controlled": True, **extra}}}
         path = tmp_path / "bank.json"
         path.write_text(json.dumps(data), encoding="utf-8")
@@ -129,6 +130,16 @@ class TestFakeBank:
         read = await bank.read(
             T, datetime(2026, 10, 31, tzinfo=UTC), 7, datetime(2026, 11, 1, tzinfo=UTC))
         assert "tx_late" not in [c.transaction_id for c in read.credits]
+        assert not read.coverage_established
+
+    async def test_an_old_credit_with_no_completion_withholds_coverage(self, tmp_path):
+        reverted = {"account_id": "acc", "transaction_id": "tx_rev", "type": "topup",
+                    "state": "reverted", "amount": 4900, "currency": "EUR",
+                    "created_at": "2026-01-02T00:00:00Z", "reference": "inv_060"}
+        bank = self.world(tmp_path)
+        bank._world["credits"].append(reverted)
+        read = await bank.read(
+            T, datetime(2026, 10, 31, tzinfo=UTC), 7, datetime(2026, 11, 1, tzinfo=UTC))
         assert not read.coverage_established
 
     async def test_an_incomplete_or_invisible_world_is_said_so(self, tmp_path):
