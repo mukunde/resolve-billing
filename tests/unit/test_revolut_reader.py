@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -356,6 +357,32 @@ async def test_each_request_is_bounded_by_what_remains_of_the_budget():
 
     await read(timed, clock=clock, budget=12.0)
     assert seen == [10.0, 4.0]
+
+
+async def test_a_wait_for_the_pacer_is_cancelled_at_the_deadline():
+    pacer = Pacer()  # real time
+    await pacer._lock.acquire()  # another read holds the key's pacer
+    bank = Bank([tx("t1", created=START)])
+    adapter = RevolutBank(
+        RevolutReader(API_KEY, SIGNING, transport=httpx.MockTransport(bank), pacer=pacer),
+        (ACCOUNT,), controlled=True, budget=0.05)
+    result = await asyncio.wait_for(adapter.read(START, END, 7, NOW), timeout=2)
+    assert result.incompleteness == ("budget_spent",)
+    assert bank.requests == []
+
+
+async def test_a_slow_answer_is_cancelled_at_the_deadline():
+    bank = Bank([tx("t1", created=START)])
+
+    async def slow(request):
+        await asyncio.sleep(5)
+        return bank(request)
+
+    adapter = RevolutBank(
+        RevolutReader(API_KEY, SIGNING, transport=httpx.MockTransport(slow), pacer=Pacer()),
+        (ACCOUNT,), controlled=True, budget=0.05)
+    result = await asyncio.wait_for(adapter.read(START, END, 7, NOW), timeout=2)
+    assert result.incompleteness == ("budget_spent",)
 
 
 async def test_the_pacer_gives_no_slot_past_the_deadline():

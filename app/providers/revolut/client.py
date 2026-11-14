@@ -196,8 +196,19 @@ class RevolutReader:
 
     async def get(self, path: str, params: dict[str, str] | None, deadline: float) -> Any:
         """One GET under the API prefix, its answer parsed. `BudgetSpent` when the budget
-        runs out first -- before a send, during one (its timeout is what remains), or by
-        the time its answer is in; `BankUnavailable(category)` on any failure."""
+        runs out first -- waiting for a slot, sending, receiving, or by the time the answer
+        is in: the whole call is cancelled at the deadline. `BankUnavailable(category)` on
+        any failure."""
+        remaining = deadline - self._clock()
+        if remaining <= 0:
+            raise BudgetSpent
+        try:
+            async with asyncio.timeout(remaining):
+                return await self._get(path, params, deadline)
+        except TimeoutError:
+            raise BudgetSpent from None
+
+    async def _get(self, path: str, params: dict[str, str] | None, deadline: float) -> Any:
         delay = 0.5
         for attempt in range(1, MAX_ATTEMPTS + 1):
             await self._pacer.wait(deadline)

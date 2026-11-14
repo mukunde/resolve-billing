@@ -195,8 +195,20 @@ def test_equivalent_arguments_are_the_same_worlds(tmp_path):
     again = Sandbox()
     lines = run(again, tmp_path, ["--invoice-number", " F-2026-0042 ", "--total", "49",
                                   "--other-number", "F-2026-0043", "--currency", "eur"])
+    lines += run(again, tmp_path, ["--invoice-number", "f-2026-0042", "--total", "49.0",
+                                   "--other-number", "F-2026-0043"])
     assert again.requests == []
     assert all("outcome is unknown" in line for line in lines)
+
+
+@pytest.mark.parametrize("status", [202, 204, 429, 500, 503])
+def test_an_answer_that_does_not_settle_the_outcome_keeps_the_intent(tmp_path, status):
+    first = Sandbox(status=status, body=b"")
+    lines = run(first, tmp_path)
+    assert all(f"answered {status}" in line for line in lines)
+    again = Sandbox()
+    run(again, tmp_path)
+    assert again.requests == []
 
 
 def test_a_second_run_at_the_same_time_sends_nothing(tmp_path):

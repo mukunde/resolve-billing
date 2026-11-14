@@ -202,10 +202,12 @@ class Seeder:
             except (ValueError, AttributeError):
                 return "made (state unreadable)"
             return f"made, state {state if state in STATES else 'other'}"
-        if status >= 500 or status == 429:
-            raise Stop(f"answered {status}; the top-up's outcome is unknown")
-        self.intents.clear(key)  # refused by Revolut: nothing was made
-        return f"refused ({status})"
+        if 400 <= status < 500 and status != 429:
+            self.intents.clear(key)  # refused by Revolut: nothing was made
+            return f"refused ({status})"
+        # 429, 5xx, or a success other than 200/201 (202, 204...): whether a top-up
+        # was made is unknown, and the intent stays.
+        raise Stop(f"answered {status}; the top-up's outcome is unknown")
 
 
 def _decimal(value: str) -> Decimal:
@@ -245,8 +247,10 @@ def arguments(argv: list[str]) -> argparse.Namespace:
 
 def run(seeder: Seeder, args: argparse.Namespace) -> list[str]:
     """Every world, under the lock; an intent's identity is the canonical arguments."""
-    label = json.dumps([args.invoice_number, str(args.total), args.other_number,
-                        args.currency])
+    # Numbers case-folded: references are matched whatever their case, so `INV-A` and
+    # `inv-a` are the same worlds.
+    label = json.dumps([args.invoice_number.casefold(), str(args.total),
+                        args.other_number.casefold(), args.currency])
     lines = []
     try:
         with seeder.intents.lock():
