@@ -89,7 +89,7 @@ counterparty value.
 - The read key, signed with its Ed25519 key, was accepted (200) on accounts and
   transactions. It reaches the API Console's own Sandbox, not one opened from the Sandbox
   sign-up page (a first run did not find the declared account there; `RB worlds` was then
-  made in the console's Sandbox). The two sandboxes share a default company name.
+  made in the console's Sandbox).
 - 6 accounts, with `id`, `name`, `currency`, `state`, `balance`, `public`, `created_at`,
   `updated_at` and one additional field per account (not printed). The declared account
   was found, EUR, active, and held **no transactions**.
@@ -114,8 +114,8 @@ shows one completed credit, from an outside payer, in the invoice's currency, fo
 citing its number and no other.
 
 **Independent Test**: The rule and the fake without network, on fixtures that include an
-outside payer's credit. The Sandbox cannot show this story: its top-ups have no outside payer
-(see SC-002).
+outside payer's credit. Whether the Sandbox can show it depends on the origin its seeded
+top-ups read back with (see SC-002); the demo top-ups carried no counterparty.
 
 **Acceptance Scenarios**:
 
@@ -226,10 +226,10 @@ outside payer's credit. The Sandbox cannot show this story: its top-ups have no 
   page boundary.
 - **SC-002**: On the Sandbox, credits seeded as top-ups (citing the invoice's number, for its
   total; for part of it; reverted; citing another number) are read back through the real
-  adapter, signed, and mapped faithfully. Top-ups have no outside payer, so none gives
-  *observed*: each gives the outcome its origin and the rule dictate, as the probe shows the
-  origin to be, and the contract records that this, not a positive match, is what the
-  Sandbox demonstrates.
+  adapter, signed, and mapped faithfully. Each gives the outcome the rule dictates for the
+  origin it actually reads back with: if, like the demo top-ups, they carry no counterparty,
+  none can give *observed*, and the contract records that a positive match was not
+  demonstrated on the Sandbox.
 - **SC-003**: Development cases, labels adjudicated by the maintainer: a claim with an
   outside payer's matching credit; a payment already recorded on the platform with the same
   money at the bank (no double counting, no duplicate payment); an amount-only credit (no
