@@ -88,17 +88,22 @@ counterparty value.
 
 - The read key, signed with its Ed25519 key, was accepted (200) on accounts and
   transactions. It reaches the API Console's own Sandbox, not one opened from the Sandbox
-  sign-up page: the declared account `RB worlds` (EUR, active) was made there, and the two
-  sandboxes share a default company name.
-- Accounts carry `id`, `name`, `currency`, `state`, `balance`, `public`, `created_at`,
-  `updated_at` and one more undocumented field.
-- 11 demo transactions (one page): types `topup` 6, `card_payment` 3, `transfer` 1,
-  `charge` 1; states `completed` 10, `failed` 1; one leg each; **no `reference` on any**;
-  **no counterparty on the six top-ups** (one `revolut` counterparty elsewhere); leg amounts
-  JSON numbers, integral or fractional; legs carry `description` and `balance`.
-- Consequence: a Sandbox top-up has no counterparty, so its origin is *unknown* and it can
-  never be a candidate (FR-003); SC-002 demonstrates retrieval, signing, mapping and the
-  unknown-origin outcome, not a positive match.
+  sign-up page (a first run did not find the declared account there; `RB worlds` was then
+  made in the console's Sandbox). The two sandboxes share a default company name.
+- 6 accounts, with `id`, `name`, `currency`, `state`, `balance`, `public`, `created_at`,
+  `updated_at` and one additional field per account (not printed). The declared account
+  was found, EUR, active, and held **no transactions**.
+- The Sandbox's demo transactions (`--demo-structure`, one page of 11): fields `id`, `type`,
+  `state`, `request_id`, `created_at`, `updated_at`, `completed_at` (present 10, absent 1),
+  `merchant`, `card`, `legs`; one leg each, with `leg_id`, `account_id`, `amount`,
+  `currency`, `balance`, `counterparty`, `description`; types `topup` 6, `card_payment` 3,
+  `transfer` 1, `charge` 1; states `completed` 10, `failed` 1; counterparty absent on 10,
+  `revolut` on 1; **no `reference` on any**; no `related_transaction_id`; leg amounts JSON
+  numbers, integral 10, fractional 1.
+- Consequence, limited to what was seen: the six demo top-ups carry no counterparty. If the
+  top-ups the seed makes carry none either, their origin is *unknown* and FR-003 keeps them
+  from ever being candidates; SC-002's expected outcome follows the origin actually read
+  back, which only the seeded run will show.
 
 ## User Scenarios & Testing *(mandatory)*
 
