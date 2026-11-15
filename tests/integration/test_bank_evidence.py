@@ -508,7 +508,7 @@ class TestThePagesEscapeTheRecord:
         eur = Money(amount_minor=5900, currency="EUR")
         record = BankCheck(
             outcome="to_reconcile", invoice_id=f"inv{MARKUP}",
-            accounts=(DeclaredAccount(id=f"acc{MARKUP}", currency="EUR"),),
+            accounts=(DeclaredAccount(id=f"acc{MARKUP}", currency=f"EUR{MARKUP}"),),
             items=(
                 CheckedCredit(account_id=f"acc{MARKUP}", transaction_id=f"tx{MARKUP}",
                               amount=eur, state=f"reverted{MARKUP}", observed_at=NOW,
@@ -520,7 +520,9 @@ class TestThePagesEscapeTheRecord:
         )
         html = bank_section(record)
         assert MARKUP not in html and "<script" not in html
-        assert html.count("&lt;script&gt;") >= 7
+        assert html.count("&lt;script&gt;") >= 8
+        # The declared account's currency is shown too, and escaped like the rest.
+        assert "EUR&lt;script&gt;x&lt;/script&gt;" in html
 
 
 class TestTelemetryOnASuccessfulRead:
@@ -554,8 +556,12 @@ class TestTelemetryOnASuccessfulRead:
         merged = {k: v for attrs in captured for k, v in attrs.items()}
         assert merged["billing.bank_check"] == outcome
         sent = json.dumps(captured, default=str)
+        # The world's instants (created, completed) and the read's (observed, the frozen
+        # instant), in the forms a span could carry them, and the bare currency.
+        instants = ("2026-09-14", "08:00:00", "08:00:05", NOW.isoformat(), "2026-10-15")
         for leak in ("tx_obs", "tx_part", "acc_eur", SECRET, "5900", "59.00", "3000",
-                     "30.00", "Facture", "Acompte", "amount_partial", "reference_matched"):
+                     "30.00", "Facture", "Acompte", "amount_partial", "reference_matched",
+                     "EUR", *instants):
             assert leak not in sent, leak
 
 
