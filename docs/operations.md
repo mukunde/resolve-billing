@@ -237,6 +237,38 @@ An action left `partial_write` or `no_trace` waits for a person: read its status
 document in Pennylane, finish or offset it there, then record what was done
 (`POST /actions/{id}/resolution`). The customer's next credit note waits until then.
 
+### On the Revolut Business Sandbox (specs/016-bank-evidence)
+
+A bank as evidence that a payment arrived, read-only, on the Sandbox only, and only the
+account declared. `.env` holds `REVOLUT_API_KEY` (a key of its own, Accounts and
+Transactions **Read** only), `REVOLUT_SIGNING_KEY_PATH` (the file holding that key's
+Ed25519 private signing key, outside any checkout) and `REVOLUT_SANDBOX_ACCOUNT_ID`;
+`BANK_EVIDENCE=revolut` selects it. With no bank selected, investigations run as before.
+Coverage is established only on the seeded worlds: `REVOLUT_CONTROLLED_WORLDS=enabled`
+declares them controlled, for that run alone, never for anything else.
+
+The worlds: `.env.seed` holds `REVOLUT_SEED_KEY` (the Sandbox's full-access key) and
+`REVOLUT_SANDBOX_ACCOUNT_ID`; never `.env`. When Revolut is selected, the service refuses
+to start with a non-empty seed key in its environment. The seed makes four top-ups on the declared account for an invoice's
+number and total -- the total, a part, one reverted, one citing another number -- and
+prints one line per world:
+
+```bash
+python -m dotenv -f .env.seed run -- python -m scripts.revolut_seed --invoice-number RB-SC002-01 --total 49.00 --other-number RB-SC002-02
+```
+
+Its intents live in `~/.resolve-billing/revolut-seed-intents.json`: a rerun skips what was
+made and stops where an earlier send's outcome is unknown. The Sandbox's states are final:
+what is made stays. Then the read-back, read-only, structure only:
+
+```bash
+python -m dotenv run -- python -m scripts.revolut_readback --invoice-number RB-SC002-01 --total 49.00 --other-number RB-SC002-02 --issued-at 2026-11-15T00:00:00Z
+```
+
+On 2026-11-15 the four seeded top-ups read back complete and covered, with no reference
+and no counterparty, so none of them is a candidate; the check's outcomes are
+demonstrated on fixtures (`docs/contract/bank-evidence.md`).
+
 ### What CI actually enforces
 
 The interesting assertion is not that the tests pass.

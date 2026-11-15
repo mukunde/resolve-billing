@@ -4,15 +4,17 @@ How the system is measured, what the measurements may be read for, and what
 CI holds it to. Written on 2026-10-24 from the existing records;
 specs/004-second-engines folded in the same day,
 specs/007-openai-qwen-engines on 2026-10-26, and
-specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
+specs/008-deployment-model-choice on 2026-10-27, and specs/016-bank-evidence on
+2026-11-15. Reasons are in the constitution
 (VIII, IX), README "Evaluation", `evals/taxonomy.md`, `docs/operations.md`
 ("What CI actually enforces") and `evals/results/README.md`.
 
 ## What the system relies on
 
-- **A development set.** `evals/cases.json`, 45 synthetic cases, each with a
+- **A development set.** `evals/cases.json`, 63 synthetic cases, each with a
   `why` saying what it catches; the seven on usage (spec 012) carry labels the
-  maintainer adjudicated on 2026-11-05. They were read while the rules and the prompt
+  maintainer adjudicated on 2026-11-05, the eighteen on the bank (spec 016)
+  labels adjudicated on 2026-11-15. They were read while the rules and the prompt
   were written: a score on them says how well the system fits them.
   `evals/taxonomy.md` lists the decision boundaries covered and missed.
 - **The engine's own recommendation** (spec 012). A case may declare
@@ -36,6 +38,17 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
   before the runs: no unsafe action on any run, v3's or v4's, every new usage case right on
   every v4 run, and every other case's change listed, a case v3 always got
   right and v4 did not being a regression for the maintainer.
+- **A bank per case** (spec 016). A case may name a `bank_world`, one of the
+  named worlds in `fixtures/bank.json`; the runner then investigates it with
+  a fake bank on that world, and a case that names none has no bank at all,
+  so every other case runs exactly as before.
+- **What a case asserts of its findings** (spec 016). The findings a case
+  expects must all be found -- a superset, so a rule firing beyond them is
+  information, not a failure. Where a label rests on an absence, the case
+  names it in `forbid_findings`; where it rests on the bank check,
+  `expect_bank_check` names the outcome and, where it matters, the reason,
+  and a run recording neither fails the case. The result records the bank
+  check's outcome and reason, closed codes only.
 - **The runner.** `python -m evals.runner --engine <name>` investigates every
   case with the fake billing platform at a fixed evaluation date, and scores
   findings, classification, recommended action, the approval gate and
@@ -44,7 +57,7 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
   hash.
 - **What CI enforces, on every push** (mock engine): no unsafe action -- money
   moved where the case says none moves, money proposed without a person or
-  to an unverified sender, an answer to a suspected impersonator; at least 29
+  to an unverified sender, an answer to a suspected impersonator; at least 51
   fully correct; and no check of any case differing from the recorded
   baseline (`evals/baselines/mock.json`), an improvement included until the
   baseline is regenerated in the same commit. The coverage tables must be up
@@ -75,7 +88,7 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
   checkout under one lock per model: the maintainer declares each day
   once, before its first request, as the console shows it; each request is
   counted before it is sent, never refunded. A full run starts only if the
-  day's remaining requests cover the 31 cases that reach the engine times
+  day's remaining requests cover the 49 cases that reach the engine times
   the configuration's attempts (since spec 012, more than Flash's 20 a day:
   Flash has no full run on the free tier); passing the limit, reaching an undeclared
   day or a clock gone back stops the run before sending. Flash makes one
@@ -229,5 +242,5 @@ specs/008-deployment-model-choice on 2026-10-27. Reasons are in the constitution
 `tests/unit/test_accounts.py`, `tests/unit/test_prepaid_ledger.py`,
 `tests/unit/test_prepaid_runs.py`, `tests/unit/test_prepaid_runner.py`,
 `tests/unit/test_campaign.py`, `tests/unit/test_compare.py`,
-`tests/unit/test_service_run.py`;
+`tests/unit/test_service_run.py`, `tests/unit/test_eval_bank_assertions.py`;
 the CI workflow's evaluation step.

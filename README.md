@@ -232,7 +232,7 @@ python -m evals.runner --engine mock      # free, deterministic, every push
 python -m evals.runner --engine claude    # real calls, on demand
 ```
 
-**Development set.** 45 cases, each with a `why` field saying what it is
+**Development set.** 63 cases, each with a `why` field saying what it is
 there to catch. They were read while the rules and the prompt were written, so
 a score on them says how well the system fits them, not how it does on a
 dispute it has not seen. [`evals/taxonomy.md`](evals/taxonomy.md) lists the
@@ -241,7 +241,7 @@ decision boundaries they cover, the ones they miss, and their redundancies.
 **What CI enforces.** The build fails if the system would move money where
 the case set says none moves, propose money without a human or to an
 unverified sender, or answer a suspected impersonator. It fails again below
-the mock's measured score (29), and again if any check of any case differs
+the mock's measured score (51), and again if any check of any case differs
 from the recorded baseline -- an improvement included, until the baseline is
 regenerated in the same commit.
 

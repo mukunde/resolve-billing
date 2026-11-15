@@ -206,10 +206,10 @@ Per channel, the bank adds:
 | `POST /disputes/investigate` response | the finding's code, as for any finding; the bank record is not part of the answer | the record excluded from the answer (**tested**) |
 | `GET /runs/{id}` | the complete bank record, as the run row's `bank_check_json`, and the bank findings' summaries in `findings_json` | authentication; no per-customer scope (above); the route returns the stored JSON without reading it back through `BankCheck` -- what was written was a `BankCheck` (**tested**) |
 | `GET /actions/{id}` | nothing of the bank: the action alone | -- |
-| Run page | the bank record: outcome, reason, the checked invoice, declared accounts, each credit's and return's allowlisted fields, reasons, window, completeness, coverage, limitations | authentication; built from `BankCheck` alone, the record's display (**tested**); values escaped by the renderer, a regression test with markup in a field (**to build**) |
+| Run page | the bank record: outcome, reason, the checked invoice, declared accounts, each credit's and return's allowlisted fields, reasons, window, completeness, coverage, limitations | authentication; built from `BankCheck` alone, the record's display (**tested**); identifiers, a credit's state and a return's type escaped, markup in them included (**tested**); a declared account's currency, displayed too, not yet in that test (**to build**) |
 | Review page | the same record, when the run has an action to review | as the run page |
 | Audit database | `bank_check_json` on the run row, written for every run, `not_run` included | the closed type, read back through it (**tested**); the file's own access as above (**convention**) |
-| Telemetry | the check's outcome code | on the investigation's event, and on a failed read's spans (**tested**); no bank value on a successful read's spans (**to build**: its regression test) |
+| Telemetry | the check's outcome code | on the investigation's event and on a failed read's spans (**tested**); on a successful read's -- observed and to reconcile -- no bank identifier, reference, amount or matching reason on any attribute (**tested**); dates and currencies not checked there (**to build**) |
 | Logs and exceptions | a fixed category when a read fails, never the bank's text | the adapter and the investigation turn every failure into a category (**tested**); `BankUnavailable` itself takes any text, so the guarantee is theirs, not the type's |
 | Review alert | the bank findings' codes and the run link; no bank record | codes, not evidence, as today (**tested** for codes generally) |
 | Approval mail | nothing of a bank finding: a bank finding blocks every correction, so no action is created; a check that found nothing may sit beside an approval | the policy blocks (**tested**) |
@@ -218,7 +218,7 @@ Per channel, the bank adds:
 | Triage mail | nothing: an unknown sender stops before the bank is read | the short-circuits run before the bank (**tested**) |
 | n8n's execution data | the original input and the API's answers: bank finding codes, never the bank record | retention and access, set in n8n (**convention**) |
 | MCP server | nothing: its investigator has no bank configured | -- |
-| Reply to the sender | no automatic reply after a bank finding or a check that could not conclude (constitution III, ADR-011) | for an observed credit (**tested**); for each of the three outcomes (**to build**: one test per outcome); a request for information sent when the bank shows nothing must not assert non-payment nor reveal any bank data -- with the reply drafter (**to build**) |
+| Reply to the sender | no automatic reply after a bank finding or a check that could not conclude (constitution III, ADR-011) | for each of the three outcomes, observed, to reconcile and a bank-derived not evaluable (**tested**); a request for information sent when the bank shows nothing must not assert non-payment nor reveal any bank data -- with the reply drafter (**to build**) |
 | Evaluation outputs | case ids, the bank outcome and reason codes of synthetic worlds | fixtures only, and the Sandbox's seeded top-ups in its one run (**convention**) |
 
 The Revolut keys are their own channel's concern: the service's read-only key

@@ -5,7 +5,8 @@ the system may rely on. Written on 2026-10-24 from the existing records;
 specs/004-second-engines folded in the same day,
 specs/007-openai-qwen-engines on 2026-10-26,
 specs/008-deployment-model-choice on 2026-10-27, and
-specs/009-luna-service and specs/010-haiku-fallback on 2026-11-02. Reasons are in ADR-002 (the engine is
+specs/009-luna-service and specs/010-haiku-fallback on 2026-11-02, and
+specs/016-bank-evidence on 2026-11-15. Reasons are in ADR-002 (the engine is
 a deployment choice), ADR-003 (deterministic before probabilistic), ADR-006
 (no agent loop) and ADR-009 (what a model provider receives).
 
@@ -29,6 +30,17 @@ the evaluation runner alone, on free tiers, and more on prepaid accounts
   deterministic function of these values (ADR-006).
 - **No amount from the engine.** It names the kind of action; what a credit
   note is worth is computed from the invoice, in code.
+- **What an engine is shown of the findings** (spec 016). One projection,
+  `findings_for_engine` (`app/decision/base.py`), sits between the rules and
+  `decide` for every engine, the mock included: a bank finding
+  (`BANK_CREDIT_OBSERVED`, `BANK_CREDIT_TO_RECONCILE`) and a `NOT_EVALUABLE`
+  the bank check made reach it as their code, a fixed description and no
+  evidence -- no amount, date, transaction id, reference or reason. Every
+  other finding passes as it is; the originals stay for the policies, the
+  audit and the pages. The mock answers a bank finding with `unknown` and
+  `escalate`, after the billing findings that keep their precedence; the
+  routing does not depend on it, since a bank finding sends the case to a
+  person whatever the engine says (`investigation-and-rules.md`).
 - **Confidence carries its nature.** `confidence_kind` is `self_reported`,
   `distribution_derived` or `calibrated`; no engine sets `calibrated`, and a
   self-reported confidence never opens an autonomy threshold.

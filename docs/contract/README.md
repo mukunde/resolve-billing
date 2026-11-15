@@ -9,18 +9,19 @@ for this layout are in
 
 ## Coverage
 
-Four capabilities are covered. For the others, behaviour is described by the
+Seven capabilities are covered. For the others, behaviour is described by the
 existing records, which remain authoritative.
 
 | Capability | Contract | Authoritative today |
 |---|---|---|
 | Billing platform | [billing-platform.md](billing-platform.md) | the contract, then ADR-001, ADR-008 |
 | Intake and sender identity | not written | ADR-007, ADR-009, ADR-011 |
-| Investigation and rules | not written | ADR-003, `evals/taxonomy.md` |
+| Investigation and rules | [investigation-and-rules.md](investigation-and-rules.md) | the contract, then ADR-003, `evals/taxonomy.md` |
+| Bank evidence | [bank-evidence.md](bank-evidence.md) | the contract, then ADR-014 |
 | Decision engine | [decision-engine.md](decision-engine.md) | the contract, then ADR-002, ADR-006, ADR-009 (model provider) |
 | Money and corrections | not written | ADR-004, ADR-005, `.specify/bugs/d14-silent-rules/` |
 | Approval and execution | [approval-and-execution.md](approval-and-execution.md) | the contract, then ADR-004, ADR-008 |
-| Disclosure and replies | not written | ADR-009 (disclosure), ADR-011 |
+| Disclosure and replies | [disclosure-and-replies.md](disclosure-and-replies.md) | the contract, then ADR-009 (disclosure, its inventory), ADR-011 |
 | Evaluation | [evaluation.md](evaluation.md) | the contract, then README "Evaluation", `evals/taxonomy.md`, docs/operations.md |
 
 This first split follows what exists; it can change when a contract is
