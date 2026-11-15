@@ -5,7 +5,8 @@ message reaches the model) added 2026-10-19; the evaluation's model
 providers added 2026-10-24, its prepaid ones (OpenAI, Scaleway)
 2026-10-26, DeepSeek's model as Scaleway serves it 2026-10-27, and OpenAI
 on the service's path, on synthetic data only, 2026-11-02, with Claude Haiku
-5.5 as its fallback the same day
+5.5 as its fallback the same day;
+a bank as a source of evidence (spec 016, ADR-014) added 2026-11-15
 
 ## Context
 
@@ -179,3 +180,51 @@ customer, which production would need (roles that carry a scope, above).
 | Model provider | the engine's vendor: Anthropic for the service; OpenAI (`gpt-6-luna`) for the demonstrator's local service path, on synthetic data only, refused at start otherwise (a safeguard against a slip in configuration, not a control of content), on this account's standard terms, accepted for that use alone: no regional commitment, and abuse-monitoring logs may keep prompts and responses for up to 30 days whatever `store` says (spec 009, ADR-013); `gpt-6-luna+claude-haiku-5-5` on the same path and the same terms, which sends a dispute to Anthropic when a request to OpenAI fails, so a timed-out request that OpenAI did process means the same masked payload reached both vendors, accepted on synthetic data (spec 010); the holdout's masked, pseudonymised payload to OpenAI and Anthropic, for its one reference run through that composite, on the maintainer's attestation of 2026-11-03 that its cases are entirely synthetic (spec 011, ADR-013); real customer data needs a decision of its own, on both vendors' terms; for evaluation runs on the synthetic development cases only, also Google (Gemini) and Mistral (Medium 3.5; Large 4 and GLM 5.3 -- a Z.ai model Mistral serves -- were planned, and refused on the free level, 2026-10-24); and, on prepaid accounts (spec 007, 2026-10-26), OpenAI (`gpt-6-luna`, `gpt-6.1-sol`; no regional commitment without an approved retention arrangement) and Scaleway (Paris, France; serving `qwen3.5-397b-a17b` and `qwen3.6-35b-a3b`, models Alibaba developed, and `deepseek-v4.1-flash`, DeepSeek's (spec 008, 2026-10-27): the developer is not the processor -- DeepSeek's own API, which processes in the PRC, stays excluded) | the message masked; the context and findings with identifiers replaced by aliases -- amounts, dates and line descriptions stay as they are | aliases for every identifier; in the message, aliases, placeholders for addresses, the customer's name, IBANs, cards and phones (**tested**, D10); the evaluation's vendors refused anywhere but the development set (**tested**) | pseudonymising identifiers does not anonymise the data; masking is by pattern, so other people's names, free text and unusual formats pass; on free tiers the vendor may train on what it receives -- each run records its data terms as declared, `unknown` included; OpenAI keeps abuse-monitoring logs up to 30 days and does not train on API data by default -- every request asks it not to store the response (`store` false, **tested**: the request, not what the vendor keeps); Scaleway keeps no request content by default, and may retain full content "for up to two weeks" when a request triggers an HTTP 500 or harms the service, and when traffic may be malicious (no duration given); it does not train base models, and the models' creators have no access; its prompt cache is per project, ephemeral, and keeps no prompt text |
 | MCP server | whoever starts it | any customer's context, invoices and findings | read-only, no mutation reachable (**tested**) | no per-caller scope: it must not be exposed beyond the operator (**convention**) |
 | Evaluation outputs | the person running them; the repository for committed files | stdout, `--json` files and baselines: case ids, codes, verdicts, and the engine's classifications | synthetic data only (**convention**) | a run on real data must stay private, out of committed files, with its own retention |
+
+## A bank as a source of evidence (2026-11-15)
+
+Spec 016 adds a source the inventory did not have: the merchant's own bank,
+read through the `BankEvidence` port (ADR-014, constitution III). What a bank
+says is untrusted text written by a payer, and about a person: a payer's name,
+an account number, a description, a free-text reference. One rule, then what
+each channel carries of it.
+
+**4. Bank text goes nowhere.** Counterparty fields, account numbers, bank
+identifiers, descriptions, raw labels and references are read by the mapper,
+used by the check, then dropped. A credit's reference lives in memory only:
+excluded from serialisation and from `repr` (**tested**). What leaves the
+check is its record, `BankCheck`, and its finding, which carries no bank text
+either. `BankCheck` rejects fields outside the audit schema and values outside
+its closed sets -- outcomes, reasons, limitations (**tested**); its
+allowlisted identifiers and other string fields keep their declared types.
+
+Per channel, the bank adds:
+
+| Channel | Carries of the bank | Guard |
+|---|---|---|
+| Model provider | the finding's code alone, with a fixed description: no amount, date, reference, account or payer | one projection at `DecisionEngine.decide` for every engine, the mock included; capturing-engine and hosted-request tests, and every bank development case (**tested**) |
+| `POST /disputes/investigate` response | the finding's code, as for any finding; the bank record is not part of the answer | the record excluded from the answer (**tested**) |
+| `GET /runs/{id}` | the complete bank record, as the run row's `bank_check_json`, and the bank findings' summaries in `findings_json` | authentication; no per-customer scope (above); the route returns the stored JSON without reading it back through `BankCheck` -- what was written was a `BankCheck` (**tested**) |
+| `GET /actions/{id}` | nothing of the bank: the action alone | -- |
+| Run page | the bank record: outcome, reason, the checked invoice, declared accounts, each credit's and return's allowlisted fields, reasons, window, completeness, coverage, limitations | authentication; built from `BankCheck` alone, the record's display (**tested**); values escaped by the renderer, a regression test with markup in a field (**to build**) |
+| Review page | the same record, when the run has an action to review | as the run page |
+| Audit database | `bank_check_json` on the run row, written for every run, `not_run` included | the closed type, read back through it (**tested**); the file's own access as above (**convention**) |
+| Telemetry | the check's outcome code | on the investigation's event, and on a failed read's spans (**tested**); no bank value on a successful read's spans (**to build**: its regression test) |
+| Logs and exceptions | a fixed category when a read fails, never the bank's text | the adapter and the investigation turn every failure into a category (**tested**); `BankUnavailable` itself takes any text, so the guarantee is theirs, not the type's |
+| Review alert | the bank findings' codes and the run link; no bank record | codes, not evidence, as today (**tested** for codes generally) |
+| Approval mail | nothing of a bank finding: a bank finding blocks every correction, so no action is created; a check that found nothing may sit beside an approval | the policy blocks (**tested**) |
+| Execution alert | none after a bank finding (no action, no execution); the API's error text as received otherwise | as today: a category instead (**to build**) |
+| API error mail | the API's error text as received; no bank-specific exclusion | a bank read failure turns into a finding, not an API error (**tested**); a category instead of the text (**to build**) |
+| Triage mail | nothing: an unknown sender stops before the bank is read | the short-circuits run before the bank (**tested**) |
+| n8n's execution data | the original input and the API's answers: bank finding codes, never the bank record | retention and access, set in n8n (**convention**) |
+| MCP server | nothing: its investigator has no bank configured | -- |
+| Reply to the sender | no automatic reply after a bank finding or a check that could not conclude (constitution III, ADR-011) | for an observed credit (**tested**); for each of the three outcomes (**to build**: one test per outcome); a request for information sent when the bank shows nothing must not assert non-payment nor reveal any bank data -- with the reply drafter (**to build**) |
+| Evaluation outputs | case ids, the bank outcome and reason codes of synthetic worlds | fixtures only, and the Sandbox's seeded top-ups in its one run (**convention**) |
+
+The Revolut keys are their own channel's concern: the service's read-only key
+and its signing key in `.env`; the Sandbox's full-access key in `.env.seed`,
+which the service and the probe never load. When Revolut is selected, the
+service refuses to start with a non-empty `REVOLUT_SEED_KEY` in its
+environment (**tested**). The seed never prints its key or a response body
+(**tested**); its request headers, which carry the key, are printed by no code
+path and kept out of the HTTP libraries' logs (**convention**).
