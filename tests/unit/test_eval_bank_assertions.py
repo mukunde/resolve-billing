@@ -77,3 +77,20 @@ class TestTheCaseFile:
         paid = next(c for c in bank if c["id"] == "bank_payment_recorded_on_platform")
         assert "DUPLICATE_PAYMENT" in paid["forbid_findings"]
         assert paid["expect_bank_check"] == {"outcome": "not_run", "reason": "paid_on_platform"}
+
+
+def test_the_scoring_fingerprint_covers_the_evidence_check(monkeypatch):
+    """`_evaluate` delegates to `findings_hold`: a change to it must move the hash."""
+    import inspect
+
+    from evals import reference_run
+
+    before = reference_run.scoring_definition()
+    real = inspect.getsource
+
+    def altered(obj):
+        text = real(obj)
+        return text + "# changed" if obj is findings_hold else text
+
+    monkeypatch.setattr(inspect, "getsource", altered)
+    assert reference_run.scoring_definition() != before
