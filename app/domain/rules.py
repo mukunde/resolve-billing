@@ -17,6 +17,17 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from app.domain.bank import (
+    BankCheck,
+    BankCredit,
+    BankRead,
+    BankReturn,
+    CheckedCredit,
+    CheckedReturn,
+    CheckReason,
+    Limitation,
+    NotEvaluableReason,
+)
 from app.domain.enums import (
     InvoiceStatus,
     PaymentStatus,
@@ -33,8 +44,10 @@ from app.domain.models import (
     RuleFinding,
     Subscription,
 )
+from app.domain.references import cited_invoices
 
 __all__ = [
+    "bank_credit_check",
     "checks_not_evaluable",
     "cited_invoice_conflict",
     "identity_conflict",
@@ -48,6 +61,7 @@ __all__ = [
     "suspicious_usage_delta",
     "unknown_customer",
     "unknown_invoice",
+    "is_bank_finding",
 ]
 
 #: Relative gap beyond which billed usage stops matching expected usage.
@@ -764,3 +778,267 @@ def _company_name(display_name: str | None) -> str | None:
 
 def _iso(value) -> str | None:
     return value.isoformat() if value is not None else None
+
+
+# -- the merchant's bank (specs/016-bank-evidence) ---------------------------------
+
+#: How far before the window opens the bank is read, by creation instant, so that a
+#: credit created a little before the invoice's issue and completed after it is read
+#: (clarified 2026-11-14; a convention until the bank states a maximum delay).
+BANK_MARGIN_DAYS = 7
+
+#: The credit types that can be an outside payer's transfer, until the bank says which
+#: type an incoming transfer carries (clarified 2026-11-14). Each still needs an external
+#: origin to qualify: the rule decides that, not the mapper. A credit of any other type
+#: is not read as a payment at all.
+BANK_CREDIT_TYPES = frozenset({"topup", "transfer"})
+
+#: The two findings the bank check makes; with a bank-derived `NOT_EVALUABLE`, each
+#: blocks every correction and sends the case to a person (FR-004).
+BANK_FINDINGS = frozenset({RuleCode.BANK_CREDIT_OBSERVED, RuleCode.BANK_CREDIT_TO_RECONCILE})
+
+#: Said every time the check runs: what a reference-based observation cannot show.
+BANK_LIMITATIONS: tuple[Limitation, ...] = (
+    "allocation_unverified_beyond_loaded_invoices",
+    "coverage_declared_accounts_from_issue",
+    "later_reversal_not_followed",
+)
+
+#: One fixed text per code: a bank finding's description names no bank value, so the
+#: explanations built from it -- and what an engine is shown -- carry none (FR-005).
+BANK_DESCRIPTIONS: dict[RuleCode, str] = {
+    RuleCode.BANK_CREDIT_OBSERVED: (
+        "Un crédit bancaire cite cette facture : candidat fondé sur la référence, payeur "
+        "non vérifié, rien n'est conclu sur la facture ; une personne examine."
+    ),
+    RuleCode.BANK_CREDIT_TO_RECONCILE: (
+        "Un crédit bancaire cite cette facture sans la régler simplement : une personne "
+        "rapproche, rien n'est conclu sur la facture."
+    ),
+    RuleCode.NOT_EVALUABLE: (
+        "Le contrôle bancaire n'a pas pu conclure : son silence ne vaut ni paiement ni "
+        "absence de paiement."
+    ),
+}
+
+#: A credit that qualifies has exactly these reasons, and nothing else.
+_QUALIFYING: tuple[CheckReason, ...] = ("reference_matched", "amount_equal")
+
+
+def is_bank_finding(finding: RuleFinding) -> bool:
+    """Either bank finding, or a `NOT_EVALUABLE` the bank check made."""
+    return finding.code in BANK_FINDINGS or (
+        finding.code is RuleCode.NOT_EVALUABLE and finding.evidence.get("check") == "bank"
+    )
+
+
+def bank_not_evaluable(invoice_id: str, reason: NotEvaluableReason) -> RuleFinding:
+    """The bank check could not conclude on `invoice_id` (D14): said, never "nothing"."""
+    return RuleFinding(
+        code=RuleCode.NOT_EVALUABLE,
+        severity=Severity.LOW,
+        description=BANK_DESCRIPTIONS[RuleCode.NOT_EVALUABLE],
+        evidence={"check": "bank", "invoice_id": invoice_id, "reason": reason},
+    )
+
+
+def bank_credit_check(
+    invoice: Invoice, read: BankRead, invoices: list[Invoice], now: datetime
+) -> tuple[RuleFinding | None, BankCheck]:
+    """What the merchant's bank says of money received for `invoice`, unpaid on the
+    platform (specs/016-bank-evidence, FR-003): a finding or none, and the record kept
+    whatever it found.
+
+    A credit is taken into account when it is of an allowlisted type, completed or
+    reverted, on a declared account, placed in the window -- its `completed_at` from the
+    invoice's issue to the frozen instant `now`, bounds inclusive; a reverted one with
+    none, by a `created_at` before the window's end -- and its reference cites this
+    invoice among the customer's loaded ones (`cited_invoices`). It qualifies when it is
+    completed, in the invoice's currency, for its exact total, from an external origin,
+    with no FX and no fee, cites no other loaded invoice, and no return relates to it.
+
+    In order of precedence: a read that cannot be relied on is *not evaluable*; any
+    referenced credit that does not qualify, or several that do, is *to reconcile*;
+    exactly one qualifying credit is *observed*, a reference-based candidate; nothing
+    referenced is no finding -- never evidence that the invoice is unpaid.
+    """
+    start, end = invoice.issued_at, now
+    currency = invoice.total.currency
+    base = {
+        "invoice_id": invoice.id,
+        "window_start": start,
+        "window_end": end,
+        "margin_days": read.margin_days,
+        "accounts": read.accounts,
+        "complete": read.complete,
+        "coverage_established": read.coverage_established,
+        "limitations": BANK_LIMITATIONS,
+    }
+
+    unusable = _bank_read_unusable(read, currency, start, end)
+    if unusable is not None:
+        return bank_not_evaluable(invoice.id, unusable), BankCheck(
+            outcome="not_evaluable", reason=unusable, **base
+        )
+
+    pool = invoices if any(i.id == invoice.id for i in invoices) else [*invoices, invoice]
+    declared = {account.id for account in read.accounts}
+    referenced: list[tuple[BankCredit, set[str]]] = []
+    for credit in sorted(read.credits, key=_credit_order):
+        if (
+            credit.type not in BANK_CREDIT_TYPES
+            or credit.state not in ("completed", "reverted")
+            or credit.account_id not in declared
+            or not _in_bank_window(credit, start, end)
+        ):
+            continue
+        cited = cited_invoices(credit.reference, pool)
+        if invoice.id in cited:
+            referenced.append((credit, cited))
+
+    if not referenced:
+        return None, BankCheck(outcome="nothing", **base)
+
+    items: list[CheckedCredit | CheckedReturn] = []
+    recorded_returns: set[str] = set()
+    qualifying: list[str] = []
+    exceptions: set[CheckReason] = set()
+    for credit, cited in referenced:
+        returns = _returns_of(credit, read.returns, end)
+        reasons = _credit_reasons(credit, cited, currency, invoice.total.amount_minor, returns)
+        if reasons == _QUALIFYING and credit.state == "completed":
+            qualifying.append(credit.transaction_id)
+        else:
+            exceptions.update(r for r in reasons if r not in _QUALIFYING)
+        items.append(
+            CheckedCredit(
+                account_id=credit.account_id,
+                transaction_id=credit.transaction_id,
+                amount=credit.amount,
+                completed_at=credit.completed_at,
+                state=credit.state,
+                observed_at=credit.observed_at,
+                reasons=reasons,
+            )
+        )
+        for item in returns:
+            if item.id not in recorded_returns:
+                recorded_returns.add(item.id)
+                items.append(_checked_return(item))
+
+    if exceptions or len(qualifying) > 1:
+        several: set[CheckReason] = {"several_candidates"} if len(qualifying) > 1 else set()
+        reasons = tuple(sorted(exceptions | several))
+        code, outcome = RuleCode.BANK_CREDIT_TO_RECONCILE, "to_reconcile"
+    else:
+        reasons = ()
+        code, outcome = RuleCode.BANK_CREDIT_OBSERVED, "observed"
+    finding = RuleFinding(
+        code=code,
+        severity=Severity.MEDIUM,
+        description=BANK_DESCRIPTIONS[code],
+        evidence={
+            "check": "bank",
+            "invoice_id": invoice.id,
+            "transaction_ids": [credit.transaction_id for credit, _ in referenced],
+            "reasons": list(reasons),
+        },
+    )
+    return finding, BankCheck(outcome=outcome, items=tuple(items), reasons=reasons, **base)
+
+
+def _bank_read_unusable(
+    read: BankRead, currency: str, start: datetime, end: datetime
+) -> NotEvaluableReason | None:
+    """Why the read cannot be stood on for an invoice in `currency`, or None."""
+    if "account_not_visible" in read.incompleteness or any(
+        not account.visible for account in read.accounts
+    ):
+        return "account_not_visible"
+    # A read that did not ask for the whole window cannot answer for it either.
+    if (
+        not read.complete
+        or read.incompleteness
+        or read.window_start > start
+        or read.window_end < end
+    ):
+        return "read_incomplete"
+    if not any(account.currency == currency for account in read.accounts):
+        return "no_account_in_currency"
+    if not read.coverage_established:
+        return "coverage_not_established"
+    return None
+
+
+def _in_bank_window(credit: BankCredit, start: datetime, end: datetime) -> bool:
+    if credit.completed_at is not None:
+        return start <= credit.completed_at <= end
+    # A reverted credit may carry no completion instant: kept, never silently dropped,
+    # when it was created before the window's end.
+    return credit.state == "reverted" and credit.created_at <= end
+
+
+def _credit_order(credit: BankCredit) -> tuple:
+    return (credit.completed_at or credit.created_at, credit.transaction_id)
+
+
+def _return_instant(item: BankReturn) -> datetime:
+    return item.completed_at or item.created_at
+
+
+def _returns_of(
+    credit: BankCredit, returns: tuple[BankReturn, ...], end: datetime
+) -> list[BankReturn]:
+    """The returns that name `credit` (`related_credit_id`), up to the window's end. A
+    return that names no credit is not attributed to one: no convention for that was
+    approved, and guessing by amount could pin someone else's refund on this invoice."""
+    related = [
+        item
+        for item in returns
+        if item.related_credit_id == credit.transaction_id and _return_instant(item) <= end
+    ]
+    return sorted(related, key=lambda r: (_return_instant(r), r.id))
+
+
+def _credit_reasons(
+    credit: BankCredit,
+    cited: set[str],
+    currency: str,
+    total_minor: int,
+    returns: list[BankReturn],
+) -> tuple[CheckReason, ...]:
+    reasons: list[CheckReason] = ["reference_matched"]
+    if credit.amount.currency != currency:
+        reasons.append("currency_differs")
+    elif credit.amount.amount_minor == total_minor:
+        reasons.append("amount_equal")
+    elif credit.amount.amount_minor < total_minor:
+        reasons.append("amount_partial")
+    else:
+        reasons.append("amount_over")
+    if credit.state == "reverted":
+        reasons.append("reversed")
+    if credit.fx:
+        reasons.append("fx_present")
+    if credit.fee:
+        reasons.append("fee_present")
+    if len(cited) > 1:
+        reasons.append("several_invoices_cited")
+    if credit.origin == "unknown":
+        reasons.append("origin_unknown")
+    elif credit.origin == "internal":
+        reasons.append("origin_internal")
+    if returns:
+        reasons.append("related_return_found")
+    return tuple(reasons)
+
+
+def _checked_return(item: BankReturn) -> CheckedReturn:
+    return CheckedReturn(
+        id=item.id,
+        type=item.type,
+        amount=item.amount,
+        related_credit_id=item.related_credit_id,
+        instant=_return_instant(item),
+        instant_is="completed" if item.completed_at is not None else "created",
+    )

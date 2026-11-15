@@ -126,3 +126,9 @@ class RuleCode(StrEnum):
     # A check that applies but cannot conclude, for lack of data (D14): said,
     # never read as "nothing found".
     NOT_EVALUABLE = "NOT_EVALUABLE"
+    # The merchant's bank (specs/016-bank-evidence): a credit citing this invoice,
+    # observed -- a reference-based candidate, nothing concluded about the invoice...
+    BANK_CREDIT_OBSERVED = "BANK_CREDIT_OBSERVED"
+    # ...or one a person must reconcile (reversed, partial, another currency...).
+    # Either blocks every correction and sends the case to a person.
+    BANK_CREDIT_TO_RECONCILE = "BANK_CREDIT_TO_RECONCILE"

@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "9aaf1b913ee549a7",
+  "cases_sha256": "f3bb08f5687cfe53",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -452,6 +452,186 @@
       "sender": true,
       "reply": true,
       "recommendation": true
+    },
+    "bank_credit_observed": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_payment_recorded_on_platform": {
+      "classification": false,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_amount_only_credit": {
+      "classification": false,
+      "action": false,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": false
+    },
+    "bank_reference_two_invoices": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_partial_payment": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_other_currency": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_reversed_credit": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_read_cut_short": {
+      "classification": false,
+      "action": false,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": false
+    },
+    "bank_duplicate_invoice_with_credit": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_no_credit": {
+      "classification": false,
+      "action": false,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": false
+    },
+    "bank_credit_unknown_origin": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_credit_internal_origin": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_credit_with_fx": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_credit_with_fee": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_credit_with_related_return": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_several_qualifying_credits": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_qualifying_beside_exception": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_coverage_not_established": {
+      "classification": false,
+      "action": false,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": false
     }
   }
 }

@@ -256,5 +256,13 @@
     "state": "succeeded",
     "received_at": "2026-09-01T09:05:00",
     "_comment": "Spec 013 : inv_630 reglee."
+  },
+  {
+    "id": "pay_702",
+    "invoice_id": "inv_702",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "succeeded",
+    "received_at": "2026-09-12T10:00:00"
   }
 ]

@@ -763,5 +763,403 @@
         ]
       }
     ]
+  },
+  {
+    "id": "inv_701",
+    "customer_id": "cus_opale",
+    "subscription_id": "sub_b01",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un virement externe la cite pour son total.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_702",
+    "customer_id": "cus_orme",
+    "subscription_id": "sub_b02",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "paid",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture payée sur la plateforme, le même argent à la banque.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_703",
+    "customer_id": "cus_cobalt",
+    "subscription_id": "sub_b03",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : un crédit du bon montant sans référence.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_704",
+    "customer_id": "cus_saule",
+    "subscription_id": null,
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-03T10:00:00",
+    "_comment": "Spec 016 : prestation ponctuelle, citée avec inv_705 par un même virement.",
+    "lines": [
+      {
+        "label": "Prestation de configuration",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00"
+      }
+    ]
+  },
+  {
+    "id": "inv_705",
+    "customer_id": "cus_saule",
+    "subscription_id": "sub_b04",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : un virement cite cette facture et inv_704.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_706",
+    "customer_id": "cus_ambre",
+    "subscription_id": "sub_b05",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : un virement partiel la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_707",
+    "customer_id": "cus_kestrel",
+    "subscription_id": "sub_b06",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : un crédit en livres sterling la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_708",
+    "customer_id": "cus_givre",
+    "subscription_id": "sub_b07",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : un crédit la citant a été annulé.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_709",
+    "customer_id": "cus_pervenche",
+    "subscription_id": "sub_b08",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : la lecture bancaire a été interrompue.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_710",
+    "customer_id": "cus_basalte",
+    "subscription_id": "sub_b09",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : première de deux factures identiques.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_711",
+    "customer_id": "cus_basalte",
+    "subscription_id": "sub_b09",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-02T04:12:00",
+    "_comment": "Spec 016 : le doublon, qu'un virement cite pour son total.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_712",
+    "customer_id": "cus_ocre",
+    "subscription_id": "sub_b10",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : aucun crédit à la banque.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_713",
+    "customer_id": "cus_azalee",
+    "subscription_id": "sub_b11",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un crédit bancaire la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_714",
+    "customer_id": "cus_bruyere",
+    "subscription_id": "sub_b12",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un crédit bancaire la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_715",
+    "customer_id": "cus_cerisier",
+    "subscription_id": "sub_b13",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un crédit bancaire la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_716",
+    "customer_id": "cus_dahlia",
+    "subscription_id": "sub_b14",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un crédit bancaire la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_717",
+    "customer_id": "cus_eglantine",
+    "subscription_id": "sub_b15",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un crédit bancaire la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_718",
+    "customer_id": "cus_fougere",
+    "subscription_id": "sub_b16",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un crédit bancaire la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_719",
+    "customer_id": "cus_glycine",
+    "subscription_id": "sub_b17",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un crédit bancaire la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
+  },
+  {
+    "id": "inv_720",
+    "customer_id": "cus_houx",
+    "subscription_id": "sub_b18",
+    "amount": "59.00",
+    "currency": "EUR",
+    "state": "open",
+    "issued_at": "2026-09-01T09:00:00",
+    "_comment": "Spec 016 : facture ouverte, un crédit bancaire la cite.",
+    "lines": [
+      {
+        "label": "Abonnement Studio - septembre 2026",
+        "quantity": "1",
+        "unit_amount": "59.00",
+        "amount": "59.00",
+        "period_start": "2026-09-01T00:00:00",
+        "period_end": "2026-10-01T00:00:00"
+      }
+    ]
   }
 ]

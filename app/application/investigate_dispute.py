@@ -8,7 +8,10 @@ Order matters and is the architecture in miniature:
 2. run the deterministic rules -- they are free, instant and certain;
 3. if the message tries to address the system, stop here and hand it to a
    human, without ever calling the model;
-4. otherwise ask the decision engine to classify what is left;
+4. otherwise read the merchant's bank, when one is configured, for evidence
+   that money arrived -- a finding for a person, its code alone shown to the
+   engine (specs/016-bank-evidence) -- then ask the decision engine to
+   classify what is left;
 5. compute the concrete action -- including its amount -- in code.
 
 Step 5 is the one worth noticing. The engine says *propose a credit note*. It
@@ -34,10 +37,11 @@ from app.decision.base import (
     EngineTelemetry,
     EngineUnavailable,
     RecommendedAction,
+    findings_for_engine,
 )
 from app.domain.automated import automated_message
 from app.domain.bank import BankCheck
-from app.domain.enums import RuleCode, SenderStatus, Severity
+from app.domain.enums import InvoiceStatus, RuleCode, SenderStatus, Severity
 from app.domain.models import (
     BillingContext,
     Customer,
@@ -49,6 +53,10 @@ from app.domain.models import (
 )
 from app.domain.money import Money
 from app.domain.rules import (
+    BANK_LIMITATIONS,
+    BANK_MARGIN_DAYS,
+    bank_credit_check,
+    bank_not_evaluable,
     checks_not_evaluable,
     cited_invoice_conflict,
     currency_mismatch,
@@ -67,7 +75,7 @@ from app.observability import tracing
 from app.policies.action_policy import ActionAuthorization, ActionPolicy, Verdict
 from app.policies.correction import correction_for
 from app.policies.reply import AutomaticReply, automatic_reply
-from app.providers.bank_base import BankEvidence
+from app.providers.bank_base import BankEvidence, BankUnavailable
 from app.providers.base import BillingProvider, ProviderUnavailable, ProviderUnsupported
 
 log = logging.getLogger(__name__)
@@ -230,6 +238,10 @@ class DisputeInvestigator:
                     "billing.verdict": result.authorization.verdict.value,
                     "billing.requires_human_approval": result.requires_human_approval,
                     "billing.findings": ",".join(f.code.value for f in result.findings),
+                    # The outcome alone: never what the bank said.
+                    "billing.bank_check": (
+                        result.bank_check.outcome if result.bank_check is not None else ""
+                    ),
                 },
             )
             return result
@@ -323,8 +335,13 @@ class DisputeInvestigator:
             )
             return self._finish(result, trace, customer.id)
 
+        # The bank is read last, once nothing else can stop the run before the engine
+        # (specs/016-bank-evidence): a run that short-circuits never reads it.
+        bank_check = await self._check_bank(dispute, context, findings, now, trace)
+
         try:
-            decision = await self._engine.decide(dispute, context, findings)
+            # What an engine sees of the findings: a bank finding as its code alone.
+            decision = await self._engine.decide(dispute, context, findings_for_engine(findings))
         except EngineUnavailable as outage:
             # An outage is not an abstention (taxonomy S8): the trace says the
             # engine could not be reached, no decision event is written for
@@ -334,7 +351,7 @@ class DisputeInvestigator:
             result = self._assemble(
                 dispute, context, findings, decision, getattr(outage, "invocation_id", None)
             )
-            return self._finish(result, trace, customer.id)
+            return self._finish(result, trace, customer.id, bank_check)
         except EngineMisidentified as error:
             # The engine answered, so this is no outage: the answer came from
             # a model nobody chose, and it was dropped.
@@ -343,7 +360,7 @@ class DisputeInvestigator:
             result = self._assemble(
                 dispute, context, findings, decision, getattr(error, "invocation_id", None)
             )
-            return self._finish(result, trace, customer.id)
+            return self._finish(result, trace, customer.id, bank_check)
         trace.append(
             event(
                 "decision_created",
@@ -353,18 +370,86 @@ class DisputeInvestigator:
             )
         )
         return self._finish(
-            self._assemble(dispute, context, findings, decision), trace, customer.id
+            self._assemble(dispute, context, findings, decision), trace, customer.id, bank_check
         )
+
+    async def _check_bank(
+        self,
+        dispute: Dispute,
+        context: BillingContext,
+        findings: list[RuleFinding],
+        now: datetime,
+        trace: list[AuditEvent],
+    ) -> BankCheck:
+        """Read the merchant's bank for the disputed invoice, unpaid on the platform,
+        and add the check's finding, if any, to `findings` (FR-003, FR-004).
+
+        A read that fails is `NOT_EVALUABLE` and the investigation goes on: the bank is
+        evidence for a person, never a condition of the run. The trace carries the
+        outcome alone; the record carries the allowlist.
+        """
+        target = context.target_invoice
+        if self._bank is None:
+            check = BankCheck(outcome="not_run", reason="no_bank")
+        elif target is None:
+            check = BankCheck(outcome="not_run", reason="no_invoice")
+        elif target.status is InvoiceStatus.PAID:
+            check = BankCheck(outcome="not_run", reason="paid_on_platform", invoice_id=target.id)
+        else:
+            finding, check = await self._read_bank(dispute, target, context.invoices, now)
+            if finding is not None:
+                findings.append(finding)
+                trace.append(
+                    event(
+                        "rule_evaluated",
+                        code=finding.code.value,
+                        severity=finding.severity.value,
+                    )
+                )
+        if self._bank is not None:
+            # With no bank configured the trace reads exactly as before.
+            trace.append(event("bank_checked", outcome=check.outcome))
+        return check
+
+    async def _read_bank(
+        self, dispute: Dispute, target: Invoice, invoices: list[Invoice], now: datetime
+    ) -> tuple[RuleFinding | None, BankCheck]:
+        assert self._bank is not None
+        try:
+            read = await self._bank.read(target.issued_at, now, BANK_MARGIN_DAYS, now)
+        except BankUnavailable as error:
+            # By its type alone: what failed is said, never what the bank answered.
+            log.warning(
+                "bank unavailable: dispute=%s error=%s", dispute.id, type(error).__name__
+            )
+            return bank_not_evaluable(target.id, "bank_unavailable"), BankCheck(
+                outcome="not_evaluable",
+                reason="bank_unavailable",
+                invoice_id=target.id,
+                window_start=target.issued_at,
+                window_end=now,
+                margin_days=BANK_MARGIN_DAYS,
+                limitations=BANK_LIMITATIONS,
+            )
+        return bank_credit_check(target, read, invoices, now)
 
     def _finish(
         self,
         result: InvestigationResult,
         trace: list[AuditEvent],
         customer_id: str | None = None,
+        bank_check: BankCheck | None = None,
     ) -> InvestigationResult:
         # `customer_id` is the verified customer's -- resolved from the
         # sender's address and checked against any claim -- or None before
-        # the customer is known, when nothing is ever queued.
+        # the customer is known, when nothing is ever queued. `bank_check` is
+        # None for every run that stopped before the bank is read: its record
+        # then says the check did not run, and why.
+        if bank_check is None:
+            reason = "no_bank" if self._bank is None else "short_circuit"
+            bank_check = BankCheck(outcome="not_run", reason=reason)
+            if self._bank is not None:
+                trace.append(event("bank_checked", outcome=bank_check.outcome))
         verdict = result.authorization.verdict.value
         trace.append(event("authorization_evaluated", verdict=verdict))
         if result.requires_human_approval:
@@ -374,7 +459,12 @@ class DisputeInvestigator:
         reply = automatic_reply(result)
         trace.append(event("automatic_reply", allowed=reply.allowed, reason=reply.reason.value))
         recorded = result.model_copy(
-            update={"events": trace, "action_id": action_id, "automatic_reply": reply}
+            update={
+                "events": trace,
+                "action_id": action_id,
+                "automatic_reply": reply,
+                "bank_check": bank_check,
+            }
         )
         if self._audit is not None:
             self._audit.record(recorded, billing_provider=self._provider.name)

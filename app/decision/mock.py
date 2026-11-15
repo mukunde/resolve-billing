@@ -47,6 +47,20 @@ _BY_FINDING: list[tuple[RuleCode, Classification, RecommendedAction, float]] = [
         RecommendedAction.REQUEST_INFORMATION,
         0.90,
     ),
+    # The bank's evidence is a person's to weigh (specs/016-bank-evidence): the mock
+    # escalates. After the billing findings above, which keep their precedence.
+    (
+        RuleCode.BANK_CREDIT_TO_RECONCILE,
+        Classification.UNKNOWN,
+        RecommendedAction.ESCALATE,
+        0.55,
+    ),
+    (
+        RuleCode.BANK_CREDIT_OBSERVED,
+        Classification.UNKNOWN,
+        RecommendedAction.ESCALATE,
+        0.55,
+    ),
     (
         RuleCode.SUSPICIOUS_USAGE_DELTA,
         Classification.UNKNOWN,

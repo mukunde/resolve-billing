@@ -275,7 +275,7 @@ The interesting assertion is not that the tests pass.
 
 ```yaml
 - run: >-
-    python -m evals.runner --engine mock --min-fully-correct 38
+    python -m evals.runner --engine mock --min-fully-correct 51
     --baseline evals/baselines/mock.json
 ```
 

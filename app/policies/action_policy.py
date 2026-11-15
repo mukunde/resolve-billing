@@ -19,6 +19,7 @@ from app.decision.base import FINANCIAL_ACTIONS, Classification, Decision, Recom
 from app.domain.enums import RuleCode, Severity
 from app.domain.models import RuleFinding
 from app.domain.money import Money
+from app.domain.rules import is_bank_finding
 from app.policies.correction import UNCERTAIN
 
 
@@ -141,6 +142,16 @@ class ActionPolicy:
             return ActionAuthorization(
                 verdict=Verdict.HUMAN_REVIEW,
                 reason=f"Constat bloquant : {blocking.code.value}.",
+            )
+
+        # 1a. The merchant's bank said something of this invoice, or could not say
+        #     (specs/016-bank-evidence, FR-004): a person weighs it, whatever the
+        #     engine concluded. The blocking findings above keep their precedence.
+        bank = next((f for f in findings if is_bank_finding(f)), None)
+        if bank is not None:
+            return ActionAuthorization(
+                verdict=Verdict.HUMAN_REVIEW,
+                reason=f"Preuve bancaire à examiner par une personne : {bank.code.value}.",
             )
 
         # 1b. A classification the engine is not sure of is not one.
