@@ -446,3 +446,135 @@ class TestThePages:
             f"/api/v1/actions/{body['action_id']}/review").text
         assert "Contrôle bancaire" in page
         assert "aucun crédit citant la facture" in page
+
+
+# -- ADR-009's disclosure inventory: guards held by a test (review r428) -----------------
+
+MARKUP = "<script>x</script>"
+WORLDS.update({
+    # Allowlisted string fields holding markup: an account id, a transaction id, a
+    # return's id and type. The related return makes the credit one to reconcile, so
+    # every one of them reaches the record and the page. (A state with markup is held
+    # by the unit-level test below: the rule reads only "completed" and "reverted".)
+    "markup": {
+        "accounts": [{"id": f"acc{MARKUP}", "currency": "EUR", "visible": True}],
+        "controlled": True,
+        "credits": [credit(f"tx{MARKUP}", "Facture inv_701", account_id=f"acc{MARKUP}")],
+        "returns": [{"id": f"ret{MARKUP}", "type": f"topup_return{MARKUP}", "amount": -5900,
+                     "currency": "EUR", "created_at": "2026-09-20T10:00:00Z",
+                     "related_credit_id": f"tx{MARKUP}"}],
+    },
+    "markup_nothing": {
+        "accounts": [{"id": f"acc{MARKUP}", "currency": "EUR", "visible": True}],
+        "controlled": True, "credits": [],
+    },
+})
+
+
+class TestThePagesEscapeTheRecord:
+    def test_the_run_page(self, api):
+        api["world"] = "markup"
+        client = TestClient(app, headers=SERVICE)
+        body = client.post(
+            "/api/v1/disputes/investigate",
+            json={"message": "J'ai payé inv_701 par virement.",
+                  "customer_email": "camille@opale-studio.fr", "invoice_id": "inv_701"},
+        ).json()
+        page = client.get(f"/api/v1/runs/{body['run_id']}/view").text
+        assert "Contrôle bancaire" in page and "à rapprocher" in page
+        assert MARKUP not in page
+        assert "&lt;script&gt;x&lt;/script&gt;" in page
+        assert f"topup_return{MARKUP}" not in page
+
+    def test_the_review_page(self, api):
+        api["world"] = "markup_nothing"
+        body = TestClient(app, headers=SERVICE).post(
+            "/api/v1/disputes/investigate",
+            json={"message": "Facturé deux fois pour septembre ?",
+                  "customer_email": "theo@basalte-btp.fr", "invoice_id": "inv_711"},
+        ).json()
+        assert body["action_id"] is not None
+        page = TestClient(app, headers=basic(APPROVER)).get(
+            f"/api/v1/actions/{body['action_id']}/review").text
+        assert "Contrôle bancaire" in page
+        assert MARKUP not in page
+        assert "&lt;script&gt;x&lt;/script&gt;" in page
+
+    def test_every_allowlisted_string_of_the_section_is_escaped(self):
+        from app.api.bank_view import bank_section
+        from app.domain.bank import BankCheck, CheckedCredit, CheckedReturn, DeclaredAccount
+        from app.domain.money import Money
+
+        eur = Money(amount_minor=5900, currency="EUR")
+        record = BankCheck(
+            outcome="to_reconcile", invoice_id=f"inv{MARKUP}",
+            accounts=(DeclaredAccount(id=f"acc{MARKUP}", currency="EUR"),),
+            items=(
+                CheckedCredit(account_id=f"acc{MARKUP}", transaction_id=f"tx{MARKUP}",
+                              amount=eur, state=f"reverted{MARKUP}", observed_at=NOW,
+                              reasons=("reference_matched", "reversed")),
+                CheckedReturn(id=f"ret{MARKUP}", type=f"refund{MARKUP}", amount=eur,
+                              related_credit_id=f"tx{MARKUP}", instant=NOW,
+                              instant_is="created"),
+            ),
+        )
+        html = bank_section(record)
+        assert MARKUP not in html and "<script" not in html
+        assert html.count("&lt;script&gt;") >= 7
+
+
+class TestTelemetryOnASuccessfulRead:
+    """The span attributes of a run whose bank read succeeded: the outcome code only."""
+
+    @pytest.mark.parametrize(("world", "outcome"),
+                             [("observed", "observed"), ("partial", "to_reconcile")])
+    def test_no_bank_value_on_any_attribute(self, worlds, monkeypatch, world, outcome):
+        from app.observability import tracing
+
+        captured: list[dict] = []
+        real = tracing.set_attributes
+
+        def capture(span, **attributes):
+            captured.append(attributes)
+            return real(span, **attributes)
+
+        monkeypatch.setattr(tracing, "set_attributes", capture)
+        result, _ = run(world, worlds)
+        assert result.bank_check.outcome == outcome
+        merged = {k: v for attrs in captured for k, v in attrs.items()}
+        assert merged["billing.bank_check"] == outcome
+        sent = json.dumps(captured, default=str)
+        for leak in ("tx_obs", "tx_part", "acc_eur", SECRET, "5900", "59.00", "3000",
+                     "30.00", "Facture", "Acompte", "amount_partial", "reference_matched"):
+            assert leak not in sent, leak
+
+
+class TestNoAutomaticReplyForAnyBankOutcome:
+    """Each bank outcome refuses the automatic reply, even when the engine asks the
+    customer a question -- which, with no finding, would be sent unattended."""
+
+    ASK = Decision(
+        classification=Classification.INSUFFICIENT_INFORMATION, confidence=0.99,
+        confidence_kind="self_reported", recommended_action=RecommendedAction.REQUEST_INFORMATION,
+    )
+
+    def outcome(self, world, worlds, code):
+        result, _ = run(world, worlds, engine=Capturing(self.ASK))
+        assert code in {f.code for f in result.findings}
+        assert result.automatic_reply.allowed is False
+        assert result.automatic_reply.reason is ReplyReason.NEEDS_A_PERSON
+        return result
+
+    def test_the_control_without_a_finding_is_allowed(self, worlds):
+        result, _ = run("nothing", worlds, engine=Capturing(self.ASK))
+        assert result.automatic_reply.allowed is True
+
+    def test_bank_credit_observed(self, worlds):
+        self.outcome("observed", worlds, RuleCode.BANK_CREDIT_OBSERVED)
+
+    def test_bank_credit_to_reconcile(self, worlds):
+        self.outcome("partial", worlds, RuleCode.BANK_CREDIT_TO_RECONCILE)
+
+    def test_bank_derived_not_evaluable(self, worlds):
+        result = self.outcome("uncovered", worlds, RuleCode.NOT_EVALUABLE)
+        assert result.bank_check.outcome == "not_evaluable"
