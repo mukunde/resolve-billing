@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import re
 import sys
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -35,6 +36,21 @@ from app.domain.money import Money
 from app.domain.references import cited_invoices
 
 MARGIN_DAYS = 7
+
+#: Every text printed comes from these closed sets; anything else prints as `other`, so
+#: no bank-authored string -- or a terminal control sequence in it -- reaches the screen.
+TYPES = frozenset({"topup", "transfer", "topup_return", "refund"})
+STATES = frozenset({"created", "pending", "completed", "declined", "failed", "reverted"})
+ORIGINS = frozenset({"external", "internal", "unknown"})
+CURRENCY = re.compile(r"[A-Z]{3}")
+
+
+def _closed(value: object, allowed: frozenset[str]) -> str:
+    return value if isinstance(value, str) and value in allowed else "other"
+
+
+def _currency(value: object) -> str:
+    return value if isinstance(value, str) and CURRENCY.fullmatch(value) else "other"
 
 
 def _instant(value: str) -> datetime:
@@ -85,14 +101,17 @@ def describe(read, loaded: list[Invoice]) -> list[str]:
         f"coverage_established={read.coverage_established}",
     ]
     for account in read.accounts:
-        lines.append(f"declared account: visible={account.visible} currency={account.currency}")
+        lines.append(
+            f"declared account: visible={account.visible} currency={_currency(account.currency)}"
+        )
     lines.append(f"credits: {len(read.credits)}")
     for credit in sorted(read.credits, key=lambda c: c.created_at):
         cites = sorted(names[i] for i in cited_invoices(credit.reference, loaded))
         lines.append(
-            f"- credit type={credit.type} state={credit.state} "
-            f"amount={Decimal(credit.amount.amount_minor) / 100} {credit.amount.currency} "
-            f"origin={credit.origin} fx={credit.fx} fee={credit.fee} "
+            f"- credit type={_closed(credit.type, TYPES)} state={_closed(credit.state, STATES)} "
+            f"amount={Decimal(credit.amount.amount_minor) / 100} "
+            f"{_currency(credit.amount.currency)} "
+            f"origin={_closed(credit.origin, ORIGINS)} fx={credit.fx} fee={credit.fee} "
             f"completed_at={'present' if credit.completed_at else 'absent'} "
             f"reference={'present' if credit.reference else 'absent'} cites={cites}"
         )
@@ -100,8 +119,8 @@ def describe(read, loaded: list[Invoice]) -> list[str]:
     lines.append(f"returns: {len(read.returns)}")
     for ret in read.returns:
         lines.append(
-            f"- return type={ret.type} "
-            f"amount={Decimal(ret.amount.amount_minor) / 100} {ret.amount.currency} "
+            f"- return type={_closed(ret.type, TYPES)} "
+            f"amount={Decimal(ret.amount.amount_minor) / 100} {_currency(ret.amount.currency)} "
             f"related_to_a_credit_read={ret.related_credit_id in read_ids}"
         )
     return lines
