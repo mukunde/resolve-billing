@@ -18,7 +18,9 @@ one customer. The window runs from the issue to now, with the 7-day margin.
 account's visibility and currency, and per credit its type, state, amount, currency,
 origin, FX and fee flags, whether it has a completion instant, and which of the two
 fictitious numbers its reference cites -- never the reference's text, an id, a payer or
-a description. Returns: type, signed amount, whether related to a credit read.
+a description. Returns: type, signed amount, whether related to a credit read. Then the
+bank check on the cited invoice, as the investigation runs it (`bank_credit_check`): its
+outcome, reasons and finding code.
 """
 
 from __future__ import annotations
@@ -34,8 +36,7 @@ from decimal import Decimal, InvalidOperation
 from app.domain.models import Invoice
 from app.domain.money import Money
 from app.domain.references import cited_invoices
-
-MARGIN_DAYS = 7
+from app.domain.rules import BANK_MARGIN_DAYS, bank_credit_check
 
 #: Every text printed comes from these closed sets; anything else prints as `other`, so
 #: no bank-authored string -- or a terminal control sequence in it -- reaches the screen.
@@ -126,6 +127,17 @@ def describe(read, loaded: list[Invoice]) -> list[str]:
     return lines
 
 
+def checked(read, loaded: list[Invoice], now: datetime) -> list[str]:
+    """The bank check on the cited invoice, as the investigation runs it: its outcome,
+    reason and reasons -- closed codes only -- and the finding's code."""
+    finding, check = bank_credit_check(loaded[0], read, loaded, now)
+    return [
+        f"check: outcome={check.outcome} reason={check.reason} "
+        f"reasons={list(check.reasons)} items={len(check.items)} "
+        f"finding={finding.code.value if finding is not None else 'none'}"
+    ]
+
+
 async def readback(args: argparse.Namespace) -> list[str]:
     from app.api.bank_config import bank_evidence
 
@@ -133,8 +145,9 @@ async def readback(args: argparse.Namespace) -> list[str]:
     os.environ["REVOLUT_CONTROLLED_WORLDS"] = "enabled"
     bank = bank_evidence()
     now = datetime.now(UTC)
-    read = await bank.read(args.issued_at, now, MARGIN_DAYS, now)
-    return describe(read, invoices(args))
+    read = await bank.read(args.issued_at, now, BANK_MARGIN_DAYS, now)
+    loaded = invoices(args)
+    return describe(read, loaded) + checked(read, loaded, now)
 
 
 def main(argv: list[str] | None = None) -> int:

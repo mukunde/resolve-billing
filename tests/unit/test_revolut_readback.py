@@ -100,7 +100,9 @@ def test_a_read_through_the_composition_controlled_for_this_run(monkeypatch, cap
     assert seen == {"bank": "revolut", "controlled": "enabled"}
     ((start, end, margin, now),) = bank.calls
     assert start == T and margin == 7 and end == now and now >= T
-    assert "coverage_established=True" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "coverage_established=True" in out
+    assert "check: outcome=nothing" in out and "finding=none" in out
 
 
 @pytest.mark.parametrize("failure", ["transport", "malformed"])
@@ -118,3 +120,29 @@ def test_a_failure_prints_its_type_and_category_only(monkeypatch, capsys, failur
     assert revolut_readback.main(ARGV) == 1
     captured = capsys.readouterr()
     assert "SECRET" not in captured.out + captured.err
+
+
+def test_the_check_runs_as_the_investigation_does():
+    """A credit citing the invoice for its total, of unknown origin -- what the Sandbox
+    gives back -- is to reconcile, never observed; one of external origin is observed."""
+    def read_of(origin):
+        c = credit("tx", "Facture RB-SC002-01").model_copy(update={"origin": origin})
+        return BankRead(accounts=(DeclaredAccount(id="acc-secret-id", currency="EUR"),),
+                        credits=(c,), window_start=T, window_end=T, margin_days=7,
+                        complete=True, coverage_established=True)
+
+    loaded = revolut_readback.invoices(ARGS)
+    unknown = revolut_readback.checked(read_of("unknown"), loaded, T)[0]
+    assert "outcome=to_reconcile" in unknown and "origin_unknown" in unknown
+    assert "finding=BANK_CREDIT_TO_RECONCILE" in unknown
+    external = revolut_readback.checked(read_of("external"), loaded, T)[0]
+    assert "outcome=observed" in external and "finding=BANK_CREDIT_OBSERVED" in external
+    assert "secret" not in unknown + external and "Facture" not in unknown + external
+
+
+def test_no_reference_is_nothing():
+    read = BankRead(accounts=(DeclaredAccount(id="a", currency="EUR"),),
+                    credits=(credit("tx", None),), window_start=T, window_end=T,
+                    margin_days=7, complete=True, coverage_established=True)
+    line = revolut_readback.checked(read, revolut_readback.invoices(ARGS), T)[0]
+    assert "outcome=nothing" in line and "finding=none" in line
