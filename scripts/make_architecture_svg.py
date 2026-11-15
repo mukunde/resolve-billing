@@ -5,11 +5,12 @@
 Four things this draws that an earlier version of the same picture did not,
 each of them a claim the repository has to be able to keep:
 
-**Adapters that do not exist are drawn as not existing.** Pennylane, Qonto,
-Zendesk, Zammad and Vertex are dashed and labelled `planned`; Stripe, built in
-test mode, says so on its chip. The README has a section naming
-them as absent; a diagram that lists them beside the working ones says the
-opposite, and a picture is believed faster than a paragraph.
+**Adapters that do not exist are drawn as not existing.** Zendesk, Zammad and
+Vertex are dashed and labelled `planned`; Stripe, built in test mode, and
+Pennylane and Revolut, built on their sandboxes, say so on their chips. The
+README has a section naming them as absent; a diagram that lists them beside
+the working ones says the opposite, and a picture is believed faster than a
+paragraph.
 
 **`ActionPolicy` is not in the ports band.** It is a rule, not a boundary --
 no Protocol, no interchangeable implementation. It belongs where it already
@@ -207,10 +208,10 @@ add(
 )
 
 ports = [
-    ("BillingProvider", ["Fake", "Stripe (test)"], ["Pennylane"]),
+    ("BillingProvider", ["Fake", "Stripe (test)", "Pennylane (sandbox)"], []),
     ("DecisionEngine", ["Mock", "Claude"], ["Vertex"]),
     ("SupportTool", [], ["Zendesk", "Zammad"]),
-    ("BankProvider", [], ["Qonto"]),
+    ("BankEvidence", ["Fake", "Revolut (sandbox)"], []),
     ("UsageReport", ["File export"], ["Admin API*"]),
 ]
 pw, pgap = 189, 13
@@ -230,20 +231,24 @@ for i, (name, built, planned) in enumerate(ports):
         f'<text class="tiny l" x="{x + 14}" y="{Y5 + 48}" '
         f'fill="{MUTED if exists else LANE}">{label}</text>'
     )
-    cx = x + 14
+    cx, row = x + 14, Y5 + 54
     for label in built:
         w = 11 + len(label) * 7.0
+        # A box with nothing planned lets its built chips take a second row.
+        if cx + w > x + pw - 14 and not planned:
+            cx, row = x + 14, row + 30
         add(
-            f'<rect x="{cx}" y="{Y5 + 54}" width="{w}" height="23" rx="5" '
+            f'<rect x="{cx}" y="{row}" width="{w}" height="23" rx="5" '
             f'fill="#eef6f4" stroke="{TEAL_D}" stroke-width="1"/>'
         )
         add(
-            f'<text class="chip" x="{cx + w / 2}" y="{Y5 + 70}" '
+            f'<text class="chip" x="{cx + w / 2}" y="{row + 16}" '
             f'fill="{TEAL_D}">{escape(label)}</text>'
         )
         cx += w + 7
     # correction 1: what does not exist is drawn as not existing
-    add(f'<text class="tiny l" x="{x + 14}" y="{Y5 + 94}" fill="{LANE}">planned</text>')
+    if planned:
+        add(f'<text class="tiny l" x="{x + 14}" y="{Y5 + 94}" fill="{LANE}">planned</text>')
     cx = x + 14
     for label in planned:
         w = 11 + len(label) * 6.6
@@ -292,9 +297,9 @@ ALT = (
     "through n8n, the application loads the billing context, runs deterministic "
     "rules, asks a decision engine only when the rules cannot settle it, and an "
     "action policy decides whether a person must approve. A prompt injection "
-    "bypasses the engine entirely. Billing providers, decision engines and usage "
-    "reports sit behind ports; the support tool and bank ports, which do not "
-    "exist yet, and every adapter not yet built, are dashed as planned. A "
+    "bypasses the engine entirely. Billing providers, decision engines, bank "
+    "evidence and usage reports sit behind ports; the support tool port, which "
+    "does not exist yet, and every adapter not yet built, are dashed as planned. A "
     "financial action carries an amount only when the code can compute it; "
     "otherwise a person reviews."
 )
