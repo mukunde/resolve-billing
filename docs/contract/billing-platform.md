@@ -5,7 +5,9 @@ the rest of the system may rely on. Written on 2026-10-22 from the existing
 records; the first real adapter -- Stripe, in test mode, read-only
 (specs/001-stripe-read-adapter) -- folded in on 2026-10-23, after its contract
 held on a seeded Stripe test account; its writes (specs/002-stripe-writes)
-the same day. Reasons are in ADR-001 (the port), ADR-007 (unknown senders),
+the same day; the printed invoice number on Stripe and the fake
+(specs/016-bank-evidence) on 2026-11-15. Reasons are in ADR-001 (the port),
+ADR-007 (unknown senders),
 ADR-008 (writes, idempotency, the platform as the authority on amounts) and
 taxonomy S6, S7.
 
@@ -98,10 +100,15 @@ CI, the demo and the evaluation run on; and **Stripe**, selected with
   invoice's rates are read from its tax rate objects, once per rate; an
   untaxed invoice reads none.
 - **References as the platform writes them.** Optionally,
-  `invoice_references(text)` and `invoice_reference_spans(text)` find the
-  invoice references a message cites, normalised to the platform's own
-  identifiers (S6, D10) -- on Stripe, `in_` identifiers only. Both are
-  synchronous: they read the text only. A platform without them has no
+  `invoice_references(text, invoices)` and
+  `invoice_reference_spans(text, invoices)` find the invoice references a
+  message cites, normalised to the platform's own identifiers (S6, D10): on
+  Stripe its `in_` identifiers, on the fake its own, and on both the printed
+  numbers of the loaded invoices (`invoices`), recognised by the domain's
+  recogniser (`app/domain/references.py`) -- whole, case-folded, the longest
+  kept where two overlap; a number outside the loaded invoices is not
+  recognised. Stripe maps an invoice's printed `number`; the fake reads it
+  from its fixtures. Both are synchronous: they read the text only. A platform without them has no
   cited-reference check, and the masking then recognises its identifiers only
   as the context holds them.
 
