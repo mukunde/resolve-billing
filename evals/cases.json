@@ -1233,14 +1233,21 @@
     "expect_findings": [
       "BANK_CREDIT_OBSERVED"
     ],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_TO_RECONCILE",
+      "NOT_EVALUABLE"
+    ],
+    "expect_bank_check": {
+      "outcome": "observed"
+    },
     "covers": [
       {
         "boundary": "B31",
         "side": "A",
         "type": "EX"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_payment_recorded_on_platform",
@@ -1253,15 +1260,26 @@
     "expect_engine_action": "explain_invoice",
     "expect_action": "reply",
     "expect_human_approval": false,
+    "expect_automatic_reply": true,
     "expect_findings": [],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "DUPLICATE_PAYMENT",
+      "BANK_CREDIT_OBSERVED",
+      "BANK_CREDIT_TO_RECONCILE",
+      "NOT_EVALUABLE"
+    ],
+    "expect_bank_check": {
+      "outcome": "not_run",
+      "reason": "paid_on_platform"
+    },
     "covers": [
       {
         "boundary": "B14",
         "side": "A",
         "type": "EX"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_amount_only_credit",
@@ -1271,17 +1289,27 @@
     "invoice_id": "inv_703",
     "bank_world": "amount_only",
     "expect_classification": "insufficient_information",
+    "expect_engine_action": "request_information",
     "expect_action": "request_information",
     "expect_human_approval": false,
+    "expect_automatic_reply": true,
     "expect_findings": [],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED",
+      "BANK_CREDIT_TO_RECONCILE",
+      "NOT_EVALUABLE"
+    ],
+    "expect_bank_check": {
+      "outcome": "nothing"
+    },
     "covers": [
       {
         "boundary": "B14",
         "side": "B",
         "type": "CD"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_reference_two_invoices",
@@ -1298,14 +1326,20 @@
     "expect_findings": [
       "BANK_CREDIT_TO_RECONCILE"
     ],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
     "covers": [
       {
         "boundary": "B31",
         "side": "B",
         "type": "EX"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_partial_payment",
@@ -1322,14 +1356,20 @@
     "expect_findings": [
       "BANK_CREDIT_TO_RECONCILE"
     ],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
     "covers": [
       {
         "boundary": "B31",
         "side": "B",
         "type": "EX"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_other_currency",
@@ -1346,14 +1386,20 @@
     "expect_findings": [
       "BANK_CREDIT_TO_RECONCILE"
     ],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
     "covers": [
       {
         "boundary": "B31",
         "side": "B",
         "type": "EX"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_reversed_credit",
@@ -1370,14 +1416,20 @@
     "expect_findings": [
       "BANK_CREDIT_TO_RECONCILE"
     ],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
     "covers": [
       {
         "boundary": "B31",
         "side": "B",
         "type": "EX"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_read_cut_short",
@@ -1394,7 +1446,14 @@
     "expect_findings": [
       "NOT_EVALUABLE"
     ],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED",
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "expect_bank_check": {
+      "outcome": "not_evaluable",
+      "reason": "read_incomplete"
+    },
     "covers": [
       {
         "boundary": "B31",
@@ -1402,7 +1461,8 @@
         "type": "EX",
         "outcome": "not_evaluable"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_duplicate_invoice_with_credit",
@@ -1420,7 +1480,12 @@
       "DUPLICATE_INVOICE",
       "BANK_CREDIT_OBSERVED"
     ],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "expect_bank_check": {
+      "outcome": "observed"
+    },
     "covers": [
       {
         "boundary": "B31",
@@ -1432,7 +1497,8 @@
         "side": "A",
         "type": "EX"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
   },
   {
     "id": "bank_no_credit",
@@ -1442,16 +1508,269 @@
     "invoice_id": "inv_712",
     "bank_world": "no_credit",
     "expect_classification": "insufficient_information",
+    "expect_engine_action": "request_information",
     "expect_action": "request_information",
     "expect_human_approval": false,
+    "expect_automatic_reply": true,
     "expect_findings": [],
-    "label_source": "proposed by the author (Claude), to adjudicate by the maintainer",
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED",
+      "BANK_CREDIT_TO_RECONCILE",
+      "NOT_EVALUABLE"
+    ],
+    "expect_bank_check": {
+      "outcome": "nothing"
+    },
     "covers": [
       {
         "boundary": "B14",
         "side": "B",
         "type": "CD"
       }
-    ]
+    ],
+    "label_source": "maintainer, 2026-11-15"
+  },
+  {
+    "id": "bank_credit_unknown_origin",
+    "why": "Spec 016, adjudicated 2026-11-15. A top-up citing the invoice for its total, with no counterparty: its origin is unknown, never a candidate -- to reconcile.",
+    "message": "Bonjour,\n\nLa facture inv_713 a été réglée mi-septembre. Merci de stopper les relances.\n\nInès",
+    "customer_email": "ines@azalee-paysages.fr",
+    "invoice_id": "inv_713",
+    "bank_world": "origin_unknown",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-15"
+  },
+  {
+    "id": "bank_credit_internal_origin",
+    "why": "Spec 016, adjudicated 2026-11-15. A transfer citing the invoice for its total, from one of the merchant's own or the bank's internal accounts: never an outside payer -- to reconcile.",
+    "message": "Bonjour,\n\nNous avons viré le montant de la facture inv_714. Pourquoi cette relance ?\n\nJules",
+    "customer_email": "jules@bruyere-conseil.fr",
+    "invoice_id": "inv_714",
+    "bank_world": "origin_internal",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-15"
+  },
+  {
+    "id": "bank_credit_with_fx",
+    "why": "Spec 016, adjudicated 2026-11-15. A credit citing the invoice for its total, but billed in another amount or currency (FX): to reconcile, never converted.",
+    "message": "Hello,\n\nWe settled invoice inv_715 by international transfer in September. Please update your records.\n\nKarim",
+    "customer_email": "karim@cerisier-media.fr",
+    "invoice_id": "inv_715",
+    "bank_world": "fx_present",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-15"
+  },
+  {
+    "id": "bank_credit_with_fee",
+    "why": "Spec 016, adjudicated 2026-11-15. A credit citing the invoice for its total with a non-zero fee on the leg: to reconcile.",
+    "message": "Bonjour,\n\nLa facture inv_716 est payée depuis le 14 septembre. Merci de corriger.\n\nLouise",
+    "customer_email": "louise@dahlia-events.fr",
+    "invoice_id": "inv_716",
+    "bank_world": "fee_present",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-15"
+  },
+  {
+    "id": "bank_credit_with_related_return",
+    "why": "Spec 016, adjudicated 2026-11-15. A qualifying credit, then a return naming it: the money may have gone back -- to reconcile.",
+    "message": "Bonjour,\n\nJ'ai payé la facture inv_717 par virement en septembre. Merci d'arrêter les relances.\n\nMathis",
+    "customer_email": "mathis@eglantine-bois.fr",
+    "invoice_id": "inv_717",
+    "bank_world": "related_return",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-15"
+  },
+  {
+    "id": "bank_several_qualifying_credits",
+    "why": "Spec 016, adjudicated 2026-11-15. Two credits, each qualifying on its own for the invoice's total: several candidates -- to reconcile, never one picked.",
+    "message": "Bonjour,\n\nJe crois que nous avons réglé la facture inv_718 deux fois. Pouvez-vous vérifier ?\n\nNoémie",
+    "customer_email": "noemie@fougere-sante.fr",
+    "invoice_id": "inv_718",
+    "bank_world": "several_candidates",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-15"
+  },
+  {
+    "id": "bank_qualifying_beside_exception",
+    "why": "Spec 016, adjudicated 2026-11-15. One qualifying credit beside a referenced exception (a partial one): the exception takes precedence over observed -- to reconcile.",
+    "message": "Bonjour,\n\nAprès un acompte, nous avons réglé le solde de la facture inv_719. Merci de mettre à jour.\n\nOscar",
+    "customer_email": "oscar@glycine-logistique.fr",
+    "invoice_id": "inv_719",
+    "bank_world": "qualifying_beside_exception",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED"
+    ],
+    "expect_bank_check": {
+      "outcome": "to_reconcile"
+    },
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "B",
+        "type": "EX"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-15"
+  },
+  {
+    "id": "bank_coverage_not_established",
+    "why": "Spec 016, adjudicated 2026-11-15 (FR-003b). A complete read whose coverage is not established (a world not controlled): not evaluable, whatever it holds.",
+    "message": "Bonjour,\n\nLa facture inv_720 a été réglée par virement. Merci de corriger votre relance.\n\nPauline",
+    "customer_email": "pauline@houx-imprimerie.fr",
+    "invoice_id": "inv_720",
+    "bank_world": "coverage_not_established",
+    "expect_classification": "unknown",
+    "expect_engine_action": "escalate",
+    "expect_action": "none",
+    "expect_human_approval": true,
+    "expect_automatic_reply": false,
+    "expect_findings": [
+      "NOT_EVALUABLE"
+    ],
+    "forbid_findings": [
+      "BANK_CREDIT_OBSERVED",
+      "BANK_CREDIT_TO_RECONCILE"
+    ],
+    "expect_bank_check": {
+      "outcome": "not_evaluable",
+      "reason": "coverage_not_established"
+    },
+    "covers": [
+      {
+        "boundary": "B31",
+        "side": "X",
+        "type": "EX",
+        "outcome": "not_evaluable"
+      }
+    ],
+    "label_source": "maintainer, 2026-11-15"
   }
 ]

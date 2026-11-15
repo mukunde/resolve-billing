@@ -29,12 +29,12 @@ from app.providers.fake.fixtures import EXTRA_FIXTURES_ENV
 #: normalised to LF, as git stores them). Changing the cases is a deliberate
 #: update of this constant; a test holds them together.
 DEVELOPMENT_SET = Path(__file__).parent / "cases.json"
-DEVELOPMENT_SET_SHA256 = "9c58496b6cc03ef3c1737e1190f0c81bc4e4d7aa1226b04d443b27eba719bbf3"
+DEVELOPMENT_SET_SHA256 = "c9176c890ad27eed394c967f5ac472104a0174decebb31b1083be16b47e66cbf"
 
 #: How many development cases reach the engine (the others are settled by
 #: the rules first): a run's daily quota is sized on it. Pinned by a test
 #: that counts them; a change of the development set updates both.
-ENGINE_CASES = 41
+ENGINE_CASES = 49
 
 #: The engines evaluated on free tiers.
 HOSTED = frozenset(CONFIGURATIONS)

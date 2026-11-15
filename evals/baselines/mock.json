@@ -1,7 +1,7 @@
 {
   "engine": "mock",
   "cases_file": "cases.json",
-  "cases_sha256": "770cdb7569860ce1",
+  "cases_sha256": "f3bb08f5687cfe53",
   "cases": {
     "duplicate_fr": {
       "classification": true,
@@ -481,7 +481,7 @@
       "skip": true,
       "sender": true,
       "reply": true,
-      "recommendation": true
+      "recommendation": false
     },
     "bank_reference_two_invoices": {
       "classification": true,
@@ -551,7 +551,87 @@
       "skip": true,
       "sender": true,
       "reply": true,
+      "recommendation": false
+    },
+    "bank_credit_unknown_origin": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
       "recommendation": true
+    },
+    "bank_credit_internal_origin": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_credit_with_fx": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_credit_with_fee": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_credit_with_related_return": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_several_qualifying_credits": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_qualifying_beside_exception": {
+      "classification": true,
+      "action": true,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": true
+    },
+    "bank_coverage_not_established": {
+      "classification": false,
+      "action": false,
+      "approval": true,
+      "findings": true,
+      "skip": true,
+      "sender": true,
+      "reply": true,
+      "recommendation": false
     }
   }
 }

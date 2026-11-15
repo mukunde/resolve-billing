@@ -254,7 +254,11 @@ invoice, and no blocking finding.
   `claimed_payment_without_evidence`, and with a bank configured
   `bank_amount_only_credit` (a credit with no reference is never a candidate)
   and `bank_no_credit` (absence at the bank is never evidence of
-  non-payment). A credit citing the invoice is B31.
+  non-payment). A credit citing the invoice is B31. With no bank finding and
+  a conclusive check, the automatic reply stays allowed (adjudicated
+  2026-11-15): constitution II forbids it on a finding or an inconclusive
+  check, not because the bank was read; the request asserts no non-payment
+  and reveals no bank data.
 - No deterministic dunning rule exists yet (ADR-003).
 - Tests: CP, CD.
 
@@ -391,9 +395,21 @@ invoice, and no blocking finding.
 - Dev: A `bank_credit_observed`, `bank_duplicate_invoice_with_credit` (the
   duplicate keeps the classification; the correction is blocked); B
   `bank_reference_two_invoices`, `bank_partial_payment`, `bank_other_currency`,
-  `bank_reversed_credit`; outside `bank_read_cut_short`. Each exception and
-  the precedence: `tests/unit/test_bank_check.py`.
-- Labels proposed by the author, to adjudicate by the maintainer.
+  `bank_reversed_credit`, `bank_credit_unknown_origin`,
+  `bank_credit_internal_origin`, `bank_credit_with_fx`, `bank_credit_with_fee`,
+  `bank_credit_with_related_return`, `bank_several_qualifying_credits`,
+  `bank_qualifying_beside_exception` (an exception outranks a qualifying
+  credit); outside `bank_read_cut_short`, `bank_coverage_not_established`.
+  Each exception and the precedence: `tests/unit/test_bank_check.py`.
+- Labels adjudicated by the maintainer on 2026-11-15. A bank finding alone --
+  observed, to reconcile, or not evaluable -- is `unknown` and escalate: the
+  engine sees its code only, and the finding settles the routing (S1 is the
+  precedent). A billing classification another finding supports is kept (the
+  duplicate). A hosted model answering `payment_already_received` on a bank
+  finding alone would be a gap in the prompt's definitions, to measure, not a
+  reason to change the label.
+- The evaluation asserts the absences a label rests on (`forbid_findings`)
+  and the bank check's outcome (`expect_bank_check`), beside the findings.
 - Tests: CP, EX.
 
 ### Automated mail and automatic replies (ADR-011)
@@ -591,7 +607,7 @@ example.
 | B28 | Comparable vs incomparable amounts | *one rule:* `duplicate_across_currencies` |  |  | CP, MU | EX |
 | B29 | Usage checked vs usage unavailable | *one rule:* `usage_unavailable_disputed` |  |  | CP | EX |
 | B30 | Taxed invoices: the same charge vs the same total | `taxed_duplicate_fr` | `taxed_same_total_control` |  | CP | CP |
-| B31 | A bank credit observed vs one to reconcile | `bank_credit_observed`, `bank_duplicate_invoice_with_credit` | `bank_reference_two_invoices`, `bank_partial_payment`, `bank_other_currency`, `bank_reversed_credit` | `bank_read_cut_short` (not evaluable) | CP, EX | EX |
+| B31 | A bank credit observed vs one to reconcile | `bank_credit_observed`, `bank_duplicate_invoice_with_credit` | `bank_reference_two_invoices`, `bank_partial_payment`, `bank_other_currency`, `bank_reversed_credit`, `bank_credit_unknown_origin`, `bank_credit_internal_origin`, `bank_credit_with_fx`, `bank_credit_with_fee`, `bank_credit_with_related_return`, `bank_several_qualifying_credits`, `bank_qualifying_beside_exception` | `bank_read_cut_short` (not evaluable), `bank_coverage_not_established` (not evaluable) | CP, EX | EX |
 | B24 | A person vs an automated response | not listed | `known_customer_out_of_office`, `unknown_sender_delivery_report` |  | CP, MU, AD | EX |
 | B25 | Investigated, but never answered automatically | *one rule:* `known_customer_bulk_dispute`, `unknown_sender_newsletter` |  |  | CP, MU | EX |
 | B26 | Who may receive an automatic reply | *one rule:* `legitimate_overage` (allowed), `unknown_sender_plain` (refused), `known_customer_out_of_office` (refused), `known_customer_bulk_dispute` (refused), `unknown_sender_newsletter` (refused), `unknown_sender_delivery_report` (refused), `invoice_outside_window` (refused), `duplicate_across_currencies` (refused), `invoice_reference_conflict` (allowed), `withdrawn_message_with_injection` (refused), `claimed_account_of_another_customer` (refused), `duplicate_check_not_evaluable` (refused) |  |  | CP | EX |
@@ -628,14 +644,14 @@ Cases per cell. **0** marks a type the boundary calls for with no case; an empty
 | B28 | **0** |  | **0** |  |  |  |  | 1 |
 | B29 | **0** |  |  |  |  |  |  | 1 |
 | B30 | 2 |  |  |  |  |  |  |  |
-| B31 | **0** |  |  |  |  |  |  | 7 |
+| B31 | **0** |  |  |  |  |  |  | 15 |
 | B24 | **0** |  | **0** | **0** |  |  |  | 2 |
 | B25 | **0** |  | **0** |  |  |  |  | 2 |
 | B26 | **0** |  |  |  |  |  |  | 12 |
 
 ### B23, from the expectations
 
-Financial action expected: 9 cases, 9 with human approval. Non-financial: 46 cases, 22 without approval and 24 sent to a person anyway.
+Financial action expected: 9 cases, 9 with human approval. Non-financial: 54 cases, 22 without approval and 32 sent to a person anyway.
 
 ### Invariances
 

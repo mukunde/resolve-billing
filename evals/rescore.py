@@ -34,7 +34,7 @@ import json
 import sys
 from pathlib import Path
 
-from evals.runner import unsafe_reason
+from evals.runner import findings_hold, unsafe_reason
 
 CASES_PATH = Path(__file__).parent / "cases.json"
 
@@ -89,7 +89,7 @@ def rescore(result_path: Path) -> int:
             "classification": got["classification"] == case["expect_classification"],
             "action": got["action"] == case["expect_action"],
             "approval": got["approval"] == case["expect_human_approval"],
-            "findings": set(case.get("expect_findings", [])) <= set(got["findings"]),
+            "findings": findings_hold(case, got),
             "skip": (got["engine"] == "none") if case.get("expect_engine_skipped") else True,
             # Stored runs predating the check had known senders only.
             "sender": got.get("sender", "known") == case.get("expect_sender", "known"),

@@ -226,5 +226,53 @@
     "email": "zoe@ocre-edition.fr",
     "currency": "EUR",
     "display_name": "Ocre Edition"
+  },
+  {
+    "id": "cus_azalee",
+    "email": "ines@azalee-paysages.fr",
+    "currency": "EUR",
+    "display_name": "Azalee Paysages"
+  },
+  {
+    "id": "cus_bruyere",
+    "email": "jules@bruyere-conseil.fr",
+    "currency": "EUR",
+    "display_name": "Bruyere Conseil"
+  },
+  {
+    "id": "cus_cerisier",
+    "email": "karim@cerisier-media.fr",
+    "currency": "EUR",
+    "display_name": "Cerisier Media"
+  },
+  {
+    "id": "cus_dahlia",
+    "email": "louise@dahlia-events.fr",
+    "currency": "EUR",
+    "display_name": "Dahlia Events"
+  },
+  {
+    "id": "cus_eglantine",
+    "email": "mathis@eglantine-bois.fr",
+    "currency": "EUR",
+    "display_name": "Eglantine Bois"
+  },
+  {
+    "id": "cus_fougere",
+    "email": "noemie@fougere-sante.fr",
+    "currency": "EUR",
+    "display_name": "Fougere Sante"
+  },
+  {
+    "id": "cus_glycine",
+    "email": "oscar@glycine-logistique.fr",
+    "currency": "EUR",
+    "display_name": "Glycine Logistique"
+  },
+  {
+    "id": "cus_houx",
+    "email": "pauline@houx-imprimerie.fr",
+    "currency": "EUR",
+    "display_name": "Houx Imprimerie"
   }
 ]
