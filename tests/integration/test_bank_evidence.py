@@ -524,23 +524,33 @@ class TestThePagesEscapeTheRecord:
 
 
 class TestTelemetryOnASuccessfulRead:
-    """The span attributes of a run whose bank read succeeded: the outcome code only."""
+    """Every attribute of every span a run with a successful bank read finishes, however
+    it was set: the outcome code only, no bank value."""
 
     @pytest.mark.parametrize(("world", "outcome"),
                              [("observed", "observed"), ("partial", "to_reconcile")])
     def test_no_bank_value_on_any_attribute(self, worlds, monkeypatch, world, outcome):
+        pytest.importorskip("opentelemetry.sdk", reason="tracing is an optional extra")
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+            InMemorySpanExporter,
+        )
+
         from app.observability import tracing
 
-        captured: list[dict] = []
-        real = tracing.set_attributes
+        # A provider of this test's own, handed to every span the code opens: the global
+        # one is process-wide and set once (tests/integration/test_tracing.py).
+        memory = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(memory))
+        monkeypatch.setattr(tracing.trace, "get_tracer", lambda *a, **k: provider.get_tracer("t"))
 
-        def capture(span, **attributes):
-            captured.append(attributes)
-            return real(span, **attributes)
-
-        monkeypatch.setattr(tracing, "set_attributes", capture)
         result, _ = run(world, worlds)
+        spans = memory.get_finished_spans()
+        assert spans, "no span was recorded"
         assert result.bank_check.outcome == outcome
+        captured = [dict(span.attributes or {}) for span in spans]
         merged = {k: v for attrs in captured for k, v in attrs.items()}
         assert merged["billing.bank_check"] == outcome
         sent = json.dumps(captured, default=str)
@@ -559,15 +569,26 @@ class TestNoAutomaticReplyForAnyBankOutcome:
     )
 
     def outcome(self, world, worlds, code):
+        from app.policies.action_policy import ActionAuthorization
+        from app.policies.reply import automatic_reply
+
         result, _ = run(world, worlds, engine=Capturing(self.ASK))
         assert code in {f.code for f in result.findings}
         assert result.automatic_reply.allowed is False
         assert result.automatic_reply.reason is ReplyReason.NEEDS_A_PERSON
+        # The action policy already sends the case to a person; the reply's own guard
+        # must hold without it: the same result, its verdict forced to AUTO.
+        unattended = result.model_copy(update={
+            "authorization": ActionAuthorization(verdict=Verdict.AUTO, reason="test")})
+        assert unattended.proposed_action.type == "request_information"
+        reply = automatic_reply(unattended)
+        assert reply.allowed is False and reply.reason is ReplyReason.NEEDS_A_PERSON
         return result
 
     def test_the_control_without_a_finding_is_allowed(self, worlds):
         result, _ = run("nothing", worlds, engine=Capturing(self.ASK))
         assert result.automatic_reply.allowed is True
+        assert result.authorization.verdict is Verdict.AUTO
 
     def test_bank_credit_observed(self, worlds):
         self.outcome("observed", worlds, RuleCode.BANK_CREDIT_OBSERVED)
