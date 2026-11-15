@@ -2,7 +2,8 @@
 
 **Status:** accepted · 2026-11-14 · spec 016 · amends constitution III (1.1.0);
 extends ADR-001 and ADR-009 · scoped to the Revolut Business Sandbox and
-fixtures; the Sandbox read-back (SC-002) is not yet demonstrated
+fixtures; the Sandbox read-back (SC-002) ran on 2026-11-15 and its check found
+nothing -- a positive bank finding is demonstrated on fixtures only
 
 ## Context
 

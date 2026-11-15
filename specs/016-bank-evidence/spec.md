@@ -103,9 +103,9 @@ counterparty value.
   numbers, integral 10, fractional 1.
 - Consequence, limited to what was seen: ten of the eleven demo transactions carried no
   counterparty; the aggregate does not say which. If the top-ups the seed makes carry none,
-  their origin is *unknown* and FR-003 keeps them from ever being candidates; SC-002's
-  expected outcome follows the origin actually read back, which only the seeded run will
-  show.
+  their origin is *unknown*, which keeps them from ever being *observed* (FR-003): one
+  that cites the invoice is *to reconcile*. SC-002's expected outcome follows the
+  reference and the origin actually read back, which only the seeded run will show.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -156,7 +156,8 @@ top-ups read back with (see SC-002).
 ### Edge Cases
 
 - A credit with no counterparty, or a `self` or `revolut` one: unknown or internal origin,
-  never a candidate.
+  never *observed*; one that cites the invoice is *to reconcile* (aligned with the
+  approved plan and the code, the maintainer's decision of 2026-11-15).
 - A credit with no reference: never a candidate.
 - A reverted credit with no `completed_at`, created before the window's end: kept, to
   reconcile.
@@ -224,15 +225,17 @@ top-ups read back with (see SC-002).
   and edge case, the payload and disclosure allowlists, the adapter's GET-only, host,
   redirect, signing, pagination-tie and decimal behaviour, the seed's restrictions; and, on
   fixtures, what the Sandbox cannot make or may not make: an outside payer's credit
-  (observed) unless the seeded top-ups read back with an external counterparty, a later
+  (observed) unless the seeded top-ups read back with a reference citing the invoice and
+  an external counterparty, a later
   reversal of a completed credit (Sandbox states are final), a separate return related to
   it, and a timestamp tie at a page boundary.
 - **SC-002**: On the Sandbox, credits seeded as top-ups (citing the invoice's number, for its
   total; for part of it; reverted; citing another number) are read back through the real
   adapter, signed, and mapped faithfully. Each gives the outcome the rule dictates for the
-  origin it actually reads back with: if they carry no counterparty,
-  none can give *observed*, and the contract records that a positive match was not
-  demonstrated on the Sandbox.
+  reference and the origin it actually reads back with. On 2026-11-15 all four read back
+  with no reference and an unknown origin; the check on the cited invoice answered
+  *nothing*, with no finding. Neither *observed* nor *to reconcile* was demonstrated on
+  the Sandbox; both are demonstrated on fixtures.
 - **SC-003**: Development cases, labels adjudicated by the maintainer: a claim with an
   outside payer's matching credit; a payment already recorded on the platform with the same
   money at the bank (no double counting, no duplicate payment); an amount-only credit (no

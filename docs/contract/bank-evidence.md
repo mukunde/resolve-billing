@@ -132,13 +132,17 @@ pure, runs on the disputed invoice when the platform says it is unpaid.
 - **The read-back** (`scripts/revolut_readback.py`) reads them through the
   service's composition, read-only, and prints structure only.
 - **What the Sandbox showed** (SC-002, 2026-11-15): the four seeded top-ups
-  (the total citing the invoice, a part, one reverted, one citing another
-  number) read back complete and covered, with the expected types, states
+  (seeded with references meant to cite the invoice for its total, for a
+  part, reverted, and to cite another number) read back complete and covered, with the expected types, states
   and amounts -- and with **no reference and no counterparty** (origin
-  unknown). None of those four is a candidate through the current adapter;
-  *observed* and *to reconcile* are demonstrated on fixtures only. Whether
-  the Sandbox carries the reference elsewhere is not yet looked at: a
-  read-only probe awaits the maintainer's approval.
+  unknown). The bank check on the cited invoice, run as the investigation
+  runs it, answered *nothing*, with no finding. The read-only probe of the
+  same day showed why: the transactions carry no `reference` field at all,
+  and their single leg carries a `description` -- a field this adapter never
+  keeps (ADR-014), whose content the probe does not print. None of the four
+  is a candidate through the current adapter; *observed* and *to reconcile*
+  are demonstrated on fixtures only. Where an incoming transfer's reference
+  lives in Production is one of the questions put to Revolut.
 
 ## Not guaranteed today
 

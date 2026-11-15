@@ -266,7 +266,10 @@ python -m dotenv run -- python -m scripts.revolut_readback --invoice-number RB-S
 ```
 
 On 2026-11-15 the four seeded top-ups read back complete and covered, with no reference
-and no counterparty, so none of them is a candidate; the check's outcomes are
+and no counterparty, and the check on the cited invoice answered `nothing`. The
+structure-only probe found no `reference` field on any of those four; it does not print
+descriptions, so whether the submitted reference appears elsewhere is not established.
+The check's other outcomes are
 demonstrated on fixtures (`docs/contract/bank-evidence.md`).
 
 ### What CI actually enforces

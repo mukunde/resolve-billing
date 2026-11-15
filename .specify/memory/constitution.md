@@ -48,8 +48,9 @@ justify or authorise a correction. Either bank finding, or a bank check that
 could not conclude, blocks every correction on the disputed invoice and
 requires a person, with no automatic reply; a complete, covered read that
 finds nothing adds no finding and establishes no non-payment. Its scope is
-the Revolut Business Sandbox and fixtures, not Production data *(adopted; the
-Sandbox read-back is not yet demonstrated)*.
+the Revolut Business Sandbox and fixtures, not Production data: the Sandbox
+read-back ran on 2026-11-15 and its check found nothing; a positive bank
+finding is demonstrated on fixtures only.
 
 *Implemented by:* ADR-001; ADR-002; ADR-014. *Rationale:* the engine, the
 platform and the bank change for reasons unrelated to quality: residency,
@@ -280,7 +281,7 @@ section or materially expanded guidance, PATCH for wording. CLAUDE.md remains
 the agents' short operating rules and MUST NOT contradict this document. A
 plan or review that departs from a principle states which one, and why.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-14
+**Version**: 1.1.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-15
 
 **Amendments**:
 
@@ -289,3 +290,6 @@ plan or review that departs from a principle states which one, and why.
   ports, so evidence from a bank had no lawful place; the amendment gives it one
   and fixes its limits: read-only, declared accounts only, never a billing
   record, never a reason for a correction.
+- 1.1.1, 2026-11-15 (PATCH) -- article III's evidence status brought up to
+  date: the Sandbox read-back (spec 016, SC-002) ran, its check found nothing,
+  and a positive bank finding is demonstrated on fixtures only.
