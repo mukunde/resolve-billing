@@ -14,10 +14,12 @@ recorded in an audit trail.
 
 [![evals](https://github.com/mukunde/resolve-billing/actions/workflows/evals.yml/badge.svg)](https://github.com/mukunde/resolve-billing/actions/workflows/evals.yml)
 
-> **Status, 2026-10-19.** A working, tested demonstrator, run on fake billing
-> data: no real billing platform is connected and nothing is deployed. The
-> goal is a production-ready product, and the next milestone is a supervised
-> pilot; [where it stands](#where-it-stands) says what is done and what is not.
+> **Status, 2026-11-17.** A working, tested demonstrator. CI, the demo and the
+> evaluation run on fake data; real platforms are connected in test mode only --
+> Stripe (test mode), Pennylane and Revolut Business (their sandboxes) -- and
+> nothing is deployed. The goal is a production-ready product, and the next
+> milestone is a supervised pilot; [where it stands](#where-it-stands) says what
+> is done and what is not.
 
 ![One pipeline, four disputes: a duplicate goes to a human for approval, a correct invoice proposes nothing, a mispriced proration goes to a person without an amount, and an injected instruction stops before the decision engine is ever called.](docs/workflow.svg)
 
@@ -126,7 +128,8 @@ agent. Autonomy thresholds exist in the code and are off.
 | Money | amount computed by code for whole-invoice errors, including tax, its breakdown shown to the approver; refused money shown as none; refund only against a settled payment; corrections capped at the invoice | partial amounts, specified with real billing data |
 | Approval and execution | authenticated approvers, proposal fingerprint, 72 h expiry, idempotent execution, uncertain outcomes reconciled with the platform within its idempotency window, the platform's answer checked before a write is recorded, incidents left to a person ([contract](docs/contract/approval-and-execution.md)) | identity provider (OIDC) instead of a configured list |
 | Intake | n8n workflow: webhook, approval mail, alert without buttons, error branch | support tool (Zendesk, Zammad) owning the case; durable workflow |
-| Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, reading and writing (a credit note; a refund as a refunding credit note, behind `STRIPE_WRITES=enabled`), its contract held on a seeded account ([contract](docs/contract/billing-platform.md)); Pennylane on a declared sandbox, reading by the maintainer's conventions where its documentation is silent, and writing credit notes (draft, check, link, finalise; anything half-way to a person) behind `PENNYLANE_WRITES=enabled`, off until Pennylane confirms its cap and that nothing is sent | Pennylane writes enabled; a bank (Revolut Business) for payment evidence |
+| Billing platforms | fake provider on fixtures; a second fixture directory for cases kept outside the repository; Stripe in test mode, reading and writing (a credit note; a refund as a refunding credit note, behind `STRIPE_WRITES=enabled`), its contract held on a seeded account ([contract](docs/contract/billing-platform.md)); Pennylane on a declared sandbox, reading by the maintainer's conventions where its documentation is silent, and writing credit notes (draft, check, link, finalise; anything half-way to a person) behind `PENNYLANE_WRITES=enabled`, off until Pennylane confirms its cap and that nothing is sent | Pennylane writes enabled |
+| Bank evidence | a read-only bank port; Revolut Business on its Sandbox, signed reads of the declared account only; a deterministic check that a credit cites the disputed invoice, sending the case to a person and blocking every correction, the model seeing its code alone; demonstrated on fixtures -- the Sandbox's top-ups read back without a reference ([contract](docs/contract/bank-evidence.md)) | Revolut in Production, once Revolut answers on incoming transfers, reversals and coverage |
 | Untrusted input | injection screen before the model; unknown and impersonating senders handled without the model; long messages read by a person; automated mail recognised by rule and never answered automatically; no automatic reply to an unknown sender, who goes to a triage mailbox; the message masked before the model | authentication results from a trusted gateway |
 | Evaluation | 63 development cases in CI, case-by-case baseline, unsafe-action gate, decision-boundary taxonomy; the blind holdout's reference run, made once (15/20, no unsafe action; the set is frozen and kept outside this repository) | a separate evaluator for the holdout, an adversarial set, a set large enough to calibrate |
 | Operations | audit in SQLite, OpenTelemetry spans, read-only MCP server, cost reconciliation | deployment, monitoring and alerting, encrypted backups |
@@ -182,9 +185,11 @@ the [engineering notes](docs/engineering-notes.md#techniques-this-does-not-use-a
 
 What the system does not do yet, said plainly.
 
-- **Stripe in test mode only; no support tool or deployment.** A dispute
-  can be investigated on a Stripe test account's data; an approved
-  correction is written there only with `STRIPE_WRITES=enabled`, as one
+- **Test modes and sandboxes only; no support tool or deployment.** A
+  dispute can be investigated on a Stripe test account's or a Pennylane
+  sandbox's data, and a Revolut Business Sandbox can be read as bank evidence;
+  Pennylane's writes stay off until Pennylane confirms its cap. On Stripe, an
+  approved correction is written only with `STRIPE_WRITES=enabled`, as one
   credit note for the whole amount, on an invoice open with nothing paid or
   paid in full. Tax is read as the platform posts it, on lines excluding
   tax (spec 013); prices including tax, tax figures that do not reconcile,
