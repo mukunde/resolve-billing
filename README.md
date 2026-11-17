@@ -3,6 +3,33 @@
 **Billing dispute resolution where code checks the facts, a model reads the
 complaint, and a person signs for the money.**
 
+**What this project is for.** Building an AI product that is production-ready
+and that other tools can call -- an aim, not a state reached: nothing is
+deployed yet ([where it stands](#where-it-stands)). What other tools can call
+today is an authenticated HTTP API, and a read-only MCP server for the operator
+only (it has no per-caller scope). Under that aim, three objectives, each
+practised here rather than claimed:
+
+1. **An agentic workflow for billing disputes**, as the summary above says.
+2. **Spec-driven development** -- a change starts from a specification or a
+   bug record; a feature's specification and plan are approved by the
+   maintainer; a constitution and decision records hold what no change may
+   break ([how it is built](#how-it-is-built)).
+3. **Evaluation and review suited to code an AI assistant writes** -- an
+   evaluation suite gating CI, a held-out set kept outside the repository, and
+   diffs -- and, as a rule, specifications and plans -- reviewed by a model from
+   another vendor (Codex). When Codex is out of quota, a separate Claude
+   session reviews meanwhile; that does not meet the cross-vendor rule, so the
+   maintainer decides whether to wait for Codex, and the record says which
+   review ran. A method still being refined.
+
+![Where ResolveBilling sits. Today a customer's dispute arrives through n8n's webhook; a company's support tool is planned as the other way in (spec 017, in progress), by a signed webhook (Zammad; Zendesk a target), drawn dashed. ResolveBilling runs deterministic rules, asks a decision engine through a model provider -- Anthropic's Claude; OpenAI on synthetic data only -- with the masked text, a pseudonymised context and finding codes, computes the amount and its policy, and a person approves. It reads the billing platform (Stripe, Pennylane), the authority on amounts, and writes there only once approved and only where writes are enabled; it reads the bank (Revolut) as evidence only. n8n orchestrates the notifications, the wait for a person and the request to execute. Every run that completes is audited. Solid: built and tested, in test mode or on a sandbox for real platforms; dashed: being built or a target.](docs/landscape.svg)
+
+<sub>Brand marks from [Simple Icons](https://simpleicons.org) (the files CC0;
+the marks remain their owners' trademarks) name the services the product
+connects to; no partnership or endorsement is implied. A brand without a mark
+there is written as a name.</sub>
+
 A customer writes that they were charged twice, billed after cancelling, or
 charged the full month for half of it. ResolveBilling loads their billing
 records, checks them with deterministic rules, asks a language model only what
@@ -17,8 +44,7 @@ recorded in an audit trail.
 > **Status, 2026-11-17.** A working, tested demonstrator. CI, the demo and the
 > evaluation run on fake data; real platforms are connected in test mode only --
 > Stripe (test mode), Pennylane and Revolut Business (their sandboxes) -- and
-> nothing is deployed. The goal is a production-ready product, and the next
-> milestone is a supervised pilot; [where it stands](#where-it-stands) says what
+> nothing is deployed. The next milestone is a supervised pilot; [where it stands](#where-it-stands) says what
 > is done and what is not.
 
 ![One pipeline, four disputes: a duplicate goes to a human for approval, a correct invoice proposes nothing, a mispriced proration goes to a person without an amount, and an injected instruction stops before the decision engine is ever called.](docs/workflow.svg)
@@ -95,8 +121,11 @@ dispute → billing context → deterministic rules → decision engine
    is bound to what they were shown, and expires.
 7. **Execution is designed to happen once**: the action is claimed
    atomically, written with an idempotency key, and an uncertain outcome is
-   reconciled with the platform rather than retried blind -- all of it tested
-   against the fake provider, not yet a real one.
+   reconciled with the platform rather than retried blind. Writes and their
+   idempotency keys are exercised on a Stripe test account and a Pennylane
+   sandbox, writes off unless enabled; the restart and uncertain-outcome
+   guarantees are shown on the fake provider only, not exactly-once on a real
+   platform.
 
 The classification set is the billing vocabulary, and closed:
 
@@ -331,11 +360,13 @@ rules that keep a person in charge of every decision that matters.
   holds the principles every change respects; the product's current
   behaviour is to be kept, capability by capability, in a
   [living contract](docs/contract/README.md), written as each capability is
-  first touched -- none is covered yet; [CONTRIBUTING](CONTRIBUTING.md) is the
-  procedure.
+  first touched -- eight capabilities are covered so far;
+  [CONTRIBUTING](CONTRIBUTING.md) is the procedure.
 - **Two agents from different vendors.** Claude Code and Codex write the
   code, including the core, and review each other's work; neither approves
-  its own.
+  its own. When Codex is out of quota, a separate Claude session reviews
+  meanwhile; it does not meet the cross-vendor rule, so the maintainer
+  decides whether to wait for Codex, and the record says which review ran.
 - **A person decides.** The maintainer owns objectives, invariants,
   architecture and acceptance, adjudicates every evaluation label, approves
   every push and merges every pull request.
