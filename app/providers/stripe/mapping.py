@@ -235,6 +235,9 @@ def invoice(
         status=status,
         issued_at=issued_at(payload),
         lines=lines,
+        # The number Stripe prints on the invoice, which a customer or a bank
+        # transfer cites (specs/016-bank-evidence); None while a draft has none.
+        number=payload.get("number") or None,
     )
 
 

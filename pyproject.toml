@@ -26,6 +26,12 @@ stripe = [
     # The SDK's async calls, which the adapter makes, go through httpx.
     "httpx>=0.27",
 ]
+# Revolut Business as bank evidence, read-only, on its Sandbox (specs/016-bank-evidence):
+# requests over httpx, each signed with an Ed25519 key.
+revolut = [
+    "httpx>=0.27",
+    "cryptography>=43",
+]
 # The engines evaluated on free tiers, for the evaluation runner only
 # (specs/004-second-engines). Pinned exactly: the clients are written to these
 # releases, and checked against them without network in CI.

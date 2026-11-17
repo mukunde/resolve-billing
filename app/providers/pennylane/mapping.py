@@ -28,6 +28,12 @@ from app.domain.models import (
     canonical_rate,
 )
 from app.domain.money import Money
+from app.domain.references import (  # noqa: F401 -- re-exported
+    _folded,
+    _numbers,
+    references,
+    resolve_number,
+)
 from app.domain.rules import exactly_one_cycle
 from app.providers.base import ProviderAction, ProviderRejected, ProviderUnsupported
 from app.providers.tax import reconcile, untaxed_unless_charged
@@ -384,65 +390,9 @@ def fully_dated(invoice_: Invoice) -> bool:
 
 
 # -- references (FR-010) ------------------------------------------------------------------
-
-
-def _numbers(invoices: Sequence[Invoice]) -> dict[str, str]:
-    """Each number, case-folded, to the one invoice that carries it; a number
-    two invoices share is left out: it designates neither."""
-    by_number: dict[str, set[str]] = {}
-    for item in invoices:
-        if item.number:
-            by_number.setdefault(item.number.casefold(), set()).add(item.id)
-    return {n: next(iter(ids)) for n, ids in by_number.items() if len(ids) == 1}
-
-
-def resolve_number(reference: str, invoices: Sequence[Invoice]) -> str | None:
-    """The invoice whose whole number `reference` is, case-folded."""
-    return _numbers(invoices).get(reference.strip().casefold())
-
-
-def _folded(text: str) -> tuple[str, list[int]]:
-    """`text` case-folded in full (ß as ss), and for each folded character the
-    index of the original character it came from."""
-    parts: list[str] = []
-    origin: list[int] = []
-    for index, char in enumerate(text):
-        folded = char.casefold()
-        parts.append(folded)
-        origin.extend([index] * len(folded))
-    return "".join(parts), origin
-
-
-def references(text: str, invoices: Sequence[Invoice]) -> list[tuple[int, int, str]]:
-    """Where the numbers of `invoices` sit in `text`, and the invoice each
-    stands for: whole numbers, compared case-folded in full, on whole
-    characters, bounded by a character that is neither a letter nor a digit (in
-    any script), the longest kept first where two overlap, never overlapping;
-    the spans are the original text's."""
-    known = _numbers(invoices)
-    if not known:
-        return []
-    folded, origin = _folded(text)
-    candidates: list[tuple[int, int, str]] = []
-    for number, invoice_id in known.items():
-        at = folded.find(number)
-        while at != -1:
-            end = at + len(number)
-            whole = (at == 0 or origin[at - 1] != origin[at]) and (
-                end == len(folded) or origin[end] != origin[end - 1]
-            )
-            if whole:
-                start, stop = origin[at], origin[end - 1] + 1
-                before = start == 0 or not text[start - 1].isalnum()
-                after = stop == len(text) or not text[stop].isalnum()
-                if before and after:
-                    candidates.append((start, stop, invoice_id))
-            at = folded.find(number, at + 1)
-    chosen: list[tuple[int, int, str]] = []
-    for start, stop, invoice_id in sorted(candidates, key=lambda c: (c[0] - c[1], c[0])):
-        if all(stop <= s or start >= e for s, e, _ in chosen):
-            chosen.append((start, stop, invoice_id))
-    return sorted(chosen)
+# The recogniser lives in the domain now (specs/016-bank-evidence): it knows invoices, not
+# Pennylane. Re-exported at the top of this module, so the adapter and its tests read as
+# before.
 
 
 # -- credit notes (specs/015-pennylane-credit-notes) -----------------------------------

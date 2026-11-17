@@ -31,8 +31,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from app.domain.bank import BankCheck
+
 if TYPE_CHECKING:
     from app.application.investigate_dispute import InvestigationResult
+
+#: What a result with no bank record says: the check did not run, no bank behind it.
+_NOT_RUN = BankCheck(outcome="not_run", reason="no_bank")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS agent_runs (
@@ -80,7 +85,12 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 
     -- What the proposed amount is made of, on a taxed invoice: JSON
     -- (specs/013-invoice-tax, FR-007). NULL otherwise.
-    tax_breakdown            TEXT
+    tax_breakdown            TEXT,
+
+    -- The bank check's record, JSON: its closed allowlist, whatever it found,
+    -- `not_run` included (specs/016-bank-evidence, FR-005). NULL only on rows
+    -- written before it existed.
+    bank_check_json          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS agent_events (
@@ -143,6 +153,7 @@ class SqliteAuditRepository:
             ("engine_invocation_id", "TEXT"),
             ("unknown_cost_attempts", "INTEGER"),
             ("tax_breakdown", "TEXT"),
+            ("bank_check_json", "TEXT"),
         ):
             if column not in held:
                 self._connection.execute(
@@ -183,7 +194,8 @@ class SqliteAuditRepository:
                     model_id, prompt_version,
                     input_tokens, cache_read_input_tokens, output_tokens,
                     cost_micros, pricing_as_of, latency_ms,
-                    engine_invocation_id, unknown_cost_attempts, tax_breakdown
+                    engine_invocation_id, unknown_cost_attempts, tax_breakdown,
+                    bank_check_json
                 ) VALUES (
                     :run_id, :created_at,
                     :billing_provider, :decision_engine, :decision_engine_version,
@@ -195,7 +207,8 @@ class SqliteAuditRepository:
                     :model_id, :prompt_version,
                     :input_tokens, :cache_read_input_tokens, :output_tokens,
                     :cost_micros, :pricing_as_of, :latency_ms,
-                    :engine_invocation_id, :unknown_cost_attempts, :tax_breakdown
+                    :engine_invocation_id, :unknown_cost_attempts, :tax_breakdown,
+                    :bank_check_json
                 )
                 """,
                 {
@@ -248,6 +261,11 @@ class SqliteAuditRepository:
                         if action.tax_breakdown is not None
                         else None
                     ),
+                    # Every run says what the bank check did; a result built
+                    # outside the investigator (none set) says it did not run.
+                    "bank_check_json": json.dumps(
+                        (result.bank_check or _NOT_RUN).to_record(), sort_keys=True
+                    ),
                 },
             )
             self._connection.executemany(
@@ -274,6 +292,14 @@ class SqliteAuditRepository:
             "SELECT * FROM agent_runs WHERE run_id = ?", (run_id,)
         )
         return cursor.fetchone()
+
+    def bank_check(self, run_id: str) -> BankCheck | None:
+        """The run's bank record, read back through its closed type; None for a
+        row written before the column existed, or no such run."""
+        row = self.run(run_id)
+        if row is None or row["bank_check_json"] is None:
+            return None
+        return BankCheck.from_record(json.loads(row["bank_check_json"]))
 
     def events(self, run_id: str) -> list[sqlite3.Row]:
         cursor = self._connection.execute(

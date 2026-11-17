@@ -47,6 +47,7 @@ OUTSIDE = {
     "B01": frozenset({"identity_conflict"}),
     "B04": frozenset({"reference_conflict"}),
     "B07": frozenset({"not_evaluable"}),
+    "B31": frozenset({"not_evaluable"}),
 }
 #: B26 states who may receive an automatic reply; a tag on it says which way
 #: the case expects it, and must agree with the case's expectation.

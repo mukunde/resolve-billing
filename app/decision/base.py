@@ -19,6 +19,7 @@ from typing import Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.models import BillingContext, Dispute, RuleFinding
+from app.domain.rules import BANK_DESCRIPTIONS, is_bank_finding
 
 
 class EngineUnavailable(Exception):  # noqa: N818 -- a state, not a programming error
@@ -245,3 +246,25 @@ class DecisionEngine(Protocol):
         context: BillingContext,
         findings: list[RuleFinding],
     ) -> Decision: ...
+
+
+def findings_for_engine(findings: list[RuleFinding]) -> list[RuleFinding]:
+    """What an engine is shown of the findings (specs/016-bank-evidence, FR-005).
+
+    The one projection between the rules and `DecisionEngine.decide`, every engine
+    the mock included: a bank finding, and a `NOT_EVALUABLE` the bank check made,
+    become their code, a fixed description and no evidence -- no amount, date,
+    transaction id or reason reaches a model. Every other finding passes as it is;
+    the originals stay for the policies, the audit and the pages.
+    """
+    return [
+        RuleFinding(
+            code=finding.code,
+            severity=finding.severity,
+            description=BANK_DESCRIPTIONS[finding.code],
+            evidence={},
+        )
+        if is_bank_finding(finding)
+        else finding
+        for finding in findings
+    ]

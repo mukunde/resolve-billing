@@ -38,13 +38,25 @@ system is permitted to do.
 
 ### III. Provider- and Engine-Agnostic Boundaries
 
-The domain and application layers MUST NOT name a billing platform or a model
-vendor. Vendors exist only behind the `BillingProvider` and `DecisionEngine`
-ports, and a platform's vocabulary only in its mapper.
+The domain and application layers MUST NOT name a billing platform, a bank or
+a model vendor. Vendors exist only behind three ports -- `BillingProvider`,
+`DecisionEngine` and `BankEvidence` -- and a vendor's vocabulary only in its
+mapper. `BankEvidence` is read-only by construction and reads only the
+merchant's own declared accounts. Its observations are never `Payment`s and
+feed neither billing figures nor the duplicate-payment rule; they never
+justify or authorise a correction. Either bank finding, or a bank check that
+could not conclude, blocks every correction on the disputed invoice and
+requires a person, with no automatic reply; a complete, covered read that
+finds nothing adds no finding and establishes no non-payment. Its scope is
+the Revolut Business Sandbox and fixtures, not Production data: the Sandbox
+read-back ran on 2026-11-15 and its check found nothing; a positive bank
+finding is demonstrated on fixtures only.
 
-*Implemented by:* ADR-001; ADR-002. *Rationale:* the engine and the platform
-change for reasons unrelated to quality: residency, contract, cost, client
-policy.
+*Implemented by:* ADR-001; ADR-002; ADR-014. *Rationale:* the engine, the
+platform and the bank change for reasons unrelated to quality: residency,
+contract, cost, client policy. A bank is a third kind of source, not a billing
+platform: the platform stays authoritative on amounts (VI), and a bank's word
+that money arrived is a reason to look, not a fact to act on.
 
 ### IV. Money Is an Integer Count of Minor Units
 
@@ -269,4 +281,15 @@ section or materially expanded guidance, PATCH for wording. CLAUDE.md remains
 the agents' short operating rules and MUST NOT contradict this document. A
 plan or review that departs from a principle states which one, and why.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-10-21
+**Version**: 1.1.1 | **Ratified**: 2026-10-21 | **Last Amended**: 2026-11-15
+
+**Amendments**:
+
+- 1.1.0, 2026-11-14 (MINOR) -- article III names a third port, `BankEvidence`,
+  read-only, for the merchant's bank (spec 016, ADR-014). The article named two
+  ports, so evidence from a bank had no lawful place; the amendment gives it one
+  and fixes its limits: read-only, declared accounts only, never a billing
+  record, never a reason for a correction.
+- 1.1.1, 2026-11-15 (PATCH) -- article III's evidence status brought up to
+  date: the Sandbox read-back (spec 016, SC-002) ran, its check found nothing,
+  and a positive bank finding is demonstrated on fixtures only.

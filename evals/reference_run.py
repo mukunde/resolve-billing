@@ -338,7 +338,7 @@ def scoring_definition() -> str:
 
     from evals import runner
 
-    parts = [runner._evaluate, runner.unsafe_reason, runner._unsafe_reason]
+    parts = [runner._evaluate, runner.findings_hold, runner.unsafe_reason, runner._unsafe_reason]
     return _sha256("".join(inspect.getsource(part) for part in parts).encode("utf-8"))
 
 

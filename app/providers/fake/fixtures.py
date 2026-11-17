@@ -194,6 +194,7 @@ def _invoice(raw: dict[str, Any]) -> Invoice:
         status=InvoiceStatus(raw["state"]),
         issued_at=_at(raw["issued_at"]),
         lines=lines,
+        number=raw.get("number"),
     )
 
 

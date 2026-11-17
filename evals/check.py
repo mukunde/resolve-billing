@@ -32,11 +32,13 @@ from __future__ import annotations
 import json
 from collections import Counter
 from pathlib import Path
+from typing import get_args
 
 from pydantic import ValidationError
 
 from app.decision.base import Classification
 from app.domain.automated import header_problem
+from app.domain.bank import NotEvaluableReason, NotRunReason, Outcome
 from app.domain.enums import RuleCode, SenderStatus
 from app.domain.models import InvoiceOwner
 from app.domain.rules import suspected_impersonation
@@ -149,7 +151,38 @@ def _well_formed(case: object) -> bool:
         and (case.get("customer_id") is None or isinstance(case.get("customer_id"), str))
         # The API's own bounds: a case the API would refuse is malformed.
         and header_problem(case.get("headers", {})) is None
+        and _evidence_well_formed(case)
     )
+
+
+#: The bank check's closed outcomes and reasons (specs/016-bank-evidence).
+_BANK_OUTCOMES = set(get_args(Outcome))
+_BANK_REASONS = set(get_args(NotRunReason)) | set(get_args(NotEvaluableReason))
+
+
+def _evidence_well_formed(case: dict) -> bool:
+    """`forbid_findings`, `expect_bank_check` and `bank_world`, where a case has them."""
+    forbidden = case.get("forbid_findings", [])
+    if not isinstance(forbidden, list) or not all(_one_of(f, _FINDINGS) for f in forbidden):
+        return False
+    if set(forbidden) & set(case.get("expect_findings") or []):
+        return False
+    bank = case.get("expect_bank_check")
+    if bank is not None and not (
+        isinstance(bank, dict)
+        and set(bank) <= {"outcome", "reason"}
+        and _one_of(bank.get("outcome"), _BANK_OUTCOMES)
+        and ("reason" not in bank or _one_of(bank["reason"], _BANK_REASONS))
+    ):
+        return False
+    world = case.get("bank_world")
+    return world is None or (isinstance(world, str) and world in _bank_worlds())
+
+
+def _bank_worlds() -> set[str]:
+    from app.providers.fake.bank import worlds
+
+    return set(worlds())
 
 
 def _one_of(value: object, allowed: set[str] | frozenset[str]) -> bool:

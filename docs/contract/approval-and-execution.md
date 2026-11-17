@@ -5,7 +5,8 @@ the moment the billing platform holds the write, and what the rest of the
 system may rely on. Written on 2026-10-23 from the existing records, as they
 stood, before the first change that touches the capability; that change --
 writes on a real platform, Stripe in test mode (specs/002-stripe-writes) --
-folded in the same day. Reasons are in ADR-004 (human approval), ADR-008
+folded in the same day; specs/016-bank-evidence on 2026-11-15. Reasons are in
+ADR-004 (human approval), ADR-008
 (the execution state machine, the platform as the authority on amounts,
 approvals bound to what was shown, writes on a real platform) and ADR-009
 (identities).
@@ -190,6 +191,16 @@ FAILED --a person's status read finds the write--> EXECUTED
   `reconcile()` refuse with 409 before anything is read, reconciled or
   claimed, and the action keeps its state. A read that fails before the
   claim leaves the action as it was: unsupported data 422, an outage 503.
+
+## What never becomes an action
+
+A run whose findings include a bank finding (`BANK_CREDIT_OBSERVED`,
+`BANK_CREDIT_TO_RECONCILE`) or a `NOT_EVALUABLE` the bank check made queues
+nothing (spec 016, ADR-014): `correction_for` refuses every figure on the
+invoice, the verdict is human review, and no automatic reply follows. A
+person reads the evidence on the run page; the run has no review page,
+since there is no action to approve. A bank check that found nothing, or did
+not run, changes nothing here.
 
 ## When an action needs a person
 

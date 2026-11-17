@@ -48,8 +48,9 @@ jobs:
 
       - name: Install
         # `engines`: the free-tier engines' SDKs, for their network-free checks;
-        # no test calls a vendor (specs/004-second-engines).
-        run: pip install -e ".[api,dev,mcp,otel,engines,claude]"
+        # no test calls a vendor (specs/004-second-engines). `revolut`: the bank
+        # reader's signing, tested on a fixed vector (specs/016-bank-evidence).
+        run: pip install -e ".[api,dev,mcp,otel,engines,claude,revolut]"
 
       - name: Lint
         run: ruff check .
@@ -61,7 +62,7 @@ jobs:
       # when the mock genuinely improves; never lower it to make a build pass.
       - name: Evaluation set, mock engine
         run: >-
-          python -m evals.runner --engine mock --min-fully-correct 38
+          python -m evals.runner --engine mock --min-fully-correct 51
           --baseline evals/baselines/mock.json
 
       # The coverage tables of the taxonomy are generated from the case tags:

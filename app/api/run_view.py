@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 
 from app.api.auth import Anyone
+from app.api.bank_view import bank_section
 from app.api.deps import get_attempts, get_audit
 from app.api.review import tax_text
 from app.api.templating import Safe, escape, render
@@ -79,6 +80,7 @@ async def run_page(
             confidence_kind=run["confidence_kind"],
             engine=_engine(run),
             findings=_findings(run),
+            bank=bank_section(audit.bank_check(run_id)),
             verdict=run["verdict"] + _tax(run),
             authorization_reason=run["authorization_reason"] or "—",
             explanation=run["explanation"] or "—",

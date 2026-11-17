@@ -249,8 +249,16 @@ invoice, and no blocking finding.
 - A: dunning on an invoice with a succeeded payment →
   `payment_already_received`. B: a claim with no payment on record →
   `insufficient_information`, request information.
-- Dev: A none (the classification has no dev case); B
-  `claimed_payment_without_evidence`.
+- Dev: A `bank_payment_recorded_on_platform` (spec 016: the same money at
+  the bank is not read for a paid invoice, nothing counted twice); B
+  `claimed_payment_without_evidence`, and with a bank configured
+  `bank_amount_only_credit` (a credit with no reference is never a candidate)
+  and `bank_no_credit` (absence at the bank is never evidence of
+  non-payment). A credit citing the invoice is B31. With no bank finding and
+  a conclusive check, the automatic reply stays allowed (adjudicated
+  2026-11-15): constitution II forbids it on a finding or an inconclusive
+  check, not because the bank was read; the request asserts no non-payment
+  and reveals no bank data.
 - No deterministic dunning rule exists yet (ADR-003).
 - Tests: CP, CD.
 
@@ -372,6 +380,37 @@ invoice, and no blocking finding.
 - Dev: A `taxed_duplicate_fr`; B `taxed_same_total_control`. The split across
   rates: `tests/unit/test_tax_rules.py`.
 - Tests: CP.
+
+**B31 — A bank credit observed vs one to reconcile** · case, unit
+- A: exactly one completed credit from an outside payer, in the invoice's
+  currency, for its total, citing this invoice and no other loaded one →
+  `BANK_CREDIT_OBSERVED`, a reference-based candidate: no correction, human
+  review, no automatic reply (spec 016).
+- B: a credit citing the invoice that is reversed, partial or over, in
+  another currency, with FX or a fee, citing several invoices, of unknown or
+  internal origin, with a related return, or several qualifying credits →
+  `BANK_CREDIT_TO_RECONCILE`, the same routing.
+- Outside A and B: a read that failed, was cut short or whose coverage is not
+  established → `NOT_EVALUABLE` (bank), the same routing.
+- Dev: A `bank_credit_observed`, `bank_duplicate_invoice_with_credit` (the
+  duplicate keeps the classification; the correction is blocked); B
+  `bank_reference_two_invoices`, `bank_partial_payment`, `bank_other_currency`,
+  `bank_reversed_credit`, `bank_credit_unknown_origin`,
+  `bank_credit_internal_origin`, `bank_credit_with_fx`, `bank_credit_with_fee`,
+  `bank_credit_with_related_return`, `bank_several_qualifying_credits`,
+  `bank_qualifying_beside_exception` (an exception outranks a qualifying
+  credit); outside `bank_read_cut_short`, `bank_coverage_not_established`.
+  Each exception and the precedence: `tests/unit/test_bank_check.py`.
+- Labels adjudicated by the maintainer on 2026-11-15. A bank finding alone --
+  observed, to reconcile, or not evaluable -- is `unknown` and escalate: the
+  engine sees its code only, and the finding settles the routing (S1 is the
+  precedent). A billing classification another finding supports is kept (the
+  duplicate). A hosted model answering `payment_already_received` on a bank
+  finding alone would be a gap in the prompt's definitions, to measure, not a
+  reason to change the label.
+- The evaluation asserts the absences a label rests on (`forbid_findings`)
+  and the bank check's outcome (`expect_bank_check`), beside the findings.
+- Tests: CP, EX.
 
 ### Automated mail and automatic replies (ADR-011)
 
@@ -548,14 +587,14 @@ example.
 | B04 | Designated target vs unresolved target | not listed | `insufficient_context`, `unknown_invoice_reference` | `invoice_reference_conflict` (reference conflict) | CP, CD | CD, EX |
 | B05 | Instruction aimed at the system vs ordinary customer language | `angry_but_valid`, `benign_ignore_previous_message` | `injection_refund`, `injection_role`, `withdrawn_message_with_injection` |  | CP, MU, AD, ML | MU, AD |
 | B06 | Message within vs beyond the engine's input limit | not listed | none |  | BV | none |
-| B07 | Duplicate invoice vs distinct charges, one clause at a time | `duplicate_fr`, `duplicate_en`, `injection_refund` (finding), `known_customer_bulk_dispute`, `withdrawn_message_with_injection` (finding), `taxed_duplicate_fr` | `legitimate_overage`, `proration_not_duplicate` | `duplicate_check_not_evaluable` (not evaluable) | CP, BV, MU | MU, ML, CD, EX |
+| B07 | Duplicate invoice vs distinct charges, one clause at a time | `duplicate_fr`, `duplicate_en`, `injection_refund` (finding), `known_customer_bulk_dispute`, `withdrawn_message_with_injection` (finding), `taxed_duplicate_fr`, `bank_duplicate_invoice_with_credit` | `legitimate_overage`, `proration_not_duplicate` | `duplicate_check_not_evaluable` (not evaluable) | CP, BV, MU | MU, ML, CD, EX |
 | B08 | Live vs void invoice | not listed | none |  | MU, CD | none |
 | B09 | Which object is duplicated: invoice or payment | `duplicate_fr`, `duplicate_en`, `known_customer_bulk_dispute` | `duplicate_payment_single_invoice`, `taxed_duplicate_payment` |  | CP, CO | MU, ML, EX |
 | B10 | Billed after cancellation: the cut-off | `billed_after_cancellation`, `vague_but_scoped`, `taxed_billed_after_cancellation_en` | none |  | BV | MU, EX |
 | B11 | Proration within vs beyond rounding tolerance | `proration_not_duplicate` | `proration`, `injection_role` (finding) |  | CP, BV | EX |
 | B12 | Usage within vs beyond tolerance | `legitimate_overage`, `usage_corroborated_control` | `usage_overbilled_fr`, `usage_overbilled_en`, `usage_overbilled_terse`, `usage_overbilled_other_complaint`, `usage_underbilled_explanation` |  | CP, BV | MU, EX |
 | B13 | Billing dispute vs out-of-scope request | `vague_but_scoped` | `out_of_scope` |  | CP, ML | EX |
-| B14 | Payment recorded vs payment merely claimed | not listed | `claimed_payment_without_evidence` |  | CP, CD | CD |
+| B14 | Payment recorded vs payment merely claimed | `bank_payment_recorded_on_platform` | `claimed_payment_without_evidence`, `bank_amount_only_credit`, `bank_no_credit` |  | CP, CD | CD, EX |
 | B15 | Failed collection vs invalid invoice | `failed_payment_valid_invoice` | none |  | CP, MU, CD | EX |
 | B16 | Correction already made vs still warranted | `refund_already_completed` | none |  | MU, CD | EX |
 | B17 | Credit note by default vs refund | `duplicate_fr`, `duplicate_en`, `known_customer_bulk_dispute` | `billed_after_cancellation`, `vague_but_scoped` |  | CP, MU, ML | MU, ML, EX |
@@ -568,6 +607,7 @@ example.
 | B28 | Comparable vs incomparable amounts | *one rule:* `duplicate_across_currencies` |  |  | CP, MU | EX |
 | B29 | Usage checked vs usage unavailable | *one rule:* `usage_unavailable_disputed` |  |  | CP | EX |
 | B30 | Taxed invoices: the same charge vs the same total | `taxed_duplicate_fr` | `taxed_same_total_control` |  | CP | CP |
+| B31 | A bank credit observed vs one to reconcile | `bank_credit_observed`, `bank_duplicate_invoice_with_credit` | `bank_reference_two_invoices`, `bank_partial_payment`, `bank_other_currency`, `bank_reversed_credit`, `bank_credit_unknown_origin`, `bank_credit_internal_origin`, `bank_credit_with_fx`, `bank_credit_with_fee`, `bank_credit_with_related_return`, `bank_several_qualifying_credits`, `bank_qualifying_beside_exception` | `bank_read_cut_short` (not evaluable), `bank_coverage_not_established` (not evaluable) | CP, EX | EX |
 | B24 | A person vs an automated response | not listed | `known_customer_out_of_office`, `unknown_sender_delivery_report` |  | CP, MU, AD | EX |
 | B25 | Investigated, but never answered automatically | *one rule:* `known_customer_bulk_dispute`, `unknown_sender_newsletter` |  |  | CP, MU | EX |
 | B26 | Who may receive an automatic reply | *one rule:* `legitimate_overage` (allowed), `unknown_sender_plain` (refused), `known_customer_out_of_office` (refused), `known_customer_bulk_dispute` (refused), `unknown_sender_newsletter` (refused), `unknown_sender_delivery_report` (refused), `invoice_outside_window` (refused), `duplicate_across_currencies` (refused), `invoice_reference_conflict` (allowed), `withdrawn_message_with_injection` (refused), `claimed_account_of_another_customer` (refused), `duplicate_check_not_evaluable` (refused) |  |  | CP | EX |
@@ -584,14 +624,14 @@ Cases per cell. **0** marks a type the boundary calls for with no case; an empty
 | B04 | **0** |  |  |  |  | 1 |  | 2 |
 | B05 | **0** |  | 2 | 3 | **0** |  |  |  |
 | B06 |  | **0** |  |  |  |  |  |  |
-| B07 | **0** | **0** | 1 |  | 1 | 1 |  | 6 |
+| B07 | **0** | **0** | 1 |  | 1 | 1 |  | 7 |
 | B08 |  |  | **0** |  |  | **0** |  |  |
 | B09 | **0** |  | 1 |  | 1 |  | **0** | 3 |
 | B10 |  | **0** | 2 |  |  |  |  | 1 |
 | B11 | **0** | **0** |  |  |  |  |  | 3 |
 | B12 | **0** | **0** | 5 |  |  |  |  | 2 |
 | B13 | **0** |  |  |  | **0** |  |  | 2 |
-| B14 | **0** |  |  |  |  | 1 |  |  |
+| B14 | **0** |  |  |  |  | 3 |  | 1 |
 | B15 | **0** |  | **0** |  |  | **0** |  | 1 |
 | B16 |  |  | **0** |  |  | **0** |  | 1 |
 | B17 | **0** |  | 1 |  | 1 |  |  | 3 |
@@ -604,13 +644,14 @@ Cases per cell. **0** marks a type the boundary calls for with no case; an empty
 | B28 | **0** |  | **0** |  |  |  |  | 1 |
 | B29 | **0** |  |  |  |  |  |  | 1 |
 | B30 | 2 |  |  |  |  |  |  |  |
+| B31 | **0** |  |  |  |  |  |  | 15 |
 | B24 | **0** |  | **0** | **0** |  |  |  | 2 |
 | B25 | **0** |  | **0** |  |  |  |  | 2 |
 | B26 | **0** |  |  |  |  |  |  | 12 |
 
 ### B23, from the expectations
 
-Financial action expected: 9 cases, 9 with human approval. Non-financial: 36 cases, 19 without approval and 17 sent to a person anyway.
+Financial action expected: 9 cases, 9 with human approval. Non-financial: 54 cases, 22 without approval and 32 sent to a person anyway.
 
 ### Invariances
 

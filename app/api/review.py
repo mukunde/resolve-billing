@@ -37,6 +37,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse
 
 from app.api.auth import Approver
+from app.api.bank_view import bank_section
 from app.api.deps import get_actions, get_approvals, get_audit
 from app.api.templating import render as _page
 from app.application.execute_action import RESOLUTION_NOTE_LIMIT, ApprovalService
@@ -114,6 +115,8 @@ async def review_page(
             tax_display=_tax(action),
             classification=run["classification"] if run else "—",
             findings=_findings(run),
+            # What the bank check recorded on this run (specs/016-bank-evidence).
+            bank=bank_section(audit.bank_check(action.run_id)),
             engine=(
                 f"{run['decision_engine']} ({run['decision_engine_version']})"
                 if run

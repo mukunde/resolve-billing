@@ -1,3 +1,4 @@
+
 """Run the case set against an engine and report what it got right.
 
 Four of the numbers this prints are ordinary. One is not.
@@ -39,13 +40,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.application.investigate_dispute import DisputeInvestigator, InvestigationResult
+from app.application.investigate_dispute import InvestigationResult
 from app.decision.base import Classification
 from app.decision.prompts import DEFAULT_PROMPT, PROMPTS
 from app.domain.enums import SenderStatus
 from app.domain.models import Dispute
 from app.providers.fake.adapter import FakeBillingProvider
 from evals import engines
+from evals.investigators import investigator_for
 
 CASES_PATH = Path(__file__).parent / "cases.json"
 
@@ -237,20 +239,59 @@ def _unsafe_reason(case: dict, result: InvestigationResult) -> str | None:
     )
 
 
+def findings_hold(case: dict, got: dict) -> bool:
+    """The evidence a case declares, against what a run recorded (`got`).
+
+    Superset, not equality: a rule firing beyond what the case names is
+    information, and holding the case set to an exact finding list would make
+    every new rule a test failure. Where a label requires an absence, the case
+    names it in `forbid_findings`; where it rests on the bank check
+    (specs/016-bank-evidence), `expect_bank_check` names its outcome and, if
+    it matters, its reason -- a run recording neither fails it.
+    """
+    found = set(got["findings"])
+    if not set(case.get("expect_findings", [])) <= found:
+        return False
+    if found & set(case.get("forbid_findings", [])):
+        return False
+    expected = case.get("expect_bank_check")
+    if expected is not None:
+        recorded = got.get("bank_check") or {}
+        return all(recorded.get(key) == value for key, value in expected.items())
+    return True
+
+
 def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
     got_findings = {finding.code.value for finding in result.findings}
-    expected_findings = set(case.get("expect_findings", []))
     telemetry = result.telemetry
+    bank = result.bank_check
+    got = {
+        "classification": result.classification.value,
+        "action": result.proposed_action.type,
+        # The engine's own request, before translation: `action` alone
+        # reads "none" for an escalation and for a credit note with no
+        # invoice, and only one of those must reach a human.
+        "recommended_action": (
+            result.recommended_action.value if result.recommended_action else None
+        ),
+        "approval": result.requires_human_approval,
+        "findings": sorted(got_findings),
+        "engine": result.decision_engine,
+        "sender": result.sender.value,
+        "automatic_reply": result.automatic_reply.allowed,
+        "automatic_reply_reason": result.automatic_reply.reason.value,
+        # The bank check's outcome and reason, closed codes only.
+        "bank_check": (
+            {"outcome": bank.outcome, "reason": bank.reason} if bank is not None else None
+        ),
+    }
 
     return CaseOutcome(
         case_id=case["id"],
         classification_ok=result.classification.value == case["expect_classification"],
         action_ok=result.proposed_action.type == case["expect_action"],
         approval_ok=result.requires_human_approval == case["expect_human_approval"],
-        # Superset, not equality: a rule firing beyond what the case names is
-        # information, and holding the case set to an exact finding list would
-        # make every new rule a test failure.
-        findings_ok=expected_findings <= got_findings,
+        findings_ok=findings_hold(case, got),
         skip_ok=((result.decision_engine == "none") if case.get("expect_engine_skipped") else True),
         # A case that does not say is about a known sender: every case
         # written before the check existed was.
@@ -275,22 +316,7 @@ def _evaluate(case: dict, result: InvestigationResult) -> CaseOutcome:
         confidence_kind=result.confidence_kind,
         cost_micros=telemetry.cost_micros if telemetry else None,
         latency_ms=telemetry.latency_ms if telemetry else None,
-        got={
-            "classification": result.classification.value,
-            "action": result.proposed_action.type,
-            # The engine's own request, before translation: `action` alone
-            # reads "none" for an escalation and for a credit note with no
-            # invoice, and only one of those must reach a human.
-            "recommended_action": (
-                result.recommended_action.value if result.recommended_action else None
-            ),
-            "approval": result.requires_human_approval,
-            "findings": sorted(got_findings),
-            "engine": result.decision_engine,
-            "sender": result.sender.value,
-            "automatic_reply": result.automatic_reply.allowed,
-            "automatic_reply_reason": result.automatic_reply.reason.value,
-        },
+        got=got,
     )
 
 
@@ -324,7 +350,6 @@ async def run(
         raise ValueError(f"{engine_name} reads no prompt")
     built = _claude_engine(prompt) if engine_name == "claude" else available[engine_name]()
     engine = wire(built, provider)
-    investigator = DisputeInvestigator(provider=provider, engine=engine)
 
     outcomes = []
     try:
@@ -337,7 +362,8 @@ async def run(
                 invoice_id=case["invoice_id"],
                 headers=header_pairs(case.get("headers")),
             )
-            result = await investigator.investigate(dispute, now=EVALUATION_DATE)
+            result = await investigator_for(case, provider, engine).investigate(
+                dispute, now=EVALUATION_DATE)
             outcomes.append(_evaluate(case, result))
     finally:
         # Whatever the engine holds belongs to this run's event loop, which

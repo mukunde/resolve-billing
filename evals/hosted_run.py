@@ -115,10 +115,10 @@ async def run(
     `admission` (a slot of the comparison), each case is recorded on disk as
     it is decided, so a lost process can be recovered."""
     from app.api.deps import wire
-    from app.application.investigate_dispute import DisputeInvestigator
     from app.domain.models import Dispute
     from app.providers.fake.adapter import FakeBillingProvider
     from evals import runner
+    from evals.investigators import investigator_for
 
     config = run_configuration(record)
     provider = FakeBillingProvider()
@@ -141,7 +141,7 @@ async def run(
         quota=quota,
     )
     record.governed = governed
-    investigator = DisputeInvestigator(provider=provider, engine=wire(governed, provider))
+    engine = wire(governed, provider)
     try:
         for index, case in enumerate(cases):
             record.not_attempted = [later["id"] for later in cases[index + 1 :]]
@@ -156,7 +156,8 @@ async def run(
                 headers=runner.header_pairs(case.get("headers")),
             )
             try:
-                result = await investigator.investigate(dispute, now=runner.EVALUATION_DATE)
+                result = await investigator_for(case, provider, engine).investigate(
+                    dispute, now=runner.EVALUATION_DATE)
             except RunStopped as stop:
                 record.stop(str(stop), cases, index)
                 return
