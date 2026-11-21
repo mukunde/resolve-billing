@@ -43,6 +43,7 @@
   }
   .analysis { margin-top: 18px; font-size: 14px; color: #374151; }
   .analysis h2 { font-size: 13px; color: var(--muted); font-weight: 400; margin: 0 0 6px; }
+  .analysis .provenance { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
   .policy {
     margin-top: 16px; font-size: 12.5px; color: #4b5563; background: #f9fafb;
     border: 1px solid var(--line); border-radius: 6px; padding: 11px 13px;
@@ -101,6 +102,9 @@
     <div class="analysis">
       <h2>Analyse</h2>
       <div>$reason</div>
+      <p class="provenance">Texte du moteur de décision, ou assemblé à partir des constats
+      quand le moteur n'en donne pas. Il peut être influencé par le message du client :
+      un avis, pas une preuve. Les constats ci-dessus viennent des règles.</p>
     </div>
 
     <div class="policy">$policy</div>
