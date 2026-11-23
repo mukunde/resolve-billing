@@ -26,10 +26,12 @@ where the per-channel detail lives.
 - **The investigation's explanation is internal prose.** The answer to
   `POST /disputes/investigate` carries the engine's explanation, or one the
   application assembles from the findings: it is not a customer reply and
-  must never be forwarded to the sender as it is. The approval mail carries
-  it today; execution and API-error mails carry the API's error text as
-  received. Reducing those channels to codes and a link is to build
-  (ADR-009).
+  must never be forwarded to the sender as it is. No mail carries it: the
+  approval mail sends codes, the amount and a link; the review and run
+  pages show the explanation escaped, the review page labelling it an
+  opinion, not evidence (2026-11-21).
+  Execution and API-error mails still carry the API's error text as
+  received; reducing those to a category is to build (ADR-009).
 - **What reaches a model provider is reduced.** The context is pseudonymised,
   the message masked for the formats the masking recognises -- printed
   invoice numbers of loaded invoices included, on every platform

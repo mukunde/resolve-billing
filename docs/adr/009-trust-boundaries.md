@@ -166,7 +166,7 @@ customer, which production would need (roles that carry a scope, above).
 | JSON reads: `GET /actions/{id}`, `GET /runs/{id}` | the orchestrator, an approver | the action, its amount and fingerprint; the run with its findings, evidence and trace | authentication | no per-customer scope (above) |
 | HTTP errors, 422 included | the caller, then whatever logs or mails it | the location and reason of the problem | a 422 never echoes the value sent (**tested**) | other error texts are not reviewed one by one |
 | Reply to the sender | the sender | nothing yet | `automatic_reply_allowed` (ADR-011) | rule 1 and its automatic check, with the reply drafter (**to build**) |
-| Approval mail | the approvers' mailbox | run, classification, amount, explanation, link | the decision itself needs a signed-in approver | mail is forwarded and archived: the explanation could give way to codes and the link |
+| Approval mail | the approvers' mailbox | run, classification, finding codes, amount, engine, confidence, the policy's reason, link | the decision itself needs a signed-in approver; no explanation: that prose, which the customer can steer, stays on the authenticated pages (review, run), escaped; the review page labels it an opinion, not evidence (2026-11-21) (**tested**) | -- |
 | Review alert | the approvers' mailbox | codes, run, link | no explanation, no evidence (**tested**) | -- |
 | Execution alert | the approvers' mailbox | action, run, link, and the API's error text | the API's errors no longer echo input | the error text is shown as received (**to build**: a category instead) |
 | Triage mail | the triage mailbox | the unknown sender's address, codes, link | no explanation, no evidence (**tested**); the instruction to confirm nothing (ADR-011) | -- |
